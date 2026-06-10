@@ -32,6 +32,11 @@ mental model.
   unresolved entry. candor is deliberately honest about what it cannot see.
 - **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` — same grammar in
   every language, spec §6.2) that fails the build deterministically.
+- **Staying current is *your* job, not candor's.** candor never phones home to check for updates —
+  it audits the `Net` effect and denies it in its own policy, so checking would make it perform the
+  effect it forbids. You have network access; it doesn't. Compare the installed version against the
+  registry yourself and upgrade — the exact one-liners (crates.io for Rust, GitHub releases for the
+  JVM) are in each implementation's "Staying current" section. Minimum supported: **0.3.2**.
 
 The full language-agnostic consumption contract is
 [candor-spec/AGENTS.md](https://github.com/tombaldwin/candor-spec/blob/main/AGENTS.md).

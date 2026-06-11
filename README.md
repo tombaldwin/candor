@@ -1,5 +1,7 @@
 # candor
 
+<p align="center"><img src="https://raw.githubusercontent.com/tombaldwin/candor/main/assets/beaky.svg" alt="Beaky, the candor canary" width="180"></p>
+
 **Per-function side-effect audit and architecture-as-code enforcement, for humans, CI, and AI
 agents — across languages.** candor knows which functions reach the network, filesystem, a database,
 a subprocess — *transitively* — and turns invariants like *"the domain layer does no I/O"* into a

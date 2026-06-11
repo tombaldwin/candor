@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="candor — per-function side effects, transitively. A CI gate that fails the PR.">
+  <!-- GitHub social-preview card (1280x640). Rasterize to PNG before uploading
+       (Settings -> Social preview): see assets/README note in the commit. -->
+  <rect width="1280" height="640" fill="#0b0e14"/>
+  <!-- Beaky, scaled up, on the right -->
+  <g transform="translate(820 120) scale(3.4)">
+    <path d="M8 95 Q60 91 112 94" fill="none" stroke="#3fb950" stroke-width="3" stroke-linecap="round"/>
+    <g transform="rotate(-3 60 60)">
+      <path d="M46 66 L20 58 L30 50 Z" fill="#e8a11a"/>
+      <path d="M45 70 L14 68 L24 59 Z" fill="#c98f1b"/>
+      <path d="M46 74 L22 80 L26 69 Z" fill="#a87514"/>
+      <path d="M61 36 L52 24 L63 31 Z" fill="#c98f1b"/>
+      <path d="M66 34 L65 19 L72 30 Z" fill="#e8a11a"/>
+      <path d="M71 34 L79 25 L75 35 Z" fill="#c98f1b"/>
+      <path d="M45 50 C50 35 74 30 86 42 C95 50 96 64 89 74 C82 84 64 89 52 83 C42 78 40 62 45 50 Z" fill="#f7c948"/>
+      <path d="M56 76 l4 -3 M63 79 l4 -3 M70 78 l4 -3" stroke="#e8a11a" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+      <path d="M51 55 C48 67 56 77 69 75 C72 74 73 72 71 70 C61 70 54 64 54 55 C53 53 52 53 51 55 Z" fill="#e8a11a"/>
+      <path d="M54 58 C55 65 60 70 67 71" fill="none" stroke="#c98f1b" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M89 49 L103 55 L90 60 Q92 54 89 49 Z" fill="#e8a11a"/>
+      <circle cx="78" cy="47" r="5.4" fill="#0b0e14"/>
+      <circle cx="78.6" cy="47.6" r="2.5" fill="#3fb950"/>
+      <path d="M71.5 44.5 L84.5 43.5 L84.5 46 Q78 44.8 72 47 Z" fill="#f7c948"/>
+      <ellipse cx="78" cy="47.5" rx="6.4" ry="6.6" fill="#f7c948" transform="translate(78 42.484) scale(1 0.08) translate(-78 -42.484)"/>
+      <path d="M58 86 L56 93 M70 85 L72 92" stroke="#c98f1b" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M52 95 q4 -3.5 8 0 M68 94 q4 -3.5 8 0" stroke="#c98f1b" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+  <!-- wordmark + tagline -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#e6edf3">
+    <text x="96" y="280" font-size="120" font-weight="700" letter-spacing="-2">candor</text>
+    <text x="100" y="356" font-size="40" fill="#9da7b3">per-function side effects, transitively.</text>
+    <text x="100" y="412" font-size="40" fill="#9da7b3">a CI gate that fails the PR.</text>
+    <text x="100" y="520" font-size="34" fill="#3fb950" font-weight="600">candor.poly.io</text>
+  </g>
+</svg>

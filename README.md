@@ -22,8 +22,10 @@ exhibits, the pre-registered evals, and the prove-it-on-your-own-repo path.
 
 **AI agent?** Start at [AGENTS.md](AGENTS.md) — it routes you to the right per-language instructions.
 
-**Sceptical?** Good. Each implementation ships a [PROVE-IT](https://github.com/tombaldwin/candor-rust/blob/main/PROVE-IT.md)
-self-experiment your own agent runs on your own repo — manual blast-radius trace committed *before*
+**Sceptical?** Good. Each implementation ships a PROVE-IT self-experiment your own agent runs on
+your own repo ([Rust](https://github.com/tombaldwin/candor-rust/blob/main/PROVE-IT.md) ·
+[JVM](https://github.com/tombaldwin/candor-java/blob/main/PROVE-IT.md) ·
+[TypeScript](https://github.com/tombaldwin/candor-ts/blob/main/PROVE-IT.md)) — manual blast-radius trace committed *before*
 the tool runs, every claimed miss verified at a file:line, and the honest negative outcome reported
 if candor doesn't help on your codebase. The implementations also hold their own gates: each analyzes
 itself in CI under a declared policy (spec §7.12).

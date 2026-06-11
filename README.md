@@ -7,11 +7,15 @@ policy that fails the build when an edit breaks them. Its reports and queries ar
 **cross-language-consistent by machine-checked conformance**, so one mental model (and one agent
 prompt) works everywhere.
 
+**Site:** [candor.poly.io](https://candor.poly.io) — the measured case in five minutes: the
+exhibits, the pre-registered evals, and the prove-it-on-your-own-repo path.
+
 | repo | what |
 |---|---|
 | [candor-spec](https://github.com/tombaldwin/candor-spec) | the specification (report format, semantics, policy DSL, conformance suite) — designed to be implementable from its text alone |
 | [candor-rust](https://github.com/tombaldwin/candor-rust) | the Rust reference implementation — `cargo install candor-scan` |
 | [candor-java](https://github.com/tombaldwin/candor-java) | the JVM implementation (Java, Kotlin, Scala, Groovy — reads bytecode) — `jbang candor@tombaldwin/candor-java` |
+| [candor-ts](https://github.com/tombaldwin/candor-ts) | the TypeScript slice, derived from the spec text alone — the derivability proof, run as the third engine in the conformance CI |
 
 **AI agent?** Start at [AGENTS.md](AGENTS.md) — it routes you to the right per-language instructions.
 

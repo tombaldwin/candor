@@ -15,7 +15,7 @@ Detect what you're working on, then follow that implementation's `AGENTS.md`:
 | `build.gradle*`, `pom.xml`, compiled `.class`/`.jar` | JVM (Java, Kotlin, Scala, Groovy) | [candor-java/AGENTS.md](https://github.com/tombaldwin/candor-java/blob/main/AGENTS.md) — `jbang candor@tombaldwin/candor-java` |
 | `tsconfig.json`, `package.json` + `.ts` sources | TypeScript | [candor-ts/AGENTS.md](https://github.com/tombaldwin/candor-ts/blob/main/AGENTS.md) — `npx -y candor-ts .` (npm ≥ 0.4.2; check `candor.spec` = 0.4 in the envelope) |
 | `Package.swift` + `.swift` sources | Swift | [candor-swift/AGENTS.md](https://github.com/tombaldwin/candor-swift/blob/main/AGENTS.md) — clone + `swift build -c release` + run the binary (young engine; check `candor.spec` = 0.4) |
-| `.claude/agents/*.md`, `.mcp.json` (an agent fleet, not a codebase) | — | [candor-agents](https://github.com/tombaldwin/candor-agents) — an exploration: the fleet's tool grants and delegation as an effect graph, gated by the same policy grammar |
+| `.claude/agents/*.md`, `.mcp.json` (an agent fleet, not a codebase) | — | [candor-agents](https://github.com/tombaldwin/candor-agents) — `pipx install git+…` then `candor-agents scan|observe|drift .`: declared vs observed fleet effects, gated by the same policy grammar |
 | anything else | — | no implementation yet; the [spec](https://github.com/tombaldwin/candor-spec) is designed to be implementable from its text alone |
 
 **Multi-language repo?** Use each implementation on its own subtree — the reports are

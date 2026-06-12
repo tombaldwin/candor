@@ -5,6 +5,13 @@ candor reports, for every function in a codebase, which side effects it performs
 declared effect/layering boundaries as a deterministic CI gate. This file routes you to the right
 per-language instructions.
 
+**Once an engine is installed, prefer its own copy of these docs**: every engine prints its
+per-language contract under `--agents` (`candor-scan --agents`, `npx -y candor-ts --agents`,
+`java -jar candor-java-*-all.jar --agents`, `candor-swift --agents`, `candor-agents --agents`),
+version-matched to the binary you are running (spec §7.11). The links below can describe a newer
+candor than the one installed; `--agents` cannot. (Engines older than tonight's 0.4.x releases
+lack the flag — if it errors, check the version per §1a of the engine's doc and upgrade first.)
+
 ## 1. Route by the project's language(s)
 
 Detect what you're working on, then follow that implementation's `AGENTS.md`:

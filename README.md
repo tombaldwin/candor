@@ -17,7 +17,8 @@ exhibits, the pre-registered evals, and the prove-it-on-your-own-repo path.
 | [candor-spec](https://github.com/tombaldwin/candor-spec) | the specification (report format, semantics, policy DSL, conformance suite) — designed to be implementable from its text alone |
 | [candor-rust](https://github.com/tombaldwin/candor-rust) | the Rust reference implementation — `cargo install candor-scan` |
 | [candor-java](https://github.com/tombaldwin/candor-java) | the JVM implementation (Java, Kotlin, Scala, Groovy — reads bytecode) — `jbang candor@tombaldwin/candor-java` |
-| [candor-ts](https://github.com/tombaldwin/candor-ts) | the TypeScript engine (young, 0.1.x): project scanning, the policy gate, queries — grown from the spec-derivability proof; third engine in the conformance CI |
+| [candor-ts](https://github.com/tombaldwin/candor-ts) | the TypeScript engine (0.4.x): project scanning, the policy gate, queries — grown from the spec-derivability proof; third engine in the conformance CI |
+| [candor-swift](https://github.com/tombaldwin/candor-swift) | the Swift engine (young, 0.4-era v0, SwiftSyntax): scanning + the policy gate + the κ ledger — the FOURTH engine, 20/20 on the shared oracle on its first run |
 | [candor-agents](https://github.com/tombaldwin/candor-agents) | an exploration off programming languages: an AGENT FLEET as an effect graph (agents=units, delegation=edges, tool grants=classified leaves) — queried and policy-gated by the unmodified candor tools |
 
 **AI agent?** Start at [AGENTS.md](AGENTS.md) — it routes you to the right per-language instructions.

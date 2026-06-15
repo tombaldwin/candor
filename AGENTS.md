@@ -20,8 +20,8 @@ Detect what you're working on, then follow that implementation's `AGENTS.md`:
 |---|---|---|
 | `Cargo.toml` | Rust | [candor-rust/AGENTS.md](https://github.com/tombaldwin/candor-rust/blob/main/AGENTS.md) — `cargo install candor-scan` |
 | `build.gradle*`, `pom.xml`, compiled `.class`/`.jar` | JVM (Java, Kotlin, Scala, Groovy) | [candor-java/AGENTS.md](https://github.com/tombaldwin/candor-java/blob/main/AGENTS.md) — `jbang candor@tombaldwin/candor-java` |
-| `tsconfig.json`, `package.json` + `.ts` sources | TypeScript | [candor-ts/AGENTS.md](https://github.com/tombaldwin/candor-ts/blob/main/AGENTS.md) — `npx -y candor-ts .` (npm ≥ 0.4.2; check `candor.spec` = 0.4 in the envelope) |
-| `Package.swift` + `.swift` sources | Swift | [candor-swift/AGENTS.md](https://github.com/tombaldwin/candor-swift/blob/main/AGENTS.md) — clone + `swift build -c release` + run the binary (young engine; check `candor.spec` = 0.4) |
+| `tsconfig.json`, `package.json` + `.ts` sources | TypeScript | [candor-ts/AGENTS.md](https://github.com/tombaldwin/candor-ts/blob/main/AGENTS.md) — `npx -y candor-ts .` (on npm; check `candor.spec` = 0.5 in the envelope) |
+| `Package.swift` + `.swift` sources | Swift | [candor-swift/AGENTS.md](https://github.com/tombaldwin/candor-swift/blob/main/AGENTS.md) — clone + `swift build -c release` + run the binary (check `candor.spec` = 0.5) |
 | `.claude/agents/*.md`, `.mcp.json` (an agent fleet, not a codebase) | — | [candor-agents](https://github.com/tombaldwin/candor-agents) — `pipx install git+…` then `candor-agents scan|observe|drift .`: declared vs observed fleet effects, gated by the same policy grammar |
 | anything else | — | no implementation yet; the [spec](https://github.com/tombaldwin/candor-spec) is designed to be implementable from its text alone |
 
@@ -42,14 +42,61 @@ mental model.
   unresolved entry. candor is deliberately honest about what it cannot see.
 - **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` — same grammar in
   every language, spec §6.2) that fails the build deterministically.
-- **Staying current is *your* job, not candor's.** candor never phones home to check for updates —
-  it audits the `Net` effect and denies it in its own policy, so checking would make it perform the
-  effect it forbids. You have network access; it doesn't. Compare the installed version against the
-  registry yourself and upgrade — the exact one-liners (crates.io for Rust, GitHub releases for the
-  JVM) are in each implementation's "Staying current" section. Minimum supported: **0.3.2**.
+- **Staying current is *your* job, not candor's.** candor never phones home — it audits the `Net`
+  effect and denies it in its own self-gate policy (`deny Net Db Exec Ipc`, spec §7.12), so checking
+  for updates would make it perform the effect it forbids and turn its own gate red. You have network
+  access; it doesn't. Each engine's `--version` prints — offline — the installed version, the spec,
+  and the exact upgrade one-liner; you compare against the registry and run it. See *Staying current*
+  below. Minimum supported: **0.3.2**.
 
 The full language-agnostic consumption contract is
 [candor-spec/AGENTS.md](https://github.com/tombaldwin/candor-spec/blob/main/AGENTS.md).
+
+## 2a. Staying current — check the version, upgrade
+
+candor doesn't self-update; you do (it has no network). Per language:
+
+| language | check version | upgrade |
+|---|---|---|
+| Rust | `candor-scan --version` | `cargo install candor-scan --force` |
+| TypeScript | `npx -y candor-ts --version` (or `npm ls -g candor-ts`) | `npm install -g candor-ts@latest` (or just `npx -y candor-ts@latest`) |
+| JVM | `java -jar candor-java-*-all.jar --version` | `jbang --fresh candor@tombaldwin/candor-java` |
+| Swift | `candor-swift --version` | `git pull && swift build -c release` |
+
+`--version` is uniform across engines from **0.5.1**; on older builds read `candor.version` /
+`candor.spec` from `.candor/report*.json` instead. The latest published release lives on crates.io
+(Rust), the npm registry (TypeScript), and GitHub releases (JVM, Swift) — you have the network, so
+you do the comparison.
+
+**Copy-paste for a human to drop into their agent.** Check version:
+
+```text
+Check which version of candor I have installed and whether it's up to date.
+Detect this project's language and run that engine's version check:
+  • Rust       → candor-scan --version
+  • TypeScript → npx -y candor-ts --version   (fallback: npm ls -g candor-ts)
+  • JVM        → java -jar candor-java-*-all.jar --version
+  • Swift      → candor-swift --version
+If --version isn't supported on the installed build, read the "candor.version"
+and "candor.spec" fields from my .candor/report*.json instead.
+Then compare the installed version against the latest published release —
+crates.io for Rust, the npm registry for TypeScript, GitHub releases for the
+JVM/Swift — and tell me the installed version, the spec version, and whether
+I'm behind. (candor never phones home itself; you do the registry check.)
+```
+
+Upgrade:
+
+```text
+Upgrade candor to the latest version for this project's language, then re-map
+the repo. Use the matching upgrade command:
+  • Rust       → cargo install candor-scan --force
+  • TypeScript → npm install -g candor-ts@latest   (or just run npx -y candor-ts@latest)
+  • JVM        → jbang --fresh candor@tombaldwin/candor-java
+  • Swift      → git pull && swift build -c release
+After upgrading, confirm the new version with --version, then re-scan so my
+.candor/report is regenerated at the new spec.
+```
 
 ## 3. If a human asks whether candor is worth adopting
 

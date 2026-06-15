@@ -1,0 +1,92 @@
+# candor fingerprint
+
+A fixed-size, text-free, **deterministic** abstract mark of a project's effect profile, rendered from
+any candor engine's report. Same report → same image. One glance tells you *what a codebase touches*
+(the effect mix), *how far those effects reach* (the neon propagation threads), and *how well-structured
+it is* (order vs. chaos).
+
+![example](../assets/fingerprint-example.png)
+
+## Usage
+
+```sh
+node candor-fingerprint.mjs <report-prefix> [options]
+```
+
+`<report-prefix>` points at a report; the tool reads `<prefix>.json` (the report) and, if present,
+`<prefix>.callgraph.json` (the call-graph sidecar every engine emits). A path ending in `.json` is
+accepted directly. Produce a report with any engine:
+
+| engine | command | report |
+| --- | --- | --- |
+| rust | `candor-scan <dir> --out <prefix>` | `<prefix>.<crate>.scan.json` (+ `.callgraph.json`) |
+| java | `candor <classes-or-jar> --json <prefix>.json` | `<prefix>.json` (+ `.callgraph.json`) |
+| ts | `candor-ts <dir> --json <prefix>.json` | `<prefix>.json` (+ `.callgraph.json`) |
+
+### Options
+
+| flag | effect |
+| --- | --- |
+| `--svg <file>` | write the SVG (default: `<prefix>.fingerprint.svg`) |
+| `--png <file>` | also write a PNG (needs a rasterizer — see below) |
+| `--html <file>` | write a standalone HTML wrapper (SVG + colour legend) |
+| `--size <px>` | output pixel size (the viewBox is always 600; default 1100) |
+| `--json` | print the fingerprint **metadata** (effect mix + structure/health score) to stdout |
+| `--no-svg` | skip the SVG file (e.g. when you only want `--png` or `--json`) |
+
+### Examples
+
+```sh
+# SVG next to the report, plus a PNG and the metadata
+node candor-fingerprint.mjs ./.candor/report.myapp.scan --png myapp.png --json
+
+# just the structure/health score, no image
+node candor-fingerprint.mjs ./report --no-svg --json
+```
+
+## The visual grammar
+
+- **Background nebula** — the project's **effect mix**. Each effect owns a soft colour territory sized
+  by its share; the dominant effect anchors the centre. The disc is always filled, edge to edge.
+  Each effect has a fixed colour; **Unknown** (an effect candor can't resolve — reflection, dynamic
+  dispatch) is a dusty lavender "fog".
+- **Neon filaments** — real **effect-propagation edges** (a call that carries an effect from callee to
+  caller), weighted by **blast radius** (how far the effect spreads through the call graph). They're
+  white-cored and brighten where they cross; fan-in/out per node is capped so one god-object hub can't
+  blow out the image.
+- **Order vs. chaos** — code **structure** drives the feel. Well-structured code renders calm and
+  radial; tangled, effect-smeared, or cyclic code renders chaotic and overheated.
+
+## Metadata & the structure score
+
+`--json` emits the DNA behind the image, including a single **structure score** (0–100, with a letter
+grade) and its components:
+
+```json
+{
+  "effects": { "Db": 0.49, "Log": 0.10, "Clock": 0.04, ... },
+  "unknown": 0.35,
+  "structure": 0.70,
+  "health": { "score": 70, "grade": "C",
+              "smear": 0.04, "unknown": 0.35, "tangleExcess": 0.71, "cycleRatio": 0.05 }
+}
+```
+
+`structure = 1 − (0.30·smear + 0.26·unknownShare + 0.24·tangleExcess + 0.20·cycleRatio)`, where:
+
+- **smear** — share of functions carrying ≥3 distinct effects (god-functions that do everything),
+- **unknownShare** — share of effect incidences candor couldn't resolve (analysis opacity),
+- **tangleExcess** — call-graph density above a healthy baseline,
+- **cycleRatio** — share of functions inside a call cycle.
+
+All four are *structural* signals candor already computes — the score just composes them. It is a
+descriptive metric, not a quality verdict: a high-Unknown or naturally effect-heavy codebase will score
+lower without being "bad".
+
+## Determinism & offline
+
+SVG generation is pure, offline and deterministic — the same report always yields byte-identical SVG
+(the seed is an FNV hash of the rounded effect DNA). **PNG export is the only step that shells out**, to
+a rasterizer, and is never part of the deterministic artifact. The tool auto-detects, in order:
+`rsvg-convert`, `resvg`, then a headless Chrome/Chromium (set `CANDOR_CHROME` to point at a binary). If
+none is found, the SVG is still written and the PNG is skipped with a note.

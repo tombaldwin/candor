@@ -41,3 +41,14 @@ adversarial fuzzers in CI), and a policy gate over the result. For agents it als
 pre-edit question — *"if I add an effect here, what's the blast radius and does it break policy?"* —
 in one query ([measured](https://github.com/tombaldwin/candor-rust/blob/main/eval/scaled/RESULTS-speed.md):
 ~1.8× faster than tracing by hand at equal completeness, and complete where untooled agents report ~6%).
+
+## Effects fingerprint
+
+<p align="center"><img src="assets/fingerprint-example.png" alt="A candor effects fingerprint" width="300"></p>
+
+[`fingerprint/`](fingerprint/) turns any engine's report into a fixed-size, text-free, **deterministic**
+abstract mark of a project's effect profile — the effect mix as a colour nebula, effect-propagation
+edges as weighted neon threads, and code structure as order-vs-chaos. Same report → same image. It also
+emits the DNA as JSON, including a single **structure score** (0–100) composed from the structural
+signals candor already computes (effect smear, Unknown opacity, call-graph tangle, cycles). Works
+identically across all four engines. See [`fingerprint/README.md`](fingerprint/README.md).

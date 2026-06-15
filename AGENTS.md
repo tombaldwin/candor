@@ -12,6 +12,26 @@ version-matched to the binary you are running (spec §7.11). The links below can
 candor than the one installed; `--agents` cannot. (Engines older than tonight's 0.4.x releases
 lack the flag — if it errors, check the version per §1a of the engine's doc and upgrade first.)
 
+## 0. Already installed? Report the version and offer to upgrade — before you scan
+
+If this project already has candor (a `.candor/` report directory, or the engine on `PATH`), do this
+**first**, before running it:
+
+1. **Tell the user which version they're on.** Run the engine's offline `candor-<engine> --version`
+   (or, on a build too old for the flag, read `candor.version` / `candor.spec` from an existing
+   `.candor/report*.json`). State it plainly — e.g. *"This project is on candor-ts 0.5.1 (spec 0.5)."*
+2. **Check whether it's current.** candor never phones home — its own policy denies `Net`, so a
+   version check is **your** job, not the tool's: you have network access, it doesn't. Compare the
+   installed version against the latest published release (crates.io / npm / GitHub releases — the
+   per-engine commands are in §2a).
+3. **If it's behind, *ask* before upgrading.** Say e.g. *"candor-ts 0.5.2 is available (you're on
+   0.5.1) — upgrade before I scan?"* and run the §2a upgrade one-liner only if the user agrees.
+   Never upgrade silently: an analysis tool's version is part of its result's provenance, so the
+   user decides when it changes.
+
+If it's already current (or the user declines), just proceed. If candor isn't installed at all, skip
+this and install per §1.
+
 ## 1. Route by the project's language(s)
 
 Detect what you're working on, then follow that implementation's `AGENTS.md`:

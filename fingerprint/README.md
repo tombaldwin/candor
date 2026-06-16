@@ -10,7 +10,7 @@ it is* (order vs. chaos).
 ## Usage
 
 ```sh
-node candor-fingerprint.mjs <report-prefix> [options]
+node candor-fingerprint.mjs <report-prefix>... [options]
 ```
 
 `<report-prefix>` points at a report; the tool reads `<prefix>.json` (the report) and, if present,
@@ -23,6 +23,11 @@ accepted directly. Produce a report with any engine:
 | java | `candor <classes-or-jar> --json <prefix>.json` | `<prefix>.json` (+ `.callgraph.json`) |
 | ts | `candor-ts <dir> --json <prefix>.json` | `<prefix>.json` (+ `.callgraph.json`) |
 
+**Workspaces / multiple reports.** A Rust workspace emits one report per crate
+(`<prefix>.<crate>.scan.json`). Pass the bare `<prefix>` and the tool auto-discovers and **merges**
+those siblings into one fingerprint — no manual merge step. You can also pass several prefixes
+explicitly; they're merged into a single mark for the whole set.
+
 ### Options
 
 | flag | effect |
@@ -33,6 +38,9 @@ accepted directly. Produce a report with any engine:
 | `--size <px>` | output pixel size (the viewBox is always 600; default 1100) |
 | `--json` | print the fingerprint **metadata** (effect mix + structure/health score) to stdout |
 | `--no-svg` | skip the SVG file (e.g. when you only want `--png` or `--json`) |
+
+Flags also accept the `--flag=value` form. A degenerate input (no effectful functions / empty graph)
+reports `structure: null` / grade `n/a` rather than a flattering perfect score.
 
 ### Examples
 
@@ -85,8 +93,11 @@ lower without being "bad".
 
 ## Determinism & offline
 
-SVG generation is pure, offline and deterministic — the same report always yields byte-identical SVG
-(the seed is an FNV hash of the rounded effect DNA). **PNG export is the only step that shells out**, to
-a rasterizer, and is never part of the deterministic artifact. The tool auto-detects, in order:
+SVG generation is pure, offline and deterministic, and **engine-independent**: node ids are sorted and
+filament ordering is tie-broken on edge identity before layout, so the *same logical graph* yields
+byte-identical SVG regardless of the order an engine happens to emit callgraph keys or adjacency lists
+(verified across reversed key+adjacency order). The seed is an FNV hash of the rounded effect DNA.
+**PNG export is the only step that shells out**, to a rasterizer, and is never part of the deterministic
+artifact. The tool auto-detects, in order:
 `rsvg-convert`, `resvg`, then a headless Chrome/Chromium (set `CANDOR_CHROME` to point at a binary). If
 none is found, the SVG is still written and the PNG is skipped with a note.

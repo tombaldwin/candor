@@ -93,6 +93,9 @@ lower without being "bad".
 
 ## Determinism & offline
 
+The disc has **transparent corners** (RGBA PNG / no background rect in the SVG), so it drops cleanly onto
+any page as an embeddable badge — light, dark, or coloured.
+
 SVG generation is pure, offline and deterministic, and **engine-independent**: node ids are sorted and
 filament ordering is tie-broken on edge identity before layout, so the *same logical graph* yields
 byte-identical SVG regardless of the order an engine happens to emit callgraph keys or adjacency lists

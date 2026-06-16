@@ -44,8 +44,9 @@ if (!argv.length || argv[0] === "-h" || argv[0] === "--help") {
 }
 const opts = { size: 1100 };
 const positional = [];
-function clampSize(v) { const n = parseInt(v, 10); if (Number.isNaN(n)) fail(`--size needs an integer, got "${v}"`); return Math.max(200, Math.min(4096, n)); }
+function clampSize(v) { if (!/^\d+$/.test(v)) fail(`--size needs a non-negative integer, got "${v}"`); return Math.max(200, Math.min(4096, parseInt(v, 10))); }
 for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === "--") { for (let j = i + 1; j < argv.length; j++) positional.push(argv[j]); break; }  // end-of-options
   let a = argv[i], inlineVal = null;
   const eq = a.startsWith("--") ? a.indexOf("=") : -1;
   if (eq > 0) { inlineVal = a.slice(eq + 1); a = a.slice(0, eq); }
@@ -82,28 +83,43 @@ function resolveStems(arg) {
   if (sibs.length) return sibs.map((f) => path.join(dir, f.replace(/\.json$/, "")));
   return [arg];   // loadReport will emit the clean "report not found" error
 }
-function readJson(file, what) {
+// Read+parse a JSON file. `soft` (the optional sidecar) warns and returns null instead of exiting.
+// Rejects non-regular files (a FIFO would otherwise hang the blocking read forever) and strips a BOM.
+function readJson(file, what, soft) {
+  const bail = (m) => { if (soft) { warn(m); return null; } fail(m); };
+  let stat;
+  try { stat = fs.statSync(file); } catch { return bail(`${what} not found: ${file}`); }
+  if (!stat.isFile()) return bail(`${what} is not a regular file: ${file}`);
   let txt;
-  try { txt = fs.readFileSync(file, "utf8"); } catch (e) { fail(`${what} not found: ${file}`); }
-  try { return JSON.parse(txt); } catch (e) { fail(`${what} is not valid JSON (${file}): ${e.message}`); }
+  try { txt = fs.readFileSync(file, "utf8"); } catch (e) { return bail(`cannot read ${what} ${file}: ${e.message}`); }
+  if (txt.charCodeAt(0) === 0xFEFF) txt = txt.slice(1);
+  try { return JSON.parse(txt); } catch (e) { return bail(`${what} is not valid JSON (${file}): ${e.message}`); }
 }
 const stems = [...new Set(positional.flatMap(resolveStems))].sort();
-let mergedFns = [], cg = {};
+// the resolved input files — outputs that collide with one are REFUSED (never clobber a report).
+const inputFiles = new Set(stems.flatMap((s) => [path.resolve(s + ".json"), path.resolve(s + ".callgraph.json")]));
+let mergedFns = [], cg = Object.create(null);   // null-proto: a `__proto__` callgraph key is a real entry, not a setter
 for (const stem of stems) {
   const rep = readJson(stem + ".json", "report");
   const part = Array.isArray(rep) ? rep : (Array.isArray(rep.functions) ? rep.functions : []);
   mergedFns = mergedFns.concat(part);
   const cgp = stem + ".callgraph.json";
   if (fs.existsSync(cgp)) {
-    let parsed;
-    try { parsed = JSON.parse(fs.readFileSync(cgp, "utf8")); }
-    catch (e) { warn(`ignoring malformed callgraph sidecar ${cgp}: ${e.message}`); parsed = null; }
-    if (parsed && typeof parsed === "object") Object.assign(cg, parsed);
+    const parsed = readJson(cgp, "callgraph sidecar", true);
+    if (parsed && typeof parsed === "object") for (const k of Object.keys(parsed)) cg[k] = parsed[k];
   }
 }
-// Only well-formed effectful functions participate. Array.isArray rejects a non-array `inferred`
-// (string/object) that would otherwise be char-iterated (silently dropping the effect) or crash later.
-const fns = mergedFns.filter((f) => f && Array.isArray(f.inferred) && f.inferred.length);
+// Dedup by fn name (UNION of inferred), so the effect mix and per-node colour are independent of report
+// order and of duplicate/colliding names (engines with plain-name collisions, or the multi-prefix merge).
+// Rejects entries without a string `fn` or a non-array/empty `inferred` (a non-array would be char-iterated).
+const fnMap = new Map();
+for (const f of mergedFns) {
+  if (!f || typeof f.fn !== "string" || !Array.isArray(f.inferred) || !f.inferred.length) continue;
+  const ex = fnMap.get(f.fn);
+  if (ex) { for (const e of f.inferred) if (!ex.inferred.includes(e)) ex.inferred.push(e); }
+  else fnMap.set(f.fn, { fn: f.fn, inferred: [...f.inferred] });
+}
+const fns = [...fnMap.values()];
 const cgVal = (n) => { const v = cg[n]; return Array.isArray(v) ? v : []; };
 
 // ---------------------------------------------------------------- palette
@@ -119,7 +135,7 @@ const inc = Object.fromEntries(ORDER.map((e) => [e, 0]));
 let unkInc = 0, totInc = 0, edges = 0;
 // Any effect not in the palette (e.g. a future/spec-added or language-specific effect) folds into
 // Unknown rather than vanishing silently — it is "something candor saw that this tool can't name".
-for (const f of fns) for (const e of f.inferred) { totInc++; if (e in inc) inc[e]++; else unkInc++; }
+for (const f of fns) for (const e of f.inferred) { totInc++; if (Object.hasOwn(inc, e)) inc[e]++; else unkInc++; }
 for (const v of Object.values(cg)) edges += (Array.isArray(v) ? v.length : 0);
 const nNodesCg = Object.keys(cg).length || fns.length || 1;
 const effs = ORDER.filter((e) => inc[e] > 0).map((e) => ({ e, c: COLOR[e], share: inc[e] / (totInc || 1) })).sort((a, b) => b.share - a.share);
@@ -219,11 +235,18 @@ const nodeIds = [...new Set([...Object.keys(cg), ...Object.values(cg).flat()])].
 const callers = new Map(nodeIds.map((n) => [n, []]));
 for (const n of Object.keys(cg).sort()) for (const c of cgVal(n)) { if (!callers.has(c)) callers.set(c, []); callers.get(c).push(n); }
 const bcache = new Map();
+// blast = transitive-caller count (propagation weight). Exact distinct-ancestor counting is inherently
+// O(N·E) on dense/deep graphs (the per-node flood can't share work without materializing ancestor sets),
+// which HUNG on pathological inputs (a 50k ring / 200k chain). A global visit BUDGET bounds total work:
+// real projects stay exact (uFlexi is ~344k visits, far under budget) while a pathological graph degrades
+// to a partial-but-bounded weight instead of hanging. Nodes are visited in sorted order, so it's
+// deterministic. This is a viz weight, not an exact analysis, so a saturated upper tail is acceptable.
+let blastBudget = 40_000_000;
 const blast = (n) => {
   if (bcache.has(n)) return bcache.get(n);
   const seen = new Set(), sk = [];
   for (const c of (callers.get(n) || [])) if (!seen.has(c)) { seen.add(c); sk.push(c); }  // mark-on-push
-  while (sk.length) { const x = sk.pop(); for (const y of (callers.get(x) || [])) if (!seen.has(y)) { seen.add(y); sk.push(y); } }
+  while (sk.length && blastBudget > 0) { const x = sk.pop(); blastBudget--; for (const y of (callers.get(x) || [])) if (!seen.has(y)) { seen.add(y); sk.push(y); } }
   bcache.set(n, seen.size); return seen.size;
 };
 let maxB = 1; for (const id of nodeIds) maxB = Math.max(maxB, blast(id));
@@ -409,9 +432,11 @@ function rasterize(svgFile, pngFile, size) {
 
 // ---------------------------------------------------------------- outputs
 function writeFile(p, content, what) {
+  if (inputFiles.has(path.resolve(p))) fail(`refusing to overwrite an input report with the ${what}: ${p}`);
   try { fs.writeFileSync(p, content); }
   catch (e) { fail(`cannot write ${what} to ${p}: ${e.message}`); }
 }
+if (opts.noSvg && !opts.png && !opts.html && !opts.json) warn("--no-svg with no --png/--html/--json: nothing to write");
 const svg = buildSvg(opts.size);
 const written = [];
 const defaultStem = positional[0].replace(/\.json$/, "");

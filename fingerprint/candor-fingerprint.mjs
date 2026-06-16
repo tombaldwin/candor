@@ -44,7 +44,7 @@ if (!argv.length || argv[0] === "-h" || argv[0] === "--help") {
 }
 const opts = { size: 1100 };
 const positional = [];
-function clampSize(v) { if (!/^\d+$/.test(v)) fail(`--size needs a non-negative integer, got "${v}"`); return Math.max(200, Math.min(4096, parseInt(v, 10))); }
+function clampSize(v) { if (!/^\d+$/.test(v)) fail(`--size needs a non-negative integer, got "${v}"`); return Math.max(32, Math.min(4096, parseInt(v, 10))); }   // 32px floor so small badges work
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--") { for (let j = i + 1; j < argv.length; j++) positional.push(argv[j]); break; }  // end-of-options
   let a = argv[i], inlineVal = null;
@@ -101,7 +101,7 @@ const inputFiles = new Set(stems.flatMap((s) => [path.resolve(s + ".json"), path
 let mergedFns = [], cg = Object.create(null);   // null-proto: a `__proto__` callgraph key is a real entry, not a setter
 for (const stem of stems) {
   const rep = readJson(stem + ".json", "report");
-  const part = Array.isArray(rep) ? rep : (Array.isArray(rep.functions) ? rep.functions : []);
+  const part = Array.isArray(rep) ? rep : (rep && Array.isArray(rep.functions) ? rep.functions : []);   // rep&& : a top-level `null` is valid JSON
   mergedFns = mergedFns.concat(part);
   const cgp = stem + ".callgraph.json";
   if (fs.existsSync(cgp)) {
@@ -157,7 +157,11 @@ const complexity = Math.min(1, (Math.log2(fns.length + 1) / 7) * 0.6 + tangle * 
 // whole layout re-randomize on a ±1-function edit (a project looked unrecognizable after a one-line
 // change). The seed keys only the bucketed effect profile; the real call graph (which genuinely changed)
 // still drives node/filament layout, so distinct projects stay distinct AND small edits degrade gracefully.
-const dna = effs.map((x) => x.e + ":" + Math.round(x.share * 20)).join("|") + `|u${Math.round(unkShare * 10)}d${Math.round(density * 8)}t${Math.round(tangle * 8)}`;
+// Build the DNA from the BUCKETED shares sorted by (bucket desc, effect name) — NOT by raw share —
+// so two effects sharing a bucket can't swap order under a tiny edit and re-seed an identical profile.
+const dnaEffs = effs.map((x) => ({ e: x.e, b: Math.round(x.share * 20) }))
+  .sort((a, b) => b.b - a.b || (a.e < b.e ? -1 : a.e > b.e ? 1 : 0));
+const dna = dnaEffs.map((x) => x.e + ":" + x.b).join("|") + `|u${Math.round(unkShare * 10)}d${Math.round(density * 8)}t${Math.round(tangle * 8)}`;
 let h = 2166136261 >>> 0; for (const ch of dna) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
 // LCG via Math.imul so the 32-bit multiply doesn't overflow 2^53 (bit-exact, engine-portable).
 let st = h || 1; const rnd = () => { st = (Math.imul(st, 1103515245) + 12345) & 0x7fffffff; return st / 0x7fffffff; };
@@ -396,7 +400,6 @@ function buildSvg(size) {
    <g style="mix-blend-mode:screen;isolation:isolate">${filWhite}</g>
  </g>
  <circle cx="${CX}" cy="${CY}" r="${DISC}" fill="none" stroke="${domColor}" stroke-width="1.5" opacity="0.6"/>
- <circle cx="${CX}" cy="${CY}" r="${DISC + 4}" fill="none" stroke="${domColor}" stroke-width="0.6" opacity="0.3"/>
 </svg>`;
 }
 
@@ -437,12 +440,19 @@ function rasterize(svgFile, pngFile, size) {
   const rz = findRasterizer();
   if (!rz) { warn("no rasterizer found (install rsvg-convert or resvg, or set CANDOR_CHROME) — PNG skipped, SVG written"); return false; }
   try { if (fs.existsSync(pngFile)) fs.unlinkSync(pngFile); } catch { /* ignore */ }   // never report a STALE png as success
-  let r;
+  let r, htmlFile = null;
   if (rz.kind === "rsvg") r = spawnSync(rz.bin, ["-w", String(size), "-h", String(size), "-o", pngFile, svgFile], { encoding: "utf8" });
   else if (rz.kind === "resvg") r = spawnSync(rz.bin, ["-w", String(size), "-h", String(size), svgFile, pngFile], { encoding: "utf8" });
-  // --default-background-color=00000000 keeps the canvas transparent so the disc's corners stay
-  // transparent in the PNG (rgba) — an embeddable badge. rsvg-convert/resvg preserve SVG alpha by default.
-  else r = spawnSync(rz.bin, ["--headless", "--disable-gpu", "--no-sandbox", "--force-device-scale-factor=1", `--screenshot=${pngFile}`, `--window-size=${size},${size}`, "--default-background-color=00000000", svgFile], { encoding: "utf8", timeout: 60000 });
+  else {
+    // Chrome's headless screenshot of an SVG *document* fills a corner OPAQUE (a filter-buffer overflow
+    // it won't clip — defeats the transparent badge). The SAME SVG loaded as an <img> in a transparent
+    // HTML page renders correctly, so wrap it (data-URI, no path/CORS issues) and screenshot that.
+    const b64 = Buffer.from(fs.readFileSync(svgFile, "utf8"), "utf8").toString("base64");
+    htmlFile = path.join(os.tmpdir(), `candor-fp-${h}-${process.pid}.wrap.html`);
+    fs.writeFileSync(htmlFile, `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:0;background:transparent"><img src="data:image/svg+xml;base64,${b64}" width="${size}" height="${size}" style="display:block"></body>`);
+    r = spawnSync(rz.bin, ["--headless", "--disable-gpu", "--no-sandbox", "--force-device-scale-factor=1", `--screenshot=${pngFile}`, `--window-size=${size},${size}`, "--default-background-color=00000000", htmlFile], { encoding: "utf8", timeout: 60000 });
+  }
+  if (htmlFile) try { fs.unlinkSync(htmlFile); } catch { /* ignore */ }
   if (r.error) { warn(`rasterizer (${rz.kind}) failed to launch: ${r.error.message} — PNG skipped`); return false; }
   if (r.status !== 0 || !fs.existsSync(pngFile) || fs.statSync(pngFile).size === 0) { warn(`rasterizer (${rz.kind}) produced no output — PNG skipped`); return false; }
   return true;

@@ -106,7 +106,14 @@ for (const stem of stems) {
   const cgp = stem + ".callgraph.json";
   if (fs.existsSync(cgp)) {
     const parsed = readJson(cgp, "callgraph sidecar", true);
-    if (parsed && typeof parsed === "object") for (const k of Object.keys(parsed)) cg[k] = parsed[k];
+    // UNION adjacency per node, don't overwrite: merging a workspace's per-crate callgraphs, two crates
+    // that share a function name (main/new/run/…) would otherwise clobber each other's edges (the later
+    // crate's empty `main` erasing the earlier crate's command fan-out). Mirror the fn-dedup union.
+    if (parsed && typeof parsed === "object") for (const k of Object.keys(parsed)) {
+      const add = Array.isArray(parsed[k]) ? parsed[k] : [];
+      if (Array.isArray(cg[k])) { for (const c of add) if (!cg[k].includes(c)) cg[k].push(c); }
+      else cg[k] = add.slice();
+    }
   }
 }
 // Dedup by fn name (UNION of inferred), so the effect mix and per-node colour are independent of report
@@ -238,10 +245,11 @@ const bcache = new Map();
 // blast = transitive-caller count (propagation weight). Exact distinct-ancestor counting is inherently
 // O(N·E) on dense/deep graphs (the per-node flood can't share work without materializing ancestor sets),
 // which HUNG on pathological inputs (a 50k ring / 200k chain). A global visit BUDGET bounds total work:
-// real projects stay exact (uFlexi is ~344k visits, far under budget) while a pathological graph degrades
-// to a partial-but-bounded weight instead of hanging. Nodes are visited in sorted order, so it's
-// deterministic. This is a viz weight, not an exact analysis, so a saturated upper tail is acceptable.
-let blastBudget = 40_000_000;
+// most projects stay exact (uFlexi ~344k visits) but a few genuinely huge graphs exceed it (hibernate-core
+// ~91M) and degrade to bounded, deterministic (sorted-order) APPROXIMATE weights — reported via
+// `meta.blastApprox` + a stderr note so it's never silent. This is a viz weight, not an exact analysis.
+const BLAST_BUDGET = 50_000_000;
+let blastBudget = BLAST_BUDGET;
 const blast = (n) => {
   if (bcache.has(n)) return bcache.get(n);
   const seen = new Set(), sk = [];
@@ -288,9 +296,10 @@ const inCyc = countCyclicNodes();
 const cycleRatio = inCyc / (nodeIds.length || 1);
 const tangleExcess = Math.max(0, tangle - 0.4) / 0.6;
 const structureRaw = Math.max(0, Math.min(1, 1 - (0.3 * smear + 0.26 * unkShare + 0.24 * tangleExcess + 0.2 * Math.min(1, cycleRatio * 3))));
-// A degenerate input (no effectful functions / empty graph) has nothing to score — report n/a rather
-// than a flattering 100/A. structureRaw still drives layout (which is a no-op when there are no nodes).
-const degenerate = fns.length === 0 || nodeIds.length === 0;
+// A degenerate input has nothing meaningful to score — report n/a rather than a flattering grade:
+// no effectful functions, an empty graph, OR zero CONCRETE effects resolved (effs empty == everything is
+// Unknown, e.g. a TS scan candor couldn't resolve — grading that "B" implies analysis quality that isn't there).
+const degenerate = fns.length === 0 || nodeIds.length === 0 || effs.length === 0;
 const structure = degenerate ? null : structureRaw;
 const grade = structure === null ? "n/a"
   : structure >= 0.85 ? "A" : structure >= 0.7 ? "B" : structure >= 0.55 ? "C" : structure >= 0.4 ? "D" : "F";
@@ -402,8 +411,10 @@ const meta = {
   threads: fedges.length,
   threadsDrawn: filDrawn.length,
   threadsCapped: filCapped,
+  blastApprox: blastBudget <= 0,   // true when the blast-visit budget was exhausted (weights approximate)
   seed: h,
 };
+if (meta.blastApprox) warn(`blast-visit budget (${BLAST_BUDGET.toLocaleString()}) exhausted on this large graph — propagation weights are approximate`);
 
 // ---------------------------------------------------------------- PNG export (optional, shells out)
 function findRasterizer() {

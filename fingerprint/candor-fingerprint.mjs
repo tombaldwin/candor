@@ -374,16 +374,17 @@ const domColor = effs.length ? effs[0].c : UNK;
 
 // ---------------------------------------------------------------- assemble SVG
 function buildSvg(size) {
+  // No full-canvas background: only the DISC is painted, so the corners are TRANSPARENT — the fingerprint
+  // is an embeddable badge that composites onto any page background. (The HTML wrapper supplies its own
+  // dark page bg for the standalone preview; the disc keeps its own dark backing circle below.)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="${size}" height="${size}">
  <defs>
-  <radialGradient id="bg" cx="50%" cy="50%" r="55%"><stop offset="0%" stop-color="#0a0e15"/><stop offset="100%" stop-color="#04060a"/></radialGradient>
   <clipPath id="disc"><circle cx="${CX}" cy="${CY}" r="${DISC}"/></clipPath>
   <filter id="neb" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="11"/></filter>
   <radialGradient id="warm" cx="50%" cy="42%" r="62%"><stop offset="0%" stop-color="#ffd089" stop-opacity="0.5"/><stop offset="55%" stop-color="#ff8a3c" stop-opacity="0.38"/><stop offset="100%" stop-color="#b83a1c" stop-opacity="0.34"/></radialGradient>
   <filter id="glow2" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.4"/></filter>
   <filter id="cglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.7"/></filter>
  </defs>
- <rect width="600" height="600" fill="url(#bg)"/>
  <circle cx="${CX}" cy="${CY}" r="${DISC}" fill="#05070b"/>
  <g clip-path="url(#disc)">
    <g filter="url(#neb)">${fill}</g>
@@ -439,9 +440,9 @@ function rasterize(svgFile, pngFile, size) {
   let r;
   if (rz.kind === "rsvg") r = spawnSync(rz.bin, ["-w", String(size), "-h", String(size), "-o", pngFile, svgFile], { encoding: "utf8" });
   else if (rz.kind === "resvg") r = spawnSync(rz.bin, ["-w", String(size), "-h", String(size), svgFile, pngFile], { encoding: "utf8" });
-  // (no --default-background-color: the SVG paints its own opaque dark background — the disc-in-dark-space
-  // look is intentional. The flag would be a no-op here; omitted so it doesn't imply transparency.)
-  else r = spawnSync(rz.bin, ["--headless", "--disable-gpu", "--no-sandbox", "--force-device-scale-factor=1", `--screenshot=${pngFile}`, `--window-size=${size},${size}`, svgFile], { encoding: "utf8", timeout: 60000 });
+  // --default-background-color=00000000 keeps the canvas transparent so the disc's corners stay
+  // transparent in the PNG (rgba) — an embeddable badge. rsvg-convert/resvg preserve SVG alpha by default.
+  else r = spawnSync(rz.bin, ["--headless", "--disable-gpu", "--no-sandbox", "--force-device-scale-factor=1", `--screenshot=${pngFile}`, `--window-size=${size},${size}`, "--default-background-color=00000000", svgFile], { encoding: "utf8", timeout: 60000 });
   if (r.error) { warn(`rasterizer (${rz.kind}) failed to launch: ${r.error.message} — PNG skipped`); return false; }
   if (r.status !== 0 || !fs.existsSync(pngFile) || fs.statSync(pngFile).size === 0) { warn(`rasterizer (${rz.kind}) produced no output — PNG skipped`); return false; }
   return true;

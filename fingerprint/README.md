@@ -36,11 +36,11 @@ explicitly; they're merged into a single mark for the whole set.
 | `--png <file>` | also write a PNG (needs a rasterizer — see below) |
 | `--html <file>` | write a standalone HTML wrapper (SVG + colour legend) |
 | `--size <px>` | output pixel size (the viewBox is always 600; default 1100) |
-| `--json` | print the fingerprint **metadata** (effect mix + structure/health score) to stdout |
+| `--json` | print the fingerprint **metadata** (effect mix + structure descriptor) to stdout |
 | `--no-svg` | skip the SVG file (e.g. when you only want `--png` or `--json`) |
 
 Flags also accept the `--flag=value` form. A degenerate input (no effectful functions / empty graph)
-reports `structure: null` / grade `n/a` rather than a flattering perfect score.
+reports `structure: null` rather than a flattering number.
 
 ### Examples
 
@@ -48,7 +48,7 @@ reports `structure: null` / grade `n/a` rather than a flattering perfect score.
 # SVG next to the report, plus a PNG and the metadata
 node candor-fingerprint.mjs ./.candor/report.myapp.scan --png myapp.png --json
 
-# just the structure/health score, no image
+# just the structure descriptor, no image
 node candor-fingerprint.mjs ./report --no-svg --json
 ```
 
@@ -65,18 +65,18 @@ node candor-fingerprint.mjs ./report --no-svg --json
 - **Order vs. chaos** — code **structure** drives the feel. Well-structured code renders calm and
   radial; tangled, effect-smeared, or cyclic code renders chaotic and overheated.
 
-## Metadata & the structure score
+## Metadata & the structure descriptor
 
-`--json` emits the DNA behind the image, including a single **structure score** (0–100, with a letter
-grade) and its components:
+`--json` emits the DNA behind the image, including a single **structure descriptor** (0–100, order vs
+chaos) and its components:
 
 ```json
 {
   "effects": { "Db": 0.49, "Log": 0.10, "Clock": 0.04, ... },
   "unknown": 0.35,
   "structure": 0.70,
-  "health": { "score": 70, "grade": "C",
-              "smear": 0.04, "unknown": 0.35, "tangleExcess": 0.71, "cycleRatio": 0.05 }
+  "structure_detail": { "value": 70,
+                        "smear": 0.04, "unknown": 0.35, "tangleExcess": 0.71, "cycleRatio": 0.05 }
 }
 ```
 
@@ -84,12 +84,13 @@ grade) and its components:
 
 - **smear** — share of functions carrying ≥3 distinct effects (god-functions that do everything),
 - **unknownShare** — share of effect incidences candor couldn't resolve (analysis opacity),
-- **tangleExcess** — call-graph density above a healthy baseline,
+- **tangleExcess** — call-graph density above a baseline,
 - **cycleRatio** — share of functions inside a call cycle.
 
-All four are *structural* signals candor already computes — the score just composes them. It is a
-descriptive metric, not a quality verdict: a high-Unknown or naturally effect-heavy codebase will score
-lower without being "bad".
+All four are *structural* signals candor already computes — the descriptor just composes them. It is a
+**descriptor, not a quality grade**: candor deliberately doesn't grade a codebase (spec §6.1). A
+high-Unknown or naturally effect-heavy codebase reads lower without being "bad" — there is no letter
+grade and no pass/fail.
 
 ## Determinism & offline
 

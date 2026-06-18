@@ -5,21 +5,22 @@
 **Architecture-as-code enforcement for the JVM — for CI, humans, and AI agents.** candor reads JVM
 bytecode (Java, Kotlin, Scala, Groovy) and knows which functions reach the network, filesystem, a
 database, a subprocess — *transitively, across packages* — then turns invariants like *"the domain
-layer does no I/O"* into a policy that fails the build when an edit breaks them. The same spec is
-implemented by secondary Rust, TypeScript and Swift engines, kept consistent by a machine-checked
-conformance suite — but **the JVM engine is the flagship and the focus.**
+layer does no I/O"* into a policy that fails the build when an edit breaks them. The same spec runs as
+full engines in Rust, TypeScript and Swift, kept in lockstep by a machine-checked conformance suite — so
+one mental model and one policy file work across your whole stack. **candor-java is the reference
+implementation; the others are first-class, conformance-checked engines.**
 
 **Site:** [candor.poly.io](https://candor.poly.io) — the measured case in five minutes: the
 exhibits, the pre-registered evals, and the prove-it-on-your-own-repo path.
 
 | repo | what |
 |---|---|
-| [candor-java](https://github.com/tombaldwin/candor-java) | **the flagship — the JVM engine** (Java, Kotlin, Scala, Groovy — reads bytecode): scanning, the policy gate, queries — `jbang candor@tombaldwin/candor-java` |
+| [candor-java](https://github.com/tombaldwin/candor-java) | **the reference implementation — the JVM engine** (Java, Kotlin, Scala, Groovy — reads bytecode): scanning, the policy gate, queries — `jbang candor@tombaldwin/candor-java` |
 | [candor-spec](https://github.com/tombaldwin/candor-spec) | the specification (report format, semantics, policy DSL, conformance suite) — implementable from its text alone |
-| [candor-rust](https://github.com/tombaldwin/candor-rust) | *secondary* — the Rust engine where the eval harness lives (`cargo install candor-scan`); a conformance engine |
-| [candor-ts](https://github.com/tombaldwin/candor-ts) | *secondary* — the TypeScript engine (**on npm**: `npx -y candor-ts`); a conformance engine |
-| [candor-swift](https://github.com/tombaldwin/candor-swift) | *secondary* — the Swift engine (SwiftSyntax); a conformance engine |
-| [candor-agents](https://github.com/tombaldwin/candor-agents) | *exploration, not a product* — effect analysis for agent fleets (declared-vs-observed drift), gated by the unmodified candor tools |
+| [candor-rust](https://github.com/tombaldwin/candor-rust) | the Rust engine (`cargo install candor-scan`); a conformance engine — and where the eval harness lives |
+| [candor-ts](https://github.com/tombaldwin/candor-ts) | the TypeScript engine (**on npm**: `npx -y candor-ts`); a conformance engine |
+| [candor-swift](https://github.com/tombaldwin/candor-swift) | the Swift engine (SwiftSyntax); a conformance engine |
+| [candor-agents](https://github.com/tombaldwin/candor-agents) | effect analysis for agent fleets (declared-vs-observed drift), gated by the unmodified candor tools — exploratory |
 
 **AI agent?** Start at [AGENTS.md](AGENTS.md) — it routes you to the right per-language instructions.
 
@@ -41,7 +42,7 @@ guessing — held to it by adversarial fuzzers in CI), and a policy gate over th
 undecidable, so this is a best-effort gate that catches far more than review and tells you where it
 couldn't see — not a completeness proof; the gaps it's still closing are tracked in the open. For
 agents it also answers the pre-edit question — *"if I add an effect here, what's the blast radius and
-does it break policy?"* — in one query (measured on the reference engine:
+does it break policy?"* — in one query (measured on the Rust engine:
 [~1.8× faster](https://github.com/tombaldwin/candor-rust/blob/main/eval/scaled/RESULTS-speed.md) than
 tracing by hand at equal completeness).
 

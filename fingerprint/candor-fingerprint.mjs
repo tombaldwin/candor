@@ -19,7 +19,7 @@
 //                     auto-detected; set CANDOR_CHROME to point at a Chrome/Chromium binary)
 //   --html <file>     write a standalone HTML wrapper (the SVG + a colour legend)
 //   --size <px>       PNG/SVG pixel size (the viewBox is always 600; default 1100)
-//   --json            print the fingerprint metadata (effect mix + structure/health score) to stdout
+//   --json            print the fingerprint metadata (effect mix + structure descriptor) to stdout
 //   --no-svg          skip the SVG file (e.g. when you only want --png or --json)
 //   (flags also accept --flag=value form)
 //
@@ -267,7 +267,7 @@ const blast = (n) => {
 };
 let maxB = 1; for (const id of nodeIds) maxB = Math.max(maxB, blast(id));
 
-// ---- STRUCTURE / health score (0 bad .. 1 good): smear + Unknown haze + tangle + cycles ----
+// ---- STRUCTURE descriptor (0 chaos .. 1 order): smear + Unknown haze + tangle + cycles ----
 const smear = fns.filter((f) => f.inferred.filter((e) => e !== "Unknown").length >= 3).length / (fns.length || 1);
 // ITERATIVE Tarjan SCC — counts nodes in non-trivial cycles. Iterative so a deep call chain (tens of
 // thousands of nodes) cannot overflow the stack (the recursive form did, and the failure was silently
@@ -304,13 +304,13 @@ const inCyc = countCyclicNodes();
 const cycleRatio = inCyc / (nodeIds.length || 1);
 const tangleExcess = Math.max(0, tangle - 0.4) / 0.6;
 const structureRaw = Math.max(0, Math.min(1, 1 - (0.3 * smear + 0.26 * unkShare + 0.24 * tangleExcess + 0.2 * Math.min(1, cycleRatio * 3))));
-// A degenerate input has nothing meaningful to score — report n/a rather than a flattering grade:
+// A degenerate input has nothing meaningful to describe — report n/a rather than a flattering number:
 // no effectful functions, an empty graph, OR zero CONCRETE effects resolved (effs empty == everything is
-// Unknown, e.g. a TS scan candor couldn't resolve — grading that "B" implies analysis quality that isn't there).
+// Unknown, e.g. a TS scan candor couldn't resolve — a structure number there would imply analysis quality
+// that isn't present). NB: `structure` is a DESCRIPTOR (order vs chaos), NOT a quality grade — candor
+// deliberately doesn't grade a codebase (spec §6.1); the A–F letter grade was removed for that reason.
 const degenerate = fns.length === 0 || nodeIds.length === 0 || effs.length === 0;
 const structure = degenerate ? null : structureRaw;
-const grade = structure === null ? "n/a"
-  : structure >= 0.85 ? "A" : structure >= 0.7 ? "B" : structure >= 0.55 ? "C" : structure >= 0.4 ? "D" : "F";
 
 // ---- node positions: effect sectors sized over EFFECTFUL nodes; pure substrate spread full-circle ----
 const present = [...effs.map((x) => x.e), ...(unkShare > UNK_MIN ? ["Unknown"] : [])];
@@ -415,7 +415,7 @@ const meta = {
   tangle: +tangle.toFixed(3),
   complexity: +complexity.toFixed(3),
   structure: structure === null ? null : +structure.toFixed(3),
-  health: { score: structure === null ? null : Math.round(structure * 100), grade, smear: +smear.toFixed(3), unknown: +unkShare.toFixed(3), tangleExcess: +tangleExcess.toFixed(3), cycleRatio: +cycleRatio.toFixed(3) },
+  structure_detail: { value: structure === null ? null : Math.round(structure * 100), smear: +smear.toFixed(3), unknown: +unkShare.toFixed(3), tangleExcess: +tangleExcess.toFixed(3), cycleRatio: +cycleRatio.toFixed(3) },
   threads: fedges.length,
   threadsDrawn: filDrawn.length,
   threadsCapped: filCapped,
@@ -486,7 +486,7 @@ if (opts.html) {
 <body style="margin:0;background:#070a0e;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font:12px ui-monospace,monospace;color:#8c84b8">
 ${svg}
 <div style="margin-top:12px;letter-spacing:.4px">${legend}</div>
-<div style="margin-top:4px;color:#3a434e">${esc(name)} · ${fns.length} fns · structure ${structure === null ? "n/a" : meta.health.score + "% (" + grade + ")"} · ${fedges.length} effect threads</div>
+<div style="margin-top:4px;color:#3a434e">${esc(name)} · ${fns.length} fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · ${fedges.length} effect threads</div>
 </body>`, "HTML");
   written.push(opts.html);
 }
@@ -495,6 +495,6 @@ if (opts.json) process.stdout.write(JSON.stringify(meta, null, 2) + "\n");
 
 const summaryParts = effs.map((x) => x.e + " " + Math.round(x.share * 100) + "%");
 if (unkShare > UNK_MIN) summaryParts.push("Unknown " + Math.round(unkShare * 100) + "%");
-console.error(`candor-fingerprint: ${name} — ${fns.length} effectful fns · structure ${structure === null ? "n/a" : meta.health.score + "% (" + grade + ")"} · [${summaryParts.join(", ") || "no effects"}]`
+console.error(`candor-fingerprint: ${name} — ${fns.length} effectful fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · [${summaryParts.join(", ") || "no effects"}]`
   + (filCapped > 0 ? ` · ${filDrawn.length}/${fedges.length} threads drawn` : "")
   + (written.length ? `\n  wrote: ${written.join(", ")}` : ""));

@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# arch.policy — your architecture, enforced on every push (candor-java)
+#
+# Each rule below is checked against the per-method effects candor reads from your
+# compiled bytecode. A violation prints an AS-EFF-### line pointing at the exact
+# method and FAILS the build (exit 1). Delete the examples that don't apply and
+# edit the package names to match yours. `#` starts a comment.
+#
+# Effects candor tracks: Net Fs Db Exec Env Clock Rand Log Ipc Clipboard
+# (plus Unknown — a call candor couldn't resolve; deny it to forbid the unverifiable).
+#
+# Scopes are matched by dotted package/class SEGMENTS: `com.acme.domain` matches
+# any method under that package; the LAST segment matches as a prefix. An empty
+# scope (omit it) means the WHOLE project.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── 1. The dependency rule: the domain core does no I/O ──────────────────────
+# The heart of your app (entities, use-cases, business rules) should be pure of
+# infrastructure. A future commit that opens a socket or a JDBC connection in here
+# flips the build red. (RealWorld case study: this passes on a real Spring DDD app.)
+deny Db Net Fs Exec   com.acme.domain
+
+# ── 2. Keep persistence in the persistence layer ─────────────────────────────
+# Only the repository/infrastructure layer may touch the database. Catches the
+# classic leak of a query into a controller or a presentation-layer Formatter.
+# (PetClinic case study: this is exactly how the PetTypeFormatter→Db smell is caught.)
+deny Db   com.acme.web
+deny Db   com.acme.api
+
+# ── 3. No surprises: forbid an effect nobody should have ─────────────────────
+# Examples — uncomment what fits your rules:
+# deny Exec                      # nothing in the app shells out to a subprocess
+# deny Rand com.acme.domain      # domain entities must not self-generate IDs — inject them (determinism/testability)
+# deny Clipboard                 # no code reaches the system clipboard
+
+# ── 4. Layering: who may depend on whom (transitive, over the call graph) ─────
+# `forbid A -> B` fails if any method in package A can transitively reach package B.
+# The `->` must have spaces around it.
+# forbid com.acme.domain -> com.acme.infrastructure   # domain must not reach infra directly
+# forbid com.acme.web    -> com.acme.persistence       # web must go through services, not the DAO
+
+# ── 5. Allow-list the only external endpoints a layer may reach ───────────────
+# `allow <Effect> in <scope> <values…>` — a method in <scope> may reach ONLY the
+# listed hosts (Net) / commands (Exec) / paths (Fs) / tables (Db); anything else fails.
+# allow Net in com.acme.integration   api.stripe.com   api.internal.acme
+# allow Exec in com.acme.tools         git

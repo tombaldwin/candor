@@ -11,10 +11,12 @@ candor-ts/scan disclose `Unknown` for the same shape (SOUNDNESS.md §8.3). The d
 end-to-end: AS-EFF-005 ratchet, AS-EFF-006/008/009 policy, AS-EFF-010 **containment** + cross-engine
 conformance (PART 11). Value now concentrates in:
 
-- **[P0 — north star] Agent edit-time blast-radius feedback.** The `diff` / MCP surface ships; the open
-  work is tightening the *delta back to the agent* — a `CANDOR_REVIEW` self-review / Claude Code hook that
-  surfaces an edit's gained effects *including the transitive blast radius*. This is where the
-  pre-registered eval's decisive lift lives (blast-radius is a reasoning gap, not a cost gap).
+- **[P0 — north star] Agent edit-time blast-radius feedback.** The `diff` / MCP surface ships, and the
+  edit-time delivery loop now ships too: [`integrations/claude-code/`](integrations/claude-code/) — a Stop
+  hook (`stop-hook.sh` over `candor-review.sh`) that scans the agent's turn, diffs effects vs a baseline,
+  and blocks-once with the gained effects + transitive blast radius + any policy violation so the agent
+  self-corrects. _Remaining polish:_ a richer in-IDE/MCP push, and per-engine scan-source variants (the
+  current loop builds Java classes once per turn; scan-source engines need no build step).
 
 - **[adoption] Get the proven wedge in front of users.** The architecture-gate is proven — 5 real-app case
   studies (`docs/`) + a copy-paste `adopt/` starter (policy template + GitHub Action), validated end-to-end

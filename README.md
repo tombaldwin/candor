@@ -54,6 +54,11 @@ and a [GitHub Actions workflow](adopt/candor.yml) that fails the build (pointing
 when an architecture rule is broken. See it running end-to-end on real Spring, Kotlin, and Quarkus apps
 in the [case studies](docs/case-studies.md).
 
+For coding agents, [`integrations/claude-code/`](integrations/claude-code/) closes the loop at edit time: a
+Claude Code **Stop hook** scans the agent's result, diffs the effects against a baseline, and hands back any
+newly-introduced effect (with its transitive blast radius) or policy violation so the agent fixes it *before
+yielding to you* — the deterministic counterpart to "the model will probably notice."
+
 ## Effects fingerprint
 
 <p align="center"><img src="assets/fingerprint-example.png" alt="A candor effects fingerprint" width="300"></p>

@@ -23,15 +23,21 @@ if command -v jq >/dev/null 2>&1; then active=$(printf '%s' "$input" | jq -r '.s
 [ "$active" = "true" ] && { echo '{}'; exit 0; }
 
 review=$("$HERE/candor-review.sh" 2>&1); rc=$?
-if [ "$rc" -eq 0 ]; then
-  echo '{}'                                   # clean — let the turn end
-else
-  # rc 1 (violation / new effect) or 2 (setup) → surface it to the agent, blocking the stop once.
+if [ "$rc" -eq 1 ]; then
+  # A policy violation / new effect → block once, hand the verdict to the agent.
   if command -v jq >/dev/null 2>&1; then
     reason=$(printf '%s' "$review" | jq -Rs .)
   else
-    reason="\"$(printf '%s' "$review" | tr '\n' ' ' | sed 's/"/\\"/g')\""
+    # No jq: hand-escaping a multi-line string risks INVALID JSON (an unescaped `\` in a path/regex would
+    # make Claude Code drop the block = FAIL-OPEN). Emit a fixed, always-valid reason so the block still
+    # fires (fail-closed); the agent re-runs candor-review.sh for detail.
+    reason='"candor flagged this change (a policy violation or a newly-introduced effect). Run integrations/claude-code/candor-review.sh for the verdict; install jq to see it inline here."'
   fi
   printf '{"decision":"block","reason":%s}\n' "$reason"
+else
+  # rc 0 = clean → allow. rc 2 = a setup/build error the AGENT can't fix → ALLOW (don't block every turn on
+  # a misconfiguration); surface it to the human on stderr instead.
+  [ "$rc" -ne 0 ] && printf 'candor stop-hook: review could not run (rc=%s), not blocking:\n%s\n' "$rc" "$review" >&2
+  echo '{}'
 fi
 exit 0

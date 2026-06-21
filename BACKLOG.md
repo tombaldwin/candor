@@ -23,10 +23,10 @@ conformance (PART 11). Value now concentrates in:
 
 ## fingerprint
 
-- **`--baseline <report>` diff for the structure score.** Report the *change* vs a baseline
-  ("structure −0.06 since main; tangleExcess up, driven by these 3 new cycles") rather than an absolute
-  number — the deterministic-gate framing, not the vanity-number one. (The A–F letter grade was already
-  removed; the 0–1 `structure` value + its four components live under `structure_detail`.)
+- _Done (2026-06-21):_ **`--baseline <report>` diff** — reports the *change* in the structure descriptor
+  vs a baseline (structure delta + per-component smear/unknown/tangleExcess/cycleRatio deltas, the
+  direction toward order/chaos), the deterministic-gate framing. (The A–F letter grade was already removed.)
+  No fingerprint backlog items remain.
 
 ## Deferred operational (need a publish or maintainer action)
 

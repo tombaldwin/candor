@@ -37,6 +37,7 @@ explicitly; they're merged into a single mark for the whole set.
 | `--html <file>` | write a standalone HTML wrapper (SVG + colour legend) |
 | `--size <px>` | output pixel size (the viewBox is always 600; default 1100) |
 | `--json` | print the fingerprint **metadata** (effect mix + structure descriptor) to stdout |
+| `--baseline <prefix>` | diff the structure descriptor vs a baseline report — the **change** (trend / PR-over-PR), not an absolute number; adds a `baseline` block to `--json` + a summary line |
 | `--no-svg` | skip the SVG file (e.g. when you only want `--png` or `--json`) |
 
 Flags also accept the `--flag=value` form. A degenerate input (no effectful functions / empty graph)
@@ -50,6 +51,10 @@ node candor-fingerprint.mjs ./.candor/report.myapp.scan --png myapp.png --json
 
 # just the structure descriptor, no image
 node candor-fingerprint.mjs ./report --no-svg --json
+
+# the CHANGE vs a baseline (e.g. main) — the deterministic-gate framing, not an absolute grade
+node candor-fingerprint.mjs ./report --no-svg --baseline ./report.main
+#   -> "vs ./report.main: structure -0.06 — drifted toward chaos (tangleExcess +0.04, cycleRatio +0.02)"
 ```
 
 ## The visual grammar

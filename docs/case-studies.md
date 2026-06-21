@@ -10,7 +10,7 @@ library supply-chain audit — and what candor does at the edge of what it model
 | 1 | [RealWorld "Conduit"](#1-realworld-conduit--spring-ddd--mybatis) | Spring Boot, DDD, MyBatis | `Db` 100% contained; domain proven I/O-free; gate bites on a real `Rand` decision |
 | 2 | [Spring PetClinic](#2-spring-petclinic--spring-data-jpa) | Spring Data JPA | a real cross-layer smell — a presentation `Formatter` reaching the DB |
 | 3 | [PetClinic, Kotlin](#3-petclinic-kotlin--language-agnostic) | Kotlin + Spring | same layer map from Kotlin bytecode — the analysis is language-agnostic |
-| 4 | [Quarkus + Jakarta Data](#4-quarkus--jakarta-data--hibernate--the-edge-of-the-model) | Quarkus, Hibernate | the edge of the model: unmodeled persistence is disclosed `invisible`, never silently "pure" |
+| 4 | [Quarkus + Jakarta Data](#4-quarkus--jakarta-data--hibernate--a-non-spring-framework) | Quarkus, Hibernate | a non-Spring framework: `Db` lands cleanly via the Hibernate-6 / Jakarta-Data model; the rest is disclosed |
 | 5 | [gson](#5-gson--a-supply-chain-audit) | library jar | a supply-chain audit: the one non-obvious network call in 386 functions |
 
 All five are reproducible: build the project (JDK 17), then `jbang candor@tombaldwin/candor-java <classes>`.
@@ -67,26 +67,35 @@ not source — one engine covers Java, Kotlin, Scala, and Groovy on the JVM.
 
 ---
 
-## 4. Quarkus + Jakarta Data + Hibernate — the edge of the model
+## 4. Quarkus + Jakarta Data + Hibernate — a non-Spring framework
 
 The Hibernate ORM / Jakarta Data quickstart — deliberately *not* Spring. `FruitRepository` is a
-`jakarta.data.repository.CrudRepository` interface, and the REST endpoints in `FruitResource` go through
-it into Hibernate's native API. candor does **not** model Jakarta Data / Hibernate-native persistence (it
-models the Spring Data and MyBatis repository patterns). The result is the one that matters most for trust:
+`jakarta.data.repository.CrudRepository` interface, and the REST endpoints in `FruitResource` go through it
+into Hibernate's Jakarta-Data-era API (`StatelessSession`, `SelectionQuery`, `MutationQuery`). candor reads
+that boundary and `Db` lands on all five endpoints, fully contained:
 
 ```
-FruitResource.get    inferred=[]   invisible=[org.hibernate, org.hibernate.query, org.hibernate.query.criteria, …]
-FruitResource.create inferred=[]   invisible=[org.hibernate, org.hibernate.exception]
-…
-candor-java: κ doesn't know 5 packages this code calls into — effects through them are INVISIBLE
-(not Unknown): org.hibernate (26 calls), org.hibernate.query.criteria (19), org.hibernate.query (17), …
+FruitResource.create   inferred=[Db]   invisible=[org.hibernate.exception]
+FruitResource.delete   inferred=[Db]   invisible=[org.hibernate.query.criteria]
+FruitResource.get      inferred=[Db]   invisible=[org.hibernate.query.criteria, org.hibernate.query.specification]
+FruitResource.getSingle inferred=[Db]  invisible=[]
+FruitResource.update   inferred=[Db]   invisible=[]
+
+candor containment   Db   100%   1 layer
 ```
 
-The endpoints' persistence is reported `invisible` — candor states the packages it can't see through and
-the call counts — **not** as `inferred=[]` meaning "pure". A gate built on candor is therefore never
-silently wrong on a framework candor doesn't fully model: it tells you where its sight ends rather than
-asserting "no effect". This run also names a concrete coverage frontier — Jakarta Data / Hibernate-native
-is the obvious next persistence pattern to model, alongside Spring Data and MyBatis.
+Two things make this the honest study of the set. First, the analysis crosses frameworks — the same engine
+that maps Spring Data and MyBatis also models the Jakarta Data / Hibernate-6 persistence path, so `Db`
+lands without a single annotation. Second, look at the residual `invisible`: the *pure* criteria-builder
+packages (`org.hibernate.query.criteria`, `…specification`) that candor doesn't model are still
+**disclosed**, not silently dropped. candor models the I/O it's sure of and names the rest — it never
+reports `inferred=[]` ("pure") for a call it hasn't actually understood. A gate built on it is never
+silently wrong, even at the edge of what it models.
+
+*(This study drove a real engine change: the Hibernate-6 / Jakarta-Data persistence model was added to
+candor-java's κ effect classifier as a direct result of an earlier run of this quickstart, which had
+disclosed the whole `org.hibernate` surface as `invisible`. The disclosure contract turned a blind spot
+into a worklist.)*
 
 ---
 

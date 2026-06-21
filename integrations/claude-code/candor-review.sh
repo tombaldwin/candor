@@ -18,9 +18,12 @@ CLASSES=${CANDOR_CLASSES:-}
 BASELINE=${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}
 [ -n "$CLASSES" ] || { echo "candor-review: set CANDOR_CLASSES to the compiled classes dir/jar"; exit 2; }
 
-CUR=$(mktemp -t candor-cur.XXXXXX).json
-SCANLOG=$(mktemp -t candor-scan.XXXXXX)
-# One scan. If CANDOR_POLICY is set it gates inline → nonzero + an [AS-EFF-…] line on a violation.
+# mktemp portably (BSD/macOS `-t` treats the arg as a prefix, not a template, and an appended `.json` would
+# point at a path mktemp never created → an orphaned temp every run). A bare mktemp + a trap is portable.
+CUR=$(mktemp); SCANLOG=$(mktemp)
+trap 'rm -f "$CUR" "$SCANLOG"' EXIT
+# One scan (the --json path needs no extension). If CANDOR_POLICY is set it gates inline → nonzero + an
+# [AS-EFF-…] line on a violation.
 $CANDOR "$CLASSES" --json "$CUR" >"$SCANLOG" 2>&1; gate=$?
 [ -s "$CUR" ] || { echo "candor-review: scan produced no report — $(tail -1 "$SCANLOG")"; exit 2; }
 
@@ -40,11 +43,18 @@ elif true; then
 fi
 
 if [ "$gate" -ne 0 ]; then
-  echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
-  grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
-  [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
-  echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
-  exit 1
+  # Distinguish a real policy violation (an AS-EFF line) from a tool/build failure that also exits nonzero —
+  # don't mislabel a crash/bad-classpath as an "architecture gate" failure.
+  if grep -qE "AS-EFF" "$SCANLOG"; then
+    echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
+    grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
+    [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
+    echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
+    exit 1
+  fi
+  echo "candor-review: candor exited $gate with no policy finding — a build/scan error, not a violation:"
+  tail -3 "$SCANLOG" | sed 's/^/  /'
+  exit 2
 fi
 if [ -n "$delta" ]; then
   echo "candor: this change introduced new effects (no policy violation):"

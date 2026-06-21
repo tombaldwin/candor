@@ -1,0 +1,58 @@
+# candor — architecture gate for the JVM
+#
+# Copy this file to .github/workflows/candor.yml in your repo, drop an `arch.policy`
+# at the repo root (see adopt/arch.policy for a template), and edit the two marked
+# spots: your build step and your compiled-classes directory.
+#
+# What it does: builds your project, then runs candor-java over the compiled
+# bytecode with your policy. A policy violation prints the offending method and
+# fails the check (exit 1), so the architecture rule is enforced on every push/PR.
+
+name: candor architecture gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  arch-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK for building YOUR project. Match the version your build needs.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ── EDIT 1: build your project so there are .class files to analyze ──────
+      # Maven:
+      - name: Build
+        run: mvn -B -q compile
+      # Gradle (use instead of the Maven step above):
+      # - name: Build
+      #   run: ./gradlew classes
+
+      # jbang fetches and runs candor-java (no install, pinned via the alias).
+      - uses: jbangdev/setup-jbang@main
+
+      # ── EDIT 2: point CLASSES at your compiled output ───────────────────────
+      #   Maven  → target/classes
+      #   Gradle → build/classes/java/main
+      # One run writes the full effect report AND enforces the policy: it exits 1
+      # (failing this check) on any violation, printing the offending method.
+      - name: candor architecture gate
+        env:
+          CANDOR_POLICY: arch.policy
+          CLASSES: target/classes
+        run: jbang candor@tombaldwin/candor-java "$CLASSES" --json candor-report.json
+
+      # Keep the full effect report as a build artifact (optional, handy for review).
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candor-report
+          path: candor-report.json
+          if-no-files-found: ignore

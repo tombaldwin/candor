@@ -118,3 +118,6 @@ not "is this library popular" but "what can it reach".
 
 *candor-java is the JVM flagship of the candor family — per-method effect disclosure from bytecode, with a
 policy DSL that fails the build when the architecture drifts. Install: `jbang candor@tombaldwin/candor-java`.*
+
+**Want this on your repo?** The [`adopt/`](../adopt/) starter has a copy-paste `arch.policy` template and a
+GitHub Actions workflow — three steps to the gate running on every push.

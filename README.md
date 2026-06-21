@@ -46,6 +46,14 @@ does it break policy?"* — in one query (measured on the Rust engine:
 [~1.8× faster](https://github.com/tombaldwin/candor-rust/blob/main/eval/scaled/RESULTS-speed.md) than
 tracing by hand at equal completeness).
 
+## Get the gate on your repo
+
+Three steps, no annotations or source changes: build your project, drop an `arch.policy`, wire one CI
+job. [**`adopt/`**](adopt/) has a copy-paste starter — an annotated [policy template](adopt/arch.policy)
+and a [GitHub Actions workflow](adopt/candor.yml) that fails the build (pointing at the exact method)
+when an architecture rule is broken. See it running end-to-end on real Spring, Kotlin, and Quarkus apps
+in the [case studies](docs/case-studies.md).
+
 ## Effects fingerprint
 
 <p align="center"><img src="assets/fingerprint-example.png" alt="A candor effects fingerprint" width="300"></p>

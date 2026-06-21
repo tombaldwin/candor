@@ -4,15 +4,16 @@
 # once and hands the verdict back so the agent can fix it before yielding to you (or refresh the baseline if
 # intended). This is the "edit-time blast-radius feedback" loop: the delta reaches the agent automatically.
 #
-# Wire it (~/.claude/settings.json or .claude/settings.json), with your project's env:
-#   {
-#     "hooks": { "Stop": [ { "hooks": [ {
-#       "type": "command",
-#       "command": "CANDOR_CLASSES=target/classes CANDOR_POLICY=arch.policy /abs/path/to/stop-hook.sh"
-#     } ] } ] }
-#   }
-# (CANDOR_CLASSES must be ALREADY BUILT — add your build to the command, e.g. `mvn -q compile && ...`, or
-#  point at a watch-built output. See README.md.)
+# Wire it (~/.claude/settings.json or .claude/settings.json), with your project's env.
+#   JVM (build first — candor-java reads BYTECODE):
+#     "command": "CANDOR_CLASSES=target/classes CANDOR_POLICY=arch.policy /abs/path/to/stop-hook.sh"
+#   SCAN-SOURCE engines (ts/swift/rust — NO build step) — point CANDOR_REVIEW at the source variant:
+#     "command": "CANDOR_REVIEW=/abs/.../candor-review-source.sh CANDOR_SCAN='npx -y candor-ts' CANDOR_QUERY='npx -y candor-ts-query' CANDOR_SRC=src CANDOR_POLICY=arch.policy /abs/.../stop-hook.sh"
+# (JVM: CANDOR_CLASSES must be ALREADY BUILT — add your build to the command, e.g. `mvn -q compile && ...`.
+#  Scan-source: nothing to build; see README.md for the per-engine CANDOR_SCAN/CANDOR_QUERY wiring.)
+#
+# CANDOR_REVIEW selects the review script — defaults to candor-review.sh (JVM/bytecode); set it to
+# candor-review-source.sh for the scan-source engines. Both share the exit contract (0 clean / 1 block / 2 setup).
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 input=$(cat 2>/dev/null || true)
@@ -22,7 +23,7 @@ active=false
 if command -v jq >/dev/null 2>&1; then active=$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false); fi
 [ "$active" = "true" ] && { echo '{}'; exit 0; }
 
-review=$("$HERE/candor-review.sh" 2>&1); rc=$?
+review=$("${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
 if [ "$rc" -eq 1 ]; then
   # A policy violation / new effect → block once, hand the verdict to the agent.
   if command -v jq >/dev/null 2>&1; then

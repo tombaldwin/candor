@@ -20,6 +20,8 @@
 //   --html <file>     write a standalone HTML wrapper (the SVG + a colour legend)
 //   --size <px>       PNG/SVG pixel size (the viewBox is always 600; default 1100)
 //   --json            print the fingerprint metadata (effect mix + structure descriptor) to stdout
+//   --baseline <prefix>  diff the structure descriptor vs a baseline report — the CHANGE (trend /
+//                     PR-over-PR), not an absolute number; adds a `baseline` block to --json + a summary line
 //   --no-svg          skip the SVG file (e.g. when you only want --png or --json)
 //   (flags also accept --flag=value form)
 //
@@ -39,7 +41,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 // ---------------------------------------------------------------- args
 const argv = process.argv.slice(2);
 if (!argv.length || argv[0] === "-h" || argv[0] === "--help") {
-  console.error("usage: candor-fingerprint <report-prefix>... [--svg f] [--png f] [--html f] [--size px] [--json] [--no-svg]");
+  console.error("usage: candor-fingerprint <report-prefix>... [--svg f] [--png f] [--html f] [--size px] [--json] [--baseline prefix] [--no-svg]");
   process.exit(argv.length ? 0 : 1);
 }
 const opts = { size: 1100 };
@@ -61,6 +63,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--html") opts.html = takeVal("--html");
   else if (a === "--size") opts.size = clampSize(takeVal("--size"));
   else if (a === "--json") opts.json = true;
+  else if (a === "--baseline") opts.baseline = takeVal("--baseline");
   else if (a === "--no-svg") opts.noSvg = true;
   else if (a.startsWith("--")) fail(`unknown flag ${a}`);
   else positional.push(a);
@@ -424,6 +427,33 @@ const meta = {
 };
 if (meta.blastApprox) warn(`blast-visit budget (${BLAST_BUDGET.toLocaleString()}) exhausted on this large graph — propagation weights are approximate`);
 
+// ---- baseline diff (--baseline <prefix>): report the CHANGE in structure vs a baseline report — the
+// deterministic-gate framing (trend / PR-over-PR) rather than an absolute number. Computed by re-running
+// THIS tool on the baseline (--json --no-svg, no --baseline → no recursion), so the structure math is one
+// implementation. A negative `structure` delta = drifted toward chaos; each component (smear/unknown/
+// tangleExcess/cycleRatio) is an effect that REDUCES structure, so a positive component delta is a regression.
+if (opts.baseline) {
+  const r = spawnSync(process.execPath, [process.argv[1], opts.baseline, "--json", "--no-svg"], { encoding: "utf8" });
+  let base = null;
+  if (r.status === 0) { try { base = JSON.parse(r.stdout); } catch { /* not parseable — handled below */ } }
+  if (!base) {
+    warn(`--baseline ${opts.baseline}: could not compute the baseline fingerprint — skipping the diff (${(r.stderr || "").trim().split("\n").pop() || "error"})`);
+  } else {
+    const d = (to, from) => (to == null || from == null) ? null : +(to - from).toFixed(3);
+    const cur = meta.structure_detail, b = base.structure_detail || {};
+    meta.baseline = {
+      prefix: opts.baseline,
+      structure: { from: base.structure ?? null, to: meta.structure, delta: d(meta.structure, base.structure ?? null) },
+      components: {
+        smear:        { from: b.smear ?? null,        to: cur.smear,        delta: d(cur.smear, b.smear) },
+        unknown:      { from: b.unknown ?? null,      to: cur.unknown,      delta: d(cur.unknown, b.unknown) },
+        tangleExcess: { from: b.tangleExcess ?? null, to: cur.tangleExcess, delta: d(cur.tangleExcess, b.tangleExcess) },
+        cycleRatio:   { from: b.cycleRatio ?? null,   to: cur.cycleRatio,   delta: d(cur.cycleRatio, b.cycleRatio) },
+      },
+    };
+  }
+}
+
 // ---------------------------------------------------------------- PNG export (optional, shells out)
 function findRasterizer() {
   const which = (c) => { const r = spawnSync(process.platform === "win32" ? "where" : "which", [c], { encoding: "utf8" }); return r.status === 0 ? (r.stdout.trim().split(/\r?\n/)[0]) : null; };
@@ -498,3 +528,12 @@ if (unkShare > UNK_MIN) summaryParts.push("Unknown " + Math.round(unkShare * 100
 console.error(`candor-fingerprint: ${name} — ${fns.length} effectful fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · [${summaryParts.join(", ") || "no effects"}]`
   + (filCapped > 0 ? ` · ${filDrawn.length}/${fedges.length} threads drawn` : "")
   + (written.length ? `\n  wrote: ${written.join(", ")}` : ""));
+
+if (meta.baseline) {
+  const sd = meta.baseline.structure.delta;
+  const fmt = (x) => x === null ? "n/a" : (x > 0 ? "+" : "") + x;
+  const comps = Object.entries(meta.baseline.components).filter(([, v]) => v.delta).map(([k, v]) => `${k} ${fmt(v.delta)}`);
+  console.error(`  vs ${opts.baseline}: structure ${fmt(sd)}`
+    + (sd === null ? " (one side n/a)" : sd < 0 ? " — drifted toward chaos" : sd > 0 ? " — toward order" : " — unchanged")
+    + (comps.length ? ` (${comps.join(", ")})` : " (no component change)"));
+}

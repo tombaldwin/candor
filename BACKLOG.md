@@ -46,7 +46,17 @@ conformance; none pending). Value now concentrates in:
 - **Case studies → candor.poly.io** — site deploy has been blocked on the ssh-agent. _Still open._
 - **candor-rust CI self-guard nightly ICE** — a rustc nightly bug; direction is the maintainer's call
   (deep-engine maintenance; see candor-rust/BACKLOG.md).
-- **Cross-model eval** (planned) — run the scaled-completeness eval across opus/sonnet/haiku/Fable.
+- **Cross-model eval** — _largely done._ The speed/completeness A/B ran across **Fable 5 / Opus /
+  Sonnet** (48 trials, `candor-rust/eval/scaled/RESULTS-speed-models.md`) and the decision-quality A/B
+  across **Sonnet / Haiku 4.5** (`candor-rust/eval/agentuse/RESULTS-weak.md`): a clean gradient — the
+  tool's answer is model-invariant, manual tracing degrades as the model cheapens, so candor's value
+  *rises* at lower tiers (Sonnet 6× faster + the difference between a complete and a silently-incomplete
+  answer; Haiku control shipped the program's first decision-level bug, zero with candor). _Genuine open
+  cell:_ every batch caveats the same way — the fixtures are small, single-screen, distinctively-named.
+  The untested regime is a **real, large, un-leaky codebase** whose call graph exceeds comfortable
+  context — exactly where the tool should dominate most. Pre-registered in
+  `candor-rust/eval/scaled/PREREG-realworld.md`; running it is what lets candor.poly.io claim the result
+  without the "easy fixture" asterisk.
 - _Done 2026-06-22:_ ~~candor-ts npm republish (`containment`)~~ — shipped in **candor-ts 0.7.5** (npm).
   ~~candor-swift release cut~~ — shipped as **v0.7.3** (GitHub).
 

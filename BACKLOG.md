@@ -34,6 +34,19 @@ conformance; none pending). Value now concentrates in:
   via jbang. The remaining lift is distribution, not capability: case studies → candor.poly.io; keep the
   adoption starter current.
 
+- **[DX / adoption] Consolidated `.candor/config` file (not built).** Today candor is configured by
+  environment variables (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`,
+  `CANDOR_DEPS`, `CANDOR_STRICT`, `CANDOR_NO_AMBIENT`, …) plus the `.candor/` directory convention
+  (`baseline.json`, the report, `.candor/policy`); the only declarative, checked-in file is the policy.
+  A single `.candor/config` could hold the policy path, baseline path, report-output prefix, mode flags
+  (closed-world / strict / no-ambient), dep-chain paths and host allowlists — so CI becomes "point at the
+  repo" with no env wiring, and the configuration travels with the code (lower setup friction, the current
+  adoption focus). Cross-engine: every engine reads `.candor/config`, with env vars overriding for one-off
+  runs. Spec touch: define the config schema in candor-spec so all engines agree — additive (it's config,
+  not the effect contract), so no contract bump. No schema yet; needs design before any engine work. (NB:
+  the lone `.candor/config` in `candor-rust/eval/minicache` is an eval-harness file holding `CANDOR_LIB`,
+  unrelated to this.) Surfaced 2026-06-22 — distinct from the policy file, which is the architecture-as-code.
+
 ## fingerprint
 
 - _Done (2026-06-21):_ **`--baseline <report>` diff** — reports the *change* in the structure descriptor

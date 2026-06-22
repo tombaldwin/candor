@@ -66,10 +66,14 @@ conformance; none pending). Value now concentrates in:
   value scales with how HARD the blast radius is to trace by hand (depth × non-greppability), not raw
   LOC: delta's deep 61-fn tree bites every tier; bottom's greppable 26-fn tree bites mainly at haiku;
   treatment is model-invariant + complete in both, and candor's report = the adjudicated truth on both
-  (delta 61/61, bottom 26/26). _Remaining:_ surface on candor.poly.io. _Toolchain:_ a `nightly-2026-06-14`
-  deep-engine port exists (candor-rust branch `nightly-2026-06-14-port`, verified 40/40 soundness + delta
-  61/61); the "ICE" that blocked modern repos turned out to be a candor-side cosmetic shutdown delayed-bug
-  (per-crate report still written), not a rustc bug — a separate candor robustness item.
+  (delta 61/61, bottom 26/26). _Remaining:_ surface on candor.poly.io. _Toolchain (done):_ the
+  `nightly-2026-06-14` deep-engine port is **merged to candor-rust main** (verified 40/40 soundness +
+  delta 61/61 byte-identical). _Robustness (done):_ the "ICE" that appeared to block modern repos was a
+  candor-side cosmetic shutdown delayed-bug (rustc promotes a pre-codegen `span_delayed_bug` from a
+  speculative `Instance::try_resolve` at exit, *after* candor wrote its complete report) — **fixed**:
+  `cargo candor snapshot` now gates success on the report being written, not dylint's exit code (genuine
+  no-report failures still fail). bottom snapshots exit 0; modern repos analyze cleanly. (The `guard` CI
+  path still fails-closed on nonzero by design — a separate call if it should tolerate the same.)
 - _Done 2026-06-22:_ ~~candor-ts npm republish (`containment`)~~ — shipped in **candor-ts 0.7.5** (npm).
   ~~candor-swift release cut~~ — shipped as **v0.7.3** (GitHub).
 

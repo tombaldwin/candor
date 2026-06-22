@@ -53,10 +53,15 @@ conformance; none pending). Value now concentrates in:
   *rises* at lower tiers (Sonnet 6× faster + the difference between a complete and a silently-incomplete
   answer; Haiku control shipped the program's first decision-level bug, zero with candor). _Genuine open
   cell:_ every batch caveats the same way — the fixtures are small, single-screen, distinctively-named.
-  The untested regime is a **real, large, un-leaky codebase** whose call graph exceeds comfortable
-  context — exactly where the tool should dominate most. Pre-registered in
-  `candor-rust/eval/scaled/PREREG-realworld.md`; running it is what lets candor.poly.io claim the result
-  without the "easy fixture" asterisk.
+  **Now closed (2026-06-22):** the real-world batch ran on **git-delta** (30k-LOC single crate,
+  `calling_process`/Exec, 61-fn tree, deep engine) across all four tiers, N=8/arm
+  (`candor-rust/eval/scaled/RESULTS-realworld.md`). Clean monotonic gradient — control recall
+  **60% (haiku) → 91% (sonnet) → 97% (opus) → 99% (fable)**, control perfect-rate **0→1→4→5 of 8**;
+  **treatment flat at 100% recall / 100% precision / 8-of-8 every tier** (model-invariant — one
+  deterministic `candor-query callers`). So candor adds value at every tier on a real large crate, most
+  at the cheap end (rescues both completeness *and* precision — one haiku control listed 235 false
+  positives), and still measurably at the frontier. The "easy fixture" asterisk is removed. _Remaining:_
+  a second repo/symbol would tighten the single real-world point; surface the result on candor.poly.io.
 - _Done 2026-06-22:_ ~~candor-ts npm republish (`containment`)~~ — shipped in **candor-ts 0.7.5** (npm).
   ~~candor-swift release cut~~ — shipped as **v0.7.3** (GitHub).
 

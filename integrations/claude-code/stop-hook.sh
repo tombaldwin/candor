@@ -64,18 +64,27 @@ log_activity() {
   blast=$(printf '%s' "$review" | sed -nE 's/.*blast radius: ([0-9]+) function.*/\1/p' | head -1); [ -z "$blast" ] && blast=0
   gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
   viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
+  # richer fields from the review's CANDOR_SUMMARY trailer (P2.1): Unknown count, effects present, wall-time.
+  local summ unknowns effects reviewms
+  summ=$(printf '%s' "$review" | grep '^CANDOR_SUMMARY ' | tail -1 | sed 's/^CANDOR_SUMMARY //')
+  unknowns=$(printf '%s' "$summ" | jq -r '.unknowns // empty' 2>/dev/null); [ -z "$unknowns" ] && unknowns=null
+  effects=$(printf '%s' "$summ" | jq -c '.effects // empty' 2>/dev/null); [ -z "$effects" ] && effects='[]'
+  reviewms=$(printf '%s' "$summ" | jq -r '.reviewMs // empty' 2>/dev/null); [ -z "$reviewms" ] && reviewms=null
   jq -nc --arg ts "$ts" --arg sid "$sid" --arg engine "$engine" --arg verdict "$verdict" \
      --argjson edited "$edited" --argjson gained "$gained" --argjson viol "$viol" --argjson blast "$blast" \
+     --argjson unknowns "$unknowns" --argjson effects "$effects" --argjson reviewms "$reviewms" \
      '{ts:$ts, sessionId:(if $sid=="" then null else $sid end), engine:$engine, edited:$edited,
-       gained:$gained, blastRadius:$blast, verdict:$verdict, violations:$viol}' >> "$log" 2>/dev/null || true
+       gained:$gained, blastRadius:$blast, verdict:$verdict, violations:$viol,
+       unknowns:$unknowns, effects:$effects, reviewMs:$reviewms}' >> "$log" 2>/dev/null || true
   # cap the log (keep the last N lines) so it can't grow without bound — best-effort.
   local cap=${CANDOR_ACTIVITY_CAP:-5000} n
   n=$(wc -l < "$log" 2>/dev/null || echo 0)
   if [ "$n" -gt "$cap" ]; then tail -n "$cap" "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null || true; fi
 }
 
-review=$("${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
-log_activity "$rc" "$review"
+review=$(CANDOR_EMIT_SUMMARY=1 "${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
+log_activity "$rc" "$review"   # log first — it reads the CANDOR_SUMMARY trailer for richer fields
+review=$(printf '%s' "$review" | grep -v '^CANDOR_SUMMARY ' || true)   # then strip the machine line from the human text
 
 if [ "$rc" -eq 1 ]; then
   # A policy violation / new effect → block once, hand the verdict to the agent; show the user a ⚠ line too.

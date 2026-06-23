@@ -14,7 +14,7 @@ effects and their transitive blast radius* exactly, and the Stop hook makes the 
 |------|------|
 | `candor-review.sh` | The review for the **JVM** (candor-java reads bytecode). Scan compiled classes → diff vs baseline → gate. Standalone (CI / manual / agent) or called by the hook. Prints the gained effects, their blast radius, and any `AS-EFF-…` policy violation; exit 1 if either fires. |
 | `candor-review-source.sh` | The review for the **scan-source** engines (candor-ts / candor-swift / candor-scan) — same job, but reads source directly, so **no build step**. Same exit contract. |
-| `stop-hook.sh` | A Claude Code **Stop** hook wrapping a review script: blocks the stop **once** and feeds the verdict to the agent when something fires; allows otherwise. `stop_hook_active` prevents an infinite loop. `CANDOR_REVIEW` selects the script (defaults to the JVM `candor-review.sh`). |
+| `stop-hook.sh` | A Claude Code **Stop** hook wrapping a review script: blocks the stop **once** and feeds the verdict to the agent when something fires; allows otherwise. On every turn it also shows you a one-line `systemMessage` notice (`✓` clean / `⚠` blocked / setup error) so candor is visible even when nothing's wrong — tune with `CANDOR_HOOK_NOTICE` (`summary` default / `changes` / `quiet` / `off`). `stop_hook_active` prevents an infinite loop. `CANDOR_REVIEW` selects the script (defaults to the JVM `candor-review.sh`). |
 
 Two review scripts share one exit contract (0 clean / 1 block / 2 setup) so the hook is engine-agnostic:
 pick the JVM script (`candor-review.sh`, scans bytecode) or the scan-source script

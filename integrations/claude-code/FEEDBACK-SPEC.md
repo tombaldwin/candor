@@ -3,10 +3,13 @@
 Status: **design / not built.** Adoption feature. Does **not** touch the candor effect
 contract (candor-spec); it surfaces and aggregates what the review already computes.
 
-> **Key unknown — resolve before any code (P0):** the user-visible, *non-blocking* output
-> channel for a Claude Code Stop hook on a clean turn (see **A · Delivery**). The whole
-> per-turn notice depends on it. Verify empirically on a real install first; if no such
-> channel exists, A is re-scoped.
+> **P0 RESOLVED (2026-06-23).** The user-visible, non-blocking channel is the Stop hook's
+> top-level **`systemMessage`** field — shown to the human, not fed to the model, on a
+> clean exit-0 allow. Confirmed against code.claude.com/docs/en/hooks. Also confirmed:
+> hook **stderr is NOT shown on exit 0** (so the old `rc=2` stderr notice was invisible —
+> now fixed), and the hook **stdin carries `session_id`** (B's delimiter) **and `tool_calls`**
+> with each Edit/Write `file_path` — so the turn's edited files come straight from the hook
+> input, no `git diff` needed. **P1 (the notice) is built** in `stop-hook.sh`.
 
 ## Why
 
@@ -31,25 +34,24 @@ uninstalled. This spec makes candor legible in the session:
 
 ## A. Per-turn notice ("candor checked this")
 
-### Delivery (verify before building)
+### Delivery (resolved — built)
 
-The notice must reach the **user** without blocking the turn or re-prompting the agent. Do
-**not** assume hook stderr is shown on a clean (exit-0 `{}`) turn — that is unverified, and
-exit-2 has special meaning for hooks, so the exit-0 path may differ. Use the documented
-user-facing field of the Stop-hook JSON output (Claude Code surfaces a `systemMessage` to the
-user without blocking — confirm the exact key and behaviour against the installed version).
-The block path (`{"decision":"block","reason":…}`) is unchanged. **P0 = confirm this channel
-on a real Claude Code install.** If none exists, re-scope A (e.g. notice only on effect-change,
-folded into the block reason, or surfaced only via `candor stats`).
+The notice reaches the **user** via the Stop hook's top-level **`systemMessage`** field
+(shown to the human, non-blocking, not fed to the model). The block path
+(`{"decision":"block","reason":…}`) is unchanged, and now also carries a `systemMessage` so
+the user sees the block too. Setup errors (`rc=2`) are surfaced via `systemMessage` as well,
+since hook **stderr is not shown on a clean exit** (the old stderr notice was invisible).
+Implemented in `stop-hook.sh`; JSON validity tested across clean / block / setup / each
+verbosity level.
 
 ### Edited-units sourcing (two tiers)
 
 The review diffs effects vs a baseline over the **whole repo**; it does *not* natively know
 which symbols the agent touched this turn. So:
 
-- **Precise (preferred):** derive the turn's changed files from `git diff --name-only`
-  (working tree vs a pre-turn ref), map to units, report those. Needs a git repo and a
-  pre-turn snapshot point (open question: `HEAD` vs a ref stamped at turn start).
+- **Precise (preferred):** the turn's edited files come straight from the hook input —
+  `tool_calls[].tool_input.file_path` for the Edit/Write tools (no `git diff` needed). Map
+  those files to units and report them. The hook passes them to the review via env.
 - **Fallback (always available):** report the whole-repo delta vs baseline — "no new effects
   vs baseline" / "new effect {Net} vs baseline" — without naming a specific symbol.
 

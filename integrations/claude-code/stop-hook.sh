@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
-# candor — Claude Code STOP hook. Runs candor-review at the end of the agent's turn; if an edit breached the
-# architecture (a CANDOR_POLICY violation) or introduced a new effect vs the baseline, it BLOCKS the stop
-# once and hands the verdict back so the agent can fix it before yielding to you (or refresh the baseline if
-# intended). This is the "edit-time blast-radius feedback" loop: the delta reaches the agent automatically.
+# candor — Claude Code STOP hook. Runs candor-review at the end of the agent's turn.
+#
+#  • A policy violation / new effect (review rc=1) → BLOCKS the stop once and hands the verdict back to the
+#    agent so it fixes it before yielding to you (the "edit-time blast-radius feedback" loop), and shows the
+#    user a one-line ⚠ notice.
+#  • A clean turn (rc=0) → ALLOWS, and (unless quiet) shows the user a one-line ✓ notice so candor's work is
+#    VISIBLE even when nothing's wrong. (Without this the clean path was silent — you couldn't tell it ran.)
+#  • A setup error the agent can't fix (rc=2) → ALLOWS (don't block every turn on a misconfig) and surfaces a
+#    one-line notice to the user. (Hook stderr is NOT shown on a clean exit, so the notice goes via JSON.)
+#
+# User-facing notices use the Stop hook's `systemMessage` field (shown to the human, not fed to the model).
+# Verbosity — CANDOR_HOOK_NOTICE:
+#   summary  (default) one line every turn  ·  changes  only on a block/new effect  ·  quiet  only on a block
+#   off      nothing
 #
 # Wire it (~/.claude/settings.json or .claude/settings.json), with your project's env.
 #   JVM (build first — candor-java reads BYTECODE):
@@ -17,16 +27,28 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 input=$(cat 2>/dev/null || true)
+have_jq() { command -v jq >/dev/null 2>&1; }
 
 # Re-invoked after a previous block → allow the stop, never loop (Claude Code sets stop_hook_active).
 active=false
-if command -v jq >/dev/null 2>&1; then active=$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false); fi
+if have_jq; then active=$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false); fi
 [ "$active" = "true" ] && { echo '{}'; exit 0; }
 
+notice=${CANDOR_HOOK_NOTICE:-summary}   # summary | changes | quiet | off
+
+# emit {"systemMessage": <msg>} (or {} when empty); jq-encodes for valid JSON, with a safe jq-less fallback.
+emit_notice() {
+  local m=$1
+  if [ -z "$m" ]; then echo '{}'; return; fi
+  if have_jq; then printf '{"systemMessage":%s}\n' "$(printf '%s' "$m" | jq -Rs .)"
+  else printf '{"systemMessage":"candor checked this turn."}\n'; fi
+}
+
 review=$("${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
+
 if [ "$rc" -eq 1 ]; then
-  # A policy violation / new effect → block once, hand the verdict to the agent.
-  if command -v jq >/dev/null 2>&1; then
+  # A policy violation / new effect → block once, hand the verdict to the agent; show the user a ⚠ line too.
+  if have_jq; then
     reason=$(printf '%s' "$review" | jq -Rs .)
   else
     # No jq: hand-escaping a multi-line string risks INVALID JSON (an unescaped `\` in a path/regex would
@@ -34,11 +56,27 @@ if [ "$rc" -eq 1 ]; then
     # fires (fail-closed); the agent re-runs candor-review.sh for detail.
     reason='"candor flagged this change (a policy violation or a newly-introduced effect). Run integrations/claude-code/candor-review.sh for the verdict; install jq to see it inline here."'
   fi
-  printf '{"decision":"block","reason":%s}\n' "$reason"
-else
-  # rc 0 = clean → allow. rc 2 = a setup/build error the AGENT can't fix → ALLOW (don't block every turn on
-  # a misconfiguration); surface it to the human on stderr instead.
-  [ "$rc" -ne 0 ] && printf 'candor stop-hook: review could not run (rc=%s), not blocking:\n%s\n' "$rc" "$review" >&2
-  echo '{}'
+  if have_jq && [ "$notice" != "quiet" ] && [ "$notice" != "off" ]; then
+    umsg=$(printf '%s' "$review" | grep -E 'GATE FAILED|introduced new effects' | head -1)
+    [ -z "$umsg" ] && umsg="candor ⚠ blocked this change — the agent has the verdict"
+    printf '{"decision":"block","reason":%s,"systemMessage":%s}\n' "$reason" "$(printf '%s' "$umsg" | jq -Rs .)"
+  else
+    printf '{"decision":"block","reason":%s}\n' "$reason"
+  fi
+  exit 0
 fi
+
+# rc 0 = clean (allow) · rc 2 = setup error the agent can't fix (allow — don't block every turn on a misconfig).
+msg=""
+if [ "$rc" -eq 0 ]; then
+  # Clean turn: a one-line ✓ notice in `summary` mode (the point — make candor visible when nothing's wrong).
+  if [ "$notice" = "summary" ]; then
+    msg=$(printf '%s' "$review" | grep -E '^candor' | tail -1)
+    [ -z "$msg" ] && msg="candor ✓ checked this turn — no boundary crossed"
+  fi
+else
+  # Setup error: surface it (stderr is invisible on exit 0), unless notices are off.
+  [ "$notice" != "off" ] && msg="candor: review couldn't run (setup, rc=$rc) — check the build/config; not blocking."
+fi
+emit_notice "$msg"
 exit 0

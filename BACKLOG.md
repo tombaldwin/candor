@@ -47,6 +47,16 @@ conformance; none pending). Value now concentrates in:
   the lone `.candor/config` in `candor-rust/eval/minicache` is an eval-harness file holding `CANDOR_LIB`,
   unrelated to this.) Surfaced 2026-06-22 — distinct from the policy file, which is the architecture-as-code.
 
+- **[DX / adoption] Agent-visible feedback — "candor checked this" + session stats (spec'd, not built).**
+  The Stop hook is silent on a clean turn (`rc=0 → {}`), so when nothing's wrong the user can't tell candor
+  is even running — invisible help gets uninstalled. Add (A) a per-turn `candor: ✓ checked …` notice, (B)
+  measured session stats from a `.candor/activity.jsonl` the review appends each run, and (C) a clearly
+  *labelled* savings estimate (model from the published 17×/50×/38× benchmark, never a measurement — candor's
+  own ROI counter must hold to its disclosure-not-fabrication standard). Mostly a surfacing/aggregation layer
+  over what the review already computes; no effect-contract change. Full design (formats, config, phasing,
+  honesty contract) in [`integrations/claude-code/FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md).
+  Surfaced 2026-06-23. Relates to the P0 edit-time feedback loop above.
+
 ## fingerprint
 
 - _Done (2026-06-21):_ **`--baseline <report>` diff** — reports the *change* in the structure descriptor

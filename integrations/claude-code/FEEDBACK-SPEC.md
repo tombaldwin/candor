@@ -7,9 +7,11 @@ contract (candor-spec); it surfaces and aggregates what the review already compu
 > top-level **`systemMessage`** field — shown to the human, not fed to the model, on a
 > clean exit-0 allow. Confirmed against code.claude.com/docs/en/hooks. Also confirmed:
 > hook **stderr is NOT shown on exit 0** (so the old `rc=2` stderr notice was invisible —
-> now fixed), and the hook **stdin carries `session_id`** (B's delimiter) **and `tool_calls`**
-> with each Edit/Write `file_path` — so the turn's edited files come straight from the hook
-> input, no `git diff` needed. **P1 (the notice) is built** in `stop-hook.sh`.
+> now fixed), and the hook **stdin carries `session_id`** (B's delimiter) but **NOT `tool_calls`**
+> — the Stop payload is only `session_id`/`transcript_path`/`cwd`/`permission_mode`/`hook_event_name`.
+> (An earlier claim that Stop carries `tool_calls` was a `claude-code-guide` hallucination, caught in
+> review and corrected against the docs.) So the turn's edited files are read from **`transcript_path`**
+> (the JSONL), scoped to the last turn — not the hook input. **P1 (the notice) is built** in `stop-hook.sh`.
 
 ## Why
 
@@ -49,9 +51,10 @@ verbosity level.
 The review diffs effects vs a baseline over the **whole repo**; it does *not* natively know
 which symbols the agent touched this turn. So:
 
-- **Precise (preferred):** the turn's edited files come straight from the hook input —
-  `tool_calls[].tool_input.file_path` for the Edit/Write tools (no `git diff` needed). Map
-  those files to units and report them. The hook passes them to the review via env.
+- **From the transcript:** Stop stdin has no `tool_calls`, so the hook reads `transcript_path`
+  (the session JSONL) and extracts the Edit/Write/MultiEdit/NotebookEdit `file_path`s from the
+  assistant `tool_use` events **since the last human (string-content) message** — i.e. this turn.
+  Logged as `null` (not a misleading `[]`) when there's no transcript or the parse fails.
 - **Fallback (always available):** report the whole-repo delta vs baseline — "no new effects
   vs baseline" / "new effect {Net} vs baseline" — without naming a specific symbol.
 

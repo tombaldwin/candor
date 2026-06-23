@@ -60,7 +60,20 @@ log_activity() {
   local ts sid edited blast gained viol
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   sid=$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")
-  edited=$(printf '%s' "$input" | jq -c '[.tool_calls[]? | select((.tool_name//"")|test("Edit|Write")) | .tool_input.file_path] | map(select(.!=null)) | unique' 2>/dev/null); [ -z "$edited" ] && edited='[]'
+  # The turn's edited files. The Stop hook stdin does NOT carry tool_calls (only Pre/PostToolUse do —
+  # verified against the docs), so read the transcript: Edit/Write/MultiEdit/NotebookEdit file_paths since
+  # the last human (string-content) message. null = couldn't determine (no transcript / parse failed); [] =
+  # genuinely no edits this turn. (Never a misleading [] when we simply don't know.)
+  local tx; tx=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null)
+  edited=
+  if [ -n "$tx" ] && [ -f "$tx" ]; then
+    edited=$(jq -cs '(map(.type=="user" and ((.message.content|type)=="string"))|rindex(true)) as $h
+      | (if $h==null then . else .[$h+1:] end)
+      | [ .[] | select(.type=="assistant") | .message.content[]?
+          | select(.type=="tool_use" and ((.name//"")|test("^(Edit|MultiEdit|Write|NotebookEdit)$")))
+          | (.input.file_path // .input.notebook_path) ] | map(select(.!=null)) | unique' "$tx" 2>/dev/null)
+  fi
+  [ -z "$edited" ] && edited=null
   blast=$(printf '%s' "$review" | sed -nE 's/.*blast radius: ([0-9]+) function.*/\1/p' | head -1); [ -z "$blast" ] && blast=0
   gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
   viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
@@ -78,6 +91,7 @@ log_activity() {
        unknowns:$unknowns, effects:$effects, reviewMs:$reviewms}' >> "$log" 2>/dev/null || true
   # cap the log (keep the last N lines) so it can't grow without bound — best-effort.
   local cap=${CANDOR_ACTIVITY_CAP:-5000} n
+  case "$cap" in ''|*[!0-9]*) cap=5000 ;; esac   # non-numeric cap → default, never error the -gt test
   n=$(wc -l < "$log" 2>/dev/null || echo 0)
   if [ "$n" -gt "$cap" ]; then tail -n "$cap" "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null || true; fi
 }

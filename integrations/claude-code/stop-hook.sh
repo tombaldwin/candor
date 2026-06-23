@@ -44,7 +44,38 @@ emit_notice() {
   else printf '{"systemMessage":"candor checked this turn."}\n'; fi
 }
 
+# Append one record to the activity log (P2; powers `candor stats`). Best-effort: needs jq, only writes when
+# the log's dir already exists (so we never create .candor/), CANDOR_ACTIVITY_LOG=off disables. session_id +
+# the turn's edited files come from the hook input; blast/gained/violations are parsed from the review's
+# output (stats-only — if a field doesn't parse it logs 0/[], the notice and gate are unaffected).
+log_activity() {
+  local rc=$1 review=$2
+  local log=${CANDOR_ACTIVITY_LOG:-.candor/activity.jsonl}
+  [ "$log" = "off" ] && return
+  have_jq || return
+  [ -d "$(dirname "$log")" ] || return
+  local verdict; case "$rc" in 0) verdict=clean;; 1) verdict=blocked;; *) verdict=setup;; esac
+  local engine=java
+  if [ -n "${CANDOR_SCAN:-}" ]; then engine=$(printf '%s' "$CANDOR_SCAN" | grep -oE 'candor-ts|candor-swift|candor-scan' | head -1); [ -z "$engine" ] && engine=source; fi
+  local ts sid edited blast gained viol
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  sid=$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")
+  edited=$(printf '%s' "$input" | jq -c '[.tool_calls[]? | select((.tool_name//"")|test("Edit|Write")) | .tool_input.file_path] | map(select(.!=null)) | unique' 2>/dev/null); [ -z "$edited" ] && edited='[]'
+  blast=$(printf '%s' "$review" | sed -nE 's/.*blast radius: ([0-9]+) function.*/\1/p' | head -1); [ -z "$blast" ] && blast=0
+  gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
+  viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
+  jq -nc --arg ts "$ts" --arg sid "$sid" --arg engine "$engine" --arg verdict "$verdict" \
+     --argjson edited "$edited" --argjson gained "$gained" --argjson viol "$viol" --argjson blast "$blast" \
+     '{ts:$ts, sessionId:(if $sid=="" then null else $sid end), engine:$engine, edited:$edited,
+       gained:$gained, blastRadius:$blast, verdict:$verdict, violations:$viol}' >> "$log" 2>/dev/null || true
+  # cap the log (keep the last N lines) so it can't grow without bound — best-effort.
+  local cap=${CANDOR_ACTIVITY_CAP:-5000} n
+  n=$(wc -l < "$log" 2>/dev/null || echo 0)
+  if [ "$n" -gt "$cap" ]; then tail -n "$cap" "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null || true; fi
+}
+
 review=$("${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
+log_activity "$rc" "$review"
 
 if [ "$rc" -eq 1 ]; then
   # A policy violation / new effect → block once, hand the verdict to the agent; show the user a ⚠ line too.

@@ -93,26 +93,33 @@ radius computation.
 
 ## B. Session stats (measured — no model anywhere)
 
-### Activity log
+### Activity log — built (hook-side, P2)
 
-`.candor/activity.jsonl`, one record per review run, written by the review scripts
-(deterministic, local, no transcript parsing):
+`.candor/activity.jsonl`, one record per turn, written by **`stop-hook.sh`** — it holds the most
+context (`session_id`, the turn's edited files, the review output, the verdict). Best-effort:
+needs jq, writes only when the log's dir already exists (never creates `.candor/`),
+`CANDOR_ACTIVITY_LOG=off` disables, `CANDOR_ACTIVITY_CAP` (default 5000) caps growth.
 
 ```json
-{"ts":"2026-06-23T10:14:02Z","sessionId":"<from hook input>","engine":"java",
- "editedUnits":["app/OrderService.export"],"gained":[],"effects":["Db"],
- "blastRadius":41,"maxHops":3,"verdict":"clean","violations":[],"unknowns":6,"reviewMs":190}
+{"ts":"2026-06-23T19:43:13Z","sessionId":"sess-123","engine":"java",
+ "edited":["src/Bar.java","src/Foo.java"],"gained":["Db"],"blastRadius":5,
+ "verdict":"blocked","violations":["AS-EFF-006"]}
 ```
 
-- **`sessionId`** comes from the Claude Code hook input JSON; `stats` scopes "this session" by
-  it. Without it, "session" is meaningless and conflates days of activity.
-- `editedUnits` is `null` in the fallback tier (changed-file set unavailable).
-- The **shell** stamps `ts` (engines stay deterministic — no `Date.now()` in-engine).
-- **Hygiene:** rotate/cap the log (e.g. last 5k lines or 30 days); records are single-line
-  appends (atomic for small writes) so parallel turns don't corrupt it.
-- **Sole source:** the log only — no transcript corroboration (avoids double-counting).
-- **Privacy:** holds edited symbol names → **local-only, never transmitted**, gitignored by
-  the adopt starter. (Consistent with candor's "code never leaves your machine" promise.)
+- `sessionId` + `edited` (Edit/Write `file_path`s) come from the hook input JSON; `null`/`[]`
+  when absent. `stats` scopes "this session" by `sessionId`.
+- `verdict` from the review exit code; `blast`/`gained`/`violations` parsed from the review's
+  output — **stats-only**: a field that doesn't parse logs `0`/`[]`; the notice and the gate are
+  unaffected.
+- The shell stamps `ts` (engines stay deterministic). `>>` of a single line is atomic; the
+  cap+rotate is best-effort (a rare concurrent-write race loses a stat line, never the gate).
+- **Privacy:** holds edited file paths → **local-only, never transmitted**; gitignored by the
+  adopt starter.
+
+**Deferred to P2.1 (needs review-side structured output):** `effects` / `unknowns` / `maxHops`
+(need the report, which the hook doesn't hold) and logging on **standalone / CI** runs (no hook).
+The fix is a machine-readable summary line emitted by `candor-review*.sh` that both the hook and
+standalone callers consume — replacing today's parse-the-human-text coupling.
 
 ### Command
 
@@ -165,17 +172,18 @@ that capture tool output.
 ## Config summary
 
 - `CANDOR_HOOK_NOTICE` = `summary` (default) | `changes` | `quiet` | `off`
-- `CANDOR_ACTIVITY_LOG` = path (default `.candor/activity.jsonl`; unset → logging off)
+- `CANDOR_ACTIVITY_LOG` = path (default `.candor/activity.jsonl`; on when that dir exists; `off` disables)
+- `CANDOR_ACTIVITY_CAP` = max log lines (default 5000)
 - `candor-agents stats [--json] [--session <id>] [--since <iso>] [--estimate]`
 
 ## Phasing
 
-- **P0 — verify delivery.** Confirm the user-visible, non-blocking Stop-hook channel on a real
-  Claude Code install. Gates all of A.
-- **P1 — per-turn notice.** Effect-delta line via the verified channel; precise edited-units
-  when `git diff` is available, else fallback; `CANDOR_HOOK_NOTICE`.
-- **P2 — activity log.** `sessionId`, hygiene, privacy default.
-- **P3 — `candor-agents stats`** (measured) over the log.
+- **P0 — verify delivery.** ✓ done — channel is `systemMessage` (see top).
+- **P1 — per-turn notice.** ✓ built — `systemMessage` on clean/block/setup; `CANDOR_HOOK_NOTICE`.
+- **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
+  gained/violations, rotation, privacy. **P2.1:** review-side structured output for
+  `effects`/`unknowns`/`maxHops` + standalone/CI logging.
+- **P3 — `candor-agents stats`** (measured) over the log. ← next
 - **P4 — per-answer comparison;** the session `--estimate` last, if at all.
 
 ## Open questions

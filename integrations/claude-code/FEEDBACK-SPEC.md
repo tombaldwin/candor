@@ -3,72 +3,119 @@
 Status: **design / not built.** Adoption feature. Does **not** touch the candor effect
 contract (candor-spec); it surfaces and aggregates what the review already computes.
 
+> **Key unknown — resolve before any code (P0):** the user-visible, *non-blocking* output
+> channel for a Claude Code Stop hook on a clean turn (see **A · Delivery**). The whole
+> per-turn notice depends on it. Verify empirically on a real install first; if no such
+> channel exists, A is re-scoped.
+
 ## Why
 
 Today the Stop hook (`stop-hook.sh`) is **silent on a clean turn**: `rc=0 → echo '{}'`.
-It only speaks when something fires (`rc=1`, block + verdict) or on a setup error
-(`rc=2`, stderr). So when candor is doing its job and nothing is wrong, the user sees
-*nothing* — and a tool whose help is invisible gets uninstalled. This spec makes candor
-legible in the session:
+It only speaks on a block (`rc=1`) or a setup error (`rc=2`). So when candor is doing its
+job and nothing is wrong, the user sees *nothing* — and a tool whose help is invisible gets
+uninstalled. This spec makes candor legible in the session:
 
-- **A. Per-turn notice** — "candor checked this" on every turn, not just on a block.
-- **B. Session stats** — measured, countable activity.
-- **C. Savings estimate** — a clearly-labelled *model* (never a measurement).
+- **A. Per-turn notice** — "candor checked this" on every turn, not only on a block.
+- **B. Session stats** — measured, countable activity (the durable signal).
+- **C. Per-answer cost comparison** — a clearly-labelled *model*, never a measurement, and
+  not summed across a session.
 
 ## Non-goals
 
-- Not part of candor-spec — this is integration/tooling, no wire/contract change.
-- Not a fabricated or fake-precise savings number (see **Honesty contract**).
-- Not measuring the agent's real token spend — candor can't see it; the saving is a
+- Not part of candor-spec — integration/tooling, no wire/contract change.
+- **No session-summed "tokens saved" figure by default** (see C — weak external validity).
+- Not measuring the agent's real token spend — candor can't see it; any comparison is a
   modelled counterfactual.
 
 ---
 
 ## A. Per-turn notice ("candor checked this")
 
-Extend the **review scripts** (`candor-review.sh` / `candor-review-source.sh`) to emit a
-one-line summary of what the turn's edits touch, and have **`stop-hook.sh` surface it on
-`rc=0` via stderr** (Claude Code shows hook stderr to the human; it does not block and
-does not re-prompt the agent). The block (`rc=1`) and setup (`rc=2`) paths are unchanged;
-they just gain a consistent `candor:` prefix.
+### Delivery (verify before building)
 
-One line, prefix `candor:`:
+The notice must reach the **user** without blocking the turn or re-prompting the agent. Do
+**not** assume hook stderr is shown on a clean (exit-0 `{}`) turn — that is unverified, and
+exit-2 has special meaning for hooks, so the exit-0 path may differ. Use the documented
+user-facing field of the Stop-hook JSON output (Claude Code surfaces a `systemMessage` to the
+user without blocking — confirm the exact key and behaviour against the installed version).
+The block path (`{"decision":"block","reason":…}`) is unchanged. **P0 = confirm this channel
+on a real Claude Code install.** If none exists, re-scope A (e.g. notice only on effect-change,
+folded into the block reason, or surfaced only via `candor stats`).
+
+### Edited-units sourcing (two tiers)
+
+The review diffs effects vs a baseline over the **whole repo**; it does *not* natively know
+which symbols the agent touched this turn. So:
+
+- **Precise (preferred):** derive the turn's changed files from `git diff --name-only`
+  (working tree vs a pre-turn ref), map to units, report those. Needs a git repo and a
+  pre-turn snapshot point (open question: `HEAD` vs a ref stamped at turn start).
+- **Fallback (always available):** report the whole-repo delta vs baseline — "no new effects
+  vs baseline" / "new effect {Net} vs baseline" — without naming a specific symbol.
+
+The notice degrades to the fallback when the changed-file set isn't available. **It never
+names a symbol it can't source.**
+
+### What it says (one line, prefix `candor:`)
 
 | State | Line |
 |---|---|
-| clean, no effect change | `candor: ✓ checked — no new effects, no boundary crossed (N fns in the edited blast radius).` |
-| effects present, unchanged vs baseline | `candor: ✓ OrderService.export reaches {Db} (≤3 hops) — unchanged vs baseline, no boundary crossed.` |
-| blocked (`rc=1`) | `candor: ⚠ blocked — PricingService.quote now reaches {Net} via billing.charge; or AS-EFF-006 …` (verdict already goes to the agent) |
-| setup (`rc=2`) | `candor: review could not run (rc=2) — <detail>` (existing behaviour) |
+| clean, no effect change | `candor: ✓ checked — no new effects, no boundary crossed.` (+ ` (OrderService.export reaches {Db}, ≤3 hops)` when the edited unit is sourced) |
+| effects changed vs baseline | `candor: ✓ new effect {Db} in OrderService.export (≤3 hops) — within policy.` |
+| blocked (`rc=1`) | `candor: ⚠ blocked — PricingService.quote now reaches {Net} via billing.charge; / AS-EFF-006 …` (verdict already goes to the agent) |
+| setup (`rc=2`) | `candor: review could not run (rc=2) — <detail>` (existing) |
 
-The review already prints gained effects + blast radius on `rc=1`; on a clean turn it must
-also compute the edited units' **current** effect set + blast-radius size for the summary
-(cheap — it already scanned the tree).
+### Verbosity / fatigue
 
-**Verbosity** — env `CANDOR_HOOK_NOTICE`:
-- `summary` (default) — the clean line every turn.
+A line every turn risks becoming wallpaper — tuned out, the opposite of the goal.
+`CANDOR_HOOK_NOTICE`:
+
+- `summary` — one short line every turn (max legibility; best for first use / demos).
+- `changes` — speak only when effects are present/changed or a boundary is involved.
 - `quiet` — only on a block (today's behaviour).
-- `off` — nothing on stderr.
+- `off`.
+
+The durable "it's working" signal is really **B**; the per-turn line is reassurance. Default
+**`summary`** for first-run legibility, but `changes` is the saner long-term per-project
+setting and the adopt starter should suggest it once a project is established.
+
+### Latency
+
+The clean path may early-exit today; computing the edited blast radius *every* turn adds work
+to *every* turn — a latency tax on the loop on a large repo. **Budget:** the notice must reuse
+the scan the review already ran and add no separate full re-analysis. If the blast radius
+isn't already in hand, the notice uses the cheap effect-delta line rather than forcing a fresh
+radius computation.
 
 ---
 
-## B. Session stats (measured — no estimation)
+## B. Session stats (measured — no model anywhere)
 
-**Source of truth: an activity log the review appends each run** — `.candor/activity.jsonl`,
-one record per review (deterministic, local, no transcript parsing required):
+### Activity log
+
+`.candor/activity.jsonl`, one record per review run, written by the review scripts
+(deterministic, local, no transcript parsing):
 
 ```json
-{"ts":"2026-06-23T10:14:02Z","engine":"java","editedUnits":["app/OrderService.export"],
- "gained":[],"effects":["Db"],"blastRadius":41,"maxHops":3,
- "verdict":"clean","violations":[],"unknowns":6,"reviewMs":190}
+{"ts":"2026-06-23T10:14:02Z","sessionId":"<from hook input>","engine":"java",
+ "editedUnits":["app/OrderService.export"],"gained":[],"effects":["Db"],
+ "blastRadius":41,"maxHops":3,"verdict":"clean","violations":[],"unknowns":6,"reviewMs":190}
 ```
 
-The shell hook stamps `ts` (engines stay deterministic — no `Date.now()` in-engine).
-candor-agents *may* also corroborate from the Claude Code transcript it already parses,
-but the log is primary.
+- **`sessionId`** comes from the Claude Code hook input JSON; `stats` scopes "this session" by
+  it. Without it, "session" is meaningless and conflates days of activity.
+- `editedUnits` is `null` in the fallback tier (changed-file set unavailable).
+- The **shell** stamps `ts` (engines stay deterministic — no `Date.now()` in-engine).
+- **Hygiene:** rotate/cap the log (e.g. last 5k lines or 30 days); records are single-line
+  appends (atomic for small writes) so parallel turns don't corrupt it.
+- **Sole source:** the log only — no transcript corroboration (avoids double-counting).
+- **Privacy:** holds edited symbol names → **local-only, never transmitted**, gitignored by
+  the adopt starter. (Consistent with candor's "code never leaves your machine" promise.)
 
-**Command: `candor-agents stats [--json] [--since <iso>] [--no-estimate]`** (alias
-`candor stats`) reads the log and reports **only measured fields**:
+### Command
+
+`candor-agents stats [--json] [--session <id>] [--since <iso>]` (alias `candor stats`) reports
+**measured fields only**:
 
 - reviews run; clean / blocked / setup counts
 - blast-radius answered — total fns covered, max radius, max hops
@@ -76,74 +123,63 @@ but the log is primary.
 - Unknowns disclosed
 - candor's own cost — total review wall-time
 
-All directly counted. No model anywhere in section B.
+All directly counted. No model in B.
 
 ---
 
-## C. Savings estimate (modelled, labelled)
+## C. Per-answer cost comparison (modelled, labelled, **not summed**)
 
-**Honesty contract — the crux.** candor's whole pitch is *disclosure, not fabrication*; its
-own ROI counter has to hold to that or the first skeptic (rightly) tears it apart. candor
-**cannot measure** what the agent would have spent re-deriving — that is a counterfactual.
-So the saving is a **model, never a measurement**, and the output must say so.
+**Revised after review.** A session-summed "tokens saved" figure over-extrapolates: the
+benchmark (~17× tokens / ~50× tool calls / ~38× time) came from *one task shape on two Rust
+repos*; summing it across a heterogeneous real session yields a number that can be materially
+wrong — exactly the credibility candor can't spend. So:
 
-- **Measured input:** number of blast-radius answers candor served (each = a "what does
-  this touch?" the agent did not have to re-derive) and their sizes.
-- **Model:** the published benchmark per-question deltas — **~17× tokens, ~50× tool calls,
-  ~38× wall-clock** (one candor query ≈ 24k tokens / 1 tool call / ~8 s). Source:
-  candor.poly.io/agents.
-- **Estimate** = served answers × (benchmark multiple − 1) × per-query baseline.
+- **No session-total saving by default.** `stats` shows measured activity (B) and stops.
+- **Per-answer comparison (the defensible form):** when candor serves a single blast-radius
+  answer, it may note the benchmark for a question *of that size* — "a blast radius this size
+  (41 fns, 3 hops) averages ~17× the tokens / ~50× the tool calls by hand — benchmark." Tied
+  to one comparable query, **not** summed.
+- **Optional session estimate (`--estimate`, off by default):** if ever shown, it is tagged
+  `(estimate — model, not measured)`, hedged ("on the order of"), **net of candor's own query
+  cost** (its result enters the agent's context — not free), and links the methodology. Never
+  shown without that caveat; never a default.
 
-**Presentation rules (enforced in the formatter):**
-1. Show measured activity (B) **first and separately**.
-2. Tag the estimate line `(estimate — model, not measured)` and state its basis.
-3. Hedged magnitude only — "on the order of", never `saved 412,337 tokens`.
-4. Link the methodology.
-5. Never print a savings figure without the benchmark caveat attached.
-6. `--no-estimate` shows measured only.
-
-**Example output:**
-
-```
-candor this session (measured)
-  8 edits checked · 8 blast-radius answers · up to 41 fns, 3 hops
-  1 boundary enforced · 0 violations · 6 Unknowns disclosed · 1.5 s of candor
-
-Estimated saving (model, not measured)
-  deriving those 8 answers by hand averaged ~17× tokens / ~50× tool calls / ~38× time
-  → on the order of a few hundred K tokens and ~40 min of agent tracing avoided
-  basis: candor.poly.io/agents — one query ≈ 24k tok / 1 call / ~8 s
-```
+**Honesty contract (applied harder than v1):** candor cannot measure the counterfactual; the
+comparison is a model; measured (B) and modelled (C) are never blended; the session sum is off
+by default because its external validity is weak. A fabricated or fake-precise ROI number
+would directly contradict candor's disclosure-not-fabrication claim and is the first thing a
+skeptic attacks.
 
 ---
 
 ## Cross-agent (non-Claude-Code)
 
-The per-turn hook is Claude-Code-specific (a Stop hook). But the **activity log is written
-by the review scripts regardless of caller**, so `stats` works for any agent that runs the
-review (MCP, other CLI agents). The generic "notice" for those is just the review's
-clean-summary line on stdout, which they already capture as tool output.
+The per-turn notice is **Claude-Code-specific** — other agents have no Stop-hook equivalent,
+so there's no clean per-turn trigger for them (honest gap, not papered over). What transfers:
+the **activity log is written whenever the review runs** (any caller — MCP, other CLI agents),
+so `candor-agents stats` works anywhere; and the review's summary line is on stdout for agents
+that capture tool output.
 
 ## Config summary
 
-- `CANDOR_HOOK_NOTICE` = `summary` (default) | `quiet` | `off`
-- `CANDOR_ACTIVITY_LOG` = path (default `.candor/activity.jsonl`); unset → logging off
-- `candor-agents stats [--json] [--since <iso>] [--no-estimate]`
+- `CANDOR_HOOK_NOTICE` = `summary` (default) | `changes` | `quiet` | `off`
+- `CANDOR_ACTIVITY_LOG` = path (default `.candor/activity.jsonl`; unset → logging off)
+- `candor-agents stats [--json] [--session <id>] [--since <iso>] [--estimate]`
 
 ## Phasing
 
-- **P1 — per-turn notice.** Clean-summary line in `candor-review*.sh`; `stop-hook.sh`
-  surfaces it on `rc=0` via stderr; `CANDOR_HOOK_NOTICE`. *Smallest change, biggest
-  legibility win — do this first.*
-- **P2 — activity log.** Review appends `.candor/activity.jsonl` each run.
+- **P0 — verify delivery.** Confirm the user-visible, non-blocking Stop-hook channel on a real
+  Claude Code install. Gates all of A.
+- **P1 — per-turn notice.** Effect-delta line via the verified channel; precise edited-units
+  when `git diff` is available, else fallback; `CANDOR_HOOK_NOTICE`.
+- **P2 — activity log.** `sessionId`, hygiene, privacy default.
 - **P3 — `candor-agents stats`** (measured) over the log.
-- **P4 — the labelled estimate** in `stats`, behind the Honesty contract.
+- **P4 — per-answer comparison;** the session `--estimate` last, if at all.
 
 ## Open questions
 
-- **Per-query baseline vs per-size scaling.** The 24k-tok / benchmark multiples are
-  averages; scaling the estimate by each answer's actual blast-radius size would be more
-  accurate (still a model). Decide in P4.
-- **Privacy.** `activity.jsonl` holds edited symbol names — keep it local; add to
-  `.gitignore` in the adopt starter by default.
-- **`ts` source.** Shell stamps it; confirm the review scripts never need it in-engine.
+- **Pre-turn snapshot point** for the `git diff` (HEAD vs a ref stamped at turn start) — sets
+  edited-units precision.
+- **Default verbosity** — ship `summary` (first-run legibility) or `changes` (less fatigue)?
+- **Size-scaled comparison** — the per-answer form scales by blast-radius size; the optional
+  session `--estimate` would need the same to be even roughly right.

@@ -121,18 +121,20 @@ needs jq, writes only when the log's dir already exists (never creates `.candor/
 The fix is a machine-readable summary line emitted by `candor-review*.sh` that both the hook and
 standalone callers consume — replacing today's parse-the-human-text coupling.
 
-### Command
+### Command — built (P3)
 
-`candor-agents stats [--json] [--session <id>] [--since <iso>]` (alias `candor stats`) reports
-**measured fields only**:
+`candor-agents stats [<dir>] [--log <path>] [--session <id>] [--since <iso>] [--json]` reports
+**measured fields only**, counted from the log:
 
-- reviews run; clean / blocked / setup counts
-- blast-radius answered — total fns covered, max radius, max hops
-- boundaries enforced (policy active?), violations caught (by AS-EFF code)
-- Unknowns disclosed
-- candor's own cost — total review wall-time
+- edits checked; clean / blocked / setup counts
+- policy violations caught (by AS-EFF code)
+- effects introduced this period; turns that introduced an effect
+- largest blast radius seen
+- files touched; sessions; time span
 
-All directly counted. No model in B.
+All directly counted, no model. Corrupt log lines are skipped, a missing log is a clean no-op,
+an unknown flag exits 2 (7 tests in candor-agents). **Deferred to P2.1:** Unknowns disclosed and
+candor's own wall-time — they need the per-turn report / `reviewMs` the hook doesn't yet record.
 
 ---
 
@@ -183,8 +185,13 @@ that capture tool output.
 - **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
   gained/violations, rotation, privacy. **P2.1:** review-side structured output for
   `effects`/`unknowns`/`maxHops` + standalone/CI logging.
-- **P3 — `candor-agents stats`** (measured) over the log. ← next
-- **P4 — per-answer comparison;** the session `--estimate` last, if at all.
+- **P3 — `candor-agents stats`** ✓ built — measured gate activity over the log (edits checked,
+  blocks, violations by AS-EFF code, effects introduced, blast radius, files, sessions, span);
+  `--json` / `--session` / `--since` / `--log`; corrupt-line/missing-log/bad-flag handled; 7 tests.
+- **P4 — per-answer comparison.** ← next, lower priority. **Note (found in P3):** its data source is
+  NOT the activity log — that's edit-time *gate* activity. The comparison is about the agent's
+  *candor-query usage* (questions it asked candor instead of re-deriving), which lives in the
+  session transcript's `candor-query` tool calls. Different source; conflating them would miscount.
 
 ## Open questions
 

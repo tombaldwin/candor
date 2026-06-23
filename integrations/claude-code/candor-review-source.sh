@@ -14,6 +14,9 @@
 # (Refresh the baseline once a change is intended — copy the current report over it:
 #    $CANDOR_SCAN <src> --out .candor/cur && cp "$(ls .candor/cur*.json|grep -ve callgraph -e hierarchy|head -1)" .candor/baseline.json)
 set -uo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+[ -f "$HERE/lib-candor-summary.sh" ] && . "$HERE/lib-candor-summary.sh"
+command -v candor_emit_summary >/dev/null 2>&1 || candor_emit_summary() { :; }   # no-op if the lib is absent
 SCAN=${CANDOR_SCAN:-}
 SRC=${CANDOR_SRC:-.}
 BASELINE=${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}
@@ -30,14 +33,7 @@ $SCAN "$SRC" --out "$PREFIX" >"$SCANLOG" 2>&1; gate=$?
 # `<prefix>.<member>.scan.json`. `<prefix>*.json` matches all; drop the .callgraph/.hierarchy sidecars.
 CUR=$(ls "$PREFIX"*.json 2>/dev/null | grep -ve callgraph -e hierarchy | head -1)
 [ -n "$CUR" ] && [ -s "$CUR" ] || { echo "candor-review-source: scan produced no report — $(tail -1 "$SCANLOG")"; exit 2; }
-
-# Machine-readable summary trailer for the stop hook (Unknown count, distinct effects, wall-time). Gated on
-# CANDOR_EMIT_SUMMARY so standalone callers never see it; the hook sets the flag, reads the line, strips it.
-if [ "${CANDOR_EMIT_SUMMARY:-}" = "1" ] && command -v jq >/dev/null 2>&1; then
-  _unk=$(jq '[.functions[]?|select(((.inferred//[])|index("Unknown")))]|length' "$CUR" 2>/dev/null || echo 0)
-  _eff=$(jq -c '[.functions[]?.inferred[]?]|unique|map(select(.!="Unknown"))' "$CUR" 2>/dev/null || echo '[]')
-  printf 'CANDOR_SUMMARY {"unknowns":%s,"effects":%s,"reviewMs":%s}\n' "${_unk:-0}" "${_eff:-[]}" "$((SECONDS*1000))"
-fi
+candor_emit_summary "$CUR"   # CANDOR_SUMMARY trailer for the stop hook (no-op unless CANDOR_EMIT_SUMMARY=1)
 
 # The delta vs the baseline, computed directly from the two spec-0.7 report files (engine-agnostic — the
 # envelope is standard, so no per-engine query CLI / prefix-vs-file quirks). INTRODUCERS = functions whose

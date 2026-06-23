@@ -27,6 +27,15 @@ trap 'rm -f "$CUR" "$SCANLOG"' EXIT
 $CANDOR "$CLASSES" --json "$CUR" >"$SCANLOG" 2>&1; gate=$?
 [ -s "$CUR" ] || { echo "candor-review: scan produced no report — $(tail -1 "$SCANLOG")"; exit 2; }
 
+# A machine-readable summary trailer for the stop hook (richer fields than the human text): the report's
+# Unknown count, the distinct effects present, and this review's wall-time. Gated on CANDOR_EMIT_SUMMARY so
+# standalone callers (CI / manual) never see it; the hook sets the flag, reads the line, strips it.
+if [ "${CANDOR_EMIT_SUMMARY:-}" = "1" ] && command -v jq >/dev/null 2>&1; then
+  _unk=$(jq '[.functions[]?|select(((.inferred//[])|index("Unknown")))]|length' "$CUR" 2>/dev/null || echo 0)
+  _eff=$(jq -c '[.functions[]?.inferred[]?]|unique|map(select(.!="Unknown"))' "$CUR" 2>/dev/null || echo '[]')
+  printf 'CANDOR_SUMMARY {"unknowns":%s,"effects":%s,"reviewMs":%s}\n' "${_unk:-0}" "${_eff:-[]}" "$((SECONDS*1000))"
+fi
+
 # The delta vs the baseline: functions that INTRODUCED a new effect (the source) + the blast radius (every
 # function that transitively gained an effect, introduced + inherited). candor's `diff` computes both.
 delta=""

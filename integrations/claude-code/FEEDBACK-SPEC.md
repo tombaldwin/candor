@@ -116,10 +116,12 @@ needs jq, writes only when the log's dir already exists (never creates `.candor/
 - **Privacy:** holds edited file paths → **local-only, never transmitted**; gitignored by the
   adopt starter.
 
-**Deferred to P2.1 (needs review-side structured output):** `effects` / `unknowns` / `maxHops`
-(need the report, which the hook doesn't hold) and logging on **standalone / CI** runs (no hook).
-The fix is a machine-readable summary line emitted by `candor-review*.sh` that both the hook and
-standalone callers consume — replacing today's parse-the-human-text coupling.
+**P2.1 — DONE (the richer fields).** `candor-review*.sh` now emit a `CANDOR_SUMMARY {…}` trailer
+(gated on `CANDOR_EMIT_SUMMARY`, so standalone callers never see it) carrying `unknowns`, the
+distinct `effects` present, and `reviewMs`; the hook reads it into the log and strips it from the
+user notice + the agent reason. **Still deferred:** `maxHops` (needs graph-depth, not cheap) and
+logging on **standalone / CI** runs (the trailer flag + logging are hook-side; a standalone review
+doesn't log).
 
 ### Command — built (P3)
 
@@ -133,8 +135,8 @@ standalone callers consume — replacing today's parse-the-human-text coupling.
 - files touched; sessions; time span
 
 All directly counted, no model. Corrupt log lines are skipped, a missing log is a clean no-op,
-an unknown flag exits 2 (7 tests in candor-agents). **Deferred to P2.1:** Unknowns disclosed and
-candor's own wall-time — they need the per-turn report / `reviewMs` the hook doesn't yet record.
+an unknown flag exits 2 (7 tests in candor-agents). Unknowns disclosed and candor's own wall-time
+are now surfaced too (P2.1 trailer). Still out: `maxHops` (not cheap to compute).
 
 ---
 
@@ -183,15 +185,14 @@ that capture tool output.
 - **P0 — verify delivery.** ✓ done — channel is `systemMessage` (see top).
 - **P1 — per-turn notice.** ✓ built — `systemMessage` on clean/block/setup; `CANDOR_HOOK_NOTICE`.
 - **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
-  gained/violations, rotation, privacy. **P2.1:** review-side structured output for
-  `effects`/`unknowns`/`maxHops` + standalone/CI logging.
+  gained/violations, rotation, privacy. **P2.1 ✓** — a `CANDOR_SUMMARY` trailer from the reviews
+  adds `effects`/`unknowns`/`reviewMs`. Still out: `maxHops`, standalone/CI logging.
 - **P3 — `candor-agents stats`** ✓ built — measured gate activity over the log (edits checked,
   blocks, violations by AS-EFF code, effects introduced, blast radius, files, sessions, span);
   `--json` / `--session` / `--since` / `--log`; corrupt-line/missing-log/bad-flag handled; 7 tests.
-- **P4 — per-answer comparison.** ← next, lower priority. **Note (found in P3):** its data source is
-  NOT the activity log — that's edit-time *gate* activity. The comparison is about the agent's
-  *candor-query usage* (questions it asked candor instead of re-deriving), which lives in the
-  session transcript's `candor-query` tool calls. Different source; conflating them would miscount.
+- **P4 — `candor-agents savings`** ✓ built — counts candor-query calls in the session transcript
+  (its true data source, NOT the gate log) and prints a clearly-labelled model: measured count vs
+  the published benchmark, no fake-precise total, "model, not measured", methodology linked. 4 tests.
 
 ## Open questions
 

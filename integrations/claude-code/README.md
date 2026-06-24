@@ -30,17 +30,23 @@ pick the JVM script (`candor-review.sh`, scans bytecode) or the scan-source scri
 2. *(optional)* drop an `arch.policy` at the repo root (see [`../../adopt/arch.policy`](../../adopt/arch.policy))
    to also gate boundaries (`deny Db io.app.domain`, …).
 3. **Wire the hook** in `.claude/settings.json` (project) or `~/.claude/settings.json` (global). The command
-   must **build first** (the hook scans compiled classes), then run the hook:
+   must **build first** (the hook scans compiled classes), then run the hook. **Redirect the build's stdout to
+   stderr with `1>&2`** — Claude Code parses the hook's *stdout* as JSON, so any byte the build prints there
+   corrupts it and the notice silently vanishes. Add a `timeout` (the build runs every turn):
    ```json
    {
      "hooks": {
        "Stop": [ { "hooks": [ {
          "type": "command",
-         "command": "mvn -q compile && CANDOR_CLASSES=target/classes CANDOR_POLICY=arch.policy CANDOR_REVIEW_BASELINE=.candor/baseline.json /abs/path/to/integrations/claude-code/stop-hook.sh"
+         "command": "mvn -q compile 1>&2 && CANDOR_CLASSES=target/classes CANDOR_POLICY=arch.policy CANDOR_REVIEW_BASELINE=.candor/baseline.json /abs/path/to/integrations/claude-code/stop-hook.sh",
+         "timeout": 120
        } ] } ] }
      }
    }
    ```
+   Gradle: `./gradlew -q classes 1>&2` and `CANDOR_CLASSES=build/classes/java/main` (multi-module: point at a
+   built jar so all modules' classes are in one place). Keep **all** your Stop hooks in **one** settings file's
+   `Stop` array (see Troubleshooting), and **fully restart** Claude Code after editing it.
 
 ## Setup — scan-source (candor-ts / candor-swift / candor-scan, no build)
 
@@ -60,7 +66,8 @@ These engines read source directly, so there's nothing to build — point `CANDO
      "hooks": {
        "Stop": [ { "hooks": [ {
          "type": "command",
-         "command": "CANDOR_REVIEW=/abs/path/to/integrations/claude-code/candor-review-source.sh CANDOR_SCAN='npx -y candor-ts' CANDOR_SRC=src CANDOR_POLICY=arch.policy CANDOR_REVIEW_BASELINE=.candor/baseline.json /abs/path/to/integrations/claude-code/stop-hook.sh"
+         "command": "CANDOR_REVIEW=/abs/path/to/integrations/claude-code/candor-review-source.sh CANDOR_SCAN='npx -y candor-ts' CANDOR_SRC=src CANDOR_POLICY=arch.policy CANDOR_REVIEW_BASELINE=.candor/baseline.json /abs/path/to/integrations/claude-code/stop-hook.sh",
+         "timeout": 120
        } ] } ] }
      }
    }
@@ -99,6 +106,29 @@ Scan-source review (`candor-review-source.sh`):
   is intended, refresh the baseline (`… --json .candor/baseline.json`) or relax the policy.
 - **Loop-safe** — on the re-invocation after a block, `stop_hook_active` is set, so the hook allows the stop
   rather than blocking forever.
+
+## Troubleshooting
+
+The things a first setup actually hits (all learned from real use):
+
+- **It seems to run but no `candor:` notice appears.** Claude Code parses the hook's **stdout** as JSON, so if
+  a build step (`mvn`/`gradle`) prints *anything* to stdout the JSON is corrupt and the `systemMessage` is
+  silently dropped — the hook still runs and logs, you just don't see it. Fix: `mvn -q compile 1>&2 && …` /
+  `./gradlew -q classes 1>&2 && …`.
+- **The hook doesn't fire at all.** Hook config loads at **launch** — fully **restart** Claude Code (a
+  `/clear` is *not* enough). Type **`/hooks`** in the session to confirm what loaded.
+- **Only one of several hooks runs.** Stop hooks defined in **both** `settings.json` *and*
+  `settings.local.json` can shadow rather than merge — put them all in **one** file's `Stop` array.
+- **The hook gets killed on a big build.** Add `"timeout": <seconds>` to the hook entry (it builds every turn).
+- **`edited` is `null` in `.candor/activity.jsonl`.** The hook reads the turn's edited files from the session
+  transcript; `null` just means it had none to read (a manual/CI run with no `transcript_path`) — in a real
+  session it lists the files you changed.
+- **No notice and no log at all.** `jq` is required — without it the notice and the activity log silently
+  no-op. `brew install jq`.
+
+To read what's accumulated: `.candor/activity.jsonl` is one record per turn, and
+[`candor-agents`](https://github.com/tombaldwin/candor-agents) summarises it — `candor-agents stats` (measured
+gate activity) and `candor-agents savings` (a labelled estimate from your `candor-query` usage).
 
 ## Notes
 

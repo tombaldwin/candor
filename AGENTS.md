@@ -9,8 +9,7 @@ per-language instructions.
 per-language contract under `--agents` (`candor-scan --agents`, `npx -y candor-ts --agents`,
 `java -jar candor-java-*-all.jar --agents`, `candor-swift --agents`, `candor-agents --agents`),
 version-matched to the binary you are running (spec §7.11). The links below can describe a newer
-candor than the one installed; `--agents` cannot. (Engines older than tonight's 0.4.x releases
-lack the flag — if it errors, check the version per §1a of the engine's doc and upgrade first.)
+candor than the one installed; `--agents` cannot. (Older engine builds may lack the flag — if it errors, check the version per §1a of the engine's doc and upgrade first.)
 
 ## 0. Already installed? Report the version and offer to upgrade — before you scan
 
@@ -19,13 +18,13 @@ If this project already has candor (a `.candor/` report directory, or the engine
 
 1. **Tell the user which version they're on.** Run the engine's offline `candor-<engine> --version`
    (or, on a build too old for the flag, read `candor.version` / `candor.spec` from an existing
-   `.candor/report*.json`). State it plainly — e.g. *"This project is on candor-ts 0.5.1 (spec 0.5)."*
+   `.candor/report*.json`). State it plainly — e.g. *"This project is on candor-ts X.Y.Z (spec N)."*
 2. **Check whether it's current.** candor never phones home — its own policy denies `Net`, so a
    version check is **your** job, not the tool's: you have network access, it doesn't. Compare the
    installed version against the latest published release (crates.io / npm / GitHub releases — the
    per-engine commands are in §2a).
-3. **If it's behind, *ask* before upgrading.** Say e.g. *"candor-ts 0.5.2 is available (you're on
-   0.5.1) — upgrade before I scan?"* and run the §2a upgrade one-liner only if the user agrees.
+3. **If it's behind, *ask* before upgrading.** Say e.g. *"candor-ts X.Y.Z is available (you're on
+   A.B.C) — upgrade before I scan?"* and run the §2a upgrade one-liner only if the user agrees.
    Never upgrade silently: an analysis tool's version is part of its result's provenance, so the
    user decides when it changes.
 
@@ -40,8 +39,8 @@ Detect what you're working on, then follow that implementation's `AGENTS.md`:
 |---|---|---|
 | `Cargo.toml` | Rust | [candor-rust/AGENTS.md](https://github.com/tombaldwin/candor-rust/blob/main/AGENTS.md) — `cargo install candor-scan` |
 | `build.gradle*`, `pom.xml`, compiled `.class`/`.jar` | JVM (Java, Kotlin, Scala, Groovy) | [candor-java/AGENTS.md](https://github.com/tombaldwin/candor-java/blob/main/AGENTS.md) — `jbang candor@tombaldwin/candor-java` |
-| `tsconfig.json`, `package.json` + `.ts` sources | TypeScript | [candor-ts/AGENTS.md](https://github.com/tombaldwin/candor-ts/blob/main/AGENTS.md) — `npx -y candor-ts .` (on npm; check `candor.spec` = 0.5 in the envelope) |
-| `Package.swift` + `.swift` sources | Swift | [candor-swift/AGENTS.md](https://github.com/tombaldwin/candor-swift/blob/main/AGENTS.md) — clone + `swift build -c release` + run the binary (check `candor.spec` = 0.5) |
+| `tsconfig.json`, `package.json` + `.ts` sources | TypeScript | [candor-ts/AGENTS.md](https://github.com/tombaldwin/candor-ts/blob/main/AGENTS.md) — `npx -y candor-ts .` (on npm; the engine prints its spec under `--version`) |
+| `Package.swift` + `.swift` sources | Swift | [candor-swift/AGENTS.md](https://github.com/tombaldwin/candor-swift/blob/main/AGENTS.md) — clone + `swift build -c release` + run the binary (it prints its spec under `--version`) |
 | `.claude/agents/*.md`, `.mcp.json` (an agent fleet, not a codebase) | — | [candor-agents](https://github.com/tombaldwin/candor-agents) — `pipx install git+…` then `candor-agents scan|observe|drift .`: declared vs observed fleet effects, gated by the same policy grammar |
 | anything else | — | no implementation yet; the [spec](https://github.com/tombaldwin/candor-spec) is designed to be implementable from its text alone |
 

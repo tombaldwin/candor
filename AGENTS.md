@@ -52,9 +52,12 @@ mental model.
 ## 1a. After you scan: tell the user what candor found (don't just say "done")
 
 The map is the result they asked for — not the JSON file. Once the report exists, report it back in
-plain language. End with:
+plain language. The engine already prints a one-glance coverage line to the console as it runs
+(`candor — N functions reach effects, across M classes` + the per-effect counts + `Unknown K
+(disclosed)`) — relay that verbatim, then add the headline and honesty notes below. End with:
 
-- **Coverage** — total functions analysed, and how many reach each effect (`Net`, `Fs`, `Db`, `Exec`, …).
+- **Coverage** — total functions analysed, and how many reach each effect (`Net`, `Fs`, `Db`, `Exec`, …)
+  — the printed summary line.
 - **The headline** — 1–2 *non-obvious* findings: a function that reaches the network / a database / a
   subprocess **transitively**, through hops that wouldn't show in a diff (exactly what review misses).
   Name the function and the path — e.g. *"`PricingService.quote` reaches `Db` three hops down, via

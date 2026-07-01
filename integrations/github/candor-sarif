@@ -163,8 +163,11 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         fn, rule = v.get("fn"), v.get("rule", "AS-EFF-006")
         if not fn:
             continue
-        # loc + effects come from the gate verdict if present, else the report envelope (joined by fn).
-        effects = v.get("effects") or eff_idx.get(fn) or []
+        # effects: trust the verdict's denied set when the KEY is present — an explicit [] means "no single
+        # effect" (a 009 layer-flow / 003 unresolved) and MUST be respected, not overwritten by the report's
+        # (superset) direct set. Only fall back to the report when a verdict omits the key entirely (a pre-0.8
+        # / non-emitting engine). loc always joins from the report.
+        effects = v["effects"] if "effects" in v else (eff_idx.get(fn) or [])
         loc = v.get("loc") or loc_idx.get(fn)
         scope = v.get("scope")
         # `detail` (from the engine's own diagnostic) is authoritative and already names fn/effect/rule;

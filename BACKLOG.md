@@ -27,7 +27,12 @@ gate** is the solid-engineering wedge (proven, deterministic, sellable). This su
 the 2026-06-18 repositioning as *demoting* the agent angle — that made the gate the lead **sales** wedge,
 not a reason to stop investing in the agent loop, which stays P0 below.
 
-- **[P0 — north star] Agent edit-time blast-radius feedback.** The `diff` / MCP surface ships, and the
+Value now runs in **two parallel tracks** (see the Priority note above); within each, new work is
+**surface, not depth** — capability is mined-out and the spec is stable at 0.7.
+
+### Agent-loop track — the north-star
+
+- **[P0] Agent edit-time blast-radius feedback.** The `diff` / MCP surface ships, and the
   edit-time delivery loop now ships too: [`integrations/claude-code/`](integrations/claude-code/) — a Stop
   hook (`stop-hook.sh`, script selected by `CANDOR_REVIEW`) that scans the agent's turn, diffs effects vs a
   baseline, and blocks-once with the gained effects + transitive blast radius + any policy violation so the
@@ -36,25 +41,7 @@ not a reason to stop investing in the agent loop, which stays P0 below.
   exit contract; the delta is computed from the spec-0.7 report envelope so it's engine-agnostic and catches
   pure→effectful. _Remaining polish:_ a richer in-IDE/MCP push.
 
-- **[adoption] Get the proven wedge in front of users.** The architecture-gate is proven — 5 real-app case
-  studies (`docs/`) + a copy-paste `adopt/` starter (policy template + GitHub Action), validated end-to-end
-  via jbang. The remaining lift is distribution, not capability: case studies → candor.poly.io; keep the
-  adoption starter current.
-
-- **[DX / adoption] Consolidated `.candor/config` file (not built).** Today candor is configured by
-  environment variables (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`,
-  `CANDOR_DEPS`, `CANDOR_STRICT`, `CANDOR_NO_AMBIENT`, …) plus the `.candor/` directory convention
-  (`baseline.json`, the report, `.candor/policy`); the only declarative, checked-in file is the policy.
-  A single `.candor/config` could hold the policy path, baseline path, report-output prefix, mode flags
-  (closed-world / strict / no-ambient), dep-chain paths and host allowlists — so CI becomes "point at the
-  repo" with no env wiring, and the configuration travels with the code (lower setup friction, the current
-  adoption focus). Cross-engine: every engine reads `.candor/config`, with env vars overriding for one-off
-  runs. Spec touch: define the config schema in candor-spec so all engines agree — additive (it's config,
-  not the effect contract), so no contract bump. No schema yet; needs design before any engine work. (NB:
-  the lone `.candor/config` in `candor-rust/eval/minicache` is an eval-harness file holding `CANDOR_LIB`,
-  unrelated to this.) Surfaced 2026-06-22 — distinct from the policy file, which is the architecture-as-code.
-
-- **[DX / adoption] Agent-visible feedback — "candor checked this" + session stats (spec'd, not built).**
+- **[P0-adjacent] Agent-visible feedback — "candor checked this" + session stats (spec'd, partly built).**
   The Stop hook is silent on a clean turn (`rc=0 → {}`), so when nothing's wrong the user can't tell candor
   is even running — invisible help gets uninstalled. Add (A) a per-turn `candor: ✓ checked …` notice, (B)
   measured session stats from a `.candor/activity.jsonl` the review appends each run, and (C) a clearly
@@ -62,43 +49,62 @@ not a reason to stop investing in the agent loop, which stays P0 below.
   own ROI counter must hold to its disclosure-not-fabrication standard). Mostly a surfacing/aggregation layer
   over what the review already computes; no effect-contract change. Full design (formats, config, phasing,
   honesty contract) in [`integrations/claude-code/FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md).
-  Surfaced 2026-06-23. Relates to the P0 edit-time feedback loop above.
+  Surfaced 2026-06-23.
 
-### New bets surfaced 2026-07-01 (planning review)
+- **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
+  a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor
+  surface also shows the arch-gate boundary live. Bigger build (a language server, ideally one shared over
+  the report envelope); a later bet, listed so it isn't lost. Surfaced 2026-07-01.
 
-The frame: analysis **capability is mature/mined-out** and the spec is stable at 0.7 — so new work is
-**surface, not depth**. Most of the bets below are the **arch-gate adoption** track (the solid-engineering
-wedge — get the proven gate in front of teams, visible where the buying decision happens); the priority
-**agent-loop** north-star is carried by the P0 edit-time-feedback item + agent-visible feedback above, and
-the IDE/LSP bet below serves it too.
+### Arch-gate adoption track — the solid-engineering wedge (ranked)
 
-- **[adoption — highest leverage] PR-native gate surfacing (GitHub Check + SARIF).** candor gates today
-  via a CI exit code, the local Stop hook, and CLI queries — but the surface where architecture gates
-  actually get adopted, **code review**, isn't covered. Emit a GitHub Check that annotates the exact line
-  a boundary is crossed ("`OrderService.quote` now reaches `Db`, crossing the domain→infra boundary you
-  declared — 3 hops via `billing.charge`") and **SARIF** so violations land in the native Code-scanning /
-  Security tab (table stakes for the enterprise/government buyer). This is "enforced on every push" made
-  visible *on the push*. Builds on the existing AS-EFF policy + `whatif`/blast-radius machinery; the new
-  work is the reporter (annotations + SARIF writer) + the Action wiring. Doesn't reposition vs
-  Semgrep/CodeQL — SARIF is an output channel, the boundary-vs-pattern differentiation is unchanged.
+One funnel: `candor init` writes the policy + config + Action → PR-native surfacing makes the gate visible
+in review → distribution drives teams to it. In priority order:
 
-- **[adoption] Policy inference / `candor init`.** The real barrier to the gate isn't running candor —
-  it's knowing *what policy to write*. Have candor read the current structure and **propose** a starter
-  policy from what's already true ("your `domain` package performs no I/O today — lock it in as
-  `pure domain`?"), then drop a working baseline + GitHub Action. Turns "candor made a map" into "candor
-  gates our PRs" in one command. Composes with `.candor/config` + the `adopt/` starter (the generative
-  front-end to them).
+1. **PR-native gate surfacing (GitHub Check + SARIF) — highest leverage.** candor gates today via a CI
+   exit code, the local Stop hook, and CLI queries — but the surface where architecture gates actually get
+   adopted, **code review**, isn't covered. Emit a GitHub Check that annotates the exact line a boundary is
+   crossed ("`OrderService.quote` now reaches `Db`, crossing the domain→infra boundary you declared — 3
+   hops via `billing.charge`") and **SARIF** so violations land in the native Code-scanning / Security tab
+   (table stakes for the enterprise/government buyer). This is "enforced on every push" made visible *on the
+   push*. Builds on the existing AS-EFF policy + `whatif`/blast-radius machinery; the new work is the
+   reporter (annotations + SARIF writer) + the Action wiring. Doesn't reposition vs Semgrep/CodeQL — SARIF
+   is an output channel, the boundary-vs-pattern differentiation is unchanged. Surfaced 2026-07-01.
 
-- **[new capability — a possible second wedge] Supply-chain effect diff (productize `gains`).** The
-  `gains` query already computes "effects a dependency surface gained across versions." Productized —
-  "your bump of lib X added `Net` to a function that was pure" — this is capability-level dependency
-  diffing, distinct from CVE matching, and something candor is uniquely placed to do (it already has
-  per-function effects). Net-new (not mined-out); could stand as its own wedge / landing page. Needs a
-  version-pair driver + a focused alarm surface over `gains`.
+2. **Policy inference / `candor init`.** The real barrier to the gate isn't running candor — it's knowing
+   *what policy to write*. Have candor read the current structure and **propose** a starter policy from
+   what's already true ("your `domain` package performs no I/O today — lock it in as `pure domain`?"), then
+   drop a working baseline + GitHub Action. Turns "candor made a map" into "candor gates our PRs" in one
+   command — the generative front-end that writes the `.candor/config` + policy below. Surfaced 2026-07-01.
 
-- **[DX — larger lift, later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`,
-  3 hops") turn candor from a batch tool into an always-on ambient signal. Bigger build (a language
-  server, ideally one shared over the report envelope); a later bet, listed so it isn't lost.
+3. **Consolidated `.candor/config` file (not built).** Today candor is configured by environment variables
+   (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`, `CANDOR_DEPS`, `CANDOR_STRICT`,
+   `CANDOR_NO_AMBIENT`, …) plus the `.candor/` directory convention (`baseline.json`, the report,
+   `.candor/policy`); the only declarative, checked-in file is the policy. A single `.candor/config` could
+   hold the policy path, baseline path, report-output prefix, mode flags (closed-world / strict / no-ambient),
+   dep-chain paths and host allowlists — so CI becomes "point at the repo" with no env wiring, and the
+   configuration travels with the code. Cross-engine: every engine reads `.candor/config`, with env vars
+   overriding for one-off runs. Spec touch: define the config schema in candor-spec so all engines agree —
+   additive (it's config, not the effect contract), so no contract bump. No schema yet; needs design before
+   any engine work. (NB: the lone `.candor/config` in `candor-rust/eval/minicache` is an eval-harness file
+   holding `CANDOR_LIB`, unrelated to this.) `candor init` (above) is what writes it. Surfaced 2026-06-22.
+
+4. **Distribution — get the proven wedge in front of users.** The architecture-gate is proven — 5 real-app
+   case studies (`docs/`) + a copy-paste `adopt/` starter (policy template + GitHub Action), validated
+   end-to-end via jbang. The remaining lift is distribution, not capability: case studies → candor.poly.io
+   (now unblocked — see Deferred); keep the adoption starter current.
+
+### New-capability bet — a possible commercial add-on
+
+- **Supply-chain effect diff (productize `gains`).** The `gains` query already computes "effects a
+  dependency surface gained across versions." Productized — "your bump of lib X added `Net` to a function
+  that was pure" — this is capability-level dependency diffing, distinct from CVE matching, and something
+  candor is uniquely placed to do (it already has per-function effects). Net-new (not mined-out); could
+  stand as its own wedge / landing page. **Business model (Tom, 2026-07-01): appealing enough to consider as
+  candor's first _commercial, closed-source add-on_** — a paid layer over the open `gains` primitive.
+  candor's engines are fully open source, so a closed paid layer is a deliberate business-model departure
+  (the open engines stay the credibility base; this rides on top), flagged as such. Needs a version-pair
+  driver + a focused alarm surface over `gains`.
 
 ## fingerprint
 
@@ -142,36 +148,9 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   guard CI path still fails-closed on any nonzero by design. This session's candor-rust `ci` ran fully
   green (2026-06-25), so it isn't currently firing. Remaining call (maintainer's): whether the guard path
   should tolerate the same cosmetic nonzero that `snapshot` now does. See candor-rust/BACKLOG.md.
-- **Cross-model eval** — _largely done._ The speed/completeness A/B ran across **Fable 5 / Opus /
-  Sonnet** (48 trials, `candor-rust/eval/scaled/RESULTS-speed-models.md`) and the decision-quality A/B
-  across **Sonnet / Haiku 4.5** (`candor-rust/eval/agentuse/RESULTS-weak.md`): a clean gradient — the
-  tool's answer is model-invariant, manual tracing degrades as the model cheapens, so candor's value
-  *rises* at lower tiers (Sonnet 6× faster + the difference between a complete and a silently-incomplete
-  answer; Haiku control shipped the program's first decision-level bug, zero with candor). _Genuine open
-  cell:_ every batch caveats the same way — the fixtures are small, single-screen, distinctively-named.
-  **Now closed (2026-06-22):** the real-world batch ran on **git-delta** (30k-LOC single crate,
-  `calling_process`/Exec, 61-fn tree, deep engine) across all four tiers, N=8/arm
-  (`candor-rust/eval/scaled/RESULTS-realworld.md`). Clean monotonic gradient — control recall
-  **60% (haiku) → 91% (sonnet) → 97% (opus) → 99% (fable)**, control perfect-rate **0→1→4→5 of 8**;
-  **treatment flat at 100% recall / 100% precision / 8-of-8 every tier** (model-invariant — one
-  deterministic `candor-query callers`). So candor adds value at every tier on a real large crate, most
-  at the cheap end (rescues both completeness *and* precision — one haiku control listed 235 false
-  positives), and still measurably at the frontier. The "easy fixture" asterisk is removed. **Second
-  real-world target added (bottom, 37k-LOC, `DataStore::get_data`/Fs, 26-fn tree):** control
-  82/99.5/99.5/100% (haiku→fable), treatment ~100% every tier. Cross-target finding — candor's marginal
-  value scales with how HARD the blast radius is to trace by hand (depth × non-greppability), not raw
-  LOC: delta's deep 61-fn tree bites every tier; bottom's greppable 26-fn tree bites mainly at haiku;
-  treatment is model-invariant + complete in both, and candor's report = the adjudicated truth on both
-  (delta 61/61, bottom 26/26). _Remaining:_ surface on candor.poly.io. _Toolchain (done):_ the
-  `nightly-2026-06-14` deep-engine port is **merged to candor-rust main** (verified 40/40 soundness +
-  delta 61/61 byte-identical). _Robustness (done):_ the "ICE" that appeared to block modern repos was a
-  candor-side cosmetic shutdown delayed-bug (rustc promotes a pre-codegen `span_delayed_bug` from a
-  speculative `Instance::try_resolve` at exit, *after* candor wrote its complete report) — **fixed**:
-  `cargo candor snapshot` now gates success on the report being written, not dylint's exit code (genuine
-  no-report failures still fail). bottom snapshots exit 0; modern repos analyze cleanly. (The `guard` CI
-  path still fails-closed on nonzero by design — a separate call if it should tolerate the same.)
-- _Done 2026-06-22:_ ~~candor-ts npm republish (`containment`)~~ — shipped in **candor-ts 0.7.5** (npm).
-  ~~candor-swift release cut~~ — shipped as **v0.7.3** (GitHub).
+- **Cross-model eval → candor.poly.io** — the eval itself is **done** (summary moved to *Recently
+  shipped*; full results in `candor-rust/eval/scaled/` + `.../agentuse/`). Only the _surface-on-the-site_
+  thread is still open — the real-world gradient is strong site evidence and isn't up yet.
 
 ## Non-goals (decided — do not build)
 
@@ -204,6 +183,16 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   `.write(to:)`), candor-java **v0.7.11** (Redis Db reconciliation + `CANDOR_CLOSED_WORLD` + CI/AGENTS.md
   sync). Decision recorded: wire/HTTP datastores (ES/OpenSearch/Solr/InfluxDB/Couchbase-raw) **stay Net** by
   the existing deliberate policy (native-protocol datastores are already Db).
+- **Cross-model eval (done 2026-06-22).** Real-world speed + decision-quality A/B across **Fable 5 / Opus /
+  Sonnet / Haiku 4.5** on two real crates (git-delta, 61-fn tree; bottom, 26-fn tree), N=8/arm: control
+  recall climbs with model tier (60%→99% on delta) while **treatment is model-invariant at ~100%
+  recall/precision every tier** (one deterministic `candor-query callers`). candor's marginal value scales
+  with how hard the blast radius is to trace by hand (depth × non-greppability); its report is the
+  adjudicated truth on both (delta 61/61, bottom 26/26). Deep-engine `nightly-2026-06-14` port merged to
+  candor-rust main (40/40 soundness, delta 61/61 byte-identical); the modern-repo "ICE" fixed (cosmetic
+  shutdown delayed-bug — `cargo candor snapshot` gates on report-written). Results in
+  `candor-rust/eval/scaled/RESULTS-realworld.md` + `RESULTS-speed-models.md` + `.../agentuse/RESULTS-weak.md`.
+  _Remaining:_ surface on candor.poly.io (tracked in Deferred).
 - κ persistence coverage (candor-java 0.7.9 / 0.7.10): Hibernate-6 / Jakarta Data, Panache, Micronaut Data,
   Ebean, ActiveJDBC, jOOQ + the general modeled-base-subclass fix; repo pure-`default` fabrication fix;
   declarative HTTP-client interfaces → Net.

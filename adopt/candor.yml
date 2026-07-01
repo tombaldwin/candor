@@ -43,6 +43,12 @@ jobs:
       # jbang fetches and runs candor-java (no install, pinned via the alias).
       - uses: jbangdev/setup-jbang@main
 
+      # jbang refuses to run a release JAR from an "untrusted" URL and, on a headless CI runner, can't
+      # prompt to confirm — so trust the candor-java release source up front (a fresh runner has no
+      # cached trust). Without this the gate step aborts (jbang exit 10) before writing the verdict.
+      - name: Trust the candor-java release source
+        run: jbang trust add https://github.com/tombaldwin/candor-java/
+
       # ── EDIT 2+3: CLASSES = compiled output · SRC = source root ─────────────
       #   Maven  → CLASSES target/classes             · SRC src/main/java
       #   Gradle → CLASSES build/classes/java/main     · SRC src/main/java

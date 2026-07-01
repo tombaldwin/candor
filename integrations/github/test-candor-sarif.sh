@@ -76,6 +76,15 @@ OUTE=$(python3 "$SARIF" "$WORK/report2.json" --gate "$WORK/eff.json" --src-root 
 ok "SARIF properties.effects = the denied subset"  '[ "$(printf "%s" "$OUTE" | jq -c ".runs[0].results[0].properties.effects")" = "[\"Fs\"]" ]'
 ok "effects is NOT the report superset direct set" '[ "$(printf "%s" "$OUTE" | jq -c ".runs[0].results[0].properties.effects")" != "[\"Clock\",\"Fs\"]" ]'
 
+# an explicit effects:[] (a 009 layer-flow / 003 unresolved) is RESPECTED — the report's direct set must
+# NOT leak in as properties.effects, and no codeFlow is traced (there's no single effect).
+echo '{"candor":{"spec":"0.8"},"functions":[{"fn":"web.Ctl.handle","loc":"Ctl.java:5","direct":["Clock","Log"],"inferred":["Clock","Log"]}]}' > "$WORK/report3.json"
+echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-009","fn":"web.Ctl.handle","effects":[],"detail":"`web.Ctl.handle` reaches into a forbidden layer (via `repo.find`)"}]}' > "$WORK/lf.json"
+OUTL=$(python3 "$SARIF" "$WORK/report3.json" --gate "$WORK/lf.json" --src-root src --query-cmd "$MOCK" 2>/dev/null)
+ok "explicit effects:[] -> no properties.effects"  '[ "$(printf "%s" "$OUTL" | jq -r ".runs[0].results[0].properties.effects // \"none\"")" = none ]'
+ok "explicit effects:[] -> no codeFlow traced"     '[ "$(printf "%s" "$OUTL" | jq -r ".runs[0].results[0].codeFlows // \"none\"")" = none ]'
+ok "a verdict OMITTING effects still falls back"   'echo "{\"functions\":[{\"fn\":\"x.y\",\"direct\":[\"Fs\"]}]}" > "$WORK/rr.json"; echo "{\"violations\":[{\"rule\":\"AS-EFF-006\",\"fn\":\"x.y\"}]}" > "$WORK/gg.json"; [ "$(python3 "$SARIF" "$WORK/rr.json" --gate "$WORK/gg.json" 2>/dev/null | jq -c ".runs[0].results[0].properties.effects")" = "[\"Fs\"]" ]'
+
 # advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
 echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
 OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)

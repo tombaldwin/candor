@@ -83,9 +83,12 @@ in review → distribution drives teams to it. In priority order:
    `adopt/candor.yml` wiring (`security-events: write` + `--gate-json` + fetch/run `candor-sarif` +
    `upload-sarif`, both `if: always()`). Design + status: [`PR-GATE-DESIGN.md`](integrations/github/PR-GATE-DESIGN.md).
    Doesn't reposition vs Semgrep/CodeQL — SARIF is an output channel; the boundary-vs-pattern differentiation
-   is unchanged. **spec 0.8 shipped reference-first** (candor-java 0.8.0 declares it; §3.3 `--gate-json`;
-   conformance PART 12 ladder-aware). **Remaining:** roll `--gate-json` to ts/scan/swift (each raises to 0.8,
-   floor rises; add sibling `conformance/gate/` fixtures then);
+   is unchanged. **spec 0.8 COMPLETE across all four engines** (candor-java/scan/ts/swift all declare 0.8,
+   §3.3 `--gate-json`; conformance PART 12 is a full 4-engine differential — the floor risen to 0.8).
+   **Remaining: RELEASE/PUBLISH the 0.8 engines** (committed locally, unpushed): push all repos, then
+   candor-java v0.8.0 + candor-swift v0.8.0 (gh release + jbang catalogs), candor-ts 0.8.0 (npm — needs the
+   passkey), candor-scan/report 0.8.0 (crates.io). The adopt Action activates once candor-java 0.8.0 is
+   released;
    the Action activates for users on the next candor-java **release** carrying `--gate-json` (currently only
    on candor-java `main`); P4 baseline-delta (`--since-baseline`); optional Check-Runs API (P5). Surfaced 2026-07-01.
 

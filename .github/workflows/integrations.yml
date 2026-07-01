@@ -1,0 +1,33 @@
+name: integrations
+
+# Gates the umbrella repo's integration surfaces — the Claude Code edit-time loop and the PR-native
+# gate reporter — so their contracts can't regress silently. Both test suites are hermetic (mock
+# review / mock `path` query; no engine, no network), so this is fast and needs no sibling checkouts.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # jsonschema powers the SARIF 2.1.0 schema-validation gate in test-candor-sarif.sh (it skips
+      # gracefully if absent, but in CI we want it to actually run). jq is preinstalled on the runner.
+      - name: Install jsonschema
+        run: python -m pip install --quiet jsonschema
+
+      - name: candor-sarif parses
+        run: python -c "import ast; ast.parse(open('integrations/github/candor-sarif').read())"
+
+      - name: Stop-hook contract (Claude Code edit-time loop)
+        run: bash integrations/claude-code/test-stop-hook.sh
+
+      - name: candor-sarif contract + SARIF 2.1.0 schema validation
+        run: bash integrations/github/test-candor-sarif.sh

@@ -185,8 +185,13 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
             "ruleId": rule,
             "level": level_of(rule),
             "message": {"text": text},
+            # Content-based fingerprint (GitHub tracks/dedups alerts by it): include the effect(s), else a
+            # fn that violates two rules for DIFFERENT effects (e.g. `deny Fs` + `deny Env` both hitting one
+            # method) collides into a single alert, hiding a real violation. Content-based (not positional) so
+            # it stays stable as results reorder between runs.
             "partialFingerprints": {
-                "candorViolation": hashlib.sha256(f"{fn}|{rule}".encode()).hexdigest()[:16]
+                "candorViolation": hashlib.sha256(
+                    f"{fn}|{rule}|{','.join(effects)}".encode()).hexdigest()[:16]
             },
         }
         if effects:

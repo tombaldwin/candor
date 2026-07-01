@@ -85,6 +85,13 @@ ok "explicit effects:[] -> no properties.effects"  '[ "$(printf "%s" "$OUTL" | j
 ok "explicit effects:[] -> no codeFlow traced"     '[ "$(printf "%s" "$OUTL" | jq -r ".runs[0].results[0].codeFlows // \"none\"")" = none ]'
 ok "a verdict OMITTING effects still falls back"   'echo "{\"functions\":[{\"fn\":\"x.y\",\"direct\":[\"Fs\"]}]}" > "$WORK/rr.json"; echo "{\"violations\":[{\"rule\":\"AS-EFF-006\",\"fn\":\"x.y\"}]}" > "$WORK/gg.json"; [ "$(python3 "$SARIF" "$WORK/rr.json" --gate "$WORK/gg.json" 2>/dev/null | jq -c ".runs[0].results[0].properties.effects")" = "[\"Fs\"]" ]'
 
+# fingerprint: a fn that violates two rules for DIFFERENT effects (deny Fs + deny Env on one method) must
+# get DISTINCT partialFingerprints — else GitHub's dedup collapses them and hides a real violation.
+echo '{"candor":{"spec":"0.8"},"functions":[{"fn":"app.Svc.run","loc":"Svc.java:3","direct":["Fs","Env"],"inferred":["Fs","Env"]}]}' > "$WORK/rfp.json"
+echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.Svc.run","effects":["Fs"],"detail":"`run` performs { Fs }"},{"rule":"AS-EFF-006","fn":"app.Svc.run","effects":["Env"],"detail":"`run` performs { Env }"}]}' > "$WORK/gfp.json"
+OUTF=$(python3 "$SARIF" "$WORK/rfp.json" --gate "$WORK/gfp.json" --src-root src 2>/dev/null)
+ok "same fn+rule, diff effect -> distinct fingerprints" '[ "$(printf "%s" "$OUTF" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 2 ]'
+
 # advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
 echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
 OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)
@@ -102,6 +109,24 @@ echo 'not json {' > "$WORK/bad.json"
 OUTB=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/bad.json" 2>/dev/null); rc=$?
 ok "malformed gate: exit 0"                    '[ "$rc" = 0 ]'
 ok "malformed gate: valid empty SARIF"         'printf "%s" "$OUTB" | jq -e ".runs[0].results|length==0" >/dev/null'
+
+# SARIF 2.1.0 schema validation against the vendored OASIS schema (the contract GitHub ingests).
+# Skips gracefully if `jsonschema` isn't installed — offline, no network.
+SCHEMA="$HERE/sarif-2.1.0.schema.json"
+if [ -f "$SCHEMA" ] && python3 -c "import jsonschema" 2>/dev/null; then
+  python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate.json" --src-root src -o "$WORK/v.sarif" 2>/dev/null
+  if python3 - "$SCHEMA" "$WORK/v.sarif" <<'PY'
+import json, sys, jsonschema
+schema = json.load(open(sys.argv[1])); doc = json.load(open(sys.argv[2]))
+cls = jsonschema.validators.validator_for(schema)
+errs = list(cls(schema).iter_errors(doc))
+sys.exit(1 if errs else 0)
+PY
+  then pass=$((pass+1)); echo "  ok   output validates against the SARIF 2.1.0 schema"
+  else fail=$((fail+1)); echo "  FAIL output does NOT validate against the SARIF 2.1.0 schema"; fi
+else
+  echo "  --   SARIF-schema validation skipped (no jsonschema / schema file)"
+fi
 
 echo
 echo "test: $pass passed, $fail failed"

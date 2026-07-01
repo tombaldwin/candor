@@ -64,3 +64,10 @@ candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD
   fabricating a line.
 - **Scope today:** the reporter covers every AS-EFF code candor emits (policy 006/008/009, baseline
   005, ambient 004, conformance 001–003; advisory 007 as a warning). `ok` reflects the CI gate verdict.
+- **Validated output:** `test-candor-sarif.sh` validates the generated SARIF against the vendored OASIS
+  **SARIF 2.1.0 schema** (`sarif-2.1.0.schema.json`, from oasis-tcs/sarif-spec) when `jsonschema` is
+  installed — so the output stays GitHub-ingestible. Dogfooded on candor-java analyzing itself (155 real
+  functions, lambdas + inner classes + records, 26 violations across many files): schema-valid, loc
+  resolves correctly for lambdas/`$`-inner-classes, and each violation gets a distinct fingerprint (the
+  fingerprint includes the effect, so a method that violates `deny Fs` *and* `deny Env` yields two alerts,
+  not one collapsed by GitHub's dedup).

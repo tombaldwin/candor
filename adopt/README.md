@@ -64,8 +64,13 @@ rule fails the build when someone breaks it.
 
 The workflow also writes the violations as **SARIF**, so they surface **inline on the
 pull-request diff** and in the repo's **Code-scanning / Security** tab — on the exact line
-a boundary is crossed, not just as a red check. (Needs a candor-java release carrying
-`--gate-json`; see [`../integrations/github/`](../integrations/github/README.md).)
+a boundary is crossed, not just as a red check. (See [`../integrations/github/`](../integrations/github/README.md).)
+
+> **Code scanning is free on public repos; on a private repo it needs GitHub Advanced
+> Security.** Without it, the SARIF upload step fails with *"Code scanning is not enabled
+> for this repository"* — the gate still runs and fails the check on a violation (exit 1),
+> you just don't get the inline annotations. Validated end-to-end on a real runner: the
+> alert lands at the exact line, e.g. `AS-EFF-006 · Order.java:11 · performs { Fs }`.
 
 ---
 

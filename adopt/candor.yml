@@ -19,6 +19,7 @@ on:
 permissions:
   contents: read
   security-events: write        # required to upload the SARIF (the Code-scanning surface)
+  actions: read                 # upload-sarif reads the workflow run for context (needed on private repos)
 
 jobs:
   arch-gate:

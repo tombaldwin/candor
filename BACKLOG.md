@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-06-22. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-01. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -57,12 +57,62 @@ conformance; none pending). Value now concentrates in:
   honesty contract) in [`integrations/claude-code/FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md).
   Surfaced 2026-06-23. Relates to the P0 edit-time feedback loop above.
 
+### New bets surfaced 2026-07-01 (planning review)
+
+The frame: analysis **capability is mature/mined-out** and the spec is stable at 0.7 — so the highest-
+leverage new work is **adoption-surface**, i.e. getting the proven JVM gate in front of a team with less
+friction and making it visible where the buying decision happens (code review), not more analysis depth.
+
+- **[adoption — highest leverage] PR-native gate surfacing (GitHub Check + SARIF).** candor gates today
+  via a CI exit code, the local Stop hook, and CLI queries — but the surface where architecture gates
+  actually get adopted, **code review**, isn't covered. Emit a GitHub Check that annotates the exact line
+  a boundary is crossed ("`OrderService.quote` now reaches `Db`, crossing the domain→infra boundary you
+  declared — 3 hops via `billing.charge`") and **SARIF** so violations land in the native Code-scanning /
+  Security tab (table stakes for the enterprise/government buyer). This is "enforced on every push" made
+  visible *on the push*. Builds on the existing AS-EFF policy + `whatif`/blast-radius machinery; the new
+  work is the reporter (annotations + SARIF writer) + the Action wiring. Doesn't reposition vs
+  Semgrep/CodeQL — SARIF is an output channel, the boundary-vs-pattern differentiation is unchanged.
+
+- **[adoption] Policy inference / `candor init`.** The real barrier to the gate isn't running candor —
+  it's knowing *what policy to write*. Have candor read the current structure and **propose** a starter
+  policy from what's already true ("your `domain` package performs no I/O today — lock it in as
+  `pure domain`?"), then drop a working baseline + GitHub Action. Turns "candor made a map" into "candor
+  gates our PRs" in one command. Composes with `.candor/config` + the `adopt/` starter (the generative
+  front-end to them).
+
+- **[new capability — a possible second wedge] Supply-chain effect diff (productize `gains`).** The
+  `gains` query already computes "effects a dependency surface gained across versions." Productized —
+  "your bump of lib X added `Net` to a function that was pure" — this is capability-level dependency
+  diffing, distinct from CVE matching, and something candor is uniquely placed to do (it already has
+  per-function effects). Net-new (not mined-out); could stand as its own wedge / landing page. Needs a
+  version-pair driver + a focused alarm surface over `gains`.
+
+- **[DX — larger lift, later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`,
+  3 hops") turn candor from a batch tool into an always-on ambient signal. Bigger build (a language
+  server, ideally one shared over the report envelope); a later bet, listed so it isn't lost.
+
 ## fingerprint
 
 - _Done (2026-06-21):_ **`--baseline <report>` diff** — reports the *change* in the structure descriptor
   vs a baseline (structure delta + per-component smear/unknown/tangleExcess/cycleRatio deltas, the
   direction toward order/chaos), the deterministic-gate framing. (The A–F letter grade was already removed.)
-  No fingerprint backlog items remain.
+
+The **structure descriptor** — `structure` `= 1 − (0.30·smear + 0.26·unknownShare + 0.24·tangleExcess +
+0.20·cycleRatio)` (0–1; `structure_detail.value` is the same ×100, 0–100), each component exposed — is the
+sanctioned "**score of sorts**": an *explainable descriptor*, not a quality grade. No letter, no
+pass/fail; a degenerate input reports `structure: null`, not a flattering number (spec §6.1). It differs
+from the rejected "candor score" (Non-goals, below) precisely by being **component-transparent and
+delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an active thread (was
+"no items remain") — candidate next steps, none committed:
+
+  - **[gate] structure-delta regression gate.** `--baseline` already reports the drift toward chaos;
+    make it *gateable* — fail a PR when `structure` regresses past a threshold. Same posture as the
+    AS-EFF-005 baseline ratchet: a PR-over-PR **delta**, never an absolute grade. This is the defensible
+    edge of the score question — a delta ratchet is not a cross-codebase grade, but the line is worth
+    drawing explicitly against the Non-goal before building.
+  - **[adoption] embeddable fingerprint badge.** The mark already renders with transparent corners as an
+    embeddable badge; surface a "your project's candor fingerprint" artifact (a README badge / a page on
+    candor.poly.io) as a low-cost distribution/marketing surface. Ties to the adoption thread above.
 
 ## Deferred operational (need a publish or maintainer action)
 
@@ -102,15 +152,27 @@ conformance; none pending). Value now concentrates in:
 
 ## Non-goals (decided — do not build)
 
-- A "candor score" / cross-codebase **grade**. A single composite fights the deterministic-per-function-
-  facts positioning (spec §6.1), is gameable, and buries the signal. Keep per-function facts + the
-  explainable structure components.
+- A "candor score" / cross-codebase **grade** — a single opaque headline number that ranks codebases.
+  It fights the deterministic-per-function-facts positioning (spec §6.1), is gameable, and buries the
+  signal. NB this does **not** rule out the fingerprint **structure descriptor** (component-transparent,
+  delta-framed, explicitly not a grade — see *fingerprint* above); the non-goal is the opaque ranking
+  number, not the explainable descriptor. Keep per-function facts + the explainable structure components.
 - **Heavier per-engine dev-tooling** (rustfmt gate / `tsc --checkJs` / SwiftLint). Each was evaluated and
   declined with documented reasons; every engine already gates its idiomatic bug-pattern linter
   (clippy `-D warnings` / eslint / Error-Prone + `-Xlint`) plus a warnings-as-errors equivalent.
 
 ## Recently shipped (context; older entries pruned from the per-engine files)
 
+- **First-run visibility + install friction (2026-06-25).** All four engines now print a one-glance effect
+  summary by default (candor-java leads with `candor — N functions reach effects, across M classes` +
+  per-effect breakdown + `Unknown K (disclosed)`; ts/scan/swift add a breakdown after the wrote line —
+  console-only, reports byte-identical). candor-java now fails loud with actionable guidance on a
+  missing/unbuilt/source path (reads bytecode → point at `build/classes` / `target/classes` / a jar)
+  instead of silently reporting "0 functions". Website: a faithful "what you'll see" sample now sits under
+  the paste box on candor.poly.io. Plus: re-synced the embedded AGENTS.md copies the 0.5→0.7 de-stale left
+  stale (candor-java jar resource, candor-rust scan + query, candor-swift generated doc — the drift gates
+  run only in CI smoke, so they'd gone red) and added a top-of-file maintainer note to each canonical
+  AGENTS.md so a doc edit can't silently drift again.
 - **Real-world corpus campaign + all-engine publish (2026-06-22).** Ran every engine on real OSS; fixed the
   last live silent-under-reports and shipped all four: candor-ts **0.7.5** (npm — `node:vm`/dynamic-`require`
   → Unknown; `@types/X`→runtime-pkg so curated DB/Net clients fire, e.g. pg→Db with `@types/pg`),

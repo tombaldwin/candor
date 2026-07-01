@@ -98,27 +98,41 @@ friction and making it visible where the buying decision happens (code review), 
   direction toward order/chaos), the deterministic-gate framing. (The A–F letter grade was already removed.)
 
 The **structure descriptor** — `structure` `= 1 − (0.30·smear + 0.26·unknownShare + 0.24·tangleExcess +
-0.20·cycleRatio)` (0–1; `structure_detail.value` is the same ×100, 0–100), each component exposed — is the
+0.20·min(1, 3·cycleRatio))` (0–1, cycle term saturates; `structure_detail.value` = ×100; exact form + the
+attribution decomposition in the design doc), each component exposed — is the
 sanctioned "**score of sorts**": an *explainable descriptor*, not a quality grade. No letter, no
 pass/fail; a degenerate input reports `structure: null`, not a flattering number (spec §6.1). It differs
 from the rejected "candor score" (Non-goals, below) precisely by being **component-transparent and
 delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an active thread (was
 "no items remain") — candidate next steps, none committed:
 
-  - **[gate] structure-delta regression gate.** `--baseline` already reports the drift toward chaos;
-    make it *gateable* — fail a PR when `structure` regresses past a threshold. Same posture as the
-    AS-EFF-005 baseline ratchet: a PR-over-PR **delta**, never an absolute grade. This is the defensible
-    edge of the score question — a delta ratchet is not a cross-codebase grade, but the line is worth
-    drawing explicitly against the Non-goal before building.
+  - **[gate] structure-delta regression gate — DESIGNED 2026-07-01, decision pending.** Full design in
+    [`fingerprint/STRUCTURE-GATE-DESIGN.md`](fingerprint/STRUCTURE-GATE-DESIGN.md). `--baseline` already
+    reports the drift toward chaos; the gate makes it *fail a PR* when `structure` regresses past a
+    tolerance (`--gate --threshold`), with the drop **attributed** to its component (`tangleExcess`/`smear`/
+    `cycleRatio`/`unknown`, an exact weighted-sum decomposition) and — v2 — to the specific functions that
+    crossed each line. Same posture as the AS-EFF-005 ratchet: a PR-over-PR **delta**, never an absolute
+    grade; opt-in, off by default; exit-contract 0/1/2; **no AS-EFF code / not in conformance** (stays a
+    fingerprint-tool feature so the sound spec surface isn't diluted by a heuristic composite). Phased
+    v1 composite+attribution → v2 per-function pointers → v3 PR-native. Open before build: threshold/
+    min-fns need calibration (noise floor unknown); the go/no-go is Tom's — it's the defensible *edge* of
+    the score non-goal, not over it.
   - **[adoption] embeddable fingerprint badge.** The mark already renders with transparent corners as an
     embeddable badge; surface a "your project's candor fingerprint" artifact (a README badge / a page on
     candor.poly.io) as a low-cost distribution/marketing surface. Ties to the adoption thread above.
 
 ## Deferred operational (need a publish or maintainer action)
 
-- **Case studies → candor.poly.io** — site deploy has been blocked on the ssh-agent. _Still open._
-- **candor-rust CI self-guard nightly ICE** — a rustc nightly bug; direction is the maintainer's call
-  (deep-engine maintenance; see candor-rust/BACKLOG.md).
+- **Case studies → candor.poly.io** — the 5 studies live in `docs/` but aren't on the site yet. The
+  earlier ssh-agent deploy blocker is **RESOLVED** (dedicated passphrase-less automation key, 2026-06-24;
+  deploys work — e.g. the 2026-06-25 "what you'll see" site update shipped fine). So this is now just
+  _to-do_, no longer blocked.
+- **candor-rust CI self-guard nightly ICE** — largely superseded: the "ICE" was diagnosed as a *cosmetic*
+  rustc shutdown delayed-bug fired *after* candor wrote its complete report, and `cargo candor snapshot`
+  was fixed to gate on the report being written (see the Cross-model eval item below). The `guard`/self-
+  guard CI path still fails-closed on any nonzero by design. This session's candor-rust `ci` ran fully
+  green (2026-06-25), so it isn't currently firing. Remaining call (maintainer's): whether the guard path
+  should tolerate the same cosmetic nonzero that `snapshot` now does. See candor-rust/BACKLOG.md.
 - **Cross-model eval** — _largely done._ The speed/completeness A/B ran across **Fable 5 / Opus /
   Sonnet** (48 trials, `candor-rust/eval/scaled/RESULTS-speed-models.md`) and the decision-quality A/B
   across **Sonnet / Haiku 4.5** (`candor-rust/eval/agentuse/RESULTS-weak.md`): a clean gradient — the

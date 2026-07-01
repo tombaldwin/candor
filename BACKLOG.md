@@ -17,8 +17,11 @@ probes + the 14-part conformance differential. **All four engines are now publis
 Redis Db-vs-Net reconciliation (all Redis clients → Db; candor-java 0.7.11). Undirected corpus probing is
 now mined out (multiple consecutive clean rounds). The deployability gate is shipped end-to-end: AS-EFF-005
 ratchet, AS-EFF-006/008/009 policy, AS-EFF-010 **containment** + cross-engine conformance (PART 11). The
-spec is **stable at 0.7, no 0.8 queued** (a bump requires a new capability across ALL engines +
-conformance; none pending). Value now concentrates in:
+spec now advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md §"Versioning policy"):
+the reference engine may lead a minor/additive rung, the floor stays conformance-pinned, breaking bumps
+stay lockstep. First use: **spec 0.8** (reference-first) — the `--gate-json` gate verdict; **candor-java
+0.8.0 declares it** while ts/scan/swift stay on the 0.7 floor and raise to 0.8 as they implement it
+(conformance PART 12 is ladder-aware). Value now concentrates in:
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -80,7 +83,9 @@ in review → distribution drives teams to it. In priority order:
    `adopt/candor.yml` wiring (`security-events: write` + `--gate-json` + fetch/run `candor-sarif` +
    `upload-sarif`, both `if: always()`). Design + status: [`PR-GATE-DESIGN.md`](integrations/github/PR-GATE-DESIGN.md).
    Doesn't reposition vs Semgrep/CodeQL — SARIF is an output channel; the boundary-vs-pattern differentiation
-   is unchanged. **Remaining:** roll `--gate-json` to ts/scan/swift + conformance → promote to **spec 0.8**;
+   is unchanged. **spec 0.8 shipped reference-first** (candor-java 0.8.0 declares it; §3.3 `--gate-json`;
+   conformance PART 12 ladder-aware). **Remaining:** roll `--gate-json` to ts/scan/swift (each raises to 0.8,
+   floor rises; add sibling `conformance/gate/` fixtures then);
    the Action activates for users on the next candor-java **release** carrying `--gate-json` (currently only
    on candor-java `main`); P4 baseline-delta (`--since-baseline`); optional Check-Runs API (P5). Surfaced 2026-07-01.
 

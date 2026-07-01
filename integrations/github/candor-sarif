@@ -32,12 +32,23 @@ SPEC_URI = "https://github.com/tombaldwin/candor/blob/main/README.md"
 
 # AS-EFF rule metadata (the codes candor's policy checker emits). helpUri points at the concept.
 RULES = {
+    "AS-EFF-001": ("UndeclaredEffect", "A class performs an effect its capabilities don't cover (conformance)."),
+    "AS-EFF-002": ("UnusedCapability", "A class injects a capability it never uses (conformance)."),
+    "AS-EFF-003": ("UnresolvedCalls", "A class makes calls candor cannot resolve (conformance)."),
+    "AS-EFF-004": ("AmbientAuthority", "A function uses ambient authority directly instead of an injected capability."),
     "AS-EFF-005": ("BaselineEffectGained", "A function gained an effect versus the recorded baseline (ratchet)."),
     "AS-EFF-006": ("EffectBoundaryCrossed", "A function performs an effect a policy rule forbids in its layer."),
+    "AS-EFF-007": ("InjectionRisk", "An injection-class effect on caller-derived input (heuristic; advisory)."),
     "AS-EFF-008": ("EffectHostNotAllowlisted", "A function reaches a host/effect outside the allowlist."),
     "AS-EFF-009": ("ForbiddenEffectFlow", "A forbidden layer→effect flow is transitively reachable."),
     "AS-EFF-010": ("ContainmentBreached", "An effect escaped the layer it is contained to."),
 }
+
+# SARIF level per code. AS-EFF-007 is the sole heuristic ADVISORY (candor-spec §6 — it never fails CI, so
+# `ok` can stay true with a 007 in `violations`); it must surface as `warning`, not a false `error` alert.
+# Every other code is gate-failing → `error`.
+def level_of(rule):
+    return "warning" if rule == "AS-EFF-007" else "error"
 
 
 def load_json(path, what):
@@ -169,7 +180,7 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         seen_rules.setdefault(rule, RULES.get(rule, (rule, "A candor architecture-policy violation.")))
         res = {
             "ruleId": rule,
-            "level": "error",
+            "level": level_of(rule),
             "message": {"text": text},
             "partialFingerprints": {
                 "candorViolation": hashlib.sha256(f"{fn}|{rule}".encode()).hexdigest()[:16]
@@ -186,7 +197,7 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         "name": name,
         "shortDescription": {"text": desc},
         "helpUri": SPEC_URI,
-        "defaultConfiguration": {"level": "error"},
+        "defaultConfiguration": {"level": level_of(rid)},
     } for rid, (name, desc) in sorted(seen_rules.items())]
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",

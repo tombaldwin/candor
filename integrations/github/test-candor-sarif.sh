@@ -65,6 +65,13 @@ OUTQ=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate.json" --src-root 
 ok "codeFlows present with --query-cmd"        'printf "%s" "$OUTQ" | jq -e ".runs[0].results[0].codeFlows[0].threadFlows[0].locations|length==2" >/dev/null'
 ok "codeFlow traces to the source hop"         'printf "%s" "$OUTQ" | jq -e "[.runs[0].results[0].codeFlows[0].threadFlows[0].locations[].location.message.text] | any(test(\"audit — source\"))" >/dev/null'
 
+# advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
+echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
+OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)
+ok "advisory AS-EFF-007 result is level:warning"   '[ "$(printf "%s" "$OUTA" | jq -r ".runs[0].results[0].level")" = warning ]'
+ok "advisory rule metadata is level:warning"       '[ "$(printf "%s" "$OUTA" | jq -r ".runs[0].tool.driver.rules[0].defaultConfiguration.level")" = warning ]'
+ok "a gate-failing code stays level:error"         '[ "$(printf "%s" "$OUT" | jq -r ".runs[0].results[0].level")" = error ]'
+
 # clean gate (ok:true, no violations) -> valid SARIF, zero results.
 echo '{"spec":"0.7","ok":true,"violations":[]}' > "$WORK/clean.json"
 OUTC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/clean.json" 2>/dev/null)

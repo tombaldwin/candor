@@ -65,6 +65,17 @@ OUTQ=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate.json" --src-root 
 ok "codeFlows present with --query-cmd"        'printf "%s" "$OUTQ" | jq -e ".runs[0].results[0].codeFlows[0].threadFlows[0].locations|length==2" >/dev/null'
 ok "codeFlow traces to the source hop"         'printf "%s" "$OUTQ" | jq -e "[.runs[0].results[0].codeFlows[0].threadFlows[0].locations[].location.message.text] | any(test(\"audit — source\"))" >/dev/null'
 
+# effects: the SARIF uses the verdict's DENIED subset, not the report's (superset) direct set.
+cat > "$WORK/report2.json" <<'JSON'
+{"candor":{"spec":"0.8"},"functions":[
+  {"fn":"app.domain.Order.audit","loc":"Order.java:6","direct":["Clock","Fs"],"inferred":["Clock","Fs"]}
+]}
+JSON
+echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.audit","effects":["Fs"],"detail":"`audit` performs { Fs }, forbidden"}]}' > "$WORK/eff.json"
+OUTE=$(python3 "$SARIF" "$WORK/report2.json" --gate "$WORK/eff.json" --src-root src 2>/dev/null)
+ok "SARIF properties.effects = the denied subset"  '[ "$(printf "%s" "$OUTE" | jq -c ".runs[0].results[0].properties.effects")" = "[\"Fs\"]" ]'
+ok "effects is NOT the report superset direct set" '[ "$(printf "%s" "$OUTE" | jq -c ".runs[0].results[0].properties.effects")" != "[\"Clock\",\"Fs\"]" ]'
+
 # advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
 echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
 OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)

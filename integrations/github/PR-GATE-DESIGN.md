@@ -52,17 +52,18 @@ must never turn a red gate green).
 
 ### Where the structured violations come from — RESOLVED: fork B (built)
 
-SARIF needs a **structured** violation list (fn, rule) joined to `loc`. Chosen: **B — a structured gate
-dump**, for robustness (no console-line parsing; a single source of truth). Implemented in candor-java as
-`--gate-json <file>` → `{ spec, ok, violations:[{rule, fn, detail}] }`.
+SARIF needs a **structured** violation list (fn, rule, effects) joined to `loc`. Chosen: **B — a structured
+gate dump**, for robustness (no console-line parsing; a single source of truth). Implemented in candor-java
+as `--gate-json <file>` → `{ spec, ok, violations:[{rule, fn, effects, detail}] }`.
 
-The capture is the cleanest possible: **every** AS-EFF violation already flows through the one
-`Candor.diag(code, format, args…)` sink, and every call site passes the offending entity as `args[0]`. So
-`--gate-json` records `{rule: code, fn: args[0], detail: message}` at that single site — all codes, zero
-per-checker drift, and from the **same** diagnostics that print and set the exit code, so the SARIF can
-never disagree with the gate. `loc` + effects are joined by `fn` from the report envelope in the reporter
-(the report already carries them), so the verdict stays minimal. Off by default → byte-identical output
-(verified: report + console identical with/without the flag; full JUnit suite green).
+The capture funnels through the one `Candor.diag` sink — every AS-EFF call site passes the offending entity
+as `args[0]`, so `fn`/`rule`/`detail` are recorded there for **all** codes with zero per-checker drift, from
+the **same** diagnostics that print and set the exit code (the SARIF can never disagree with the gate). The
+effect-bearing codes additionally pass their **denied effect set** through a `diag` overload — `effects` is
+`(what the fn does) ∩ (what the rule forbids)`, e.g. `["Fs"]` for a `{Clock, Fs}` fn under `deny Fs`. This is
+the one field the report can't reconstruct (its per-fn `direct` set is a superset), so the reporter uses it
+to trace the *right* effect into a codeFlow. `loc` is still joined by `fn` from the report. Off by default →
+byte-identical output (verified: report + console identical with/without the flag; full JUnit suite green).
 
 This is a candor-java **engine feature at the current spec 0.7** — not a spec change (queries/outputs are
 "an interface convenience, not the wire contract", SPEC §3.1; and the versioning policy has the reference

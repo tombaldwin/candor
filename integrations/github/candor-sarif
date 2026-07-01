@@ -186,6 +186,8 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
                 "candorViolation": hashlib.sha256(f"{fn}|{rule}".encode()).hexdigest()[:16]
             },
         }
+        if effects:
+            res["properties"] = {"effects": effects}   # the denied set, structured (not just in the message prose)
         ph = physical_location(fn, loc, src_root) if loc else None
         res["locations"] = [ph] if ph else []
         cf = code_flow(query_cmd, report_path, fn, effects[0] if effects else None, src_root, loc_idx)

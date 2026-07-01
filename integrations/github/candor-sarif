@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""candor-sarif — turn a candor policy verdict into SARIF 2.1.0 so architecture-gate violations
+surface WHERE code review happens: inline on the PR diff AND in the GitHub Code-scanning / Security tab.
+
+It is a reporter over the STANDARD outputs — the spec-0.7 report envelope + the engine's structured
+`gate --json` verdict — so one implementation serves every engine (nothing here is JVM-specific except
+the loc→path resolution note below). It does NOT re-run analysis and never changes the pass/fail verdict;
+the engine's exit code stays the source of truth. See PR-GATE-DESIGN.md.
+
+Usage:
+    candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD"] [-o out.sarif]
+
+    <report.json>   the spec-0.7 report (carries each function's `loc`)
+    --gate FILE     the engine's `gate --json` output: {"violations":[{fn,rule,effects,loc,...}],"ok":bool}
+                    ('-' or omitted → read from stdin)
+    --src-root DIR  source root the SARIF `uri` is relative to (default "."). candor-java's `loc` is a bare
+                    `File.java:line` (the bytecode SourceFile), so the repo path is rebuilt from the fn's
+                    package: app.domain.Order.audit + Order.java → <src-root>/app/domain/Order.java. Scan
+                    engines whose `loc` is already a path use it as-is.
+    --query-cmd CMD optional engine query command (e.g. 'java -jar candor-java-all.jar classes'); when set,
+                    each violation gets a SARIF codeFlow from `CMD path <fn> <effect>` — the hop chain to
+                    the effect source, rendered as a clickable trace in the Security tab.
+    -o FILE         write SARIF here (default stdout).
+
+Exit: 0 always (surfacing is advisory; the gate already decided). A malformed input is reported on stderr
+and yields an empty-results SARIF rather than a crash — never masks the gate.
+"""
+import argparse, hashlib, json, re, shlex, subprocess, sys
+
+INFO_URI = "https://candor.poly.io"
+SPEC_URI = "https://github.com/tombaldwin/candor/blob/main/README.md"
+
+# AS-EFF rule metadata (the codes candor's policy checker emits). helpUri points at the concept.
+RULES = {
+    "AS-EFF-005": ("BaselineEffectGained", "A function gained an effect versus the recorded baseline (ratchet)."),
+    "AS-EFF-006": ("EffectBoundaryCrossed", "A function performs an effect a policy rule forbids in its layer."),
+    "AS-EFF-008": ("EffectHostNotAllowlisted", "A function reaches a host/effect outside the allowlist."),
+    "AS-EFF-009": ("ForbiddenEffectFlow", "A forbidden layer→effect flow is transitively reachable."),
+    "AS-EFF-010": ("ContainmentBreached", "An effect escaped the layer it is contained to."),
+}
+
+
+def load_json(path, what):
+    try:
+        raw = sys.stdin.read() if path in (None, "-") else open(path, encoding="utf-8").read()
+        return json.loads(raw)
+    except Exception as e:
+        print(f"candor-sarif: could not read {what} ({path}): {e}", file=sys.stderr)
+        return None
+
+
+def fn_loc_index(report):
+    """fn name -> its `loc` string, from the report envelope."""
+    idx = {}
+    for f in (report or {}).get("functions", []):
+        if "fn" in f and f.get("loc"):
+            idx[f["fn"]] = f["loc"]
+    return idx
+
+
+def fn_effects_index(report):
+    """fn name -> its `direct` effect names, from the report envelope (the effects it performs itself —
+    what a codeFlow to the source should trace). Used when the gate verdict doesn't carry effects."""
+    idx = {}
+    for f in (report or {}).get("functions", []):
+        if "fn" in f:
+            idx[f["fn"]] = f.get("direct") or f.get("inferred") or []
+    return idx
+
+
+def parse_loc(loc):
+    """`File.java:6` or `path/f.rs:10:1: 10:9` -> (file, startLine, startCol, endLine, endCol)."""
+    if not loc:
+        return None
+    m = re.match(r"^(.*?):(\d+)(?::(\d+))?(?::\s*(\d+):(\d+))?$", loc.strip())
+    if not m:
+        # a bare filename with no line — locate the file, no region
+        return (loc.strip(), None, None, None, None)
+    f, l1, c1, l2, c2 = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
+    return (f, int(l1), int(c1) if c1 else None, int(l2) if l2 else None, int(c2) if c2 else None)
+
+
+def repo_uri(fn, locfile, src_root):
+    """Repo-relative path for the SARIF `uri`. If `locfile` already looks like a path (has a separator) it is
+    a scan engine's already-repo-relative loc — trust it as-is. Else it is a bytecode bare filename
+    (candor-java's SourceFile) — rebuild it from the fn's package under --src-root: a.b.C.m + C.java (root
+    `src`) -> src/a/b/C.java. --src-root ONLY affects this rebuild; a path-style loc is never re-rooted."""
+    if "/" in locfile:
+        return locfile
+    root = src_root.rstrip("/")
+    pkg = ""
+    # the package is the fn minus the last two dotted segments (Class.method); best-effort.
+    parts = fn.split(".")
+    if len(parts) >= 3:
+        pkg = "/".join(parts[:-2])
+    uri = f"{pkg}/{locfile}" if pkg else locfile
+    return f"{root}/{uri}" if root and root != "." else uri
+
+
+def physical_location(fn, loc, src_root):
+    p = parse_loc(loc)
+    if not p:
+        return None
+    locfile, l1, c1, l2, c2 = p
+    region = {}
+    if l1:
+        region["startLine"] = l1
+        if c1:
+            region["startColumn"] = c1
+        if l2:
+            region["endLine"] = l2
+        if c2:
+            region["endColumn"] = c2
+    ph = {"artifactLocation": {"uri": repo_uri(fn, locfile, src_root)}}
+    if region:
+        ph["region"] = region
+    return {"physicalLocation": ph}
+
+
+def code_flow(query_cmd, report_path, fn, effect, src_root, loc_idx):
+    """Run `CMD path <report> <fn> <effect> --json` -> a SARIF codeFlow (the hop chain to the source)."""
+    if not query_cmd or not effect:
+        return None
+    try:
+        out = subprocess.run(shlex.split(query_cmd) + ["path", report_path, fn, effect, "--json"],
+                             capture_output=True, text=True, timeout=120)
+        data = json.loads(out.stdout)
+    except Exception as e:
+        print(f"candor-sarif: path query failed for {fn}/{effect}: {e}", file=sys.stderr)
+        return None
+    hops = data.get("path") or []
+    if not hops:
+        return None
+    tf = []
+    for h in hops:
+        hfn = h.get("fn", "?")
+        hloc = h.get("loc") or loc_idx.get(hfn)
+        ph = physical_location(hfn, hloc, src_root) if hloc else None
+        step = {"location": {"message": {"text": f"{hfn}{' — source' if h.get('source') else ''}"}}}
+        if ph:
+            step["location"].update(ph)
+        tf.append(step)
+    return [{"threadFlows": [{"locations": tf}]}]
+
+
+def build_sarif(report, report_path, gate, src_root, query_cmd):
+    loc_idx = fn_loc_index(report)
+    eff_idx = fn_effects_index(report)
+    violations = (gate or {}).get("violations", []) or []
+    seen_rules, results = {}, []
+    for v in violations:
+        fn, rule = v.get("fn"), v.get("rule", "AS-EFF-006")
+        if not fn:
+            continue
+        # loc + effects come from the gate verdict if present, else the report envelope (joined by fn).
+        effects = v.get("effects") or eff_idx.get(fn) or []
+        loc = v.get("loc") or loc_idx.get(fn)
+        scope = v.get("scope")
+        # `detail` (from the engine's own diagnostic) is authoritative and already names fn/effect/rule;
+        # only compose a message when the verdict didn't carry one.
+        detail = v.get("detail")
+        if detail:
+            text = detail
+        else:
+            eff_txt = "{" + ", ".join(effects) + "}" if effects else "a forbidden effect"
+            text = f"{fn} performs {eff_txt}"
+            if scope:
+                text += f" — crossing the `{scope}` boundary"
+        seen_rules.setdefault(rule, RULES.get(rule, (rule, "A candor architecture-policy violation.")))
+        res = {
+            "ruleId": rule,
+            "level": "error",
+            "message": {"text": text},
+            "partialFingerprints": {
+                "candorViolation": hashlib.sha256(f"{fn}|{rule}".encode()).hexdigest()[:16]
+            },
+        }
+        ph = physical_location(fn, loc, src_root) if loc else None
+        res["locations"] = [ph] if ph else []
+        cf = code_flow(query_cmd, report_path, fn, effects[0] if effects else None, src_root, loc_idx)
+        if cf:
+            res["codeFlows"] = cf
+        results.append(res)
+    rules = [{
+        "id": rid,
+        "name": name,
+        "shortDescription": {"text": desc},
+        "helpUri": SPEC_URI,
+        "defaultConfiguration": {"level": "error"},
+    } for rid, (name, desc) in sorted(seen_rules.items())]
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {"name": "candor", "informationUri": INFO_URI, "rules": rules}},
+            "results": results,
+        }],
+    }
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="candor-sarif", add_help=True)
+    ap.add_argument("report")
+    ap.add_argument("--gate", default="-")
+    ap.add_argument("--src-root", default=".")
+    ap.add_argument("--query-cmd", default=None)
+    ap.add_argument("-o", "--out", default=None)
+    args = ap.parse_args(argv)
+
+    report = load_json(args.report, "report") or {"functions": []}
+    gate = load_json(args.gate, "gate") or {"violations": []}
+    sarif = build_sarif(report, args.report, gate, args.src_root, args.query_cmd)
+    text = json.dumps(sarif, indent=2)
+    if args.out:
+        open(args.out, "w", encoding="utf-8").write(text + "\n")
+    else:
+        print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

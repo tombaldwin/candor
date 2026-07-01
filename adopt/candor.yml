@@ -1,12 +1,13 @@
 # candor — architecture gate for the JVM
 #
 # Copy this file to .github/workflows/candor.yml in your repo, drop an `arch.policy`
-# at the repo root (see adopt/arch.policy for a template), and edit the two marked
-# spots: your build step and your compiled-classes directory.
+# at the repo root (see adopt/arch.policy for a template), and edit the three marked
+# spots: your build step, your compiled-classes directory, and your source root.
 #
-# What it does: builds your project, then runs candor-java over the compiled
-# bytecode with your policy. A policy violation prints the offending method and
-# fails the check (exit 1), so the architecture rule is enforced on every push/PR.
+# What it does: builds your project, runs candor-java over the compiled bytecode with
+# your policy, and — the PR-native part — writes the violations as SARIF so they show up
+# INLINE on the pull-request diff AND in the repo's Code-scanning / Security tab, on the
+# exact line a boundary is crossed. A policy violation still fails the check (exit 1).
 
 name: candor architecture gate
 
@@ -14,6 +15,10 @@ on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+  security-events: write        # required to upload the SARIF (the Code-scanning surface)
 
 jobs:
   arch-gate:
@@ -38,21 +43,45 @@ jobs:
       # jbang fetches and runs candor-java (no install, pinned via the alias).
       - uses: jbangdev/setup-jbang@main
 
-      # ── EDIT 2: point CLASSES at your compiled output ───────────────────────
-      #   Maven  → target/classes
-      #   Gradle → build/classes/java/main
-      # One run writes the full effect report AND enforces the policy: it exits 1
-      # (failing this check) on any violation, printing the offending method.
+      # ── EDIT 2+3: CLASSES = compiled output · SRC = source root ─────────────
+      #   Maven  → CLASSES target/classes             · SRC src/main/java
+      #   Gradle → CLASSES build/classes/java/main     · SRC src/main/java
+      # One run writes the effect report, the machine-readable gate verdict
+      # (--gate-json), AND enforces the policy: it exits 1 (failing this check) on
+      # any violation, printing the offending method.
       - name: candor architecture gate
+        id: gate
         env:
           CANDOR_POLICY: arch.policy
           CLASSES: target/classes
-        run: jbang candor@tombaldwin/candor-java "$CLASSES" --json candor-report.json
+        run: jbang candor@tombaldwin/candor-java "$CLASSES" --json candor-report.json --gate-json candor-gate.json
+
+      # Turn the gate verdict into SARIF and surface it on the PR + Security tab.
+      # Runs even when the gate FAILED (that's the point — show the violation on the push).
+      # Requires candor-java with --gate-json (≥ the release that adds it); older jars skip this.
+      - name: candor → SARIF
+        if: always() && hashFiles('candor-gate.json') != ''
+        env:
+          SRC: src/main/java     # ← EDIT 3: your source root (for repo-relative line links)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/main/integrations/github/candor-sarif -o candor-sarif
+          python3 candor-sarif candor-report.json --gate candor-gate.json --src-root "$SRC" -o candor.sarif
+          # For a clickable "how the effect reaches here" trace on each finding, add:
+          #   --query-cmd "jbang candor@tombaldwin/candor-java"   (one query per violation — slower)
+
+      - name: upload SARIF
+        if: always() && hashFiles('candor.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: candor.sarif
 
       # Keep the full effect report as a build artifact (optional, handy for review).
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: candor-report
-          path: candor-report.json
+          path: |
+            candor-report.json
+            candor-gate.json
+            candor.sarif
           if-no-files-found: ignore

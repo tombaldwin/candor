@@ -111,8 +111,11 @@ if [ "$rc" -eq 1 ]; then
     reason='"candor flagged this change (a policy violation or a newly-introduced effect). Run integrations/claude-code/candor-review.sh for the verdict; install jq to see it inline here."'
   fi
   if have_jq && [ "$notice" != "quiet" ] && [ "$notice" != "off" ]; then
-    umsg=$(printf '%s' "$review" | grep -E 'GATE FAILED|introduced new effects' | head -1)
-    [ -z "$umsg" ] && umsg="candor ⚠ blocked this change — the agent has the verdict"
+    # a user-facing ⚠ line that NAMES the cause — not the dangling "...introduced new effects:" header.
+    # Prefer a policy AS-EFF line; else the first `• fn introduces {E}` introducer; else a generic notice.
+    umsg=$(printf '%s' "$review" | grep -E 'AS-EFF' | head -1 | sed 's/^ *//')
+    [ -z "$umsg" ] && umsg=$(printf '%s' "$review" | grep -E 'introduces \{' | head -1 | sed 's/^ *•* *//')
+    if [ -n "$umsg" ]; then umsg="candor ⚠ blocked — $umsg"; else umsg="candor ⚠ blocked this change — the agent has the verdict"; fi
     printf '{"decision":"block","reason":%s,"systemMessage":%s}\n' "$reason" "$(printf '%s' "$umsg" | jq -Rs .)"
   else
     printf '{"decision":"block","reason":%s}\n' "$reason"

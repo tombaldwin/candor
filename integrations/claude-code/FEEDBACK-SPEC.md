@@ -186,7 +186,11 @@ that capture tool output.
 ## Phasing
 
 - **P0 — verify delivery.** ✓ done — channel is `systemMessage` (see top).
-- **P1 — per-turn notice.** ✓ built — `systemMessage` on clean/block/setup; `CANDOR_HOOK_NOTICE`.
+- **P1 — per-turn notice.** ✓ built — `systemMessage` on clean/block/setup; `CANDOR_HOOK_NOTICE`. The
+  block-path user notice NAMES the cause (the `AS-EFF` line or the `• fn introduces {E}` introducer), not the
+  dangling `…introduced new effects:` header (fixed 2026-07-01). Contract locked by `test-stop-hook.sh` (22
+  assertions: every path is valid JSON, clean allows, block fires + names the cause, setup allows, the
+  active-guard doesn't re-run the review, the activity log appends).
 - **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
   gained/violations, rotation, privacy. **P2.1 ✓** — a `CANDOR_SUMMARY` trailer from the reviews
   adds `effects`/`unknowns`/`reviewMs`. Still out: `maxHops`, standalone/CI logging.

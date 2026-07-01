@@ -41,15 +41,21 @@ Value now runs in **two parallel tracks** (see the Priority note above); within 
   exit contract; the delta is computed from the spec-0.7 report envelope so it's engine-agnostic and catches
   pure→effectful. _Remaining polish:_ a richer in-IDE/MCP push.
 
-- **[P0-adjacent] Agent-visible feedback — "candor checked this" + session stats (spec'd, partly built).**
-  The Stop hook is silent on a clean turn (`rc=0 → {}`), so when nothing's wrong the user can't tell candor
-  is even running — invisible help gets uninstalled. Add (A) a per-turn `candor: ✓ checked …` notice, (B)
-  measured session stats from a `.candor/activity.jsonl` the review appends each run, and (C) a clearly
-  *labelled* savings estimate (model from the published 17×/50×/38× benchmark, never a measurement — candor's
-  own ROI counter must hold to its disclosure-not-fabrication standard). Mostly a surfacing/aggregation layer
-  over what the review already computes; no effect-contract change. Full design (formats, config, phasing,
-  honesty contract) in [`integrations/claude-code/FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md).
-  Surfaced 2026-06-23.
+- **[P0-adjacent] Agent-visible feedback — "candor checked this" + session stats — SHIPPED (2026-06-23/24).**
+  The Stop hook was silent on a clean turn (`rc=0 → {}`), so when nothing's wrong the user couldn't tell candor
+  ran — invisible help gets uninstalled. All phases built: (A) a per-turn `candor: ✓ checked …` notice via the
+  Stop hook's `systemMessage` (`CANDOR_HOOK_NOTICE` = summary|changes|quiet|off); (B) measured session stats
+  from `.candor/activity.jsonl` (the hook appends one record per turn — verdict, edited files sourced from the
+  transcript, gained effects, blast radius, plus the P2.1 `CANDOR_SUMMARY` trailer's Unknown/effects/wall-time)
+  surfaced by `candor-agents stats`; (C) the labelled per-answer/`savings` model (`candor-agents savings` counts
+  real candor-query calls in the transcript vs the published 17×/50×/38× benchmark — "model, not measured", no
+  fake-precise total). Design + phasing in [`FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md);
+  candor-agents suite 234 green. **Dogfood pass 2026-07-01** exercised the loop end-to-end on a live scan-source
+  turn and fixed one finding: the block-path user notice was a dangling header (`…introduced new effects:`) —
+  now names the cause (the `• fn introduces {E}` introducer or the `AS-EFF` line). Added `test-stop-hook.sh`
+  (22 assertions locking the JSON output contract — clean/block/setup × verbosity, the active-guard no-loop,
+  activity-log append; previously only ad-hoc-tested). _Remaining (deferred, not P0):_ `maxHops` in the log
+  (needs graph depth, not cheap); logging on standalone/CI runs (today hook-side only); a richer in-IDE/MCP push.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor

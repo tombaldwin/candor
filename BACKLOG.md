@@ -20,6 +20,13 @@ ratchet, AS-EFF-006/008/009 policy, AS-EFF-010 **containment** + cross-engine co
 spec is **stable at 0.7, no 0.8 queued** (a bump requires a new capability across ALL engines +
 conformance; none pending). Value now concentrates in:
 
+**Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
+fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
+bet (effect-aware feedback into a live AI coding loop is novel and hard to copy); the **JVM architecture
+gate** is the solid-engineering wedge (proven, deterministic, sellable). This supersedes any reading of
+the 2026-06-18 repositioning as *demoting* the agent angle — that made the gate the lead **sales** wedge,
+not a reason to stop investing in the agent loop, which stays P0 below.
+
 - **[P0 — north star] Agent edit-time blast-radius feedback.** The `diff` / MCP surface ships, and the
   edit-time delivery loop now ships too: [`integrations/claude-code/`](integrations/claude-code/) — a Stop
   hook (`stop-hook.sh`, script selected by `CANDOR_REVIEW`) that scans the agent's turn, diffs effects vs a
@@ -59,9 +66,11 @@ conformance; none pending). Value now concentrates in:
 
 ### New bets surfaced 2026-07-01 (planning review)
 
-The frame: analysis **capability is mature/mined-out** and the spec is stable at 0.7 — so the highest-
-leverage new work is **adoption-surface**, i.e. getting the proven JVM gate in front of a team with less
-friction and making it visible where the buying decision happens (code review), not more analysis depth.
+The frame: analysis **capability is mature/mined-out** and the spec is stable at 0.7 — so new work is
+**surface, not depth**. Most of the bets below are the **arch-gate adoption** track (the solid-engineering
+wedge — get the proven gate in front of teams, visible where the buying decision happens); the priority
+**agent-loop** north-star is carried by the P0 edit-time-feedback item + agent-visible feedback above, and
+the IDE/LSP bet below serves it too.
 
 - **[adoption — highest leverage] PR-native gate surfacing (GitHub Check + SARIF).** candor gates today
   via a CI exit code, the local Stop hook, and CLI queries — but the surface where architecture gates

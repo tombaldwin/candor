@@ -67,15 +67,22 @@ Value now runs in **two parallel tracks** (see the Priority note above); within 
 One funnel: `candor init` writes the policy + config + Action → PR-native surfacing makes the gate visible
 in review → distribution drives teams to it. In priority order:
 
-1. **PR-native gate surfacing (GitHub Check + SARIF) — highest leverage.** candor gates today via a CI
-   exit code, the local Stop hook, and CLI queries — but the surface where architecture gates actually get
-   adopted, **code review**, isn't covered. Emit a GitHub Check that annotates the exact line a boundary is
-   crossed ("`OrderService.quote` now reaches `Db`, crossing the domain→infra boundary you declared — 3
-   hops via `billing.charge`") and **SARIF** so violations land in the native Code-scanning / Security tab
-   (table stakes for the enterprise/government buyer). This is "enforced on every push" made visible *on the
-   push*. Builds on the existing AS-EFF policy + `whatif`/blast-radius machinery; the new work is the
-   reporter (annotations + SARIF writer) + the Action wiring. Doesn't reposition vs Semgrep/CodeQL — SARIF
-   is an output channel, the boundary-vs-pattern differentiation is unchanged. Surfaced 2026-07-01.
+1. **PR-native gate surfacing (SARIF) — P1–P3 SHIPPED on the JVM flagship (2026-07-01).** The surface where
+   architecture gates actually get adopted — **code review** — is now covered: violations land inline on the
+   PR diff AND in the Code-scanning / Security tab, on the exact line a boundary is crossed, via **SARIF**
+   (table stakes for the enterprise/government buyer). Built: (P0) candor-java `--gate-json` — a structured
+   verdict `{spec, ok, violations:[{rule,fn,detail}]}` captured at the one `diag` sink (all AS-EFF codes,
+   byte-identical when off, from the same diagnostics that set the exit code so the SARIF can't disagree with
+   the gate); (P1) [`integrations/github/candor-sarif`](integrations/github/candor-sarif) — report + verdict →
+   SARIF 2.1.0, `loc`→repo-path resolution (bytecode bare-filename rebuilt from the fn package under
+   `--src-root`; scan-engine path-locs as-is), `partialFingerprints` dedup, 16-assertion hermetic test;
+   (P2) codeFlows from the `path` query (the "how the effect reaches here" hop chain, clickable); (P3)
+   `adopt/candor.yml` wiring (`security-events: write` + `--gate-json` + fetch/run `candor-sarif` +
+   `upload-sarif`, both `if: always()`). Design + status: [`PR-GATE-DESIGN.md`](integrations/github/PR-GATE-DESIGN.md).
+   Doesn't reposition vs Semgrep/CodeQL — SARIF is an output channel; the boundary-vs-pattern differentiation
+   is unchanged. **Remaining:** roll `--gate-json` to ts/scan/swift + conformance → promote to **spec 0.8**;
+   the Action activates for users on the next candor-java **release** carrying `--gate-json` (currently only
+   on candor-java `main`); P4 baseline-delta (`--since-baseline`); optional Check-Runs API (P5). Surfaced 2026-07-01.
 
 2. **Policy inference / `candor init`.** The real barrier to the gate isn't running candor — it's knowing
    *what policy to write*. Have candor read the current structure and **propose** a starter policy from

@@ -56,11 +56,16 @@ The rule kinds (full grammar + examples in [`arch.policy`](./arch.policy)):
 
 ## 3. Wire it into CI
 
-Copy [`candor.yml`](./candor.yml) to `.github/workflows/candor.yml` and edit the two
-marked spots (your build command and your compiled-classes directory:
-`target/classes` for Maven, `build/classes/java/main` for Gradle). That's it — every
-push and pull request now runs the gate, and the architecture rule fails the build
-when someone breaks it.
+Copy [`candor.yml`](./candor.yml) to `.github/workflows/candor.yml` and edit the three
+marked spots (your build command, your compiled-classes directory —
+`target/classes` for Maven, `build/classes/java/main` for Gradle — and your source
+root). That's it — every push and pull request now runs the gate, and the architecture
+rule fails the build when someone breaks it.
+
+The workflow also writes the violations as **SARIF**, so they surface **inline on the
+pull-request diff** and in the repo's **Code-scanning / Security** tab — on the exact line
+a boundary is crossed, not just as a red check. (Needs a candor-java release carrying
+`--gate-json`; see [`../integrations/github/`](../integrations/github/README.md).)
 
 ---
 

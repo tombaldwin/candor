@@ -11,7 +11,8 @@ the live §6.2 gate verdict as diagnostics (config-discovered policy), over the 
 against candor-ts AND candor-java reports (bare bytecode locs resolve via package segments); freshness by
 re-reading reports per request (watch/stop-hook/build refresh the lenses; the server never scans, §7.12).
 Editor wiring documented for helix/neovim (native LSP clients). Remaining P2 slices: a thin VS Code client
-extension, hover provenance (the `path` hop chain), the `whatif` code-action, large-repo lens performance.
+extension, the `whatif` code-action, large-repo lens performance. (Hover provenance SHIPPED 2026-07-02:
+the path hop chain per inherited effect + unknownWhy/invisible disclosure + the blast-radius count.)
 Original scoping below.
 
 ## What exists today (the inventory that changes the picture)

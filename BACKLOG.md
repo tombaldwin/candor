@@ -49,8 +49,8 @@ both site items resolved — see *Deferred*.
   **Bet 2 — `candor-lsp` — P1 SHIPPED (2026-07-02):** CodeLens `⚡ effects · blast radius N` + the live
   gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
   freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
-  _Remaining P2 slices:_ a thin VS Code client extension, hover provenance, the whatif code-action,
-  large-repo lens performance. **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  _Remaining P2 slices:_ a thin VS Code client extension, the whatif code-action, large-repo lens
+  performance (hover provenance shipped 2026-07-02; rides the next candor-ts publish). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
   the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
   every released artifact is current with main.
 

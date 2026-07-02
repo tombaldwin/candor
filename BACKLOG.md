@@ -54,11 +54,11 @@ both site items resolved — see *Deferred*.
   slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
   → auto npm-install) — **PR OPEN:
   [redhat-developer/lsp4ij#1609](https://github.com/redhat-developer/lsp4ij/pull/1609)** (watch for
-  maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — the
-  Marketplace-plugin skeleton: LSP4IJ client spawning the VERIFIED 20KB single-file server bundle +
-  the JVM freshness loop (the bundled candor-java jar re-scans after every successful build, opt-in
-  via `.candor/`). Next: compile-verify (`gradle buildPlugin`, ~1GB SDK), runIde smoke, Marketplace
-  vendor account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — **COMPILE-VERIFIED + PACKAGED
+  (2026-07-02):** `gradle buildPlugin` → `candor-intellij-0.1.0.zip` (sideloadable) against IC 2024.3 +
+  LSP4IJ 0.20.1, embedding the verified 18KB server bundle + the v0.8.2 engine jar; the JVM freshness
+  loop uses the modern ProjectTaskListener API. Next: runIde smoke, the Beaky icon, Marketplace vendor
+  account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
   the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
   every released artifact is current with main.
 

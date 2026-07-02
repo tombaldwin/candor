@@ -78,6 +78,15 @@ else
   BASELINE_NOTE=".candor/baseline.json   ← the regression ratchet baseline"
 fi
 
+# 3a. the checked-in config (spec §3.4, never clobber): makes local runs "point at the repo" — the
+# policy + ratchet baseline resolve from .candor/config with no env wiring (env still overrides).
+if [ ! -f .candor/config ]; then
+  printf '# candor configuration (spec §3.4) — the checked-in floor; CANDOR_* env vars override.\npolicy   arch.policy\nbaseline .candor/baseline.json\n' > .candor/config
+  CONFIG_NOTE=".candor/config          ← policy + baseline wired (env vars still override)"
+else
+  CONFIG_NOTE=".candor/config already exists — left it"
+fi
+
 # 3b. vendor the SARIF reporter beside the baseline (never clobber) — the Action prefers this copy over
 # a curl of the umbrella repo's unpinned main, so a breaking upstream push can't affect this repo's CI.
 if [ ! -f .candor/candor-sarif ] && [ -f "$HERE/../integrations/github/candor-sarif" ]; then
@@ -97,6 +106,7 @@ echo
 echo "candor init: done. Scaffolded:"
 echo "  $POLICY_NOTE"
 echo "  $BASELINE_NOTE"
+echo "  $CONFIG_NOTE"
 echo "  $ACTION_NOTE"
 echo
 echo "Next: review arch.policy, keep the rules you want, then commit. Check it locally:"

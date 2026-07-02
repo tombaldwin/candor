@@ -39,6 +39,7 @@ ok "policy proposes pure for the pure layer"     'grep -qE "^pure com\.shop\.dom
 ok "policy proposes deny for the effect layer"   'grep -qE "^deny .* com\.shop\.repo" arch.policy'
 ok "writes the ratchet baseline"                 '[ -f .candor/baseline.json ]'
 ok "drops the GitHub Action"                     '[ -f .github/workflows/candor.yml ]'
+ok "writes .candor/config (policy + baseline)"   'grep -qE "^policy +arch.policy" .candor/config && grep -qE "^baseline" .candor/config'
 ok "the Action is the candor gate"               'grep -q "candor architecture gate" .github/workflows/candor.yml'
 
 # re-run: must NOT clobber the (hand-edited) arch.policy or the workflow.
@@ -96,6 +97,9 @@ echo '{"marker":"original-baseline"}' > .candor/baseline.json
 CANDOR_SCAN_CMD="$MOCK" bash "$INIT" classes >"$WORK/relog" 2>&1
 ok "re-run leaves the existing baseline"           'grep -q "original-baseline" .candor/baseline.json'
 ok "re-run says the baseline was left"             'grep -q "baseline.json already exists" "$WORK/relog"'
+echo '# hand-edited' >> .candor/config
+CANDOR_SCAN_CMD="$MOCK" bash "$INIT" classes >/dev/null 2>&1
+ok "re-run does NOT clobber .candor/config"        'grep -q "hand-edited" .candor/config'
 
 echo
 echo "test: $pass passed, $fail failed"

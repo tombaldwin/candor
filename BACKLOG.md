@@ -69,14 +69,13 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    [`adopt/candor-init.sh`](adopt/candor-init.sh) scaffolds policy + baseline + Action in one command.
    Both hermetically tested, in umbrella CI, documented as the fast start in `adopt/README`.
 
-3. **Consolidated `.candor/config` file — reference impl SHIPPED in candor-java (2026-07-02); cross-engine
-   roll OPEN.** A checked-in `key value` file (§6.2 lexical) replacing the `CANDOR_*` env wiring; keys map
-   1:1 to the env vars; precedence CLI → env → config → default (env still wins for a one-off run); located
-   at `.candor/config` or `$CANDOR_CONFIG`. Schema: `candor-spec/proposals/config-file.md`. **Remaining:**
-   roll the same parse+precedence to candor-scan/ts/swift; a conformance parse-agreement check (the
-   `parsepolicy` pattern); then a normative §config in the spec (not a contract bump — config, not wire) and
-   `candor-init.sh` scaffolding it. (NB: the lone `.candor/config` in `candor-rust/eval/minicache` is an
-   eval-harness file holding `CANDOR_LIB`, unrelated.)
+3. **Consolidated `.candor/config` file — DONE across all four engines (2026-07-02); normative as
+   SPEC.md §3.4.** A checked-in `key value` file replacing the `CANDOR_*` env wiring: shared 7-key
+   vocabulary (inert-if-unimplemented, warn-if-unknown), target-anchored discovery (`$CANDOR_CONFIG`
+   overrides), precedence CLI → env → config → default, fail-closed when configured-but-unusable.
+   Conformance **PART 13** pins discovery/precedence/fail-closed per engine (1/0/2, all four green);
+   `candor-init.sh` scaffolds it (policy + baseline wired, never clobbered). An additive amendment
+   within 0.8 — configuration, not the wire contract. On each engine's main; rides the next cuts.
 
 4. **Distribution — CLEARED (2026-07-02).** The proven wedge is now on the site:
    [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (the five studies, deployed) and

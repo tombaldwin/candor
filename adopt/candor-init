@@ -91,33 +91,58 @@ def analyze(report, callgraph):
     all_names = list(callgraph.keys()) if isinstance(callgraph, dict) else effect_names
     sep = "::" if any("::" in n for n in all_names) else "."
     prefix = common_prefix_segments(all_names, sep)
-    layers = {}  # layer -> {"fns": int, "effects": set}
+    layers = {}  # layer -> {"fns": int, "effects": set, "unknown": bool}
     for fn in all_names:                       # enumerate layers from ALL fns (pure layers appear here)
         L = layer_of(fn, prefix, sep)
         if L is not None:
-            layers.setdefault(L, {"fns": 0, "effects": set()})["fns"] += 1
-    eff_by_fn = {f["fn"]: [e for e in f.get("inferred", []) if e != "Unknown"] for f in fns if "fn" in f}
-    for fn, effs in eff_by_fn.items():         # effects come from the report (only effectful fns)
+            layers.setdefault(L, {"fns": 0, "effects": set(), "unknown": False})["fns"] += 1
+    for f in fns:                              # effects come from the report (only effectful fns)
+        fn = f.get("fn")
+        if not fn:
+            continue
         L = layer_of(fn, prefix, sep)
-        if L is not None and L in layers:
-            layers[L]["effects"].update(effs)
+        if L is None or L not in layers:
+            continue
+        inferred = f.get("inferred", [])
+        layers[L]["effects"].update(e for e in inferred if e != "Unknown")
+        if "Unknown" in inferred:
+            layers[L]["unknown"] = True        # disclosed opacity — `pure` would fail (not certifiably pure)
     return ".".join(prefix), sep, layers
 
 
 def propose(prefix, layers, min_fns):
-    lines, pure, denies = [], [], []
-    for L in sorted(layers):
+    lines, pure, denies, skipped = [], [], [], []
+    names = sorted(layers)
+    for L in names:
         rec = layers[L]
         if rec["fns"] < min_fns:
             continue
         full = f"{prefix}.{L}" if prefix else L
+        # §6.2 scope matching is last-segment-PREFIX: a scope for layer `api` also binds a sibling
+        # `apiv2`, so a rule proposed from api's fns alone may FAIL on the sibling's — breaking the
+        # "every rule currently passes" guarantee. Skip prefix-colliding layers, say why.
+        collide = [o for o in names if o != L and o.startswith(L)]
+        if collide:
+            skipped.append((full, [f"{prefix}.{o}" if prefix else o for o in collide]))
+            continue
         if not rec["effects"]:
+            if rec["unknown"]:
+                # Disclosed opacity: `pure` fails on the scan-source engines ("performs { Unknown },
+                # not certifiably pure"), so proposing it would break the passes-today guarantee.
+                skipped.append((full, ["discloses Unknown — cannot certify `pure`"]))
+                continue
             pure.append((full, rec["fns"]))
         else:
             missing = [e for e in BOUNDARY if e not in rec["effects"]]
             if missing:
                 have = ", ".join(sorted(rec["effects"]))
                 denies.append((full, missing, have, rec["fns"]))
+    if skipped:
+        lines.append("# ── Layers candor-init did NOT write a rule for (and why) ──")
+        for full, why in skipped:
+            w = why[0] if why and why[0].startswith("discloses") else                 "scope would also bind sibling layer(s) " + ", ".join(why) + " (§6.2 last-segment prefix match)"
+            lines.append(f"# {full}: skipped — {w}")
+        lines.append("")
     if pure:
         lines.append("# ── Layers that perform NO effects today — lock the purity in ──")
         for full, n in pure:

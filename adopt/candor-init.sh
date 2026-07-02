@@ -31,24 +31,52 @@ command -v python3 >/dev/null 2>&1 || { echo "candor init: python3 is required f
 
 mkdir -p .candor
 
+# Engine-agnostic report output: candor-java writes a file via `--json <file>`; the scan-source engines
+# (ts/scan/swift) write files via `--out <prefix>` and treat `--json` as a STDOUT boolean — passing it a
+# filename there silently produces no report (max-review find). Probe the engine's --help for --out.
+if $SCAN --help 2>&1 | grep -q -- '--out'; then
+  SCAN_ARGS=(--out .candor/report)
+else
+  SCAN_ARGS=(--json .candor/report.json)
+fi
+
 echo "candor init: scanning $TARGET ($SCAN) ..."
-if ! $SCAN "$TARGET" --json .candor/report.json >/dev/null 2>&1; then
+if ! $SCAN "$TARGET" "${SCAN_ARGS[@]}" >/dev/null 2>&1; then
   echo "candor init: the scan failed — is the engine installed (jbang / npx)? Run it manually to see why:"
-  echo "  $SCAN $TARGET --json .candor/report.json"
+  echo "  $SCAN $TARGET ${SCAN_ARGS[*]}"
+  exit 2
+fi
+# The report filename varies per engine (java: report.json; ts: report.json; swift: report.<pkg>.Swift.json;
+# scan: report.<crate>.scan.json) — glob the prefix, drop the callgraph/hierarchy sidecars.
+REPORT=$(ls .candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)
+if [ -z "$REPORT" ] || [ ! -s "$REPORT" ]; then
+  echo "candor init: the scan reported success but produced no report under .candor/report* — run it"
+  echo "  manually to see why:  $SCAN $TARGET ${SCAN_ARGS[*]}"
   exit 2
 fi
 
 # 2. propose the policy (NEVER clobber a hand-edited one — write the proposal beside it instead).
+# A failed proposal STOPS the scaffold (no false "done", no Action dropped that would fail every CI run
+# on a policy that doesn't exist — max-review find: failures here were silently ignored).
 if [ -f arch.policy ]; then
-  python3 "$HERE/candor-init" .candor/report.json --out arch.policy.proposed
+  python3 "$HERE/candor-init" "$REPORT" --out arch.policy.proposed \
+    || { echo "candor init: policy proposal failed — stopping (nothing scaffolded beyond the scan)"; exit 2; }
   POLICY_NOTE="arch.policy already exists — left it; wrote the fresh proposal to arch.policy.proposed"
 else
-  python3 "$HERE/candor-init" .candor/report.json --out arch.policy
+  python3 "$HERE/candor-init" "$REPORT" --out arch.policy \
+    || { echo "candor init: policy proposal failed — stopping (nothing scaffolded beyond the scan)"; exit 2; }
   POLICY_NOTE="arch.policy  ← REVIEW THIS (proposed from your code; every rule currently passes)"
 fi
 
-# 3. the regression-ratchet baseline.
-cp .candor/report.json .candor/baseline.json
+# 3. the regression-ratchet baseline — NEVER clobbered on a re-run: overwriting it would silently
+# grandfather every effect gained since adoption (the AS-EFF-005 ratchet reset, max-review find).
+if [ -f .candor/baseline.json ]; then
+  BASELINE_NOTE=".candor/baseline.json already exists — left it (refresh deliberately: cp $REPORT .candor/baseline.json)"
+else
+  cp "$REPORT" .candor/baseline.json \
+    || { echo "candor init: could not record the baseline — stopping"; exit 2; }
+  BASELINE_NOTE=".candor/baseline.json   ← the regression ratchet baseline"
+fi
 
 # 4. drop the GitHub Action (never clobber).
 mkdir -p .github/workflows
@@ -62,7 +90,7 @@ fi
 echo
 echo "candor init: done. Scaffolded:"
 echo "  $POLICY_NOTE"
-echo "  .candor/baseline.json   ← the regression ratchet baseline"
+echo "  $BASELINE_NOTE"
 echo "  $ACTION_NOTE"
 echo
 echo "Next: review arch.policy, keep the rules you want, then commit. Check it locally:"

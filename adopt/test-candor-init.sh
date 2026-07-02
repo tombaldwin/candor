@@ -61,6 +61,32 @@ OUTF=$(python3 "$INIT" "$WORK/flat.json" 2>/dev/null)
 ok "no clear layering → a helpful note"         'printf "%s" "$OUTF" | grep -qi "no clear layering\|no sub-layers"'
 ok "no clear layering → no bogus rules"         '! printf "%s" "$OUTF" | grep -qE "^(pure|deny) "'
 
+# [max-review 11] a layer whose ONLY disclosure is Unknown must NOT be proposed `pure` — the scan-source
+# engines flag Unknown under `pure` ("not certifiably pure"), so the rule would fail immediately.
+cat > "$WORK/unk.json" <<'JSON'
+{"candor":{"spec":"0.8"},"functions":[{"fn":"app.lib.Loader.load","inferred":["Unknown"]}]}
+JSON
+cat > "$WORK/unk.callgraph.json" <<'JSON'
+{"app.lib.Loader.load":[],"app.domain.Order.total":[]}
+JSON
+OUTU=$(python3 "$INIT" "$WORK/unk.json" 2>/dev/null)
+ok "Unknown-only layer gets NO pure rule"        '! printf "%s" "$OUTU" | grep -qE "^pure app\.lib\b"'
+ok "Unknown-only layer skip is explained"        'printf "%s" "$OUTU" | grep -q "discloses Unknown"'
+ok "the truly-pure sibling still gets pure"      'printf "%s" "$OUTU" | grep -qE "^pure app\.domain\b"'
+
+# [max-review 12] §6.2 scope matching is last-segment-PREFIX: a rule for layer `api` also binds `apiv2`,
+# so a prefix-colliding layer must be SKIPPED (with the reason), never proposed.
+cat > "$WORK/pfx.json" <<'JSON'
+{"candor":{"spec":"0.8"},"functions":[{"fn":"com.shop.apiv2.Client.fetch","inferred":["Net"]}]}
+JSON
+cat > "$WORK/pfx.callgraph.json" <<'JSON'
+{"com.shop.api.Handler.route":[],"com.shop.apiv2.Client.fetch":[]}
+JSON
+OUTP=$(python3 "$INIT" "$WORK/pfx.json" 2>/dev/null)
+ok "prefix-colliding layer gets NO rule"         '! printf "%s" "$OUTP" | grep -qE "^(pure|deny)[^#]* com\.shop\.api( |$)"'
+ok "prefix collision is explained"               'printf "%s" "$OUTP" | grep -q "sibling layer"'
+ok "the non-prefix sibling (apiv2) still ruled"  'printf "%s" "$OUTP" | grep -qE "^deny .* com\.shop\.apiv2\b"'
+
 echo
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

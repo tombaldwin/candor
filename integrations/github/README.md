@@ -27,8 +27,8 @@ The GitHub Action wiring lives in [`../../adopt/candor.yml`](../../adopt/candor.
    ```
    `gate.json` is `{ "spec", "ok", "violations":[ { "rule", "fn", "effects":[…], "detail" } ] }` — the structured
    analog of the `AS-EFF-…` console lines, captured from the **same** diagnostics that set the exit
-   code, so the SARIF can never disagree with the gate. (candor-java engine feature; the other
-   engines gain it as the capability is promoted to the shared spec.)
+   code, so the SARIF can never disagree with the gate. (Spec 0.8, §3.3 — all four engines
+   implement it; the conformance gate-verdict differential pins their agreement.)
    `effects` is the DENIED set (what the fn does ∩ what the rule forbids) — the one piece the report can't
    supply, so a codeFlow traces the right effect.
 2. The reporter joins each violation to its source location (`fn` → `loc`) from the report envelope and

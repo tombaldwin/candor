@@ -17,7 +17,8 @@ Usage:
                     `File.java:line` (the bytecode SourceFile), so the repo path is rebuilt from the fn's
                     package: app.domain.Order.audit + Order.java → <src-root>/app/domain/Order.java. Scan
                     engines whose `loc` is already a path use it as-is.
-    --query-cmd CMD optional engine query command (e.g. 'java -jar candor-java-all.jar classes'); when set,
+    --query-cmd CMD optional engine query command (e.g. 'java -jar candor-java-all.jar' — NO scan target:
+                    the tool appends `path <report> <fn> <effect> --json`); when set,
                     each violation gets a SARIF codeFlow from `CMD path <fn> <effect>` — the hop chain to
                     the effect source, rendered as a clickable trace in the Security tab.
     -o FILE         write SARIF here (default stdout).
@@ -81,8 +82,8 @@ def fn_effects_index(report):
 
 def parse_loc(loc):
     """`File.java:6` or `path/f.rs:10:1: 10:9` -> (file, startLine, startCol, endLine, endCol)."""
-    if not loc:
-        return None
+    if not loc or not isinstance(loc, str):
+        return None            # a malformed (non-string) loc is dropped, never a crash
     m = re.match(r"^(.*?):(\d+)(?::(\d+))?(?::\s*(\d+):(\d+))?$", loc.strip())
     if not m:
         # a bare filename with no line — locate the file, no region
@@ -168,6 +169,9 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         # (superset) direct set. Only fall back to the report when a verdict omits the key entirely (a pre-0.8
         # / non-emitting engine). loc always joins from the report.
         effects = v["effects"] if "effects" in v else (eff_idx.get(fn) or [])
+        if not isinstance(effects, list):
+            effects = []       # a malformed verdict (effects: null / non-list) degrades, never crashes
+        effects = [e for e in effects if isinstance(e, str)]
         loc = v.get("loc") or loc_idx.get(fn)
         scope = v.get("scope")
         # `detail` (from the engine's own diagnostic) is authoritative and already names fn/effect/rule;
@@ -233,7 +237,11 @@ def main(argv=None):
     sarif = build_sarif(report, args.report, gate, args.src_root, args.query_cmd)
     text = json.dumps(sarif, indent=2)
     if args.out:
-        open(args.out, "w", encoding="utf-8").write(text + "\n")
+        try:
+            open(args.out, "w", encoding="utf-8").write(text + "\n")
+        except OSError as e:
+            # surfacing is advisory (the gate already decided): disclose and keep the exit-0 contract
+            print(f"candor-sarif: could not write {args.out}: {e}", file=sys.stderr)
     else:
         print(text)
     return 0

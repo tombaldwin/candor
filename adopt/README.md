@@ -44,11 +44,14 @@ layers that are pure today (`pure com.shop.domain`) and the boundary effects eac
 (`deny Db Net … com.shop.repo`). Review `arch.policy`, keep what matches your intent, delete the rest. It
 never clobbers an existing policy or workflow.
 
-**Just the policy** (engine-agnostic — works on a `candor-ts`/`candor-scan`/`candor-swift` report too):
+**Just the policy** (engine-agnostic — works on a `candor-ts`/`candor-scan`/`candor-swift` report too;
+NB the file-output flag differs: candor-java takes `--json <file>`, the scan-source engines take
+`--out <prefix>` — their `--json` streams to stdout):
 
 ```bash
-<your engine> <target> --json .candor/report.json   # writes report + callgraph
-python3 candor-init .candor/report.json --out arch.policy
+jbang candor@tombaldwin/candor-java <classes> --json .candor/report.json   # java: report + callgraph
+npx -y candor-ts <src> --out .candor/report                               # ts/scan/swift: --out <prefix>
+python3 candor-init .candor/report.json --out arch.policy                 # (or the report the glob finds)
 ```
 
 **Or write it by hand.** Copy [`arch.policy`](./arch.policy) to your repo root and edit the package names.

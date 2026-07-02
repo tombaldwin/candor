@@ -78,6 +78,12 @@ else
   BASELINE_NOTE=".candor/baseline.json   ← the regression ratchet baseline"
 fi
 
+# 3b. vendor the SARIF reporter beside the baseline (never clobber) — the Action prefers this copy over
+# a curl of the umbrella repo's unpinned main, so a breaking upstream push can't affect this repo's CI.
+if [ ! -f .candor/candor-sarif ] && [ -f "$HERE/../integrations/github/candor-sarif" ]; then
+  cp "$HERE/../integrations/github/candor-sarif" .candor/candor-sarif
+fi
+
 # 4. drop the GitHub Action (never clobber).
 mkdir -p .github/workflows
 if [ -f .github/workflows/candor.yml ]; then

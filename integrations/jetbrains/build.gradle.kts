@@ -65,6 +65,14 @@ tasks.processResources {
 
 intellijPlatform {
     pluginConfiguration {
-        name = "candor — effects & architecture gate"
+        name = "candor: effects & architecture gate"
+    }
+    // The headless pre-publish gate: JetBrains' Plugin Verifier checks binary compatibility (broken
+    // APIs, missing classes) against the pinned target IDE — the same verification the Marketplace
+    // runs on upload. One IDE keeps the download bounded; broaden before widening since/until builds.
+    pluginVerification {
+        ides {
+            recommended()   // the IDE releases matching this plugin's since/until builds
+        }
     }
 }

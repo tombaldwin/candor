@@ -31,7 +31,7 @@ the 2026-06-18 repositioning as *demoting* the agent angle — that made the gat
 not a reason to stop investing in the agent loop, which stays P0 below.
 
 Value now runs in **two parallel tracks** (see the Priority note above); within each, new work is
-**surface, not depth** — capability is mined-out and the spec is stable at 0.7.
+**surface, not depth** — capability is mined-out; the spec advances only on the ladder (now at 0.8).
 
 ### Agent-loop track — the north-star
 
@@ -83,14 +83,14 @@ in review → distribution drives teams to it. In priority order:
    `adopt/candor.yml` wiring (`security-events: write` + `--gate-json` + fetch/run `candor-sarif` +
    `upload-sarif`, both `if: always()`). Design + status: [`PR-GATE-DESIGN.md`](integrations/github/PR-GATE-DESIGN.md).
    Doesn't reposition vs Semgrep/CodeQL — SARIF is an output channel; the boundary-vs-pattern differentiation
-   is unchanged. **spec 0.8 COMPLETE across all four engines** (candor-java/scan/ts/swift all declare 0.8,
-   §3.3 `--gate-json`; conformance PART 12 is a full 4-engine differential — the floor risen to 0.8).
-   **Remaining: RELEASE/PUBLISH the 0.8 engines** (committed locally, unpushed): push all repos, then
-   candor-java v0.8.0 + candor-swift v0.8.0 (gh release + jbang catalogs), candor-ts 0.8.0 (npm — needs the
-   passkey), candor-scan/report 0.8.0 (crates.io). The adopt Action activates once candor-java 0.8.0 is
-   released;
-   the Action activates for users on the next candor-java **release** carrying `--gate-json` (currently only
-   on candor-java `main`); P4 baseline-delta (`--since-baseline`); optional Check-Runs API (P5). Surfaced 2026-07-01.
+   is unchanged. **spec 0.8 COMPLETE + SHIPPED across all four engines (2026-07-02)** — candor-java v0.8.0
+   (GitHub/jbang, Java-17 bytecode), candor-swift v0.8.0, candor-ts 0.8.0 (npm), candor-scan 0.8.0 +
+   candor-report 0.5.7 (crates.io); conformance PART 12 is a full 4-engine differential (floor risen to 0.8).
+   **VALIDATED END-TO-END in real GitHub Actions** ([`tombaldwin/candor-action-demo`](https://github.com/tombaldwin/candor-action-demo)):
+   the code-scanning alert lands on the exact boundary-crossing line. The E2E fixed 3 CI-only workflow bugs
+   (jbang trust, Java-21→17 bytecode, upload-sarif `actions:read`) — all in `adopt/candor.yml`. **Remaining:**
+   P4 baseline-delta — _skip_ (GitHub's code-scanning already diffs PR SARIF vs the base branch natively);
+   optional Check-Runs API (P5). Surfaced 2026-07-01, shipped 2026-07-02.
 
 2. **Policy inference / `candor init` — SHIPPED (2026-07-02, [`adopt/candor-init`](adopt/candor-init)).**
    The real barrier to the gate isn't running candor — it's knowing *what policy to write*. `candor-init`

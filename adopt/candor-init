@@ -79,8 +79,10 @@ def find_callgraph(report_path):
     exact = report_path[:-5] + ".callgraph.json" if report_path.endswith(".json") else report_path + ".callgraph.json"
     if os.path.exists(exact):
         return exact
-    hits = [p for p in glob.glob(os.path.join(os.path.dirname(report_path) or ".", "*callgraph*.json"))]
-    return hits[0] if hits else None
+    hits = glob.glob(os.path.join(os.path.dirname(report_path) or ".", "*callgraph*.json"))
+    # Only trust an UNAMBIGUOUS fallback: with several sidecars in one dir (a Rust workspace's member
+    # reports), picking hits[0] joins an arbitrary — possibly wrong — member's callgraph to this report.
+    return hits[0] if len(hits) == 1 else None
 
 
 def analyze(report, callgraph):

@@ -60,6 +60,9 @@ jobs:
         id: gate
         env:
           CANDOR_POLICY: arch.policy
+          # The AS-EFF-005 regression ratchet: bites when .candor/baseline.json is committed (candor-init.sh
+          # records it); with no baseline candor prints a note and the guard is simply inactive.
+          CANDOR_BASELINE: .candor/baseline.json
           CLASSES: target/classes
         run: jbang candor@tombaldwin/candor-java "$CLASSES" --json candor-report.json --gate-json candor-gate.json
 
@@ -71,7 +74,10 @@ jobs:
         env:
           SRC: src/main/java     # ← EDIT 3: your source root (for repo-relative line links)
         run: |
-          curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/main/integrations/github/candor-sarif -o candor-sarif
+          # Prefer the VENDORED reporter (candor-init.sh drops it at .candor/candor-sarif — pinned with
+          # your repo, immune to upstream churn); fall back to fetching the umbrella repo's main.
+          if [ -f .candor/candor-sarif ]; then cp .candor/candor-sarif candor-sarif;
+          else curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/main/integrations/github/candor-sarif -o candor-sarif; fi
           python3 candor-sarif candor-report.json --gate candor-gate.json --src-root "$SRC" -o candor.sarif
           # For a clickable "how the effect reaches here" trace on each finding, add:
           #   --query-cmd "jbang candor@tombaldwin/candor-java"   (one query per violation — slower)

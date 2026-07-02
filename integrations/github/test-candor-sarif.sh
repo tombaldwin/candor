@@ -99,6 +99,17 @@ ok "advisory AS-EFF-007 result is level:warning"   '[ "$(printf "%s" "$OUTA" | j
 ok "advisory rule metadata is level:warning"       '[ "$(printf "%s" "$OUTA" | jq -r ".runs[0].tool.driver.rules[0].defaultConfiguration.level")" = warning ]'
 ok "a gate-failing code stays level:error"         '[ "$(printf "%s" "$OUT" | jq -r ".runs[0].results[0].level")" = error ]'
 
+# crash contract (max-review 28/33/34): "Exit: 0 always" + malformed input degrades, never a traceback.
+echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.audit","effects":null,"detail":"x"}]}' > "$WORK/nullfx.json"
+OUTN=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/nullfx.json" 2>/dev/null); rcn=$?
+ok "effects:null verdict → no crash, exit 0"       '[ "$rcn" = 0 ] && printf "%s" "$OUTN" | jq -e ".runs[0].results|length==1" >/dev/null'
+echo '{"candor":{"spec":"0.8"},"functions":[{"fn":"x.y","loc":42,"direct":["Fs"]}]}' > "$WORK/badloc.json"
+echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"x.y","effects":["Fs"]}]}' > "$WORK/badlocg.json"
+OUTB=$(python3 "$SARIF" "$WORK/badloc.json" --gate "$WORK/badlocg.json" 2>/dev/null); rcbl=$?
+ok "non-string loc → no crash, exit 0"             '[ "$rcbl" = 0 ] && printf "%s" "$OUTB" | jq -e . >/dev/null'
+python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate.json" -o "$WORK/no/such/dir/out.sarif" >/dev/null 2>"$WORK/oerr"; rco=$?
+ok "unwritable -o → disclosed on stderr, exit 0"   '[ "$rco" = 0 ] && grep -q "could not write" "$WORK/oerr"'
+
 # clean gate (ok:true, no violations) -> valid SARIF, zero results.
 echo '{"spec":"0.7","ok":true,"violations":[]}' > "$WORK/clean.json"
 OUTC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/clean.json" 2>/dev/null)

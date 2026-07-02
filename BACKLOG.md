@@ -40,11 +40,14 @@ both site items resolved — see *Deferred*.
   [`FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md). _Remaining polish (deferred):_ `maxHops`
   in the activity log; standalone/CI logging; a richer in-IDE/MCP push.
 
-- **[decision needed] The next agent-loop bet is unscoped.** The track's P0 is done, and what remains is a
-  vague "richer in-IDE/MCP push" plus the *later* LSP below — i.e. the stated north-star has **no concrete
-  next item** while the arch-gate track absorbed all recent investment. Either (a) scope the LSP with a
-  design doc (the way the structure-gate got one), (b) define the MCP push concretely, or (c) state that
-  the track is in harvest mode until a new bet emerges. Surfaced by the 2026-07-02 backlog review.
+- **[decision needed] The next agent-loop bet — DESIGNED 2026-07-02, decision pending (Tom's).** Full
+  scoping in [`integrations/AGENT-SURFACE-DESIGN.md`](integrations/AGENT-SURFACE-DESIGN.md): both
+  candidates consume the same spec-0.8 envelope, so the shape is **one read-core, two surfaces** —
+  **bet 1: a unified engine-agnostic `candor-mcp`** (days; supersedes the two divergent per-engine
+  servers, adds the gate-verdict/containment/blindspots/gains tools + resources + the generalized watch
+  freshness loop) then **bet 2: `candor-lsp`** on the same core (weeks; CodeLens effects/blast-radius,
+  gate diagnostics at the violating loc, whatif code-action). Recommended sequence: core → MCP now →
+  LSP next; bet 1 stands alone if bet 2 defers. Go/no-go + sequence choice is Tom's.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor

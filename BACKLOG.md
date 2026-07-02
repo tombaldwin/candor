@@ -24,10 +24,9 @@ the 2026-06-18 repositioning as *demoting* the agent angle — that made the gat
 not a reason to stop investing in the agent loop, which stays P0 below.
 
 Value runs in **two parallel tracks**; within each, new work is **surface, not depth** — capability is
-mined-out; the spec advances only on the ladder (now at 0.8). NB the arch-gate track's build-out is now
-essentially **complete** (items 1–3 below shipped); per this file's own claim, **the highest-leverage open
-work is distribution** (the two site items in *Deferred*), which has been parked since 2026-06-24 while
-capability kept shipping — the imbalance is the thing to correct next.
+mined-out; the spec advances only on the ladder (now at 0.8). The arch-gate track's build-out is
+**complete** (items 1–3 below shipped), and the distribution backlog is now **cleared too** (2026-07-02):
+both site items resolved — see *Deferred*.
 
 ### Agent-loop track — the north-star
 
@@ -125,13 +124,13 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Deferred operational (need a publish or maintainer action)
 
-- **Case studies → candor.poly.io** — the 5 studies live in `docs/` but aren't on the site yet. The
-  ssh-agent deploy blocker is **RESOLVED** (2026-06-24; deploys work). Unblocked, highest-leverage,
-  still to-do.
-- **Cross-model eval → candor.poly.io** — the eval is **done** (results in `candor-rust/eval/scaled/` +
-  `.../agentuse/`); only the surface-on-the-site thread is open. The untracked `assets/charts/`
-  (completeness/efficiency renders + generators, 2026-06-22) belongs to this item — commit it with the
-  site work or drop it.
+- **Case studies → candor.poly.io — DONE (2026-07-02).** Live at
+  [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (all five studies, linked from the
+  JVM page; site checks 226 green, pre-deploy review clean).
+- **Cross-model eval → candor.poly.io — DONE (verified 2026-07-02, was already live).** The completeness +
+  efficiency charts and the eval claims ship on [candor.poly.io/agents/](https://candor.poly.io/agents/) —
+  this item was stale. `assets/charts/` (the chart renders + generators) is now committed here as the
+  regeneration source for the site copies in `web/static/images/candor/`.
 - **candor-rust self-guard baseline drift** — it fired again 2026-06-30 → 2026-07-02 (the deep-engine
   oracle commit `8693315` made the lint's own `check_crate_post` read a benign `Unknown` the Jun-17
   baseline didn't record); baseline refreshed + green (`a63e26b`, recipe: `cargo candor snapshot

@@ -57,8 +57,10 @@ both site items resolved — see *Deferred*.
   maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — **COMPILE-VERIFIED + PACKAGED
   (2026-07-02):** `gradle buildPlugin` → `candor-intellij-0.1.0.zip` (sideloadable) against IC 2024.3 +
   LSP4IJ 0.20.1, embedding the verified 18KB server bundle + the v0.8.2 engine jar; the JVM freshness
-  loop uses the modern ProjectTaskListener API. Next: runIde smoke, the Beaky icon, Marketplace vendor
-  account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  loop uses the modern ProjectTaskListener API. **Verifier-clean (Compatible × 6 IDE targets, IC-243 →
+  IU-262** — it caught the em-dash plugin-name Marketplace blocker); Beaky pluginIcon.svg; a
+  `jetbrains-plugin` CI job in the umbrella (green). Next: a HUMAN install-from-disk/runIde smoke of
+  `candor-intellij-0.1.0.zip` in a real IDE, then the Marketplace vendor account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
   the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
   every released artifact is current with main.
 

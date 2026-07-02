@@ -52,8 +52,9 @@ both site items resolved — see *Deferred*.
   _Remaining P2 slices:_ a thin VS Code client extension, the whatif code-action, large-repo lens
   performance (hover provenance shipped 2026-07-02; rides the next candor-ts publish). **JetBrains
   slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
-  → auto npm-install) — authored + committed on a local branch of the lsp4ij fork, **PR awaiting Tom's
-  go** (external-repo publication); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — the
+  → auto npm-install) — **PR OPEN:
+  [redhat-developer/lsp4ij#1609](https://github.com/redhat-developer/lsp4ij/pull/1609)** (watch for
+  maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — the
   Marketplace-plugin skeleton: LSP4IJ client spawning the VERIFIED 20KB single-file server bundle +
   the JVM freshness loop (the bundled candor-java jar re-scans after every successful build, opt-in
   via `.candor/`). Next: compile-verify (`gradle buildPlugin`, ~1GB SDK), runIde smoke, Marketplace

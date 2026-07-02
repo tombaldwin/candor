@@ -102,7 +102,11 @@ in review → distribution drives teams to it. In priority order:
    one-command wrapper [`adopt/candor-init.sh`](adopt/candor-init.sh) also ships — scan → propose arch.policy →
    baseline → drop the Action (never clobbers), tested hermetically. The adoption funnel front-end is complete.
 
-3. **Consolidated `.candor/config` file (not built).** Today candor is configured by environment variables
+3. **Consolidated `.candor/config` file — REFERENCE IMPL in candor-java (2026-07-02, UNRELEASED on main).**
+   A checked-in `key value` file (§6.2 lexical) replacing the CANDOR_* env wiring; keys map 1:1 to the env
+   vars; precedence CLI→env→config→default (env still wins for a one-off). Schema in `candor-spec/proposals/config-file.md`;
+   rolls to scan/ts/swift next, then a normative §config (not a spec-version bump — config, not the wire contract).
+   ORIGINAL NOTE:** Today candor is configured by environment variables
    (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`, `CANDOR_DEPS`, `CANDOR_STRICT`,
    `CANDOR_NO_AMBIENT`, …) plus the `.candor/` directory convention (`baseline.json`, the report,
    `.candor/policy`); the only declarative, checked-in file is the policy. A single `.candor/config` could

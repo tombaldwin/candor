@@ -98,8 +98,9 @@ in review → distribution drives teams to it. In priority order:
    rule it emits currently PASSES (safe to adopt, catches regressions): `pure <layer>` for layers with no
    effects today, `deny <boundary effects> <layer>` for what a layer doesn't reach. Engine-agnostic (reads
    the standard envelope); 10-assertion hermetic test, in umbrella CI; documented in `adopt/README`. Verified
-   end-to-end: the proposed policy gates clean, and a later I/O leak into a `pure` layer trips it. _Remaining:_
-   optionally scaffold the `.candor/` dir + Action in one command (the `candor init` wrapper over this).
+   end-to-end: the proposed policy gates clean, and a later I/O leak into a `pure` layer trips it. The
+   one-command wrapper [`adopt/candor-init.sh`](adopt/candor-init.sh) also ships — scan → propose arch.policy →
+   baseline → drop the Action (never clobbers), tested hermetically. The adoption funnel front-end is complete.
 
 3. **Consolidated `.candor/config` file (not built).** Today candor is configured by environment variables
    (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`, `CANDOR_DEPS`, `CANDOR_STRICT`,

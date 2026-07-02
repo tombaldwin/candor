@@ -37,3 +37,6 @@ jobs:
 
       - name: candor-init policy-inference contract
         run: bash adopt/test-candor-init.sh
+
+      - name: candor-init.sh one-command scaffolder contract
+        run: bash adopt/test-candor-init-sh.sh

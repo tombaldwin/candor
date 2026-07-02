@@ -69,8 +69,13 @@ a boundary is crossed, not just as a red check. (See [`../integrations/github/`]
 > **Code scanning is free on public repos; on a private repo it needs GitHub Advanced
 > Security.** Without it, the SARIF upload step fails with *"Code scanning is not enabled
 > for this repository"* — the gate still runs and fails the check on a violation (exit 1),
-> you just don't get the inline annotations. Validated end-to-end on a real runner: the
-> alert lands at the exact line, e.g. `AS-EFF-006 · Order.java:11 · performs { Fs }`.
+> you just don't get the inline annotations.
+
+**See it running:** [`tombaldwin/candor-action-demo`](https://github.com/tombaldwin/candor-action-demo)
+is a live, minimal example — a `domain` class that writes a file under a `deny Fs domain` policy. Check its
+**Actions** run (the gate failing on the deliberate violation) and **Security → Code scanning**, where the
+alert lands on the exact line:
+> `AS-EFF-006` · `src/main/java/com/demo/domain/Order.java:11` · `Order.audit` performs `{ Fs }`, forbidden by `deny Fs com.demo.domain`
 
 ---
 

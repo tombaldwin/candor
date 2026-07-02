@@ -31,3 +31,9 @@ jobs:
 
       - name: candor-sarif contract + SARIF 2.1.0 schema validation
         run: bash integrations/github/test-candor-sarif.sh
+
+      - name: candor-init parses
+        run: python -c "import ast; ast.parse(open('adopt/candor-init').read())"
+
+      - name: candor-init policy-inference contract
+        run: bash adopt/test-candor-init.sh

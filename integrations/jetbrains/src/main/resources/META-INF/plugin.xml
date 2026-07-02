@@ -39,9 +39,10 @@
         <fileTypeMapping fileType="Swift" serverId="candor" languageId="swift"/>
     </extensions>
 
-    <extensions defaultExtensionNs="com.intellij">
-        <!-- The JVM freshness loop: after a successful Gradle/Maven/JPS build, re-run the bundled
-             candor-java jar over the compiled output so the lenses/gate reflect the code just built. -->
-        <projectTaskListener implementation="io.poly.candor.ide.CandorBuildListener"/>
-    </extensions>
+    <!-- The JVM freshness loop: after a successful Gradle/Maven/JPS build, re-run the bundled
+         candor-java jar over the compiled output so the lenses/gate reflect the code just built. -->
+    <projectListeners>
+        <listener class="io.poly.candor.ide.CandorBuildListener"
+                  topic="com.intellij.task.ProjectTaskListener"/>
+    </projectListeners>
 </idea-plugin>

@@ -1,0 +1,5 @@
+# Gradle + IntelliJ Platform build state (the SDK sandbox, staged npm deps, outputs) — never committed;
+# `gradle buildPlugin` regenerates everything.
+build/
+.gradle/
+.intellijPlatform/

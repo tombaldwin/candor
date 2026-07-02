@@ -1,12 +1,10 @@
 # candor for JetBrains IDEs — plugin skeleton
 
-**Status: SKELETON (AGENT-SURFACE-DESIGN bet 2, the JetBrains slice) — written against the documented
-LSP4IJ + IntelliJ Platform APIs, not yet compile-verified** (the first `buildPlugin` downloads the ~1 GB
-IDE SDK; run it before trusting the Java sources). The two load-bearing pieces ARE verified:
-
-- the **single-file server bundle** (esbuild of candor-ts's `lsp.mjs`, ~20 KB, zero deps) handshakes
-  over LSP stdio with full capabilities — `bundleServer` reproduces it;
-- the **bundled engine** is the released `candor-java-all.jar` (~1 MB) — `fetchEngineJar` pins it.
+**Status: COMPILE-VERIFIED + PACKAGED (2026-07-02)** — `gradle buildPlugin` produces
+`build/distributions/candor-intellij-0.1.0.zip` (sideloadable via Settings → Plugins → ⚙ → Install
+from disk) against IC 2024.3 + LSP4IJ 0.20.1, with both artifacts embedded and verified: the
+single-file server bundle (`server/candor-lsp.mjs`, ~18 KB, handshakes with full capabilities) and
+the released engine (`engine/candor-java-all.jar`). Not yet `runIde`-smoked or Marketplace-published.
 
 ## What it is
 
@@ -31,7 +29,8 @@ gradle buildPlugin          # first run downloads the IntelliJ SDK (large)
 
 ## Remaining before Marketplace
 
-1. Compile-verify + `runIde` smoke (the API surface here matches LSP4IJ `0.14.x` docs; pin on build).
+1. `runIde` smoke (compile-verification done — the build listener uses the modern
+   `finished(ProjectTaskManager.Result)` + declarative `<projectListeners>` with constructor injection).
 2. Multi-module JVM projects: scan a report SET (one per output root) — the LSP already merges a prefix.
 3. A "propose a policy" first-run notification (the `candor-init` logic as an IDE action).
 4. Marketplace publishing (needs the vendor account) + plugin icon (Beaky).

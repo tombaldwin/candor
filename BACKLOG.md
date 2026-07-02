@@ -50,7 +50,9 @@ both site items resolved — see *Deferred*.
   gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
   freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
   _Remaining P2 slices:_ a thin VS Code client extension, hover provenance, the whatif code-action,
-  large-repo lens performance. Both surfaces ride the next candor-ts publish.
+  large-repo lens performance. **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
+  every released artifact is current with main.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor
@@ -81,7 +83,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    overrides), precedence CLI → env → config → default, fail-closed when configured-but-unusable.
    Conformance **PART 13** pins discovery/precedence/fail-closed per engine (1/0/2, all four green);
    `candor-init.sh` scaffolds it (policy + baseline wired, never clobbered). An additive amendment
-   within 0.8 — configuration, not the wire contract. On each engine's main; rides the next cuts.
+   within 0.8 — configuration, not the wire contract. **Shipped in every engine's release 2026-07-02**
+   (ts 0.8.3 / scan 0.8.3 / java v0.8.2 / swift v0.8.2).
 
 4. **Distribution — CLEARED (2026-07-02).** The proven wedge is now on the site:
    [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (the five studies, deployed) and

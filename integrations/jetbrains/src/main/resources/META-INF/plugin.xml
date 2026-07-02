@@ -1,6 +1,6 @@
 <idea-plugin>
     <id>io.poly.candor</id>
-    <name>candor — effects &amp; architecture gate</name>
+    <name>candor: effects &amp; architecture gate</name>
     <vendor url="https://candor.poly.io">Polymorphism</vendor>
     <description><![CDATA[
         Every function's <b>side-effect map</b>, where the code is — from

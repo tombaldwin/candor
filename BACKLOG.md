@@ -78,10 +78,11 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    `candor-init.sh` scaffolding it. (NB: the lone `.candor/config` in `candor-rust/eval/minicache` is an
    eval-harness file holding `CANDOR_LIB`, unrelated.)
 
-4. **Distribution — the actual bottleneck.** The wedge is proven (5 case studies in `docs/`, the `adopt/`
-   starter, the live Action demo) — "the remaining lift is distribution, not capability", and it still is:
-   the two site items in *Deferred* (case studies → candor.poly.io; cross-model eval → candor.poly.io) are
-   unblocked and have been to-do since 2026-06-24/25. They are the highest-leverage open work in this file.
+4. **Distribution — CLEARED (2026-07-02).** The proven wedge is now on the site:
+   [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (the five studies, deployed) and
+   the cross-model eval evidence on [candor.poly.io/agents/](https://candor.poly.io/agents/) (verified
+   live). Remaining distribution is ongoing marketing, not a backlog item: keep the adopt starter + site
+   current as the tools change (the site's engine versions self-update at build; fallbacks refreshed 0.8.x).
 
 ### New-capability bet — a possible commercial add-on
 

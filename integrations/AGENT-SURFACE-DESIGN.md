@@ -5,8 +5,14 @@ Status: **decision made (Tom, 2026-07-02): the recommended sequence — and bet 
 extraction" collapsed to enrichment): five new tools (gate / containment / blindspots / diff / gains),
 MCP resources (report + checked-in policy), `.candor/config` policy discovery for `candor_gate`, the
 `candor-mcp` bin alias, default-prefix discovery; verified serving all four engines' real reports through
-one server; the rust python server carries a deprecation pointer. **Bet 2 (the LSP) is the next bet on
-this surface** — unscheduled, on the same core. Original scoping below.
+one server; the rust python server carries a deprecation pointer. **Bet 2 (the LSP) — P1 SHIPPED same day too:**
+`candor-lsp` (candor-ts pkg, new bin) — CodeLens `⚡ effects · blast radius N` per effectful fn +
+the live §6.2 gate verdict as diagnostics (config-discovered policy), over the same read layer; verified
+against candor-ts AND candor-java reports (bare bytecode locs resolve via package segments); freshness by
+re-reading reports per request (watch/stop-hook/build refresh the lenses; the server never scans, §7.12).
+Editor wiring documented for helix/neovim (native LSP clients). Remaining P2 slices: a thin VS Code client
+extension, hover provenance (the `path` hop chain), the `whatif` code-action, large-repo lens performance.
+Original scoping below.
 
 ## What exists today (the inventory that changes the picture)
 

@@ -92,11 +92,14 @@ in review → distribution drives teams to it. In priority order:
    the Action activates for users on the next candor-java **release** carrying `--gate-json` (currently only
    on candor-java `main`); P4 baseline-delta (`--since-baseline`); optional Check-Runs API (P5). Surfaced 2026-07-01.
 
-2. **Policy inference / `candor init`.** The real barrier to the gate isn't running candor — it's knowing
-   *what policy to write*. Have candor read the current structure and **propose** a starter policy from
-   what's already true ("your `domain` package performs no I/O today — lock it in as `pure domain`?"), then
-   drop a working baseline + GitHub Action. Turns "candor made a map" into "candor gates our PRs" in one
-   command — the generative front-end that writes the `.candor/config` + policy below. Surfaced 2026-07-01.
+2. **Policy inference / `candor init` — SHIPPED (2026-07-02, [`adopt/candor-init`](adopt/candor-init)).**
+   The real barrier to the gate isn't running candor — it's knowing *what policy to write*. `candor-init`
+   reads a report + its callgraph sidecar and **proposes a starter policy from what's already true** — every
+   rule it emits currently PASSES (safe to adopt, catches regressions): `pure <layer>` for layers with no
+   effects today, `deny <boundary effects> <layer>` for what a layer doesn't reach. Engine-agnostic (reads
+   the standard envelope); 10-assertion hermetic test, in umbrella CI; documented in `adopt/README`. Verified
+   end-to-end: the proposed policy gates clean, and a later I/O leak into a `pure` layer trips it. _Remaining:_
+   optionally scaffold the `.candor/` dir + Action in one command (the `candor init` wrapper over this).
 
 3. **Consolidated `.candor/config` file (not built).** Today candor is configured by environment variables
    (`CANDOR_POLICY`, `CANDOR_BASELINE`, `CANDOR_JSON`, `CANDOR_CLOSED_WORLD`, `CANDOR_DEPS`, `CANDOR_STRICT`,

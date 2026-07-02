@@ -29,9 +29,21 @@ jbang candor@tombaldwin/candor-java containment report.json
 `containment` shows where each boundary effect lives (e.g. `Db 100% — infrastructure`).
 That tells you which rules are already true and worth locking in.
 
-## 2. Write your policy
+## 2. Write your policy — or let candor propose one
 
-Copy [`arch.policy`](./arch.policy) to your repo root and edit the package names.
+**Fastest start — [`candor-init`](./candor-init) proposes a policy from what your code already does**, so
+every rule it emits *currently passes* (safe to adopt, and it catches future regressions):
+
+```bash
+jbang candor@tombaldwin/candor-java target/classes --json .candor/report.json   # writes report + callgraph
+python3 candor-init .candor/report.json --out .candor/policy                     # proposes the policy
+```
+
+It finds the layers that are pure today (`pure com.shop.domain`) and the boundary effects each layer doesn't
+reach (`deny Db Net … com.shop.repo`). Review it, keep what matches your intent, delete the rest. (It's
+engine-agnostic — a `candor-ts`/`candor-scan`/`candor-swift` report works too.)
+
+**Or write it by hand.** Copy [`arch.policy`](./arch.policy) to your repo root and edit the package names.
 Start with the one rule that matters most — usually "the domain does no I/O":
 
 ```

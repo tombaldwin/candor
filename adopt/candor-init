@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""candor-init — propose a starter architecture policy from what a codebase ALREADY does.
+
+The barrier to the candor gate isn't running it — it's knowing *what policy to write*. This reads a
+spec-0.7/0.8 report envelope (any engine) and proposes a `.candor/policy` from the structure that's already
+true, so **every rule it emits currently passes** — adopting it is safe and locks the discipline in against
+future regressions. Review it, keep what matches your intent, delete the rest.
+
+Two kinds of proposal:
+  • `pure <layer>`            — a layer that performs NO effect today (a future I/O leak there fails the gate)
+  • `deny <effects> <layer>`  — the boundary effects a layer does NOT reach today (lock them out)
+
+Usage:
+    candor-init <report.json> [--callgraph <file>] [--out <policy-file>] [--min-fns N]
+
+    <report.json>   a candor report (from any engine: `candor <target> --json report.json`)
+    --callgraph F   the report's call-graph sidecar (auto-detected as the sibling `*callgraph*.json`).
+                    It lists EVERY function incl. pure leaves (§2.2), which the report omits — so it is
+                    what lets `candor-init` see a FULLY-PURE layer and propose `pure <layer>` for it.
+    --out FILE      write the policy here (default: stdout)
+    --min-fns N     ignore layers with fewer than N functions (default 1) — trims noise on tiny packages
+
+Layers are the module segment just below the common package prefix (candor-spec §6.1), the same bucketing
+`containment` uses. Emits nothing actionable (just a note) when there's no clear layering.
+"""
+import argparse, glob, json, os, sys
+
+# Effects that mark an architectural BOUNDARY (worth a layering rule). Ambient effects (Clock/Rand/Log/Env)
+# and Unknown are deliberately excluded — a `deny Clock` rule is noise, not architecture.
+BOUNDARY = ["Db", "Net", "Fs", "Exec", "Ipc", "Clipboard"]
+
+
+def load(path):
+    try:
+        return json.load(open(path, encoding="utf-8"))
+    except Exception as e:
+        print(f"candor-init: could not read report {path}: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
+def load_optional(path):
+    """Load the callgraph sidecar — OPTIONAL (it only enriches pure-layer detection), so a missing or
+    unreadable file degrades to report-only rather than aborting."""
+    if not path:
+        return None
+    try:
+        return json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def common_prefix_segments(names, sep):
+    """The longest common leading package path (list of segments) across all fn names."""
+    split = [n.split(sep)[:-1] for n in names if sep in n]  # drop the final member; keep the package path
+    if not split:
+        return []
+    pre = split[0]
+    for s in split[1:]:
+        i = 0
+        while i < len(pre) and i < len(s) and pre[i] == s[i]:
+            i += 1
+        pre = pre[:i]
+        if not pre:
+            break
+    return pre
+
+
+def layer_of(fn, prefix, sep):
+    """The module segment just below the common prefix — the 'layer' (§6.1). None if fn is at the prefix root."""
+    segs = fn.split(sep)[:-1]  # package path (drop the member)
+    if len(segs) <= len(prefix):
+        return None            # sits at the root — no sub-layer
+    return segs[len(prefix)]
+
+
+def find_callgraph(report_path):
+    """The sibling call-graph sidecar (naming varies per engine: <stem>.callgraph.json, or
+    <prefix>.<member>.scan.callgraph.json …). Prefer the exact `.json`→`.callgraph.json` swap, else glob."""
+    exact = report_path[:-5] + ".callgraph.json" if report_path.endswith(".json") else report_path + ".callgraph.json"
+    if os.path.exists(exact):
+        return exact
+    hits = [p for p in glob.glob(os.path.join(os.path.dirname(report_path) or ".", "*callgraph*.json"))]
+    return hits[0] if hits else None
+
+
+def analyze(report, callgraph):
+    fns = report.get("functions", [])
+    effect_names = [f["fn"] for f in fns if "fn" in f]
+    # ALL functions (incl. pure leaves the report omits) come from the callgraph — that's what reveals a
+    # fully-pure layer. Fall back to the report's names when no callgraph is available.
+    all_names = list(callgraph.keys()) if isinstance(callgraph, dict) else effect_names
+    sep = "::" if any("::" in n for n in all_names) else "."
+    prefix = common_prefix_segments(all_names, sep)
+    layers = {}  # layer -> {"fns": int, "effects": set}
+    for fn in all_names:                       # enumerate layers from ALL fns (pure layers appear here)
+        L = layer_of(fn, prefix, sep)
+        if L is not None:
+            layers.setdefault(L, {"fns": 0, "effects": set()})["fns"] += 1
+    eff_by_fn = {f["fn"]: [e for e in f.get("inferred", []) if e != "Unknown"] for f in fns if "fn" in f}
+    for fn, effs in eff_by_fn.items():         # effects come from the report (only effectful fns)
+        L = layer_of(fn, prefix, sep)
+        if L is not None and L in layers:
+            layers[L]["effects"].update(effs)
+    return ".".join(prefix), sep, layers
+
+
+def propose(prefix, layers, min_fns):
+    lines, pure, denies = [], [], []
+    for L in sorted(layers):
+        rec = layers[L]
+        if rec["fns"] < min_fns:
+            continue
+        full = f"{prefix}.{L}" if prefix else L
+        if not rec["effects"]:
+            pure.append((full, rec["fns"]))
+        else:
+            missing = [e for e in BOUNDARY if e not in rec["effects"]]
+            if missing:
+                have = ", ".join(sorted(rec["effects"]))
+                denies.append((full, missing, have, rec["fns"]))
+    if pure:
+        lines.append("# ── Layers that perform NO effects today — lock the purity in ──")
+        for full, n in pure:
+            lines.append(f"pure {full}          # {n} function(s), no effects — a future I/O leak here fails the gate")
+        lines.append("")
+    if denies:
+        lines.append("# ── Boundary effects each layer does NOT reach today — keep it that way ──")
+        for full, missing, have, n in denies:
+            lines.append(f"deny {' '.join(missing)} {full}   # today reaches {{ {have} }} only ({n} fn) — locks out the rest")
+        lines.append("")
+    return lines, len(pure) + len(denies)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="candor-init")
+    ap.add_argument("report")
+    ap.add_argument("--callgraph", default=None)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--min-fns", type=int, default=1)
+    args = ap.parse_args(argv)
+
+    report = load(args.report)
+    cg_path = args.callgraph or find_callgraph(args.report)
+    callgraph = load_optional(cg_path)
+    if callgraph is None:
+        print("candor-init: no call-graph sidecar found — pure layers can't be detected (only deny rules "
+              "from effectful layers). Pass --callgraph or run the scan with --json to write one.", file=sys.stderr)
+    prefix, sep, layers = analyze(report, callgraph)
+    body, n = propose(prefix, layers, args.min_fns)
+
+    header = [
+        "# .candor/policy — PROPOSED by `candor-init` from what your code does today.",
+        "# EVERY rule below currently PASSES: adopting it is safe and catches future regressions.",
+        "# Review it, keep the rules that match your intent, delete the rest, then gate on it:",
+        "#   candor <classes-or-src> --policy .candor/policy   (exit 1 on a violation)",
+        "",
+    ]
+    if n == 0:
+        header.append("# (No clear layering under a common package prefix — candor found no sub-layers to")
+        header.append("#  propose rules for. Add packages/modules, or write rules by hand from `candor map`.)")
+    out = "\n".join(header + body).rstrip() + "\n"
+
+    if args.out:
+        open(args.out, "w", encoding="utf-8").write(out)
+        print(f"candor-init: wrote {n} proposed rule(s) to {args.out}", file=sys.stderr)
+    else:
+        sys.stdout.write(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

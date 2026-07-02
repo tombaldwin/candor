@@ -46,8 +46,11 @@ both site items resolved — see *Deferred*.
   serving all four engines' reports, with the gate verdict (resolves the checked-in `.candor/config`
   policy), containment, blindspots, diff, gains + MCP resources (report + policy); verified across all
   four engines' real reports; the rust python server deprecated. Rides the next candor-ts publish.
-  **Bet 2 — `candor-lsp` — is the track's next scoped item** (weeks; CodeLens effects/blast-radius, gate
-  diagnostics at the violating loc, whatif code-action, on the same read layer). Not yet scheduled.
+  **Bet 2 — `candor-lsp` — P1 SHIPPED (2026-07-02):** CodeLens `⚡ effects · blast radius N` + the live
+  gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
+  freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
+  _Remaining P2 slices:_ a thin VS Code client extension, hover provenance, the whatif code-action,
+  large-repo lens performance. Both surfaces ride the next candor-ts publish.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor

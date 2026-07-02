@@ -50,7 +50,14 @@ both site items resolved — see *Deferred*.
   gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
   freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
   _Remaining P2 slices:_ a thin VS Code client extension, the whatif code-action, large-repo lens
-  performance (hover provenance shipped 2026-07-02; rides the next candor-ts publish). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  performance (hover provenance shipped 2026-07-02; rides the next candor-ts publish). **JetBrains
+  slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
+  → auto npm-install) — authored + committed on a local branch of the lsp4ij fork, **PR awaiting Tom's
+  go** (external-repo publication); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — the
+  Marketplace-plugin skeleton: LSP4IJ client spawning the VERIFIED 20KB single-file server bundle +
+  the JVM freshness loop (the bundled candor-java jar re-scans after every successful build, opt-in
+  via `.candor/`). Next: compile-verify (`gradle buildPlugin`, ~1GB SDK), runIde smoke, Marketplace
+  vendor account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
   the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
   every released artifact is current with main.
 

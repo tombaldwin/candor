@@ -40,14 +40,14 @@ both site items resolved — see *Deferred*.
   [`FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md). _Remaining polish (deferred):_ `maxHops`
   in the activity log; standalone/CI logging; a richer in-IDE/MCP push.
 
-- **[decision needed] The next agent-loop bet — DESIGNED 2026-07-02, decision pending (Tom's).** Full
-  scoping in [`integrations/AGENT-SURFACE-DESIGN.md`](integrations/AGENT-SURFACE-DESIGN.md): both
-  candidates consume the same spec-0.8 envelope, so the shape is **one read-core, two surfaces** —
-  **bet 1: a unified engine-agnostic `candor-mcp`** (days; supersedes the two divergent per-engine
-  servers, adds the gate-verdict/containment/blindspots/gains tools + resources + the generalized watch
-  freshness loop) then **bet 2: `candor-lsp`** on the same core (weeks; CodeLens effects/blast-radius,
-  gate diagnostics at the violating loc, whatif code-action). Recommended sequence: core → MCP now →
-  LSP next; bet 1 stands alone if bet 2 defers. Go/no-go + sequence choice is Tom's.
+- **The agent-surface sequence (decided by Tom 2026-07-02; design in
+  [`integrations/AGENT-SURFACE-DESIGN.md`](integrations/AGENT-SURFACE-DESIGN.md)). Bet 1 — the unified
+  `candor-mcp` — SHIPPED same day:** one engine-agnostic MCP server (candor-ts pkg, `candor-mcp` bin)
+  serving all four engines' reports, with the gate verdict (resolves the checked-in `.candor/config`
+  policy), containment, blindspots, diff, gains + MCP resources (report + policy); verified across all
+  four engines' real reports; the rust python server deprecated. Rides the next candor-ts publish.
+  **Bet 2 — `candor-lsp` — is the track's next scoped item** (weeks; CodeLens effects/blast-radius, gate
+  diagnostics at the violating loc, whatif code-action, on the same read layer). Not yet scheduled.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor

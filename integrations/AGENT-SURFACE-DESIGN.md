@@ -1,9 +1,12 @@
 # The next agent-loop bet — one candor core, two delivery surfaces
 
-Status: **design / decision pending (Tom's go/no-go).** Written for the backlog's
-*[decision needed] the next agent-loop bet* — the north-star track's P0 shipped and nothing concrete is
-scoped behind it. This doc scopes the two candidates the backlog names — **(a) the LSP** and **(b) the
-richer MCP push** — and recommends a sequence rather than a choice.
+Status: **decision made (Tom, 2026-07-02): the recommended sequence — and bet 1 is BUILT.** The unified
+`candor-mcp` ships in the candor-ts package (the read layer was already engine-agnostic, so the "core
+extraction" collapsed to enrichment): five new tools (gate / containment / blindspots / diff / gains),
+MCP resources (report + checked-in policy), `.candor/config` policy discovery for `candor_gate`, the
+`candor-mcp` bin alias, default-prefix discovery; verified serving all four engines' real reports through
+one server; the rust python server carries a deprecation pointer. **Bet 2 (the LSP) is the next bet on
+this surface** — unscheduled, on the same core. Original scoping below.
 
 ## What exists today (the inventory that changes the picture)
 
@@ -96,10 +99,11 @@ binary for other editors.
 
 ## Open questions (before bet 1 starts)
 
-1. **Home:** the umbrella repo (`integrations/mcp/`, beside `integrations/github/`) vs a new
-   `candor-mcp` repo. Umbrella is consistent with candor-sarif; npm packaging works from either.
-2. **Deprecation:** do the per-engine servers (`candor-ts-mcp`, the rust python) get retired
-   immediately or kept as thin aliases for a release?
+1. **Home — RESOLVED:** it stays in the candor-ts package (the read layer lives there as
+   `query-core.mjs`, one source of truth with the CLI; a separate package would fork it). The unified
+   name ships as the `candor-mcp` bin alias.
+2. **Deprecation — RESOLVED:** `candor-ts-mcp` stays as a compat alias; the rust python server carries
+   a deprecation banner for one release cycle.
 3. **The §config `scan` key** (the refresh command per repo) — a v1.1 amendment candidate, not v1.
 4. **candor-agents** (the fleet engine) — its reports are the same envelope; the unified server
    should read them for free, worth a test.

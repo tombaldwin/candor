@@ -1,0 +1,47 @@
+<idea-plugin>
+    <id>io.poly.candor</id>
+    <name>candor — effects &amp; architecture gate</name>
+    <vendor url="https://candor.poly.io">Polymorphism</vendor>
+    <description><![CDATA[
+        Every function's <b>side-effect map</b>, where the code is — from
+        <a href="https://candor.poly.io">candor</a>'s per-function effect analysis
+        (JVM bytecode, TypeScript/JavaScript, Rust, Swift):
+        <ul>
+            <li><b>CodeLens</b>: <code>⚡ Db, Net · blast radius 12</code> on every effectful function;</li>
+            <li><b>Diagnostics</b>: your checked-in architecture policy ("the domain does no I/O")
+                enforced live, violations squiggled at the offending function;</li>
+            <li><b>Hover</b>: effect provenance — the call chain an inherited effect travels.</li>
+        </ul>
+        On JVM projects the bundled candor engine refreshes the effect report automatically after each
+        successful build — no external tools needed. Requires Node.js on PATH (the language server runtime).
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="candor"
+                name="candor"
+                factoryClass="io.poly.candor.ide.CandorLanguageServerFactory">
+            <description><![CDATA[
+                candor's effect map as LSP: codeLens (effects + blast radius), architecture-gate
+                diagnostics, and effect-provenance hover — rendered from the project's
+                <code>.candor/report</code> (any candor engine).
+            ]]></description>
+        </server>
+        <!-- The report is language-agnostic; map the family's languages. A mapping only ATTACHES the
+             server — files with no report entries simply get no lenses (the server is silent there). -->
+        <languageMapping language="JAVA" serverId="candor" languageId="java"/>
+        <languageMapping language="kotlin" serverId="candor" languageId="kotlin"/>
+        <fileTypeMapping fileType="JavaScript" serverId="candor" languageId="javascript"/>
+        <fileTypeMapping fileType="TypeScript" serverId="candor" languageId="typescript"/>
+        <fileTypeMapping fileType="Rust" serverId="candor" languageId="rust"/>
+        <fileTypeMapping fileType="Swift" serverId="candor" languageId="swift"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- The JVM freshness loop: after a successful Gradle/Maven/JPS build, re-run the bundled
+             candor-java jar over the compiled output so the lenses/gate reflect the code just built. -->
+        <projectTaskListener implementation="io.poly.candor.ide.CandorBuildListener"/>
+    </extensions>
+</idea-plugin>

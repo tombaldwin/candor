@@ -5,7 +5,7 @@ import de.undercouch.gradle.tasks.download.Download
 // a spawn, and a build hook. See ../AGENT-SURFACE-DESIGN.md (bet 2) + README.md.
 plugins {
     id("java")
-    id("org.jetbrains.intellij.platform") version "2.2.1"
+    id("org.jetbrains.intellij.platform") version "2.17.0"
     id("de.undercouch.download") version "5.6.0"
 }
 
@@ -30,14 +30,18 @@ java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
 // ── the two embedded artifacts ──────────────────────────────────────────────────────────────────────
 // 1. The single-file LSP server: npm-install candor-ts into build/, esbuild lsp.mjs → one ~20KB .mjs.
 //    (Requires node+npx on the BUILD machine only; users need node on PATH at runtime — see README.)
+val stageServer by tasks.registering(Exec::class) {
+    val stage = layout.buildDirectory.dir("server-stage").get().asFile
+    outputs.dir(stage.resolve("node_modules/candor-ts"))
+    doFirst { stage.mkdirs() }
+    workingDir = stage
+    commandLine("npm", "install", "--no-save", "--no-audit", "--no-fund", "candor-ts")
+}
 val bundleServer by tasks.registering(Exec::class) {
+    dependsOn(stageServer)
     val stage = layout.buildDirectory.dir("server-stage").get().asFile
     val out = layout.buildDirectory.file("embedded/candor-lsp.mjs").get().asFile
     outputs.file(out)
-    doFirst {
-        stage.mkdirs()
-        exec { workingDir = stage; commandLine("npm", "install", "--no-save", "candor-ts") }
-    }
     workingDir = stage
     commandLine(
         "npx", "-y", "esbuild", "node_modules/candor-ts/lsp.mjs",

@@ -6,9 +6,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.CompilerModuleExtension;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.module.ModuleManager;
-import com.intellij.task.ProjectTaskContext;
 import com.intellij.task.ProjectTaskListener;
 import com.intellij.task.ProjectTaskManager;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,10 +31,17 @@ import java.util.List;
 public class CandorBuildListener implements ProjectTaskListener {
     private static final Logger LOG = Logger.getInstance(CandorBuildListener.class);
 
+    // Declarative project-level listener (plugin.xml <projectListeners>): the platform injects the
+    // Project via this constructor; the modern finished() carries only the Result.
+    private final Project project;
+
+    public CandorBuildListener(Project project) {
+        this.project = project;
+    }
+
     @Override
-    public void finished(ProjectTaskContext context, ProjectTaskManager.Result result) {
-        if (result.hasErrors()) return;
-        Project project = context.getProject();
+    public void finished(@NotNull ProjectTaskManager.Result result) {
+        if (result.hasErrors() || result.isAborted()) return;
         String base = project.getBasePath();
         if (base == null || !Files.isDirectory(Path.of(base, ".candor"))) return;   // opt-in marker
 

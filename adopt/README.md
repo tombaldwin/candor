@@ -31,17 +31,25 @@ That tells you which rules are already true and worth locking in.
 
 ## 2. Write your policy — or let candor propose one
 
-**Fastest start — [`candor-init`](./candor-init) proposes a policy from what your code already does**, so
-every rule it emits *currently passes* (safe to adopt, and it catches future regressions):
+**Fastest start — one command.** [`candor-init.sh`](./candor-init.sh) scans your compiled classes, proposes
+a starter policy from what your code already does, records a baseline, and drops the GitHub Action:
 
 ```bash
-jbang candor@tombaldwin/candor-java target/classes --json .candor/report.json   # writes report + callgraph
-python3 candor-init .candor/report.json --out .candor/policy                     # proposes the policy
+mvn -q compile              # (or ./gradlew classes) — candor reads bytecode
+./candor-init.sh            # → arch.policy + .candor/baseline.json + .github/workflows/candor.yml
 ```
 
-It finds the layers that are pure today (`pure com.shop.domain`) and the boundary effects each layer doesn't
-reach (`deny Db Net … com.shop.repo`). Review it, keep what matches your intent, delete the rest. (It's
-engine-agnostic — a `candor-ts`/`candor-scan`/`candor-swift` report works too.)
+Every rule it proposes *currently passes* (safe to adopt, and it catches future regressions): it finds the
+layers that are pure today (`pure com.shop.domain`) and the boundary effects each layer doesn't reach
+(`deny Db Net … com.shop.repo`). Review `arch.policy`, keep what matches your intent, delete the rest. It
+never clobbers an existing policy or workflow.
+
+**Just the policy** (engine-agnostic — works on a `candor-ts`/`candor-scan`/`candor-swift` report too):
+
+```bash
+<your engine> <target> --json .candor/report.json   # writes report + callgraph
+python3 candor-init .candor/report.json --out arch.policy
+```
 
 **Or write it by hand.** Copy [`arch.policy`](./arch.policy) to your repo root and edit the package names.
 Start with the one rule that matters most — usually "the domain does no I/O":

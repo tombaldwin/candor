@@ -149,10 +149,10 @@ def main(argv=None):
     body, n = propose(prefix, layers, args.min_fns)
 
     header = [
-        "# .candor/policy — PROPOSED by `candor-init` from what your code does today.",
+        "# candor architecture policy — PROPOSED by `candor-init` from what your code does today.",
         "# EVERY rule below currently PASSES: adopting it is safe and catches future regressions.",
         "# Review it, keep the rules that match your intent, delete the rest, then gate on it:",
-        "#   candor <classes-or-src> --policy .candor/policy   (exit 1 on a violation)",
+        "#   candor <classes-or-src> --policy <this file>   (exit 1 on a violation)",
         "",
     ]
     if n == 0:

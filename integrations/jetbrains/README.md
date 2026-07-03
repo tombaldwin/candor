@@ -1,7 +1,7 @@
 # candor for JetBrains IDEs — plugin skeleton
 
 **Status: COMPILE-VERIFIED + PACKAGED (2026-07-02)** — `gradle buildPlugin` produces
-`build/distributions/candor-intellij-0.1.0.zip` (sideloadable via Settings → Plugins → ⚙ → Install
+`build/distributions/candor-intellij-0.8.0.zip` (sideloadable via Settings → Plugins → ⚙ → Install
 from disk) against IC 2024.3 + LSP4IJ 0.20.1, with both artifacts embedded and verified: the
 single-file server bundle (`server/candor-lsp.mjs`, ~18 KB, handshakes with full capabilities) and
 the released engine (`engine/candor-java-all.jar`). Not yet `runIde`-smoked or Marketplace-published.
@@ -19,6 +19,10 @@ editor runs:
   writing `.candor/report.json`. Opt-in by presence of a `.candor/` directory — the plugin never
   writes into a repo that hasn't adopted candor. Zero external tools (no jbang, no npm for JVM users).
 - **Runtime prerequisite:** Node.js on PATH (the server runtime; `$CANDOR_NODE` overrides).
+
+**Versioning:** the plugin's major.minor tracks the candor-spec version of its bundled toolchain
+(the family rule) — 0.8.x ships spec-0.8 tools (candor-java 0.8.x jar + the candor-ts 0.8.x server);
+the patch floats per plugin release.
 
 ## Build
 

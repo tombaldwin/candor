@@ -58,7 +58,18 @@ val fetchEngineJar by tasks.registering(Download::class) {
     overwrite(false)
 }
 
+// The artifact gate: handshake the BUILT bundle over LSP stdio before it can be packaged. The plugin
+// once shipped a startup-crashing server because the verified bundle and the packaged bundle were
+// built from different sources — this task makes the packaged one the verified one, by construction.
+val verifyServerBundle by tasks.registering(Exec::class) {
+    dependsOn(bundleServer)
+    val out = layout.buildDirectory.file("embedded/candor-lsp.mjs").get().asFile
+    inputs.file(out)
+    commandLine("node", "verify-server.mjs", out.absolutePath)
+}
+
 tasks.processResources {
+    dependsOn(verifyServerBundle)
     from(bundleServer) { into("server") }
     from(fetchEngineJar) { into("engine") }
 }

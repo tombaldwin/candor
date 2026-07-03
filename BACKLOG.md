@@ -59,8 +59,11 @@ both site items resolved — see *Deferred*.
   LSP4IJ 0.20.1, embedding the verified 18KB server bundle + the v0.8.2 engine jar; the JVM freshness
   loop uses the modern ProjectTaskListener API. **Verifier-clean (Compatible × 6 IDE targets, IC-243 →
   IU-262** — it caught the em-dash plugin-name Marketplace blocker); Beaky pluginIcon.svg; a
-  `jetbrains-plugin` CI job in the umbrella (green). Next: a HUMAN install-from-disk/runIde smoke of
-  `candor-intellij-0.1.0.zip` in a real IDE, then the Marketplace vendor account (Tom's). **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
+  `jetbrains-plugin` CI job in the umbrella (green). **UPLOADED to the
+  JetBrains Marketplace 2026-07-03 (Apache-2.0, tags: static analysis / code quality / security; source
+  URL → integrations/jetbrains) — first-plugin moderation pending (~2-3 business days).** On approval:
+  wire `publishPlugin` + the Marketplace token as a repo secret so 0.1.1+ ship headlessly; an
+  install-from-disk smoke in a real IDE remains worthwhile whenever convenient. **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
   the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
   every released artifact is current with main.
 

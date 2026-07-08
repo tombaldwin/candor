@@ -82,7 +82,11 @@ public class CandorBuildListener implements ProjectTaskListener {
     static Path extractedEngineJar() throws IOException {
         Path dir = Path.of(System.getProperty("java.io.tmpdir"), "candor-intellij");
         Path out = dir.resolve("candor-java-all.jar");
-        if (Files.exists(out) && Files.size(out) > 0) return out;
+        // ALWAYS re-extract (REPLACE_EXISTING, no exists-short-circuit) — an exists-and-nonempty check
+        // pinned users to the OLD jar after a plugin upgrade bundling a newer engine, so post-build
+        // reports silently missed the new coverage (e.g. these very 0.8.4 soundness fixes). The bundled
+        // jar IS the correct one for THIS plugin build; extraction is once per build, negligible. Mirrors
+        // extractedServer's REPLACE_EXISTING (review find).
         try (InputStream in = CandorBuildListener.class.getResourceAsStream("/engine/candor-java-all.jar")) {
             if (in == null) throw new IOException("bundled engine missing from plugin resources");
             Files.createDirectories(dir);

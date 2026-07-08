@@ -109,6 +109,15 @@ candor doesn't self-update; you do (it has no network). Per language:
 (Rust), the npm registry (TypeScript), and GitHub releases (JVM, Swift) — you have the network, so
 you do the comparison.
 
+**Upgrading invalidates baselines.** Coverage batches change what an engine sees — a new release can
+unmask hundreds of previously-invisible effects — so a saved baseline (the AS-EFF-005 regression guard,
+the AS-EFF-010 containment ratchet, a fingerprint `--baseline`) is comparable only to reports from its
+own producing build (spec §2.1; the JVM engine prints a note when the builds differ). After you upgrade
+candor in a repo: expect a wave of "gained" effects, read it as newly-visible reality unless a specific
+gain looks suspicious, then **regenerate the baseline with the new build** — never carry one across
+builds silently, and never wave the whole wave through without looking (a real regression can hide
+inside an unmasking).
+
 **Copy-paste for a human to drop into their agent.** Check version:
 
 ```text

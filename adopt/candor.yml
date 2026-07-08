@@ -61,10 +61,17 @@ jobs:
         env:
           CANDOR_POLICY: arch.policy
           # The AS-EFF-005 regression ratchet: bites when .candor/baseline.json is committed (candor-init.sh
-          # records it); with no baseline candor prints a note and the guard is simply inactive.
+          # records it); with no baseline candor prints a note and the guard is simply inactive. A baseline
+          # from a DIFFERENT engine build fails the gate closed (exit 2) — which is why the engine is PINNED
+          # below: upgrades become deliberate PRs that bump the version AND regenerate the baseline together.
           CANDOR_BASELINE: .candor/baseline.json
+          # ── EDIT 4 (occasionally): the pinned engine. Upgrade = bump this + regenerate the baseline in
+          # the same PR (run the scan locally with the new version, review the effect delta, commit both).
+          CANDOR_JAVA_VERSION: 0.8.3
           CLASSES: target/classes
-        run: jbang candor@tombaldwin/candor-java "$CLASSES" --json candor-report.json --gate-json candor-gate.json
+        run: >
+          jbang "https://github.com/tombaldwin/candor-java/releases/download/v${CANDOR_JAVA_VERSION}/candor-java-${CANDOR_JAVA_VERSION}-all.jar"
+          "$CLASSES" --json candor-report.json --gate-json candor-gate.json
 
       # Turn the gate verdict into SARIF and surface it on the PR + Security tab.
       # Runs even when the gate FAILED (that's the point — show the violation on the push).

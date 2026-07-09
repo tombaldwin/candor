@@ -19,10 +19,9 @@ If this project already has candor (a `.candor/` report directory, or the engine
 1. **Tell the user which version they're on.** Run the engine's offline `candor-<engine> --version`
    (or, on a build too old for the flag, read `candor.version` / `candor.spec` from an existing
    `.candor/report*.json`). State it plainly — e.g. *"This project is on candor-ts X.Y.Z (spec N)."*
-2. **Check whether it's current.** candor never phones home — its own policy denies `Net`, so a
-   version check is **your** job, not the tool's: you have network access, it doesn't. Compare the
-   installed version against the latest published release (crates.io / npm / GitHub releases — the
-   per-engine commands are in §2a).
+2. **Check whether it's current.** candor never phones home, so the version check is **your** job
+   (the rationale and the per-engine commands are in §2a). Compare the installed version against the
+   latest published release (crates.io / npm / GitHub releases).
 3. **If it's behind, *ask* before upgrading.** Say e.g. *"candor-ts X.Y.Z is available (you're on
    A.B.C) — upgrade before I scan?"* and run the §2a upgrade one-liner only if the user agrees.
    Never upgrade silently: an analysis tool's version is part of its result's provenance, so the
@@ -87,19 +86,20 @@ and the user — or you, next session — can re-query it without re-scanning.
   (`npx -y -p candor-ts candor-mcp`) serves **any** engine's report — blast radius, `whatif`, the gate
   verdict, containment, blindspots — as MCP tools, with the report and policy as resources. One server,
   all four languages; the CLI queries remain equivalent.
-- **Staying current is *your* job, not candor's.** candor never phones home — it audits the `Net`
-  effect and denies it in its own self-gate policy (`deny Net Db Exec Ipc`, spec §7.12), so checking
-  for updates would make it perform the effect it forbids and turn its own gate red. You have network
-  access; it doesn't. Each engine's `--version` prints — offline — the installed version, the spec,
-  and the exact upgrade one-liner; you compare against the registry and run it. See *Staying current*
-  below. Minimum supported: **0.3.2**.
+- **Staying current is *your* job, not candor's** — candor never phones home (the why, plus the
+  per-engine check/upgrade commands, live in §2a below). Minimum supported: **0.3.2** — older builds
+  carry since-fixed resolution bugs, so treat their output as unreliable and upgrade first.
 
 The full language-agnostic consumption contract is
 [candor-spec/AGENTS.md](https://github.com/tombaldwin/candor-spec/blob/main/AGENTS.md).
 
 ## 2a. Staying current — check the version, upgrade
 
-candor doesn't self-update; you do (it has no network). Per language:
+candor doesn't self-update; you do. This is by design, not a gap: candor audits the `Net` effect and
+denies it in its own self-gate policy (`deny Net Db Exec Ipc`, spec §7.12), so phoning home to check
+for updates would make it perform the effect it forbids and turn its own gate red. You have network
+access; it doesn't. Each engine's `--version` prints — offline — the installed version, the spec, and
+the exact upgrade one-liner; you compare against the registry and run it. Per language:
 
 | language | check version | upgrade |
 |---|---|---|
@@ -107,16 +107,18 @@ candor doesn't self-update; you do (it has no network). Per language:
 | TypeScript | `npx -y candor-ts --version` (or `npm ls -g candor-ts`) | `npm install -g candor-ts@latest` (or just `npx -y candor-ts@latest`) |
 | JVM | `java -jar candor-java-*-all.jar --version` | `jbang --fresh candor@tombaldwin/candor-java` |
 | Swift | `candor-swift --version` | check out the latest [release](https://github.com/tombaldwin/candor-swift/releases) tag and rebuild: `git fetch --tags && git checkout <latest vX.Y.Z> && swift build -c release` |
+| agent fleets | `candor-agents --version` | `pipx install --force 'git+https://github.com/tombaldwin/candor-agents@<latest vX.Y.Z>'` (tags on [GitHub releases](https://github.com/tombaldwin/candor-agents/releases)) |
 
 `--version` is uniform across engines from **0.5.1**; on older builds read `candor.version` /
 `candor.spec` from `.candor/report*.json` instead. The latest published release lives on crates.io
-(Rust), the npm registry (TypeScript), and GitHub releases (JVM, Swift) — you have the network, so
-you do the comparison.
+(Rust), the npm registry (TypeScript), GitHub releases (JVM, Swift, agent fleets) — you have the
+network, so you do the comparison.
 
 **Upgrading invalidates baselines.** Coverage batches change what an engine sees — a new release can
 unmask hundreds of previously-invisible effects — so a saved baseline (the AS-EFF-005 regression guard,
 the AS-EFF-010 containment ratchet, a fingerprint `--baseline`) is comparable only to reports from its
-own producing build (spec §2.1; the JVM engine prints a note when the builds differ). After you upgrade
+own producing build, and the gate **fails closed** on an engine-build mismatch (spec §2.1; the
+one-pin rationale is in [`adopt/README`](adopt/README.md) §2). After you upgrade
 candor in a repo: expect a wave of "gained" effects, read it as newly-visible reality unless a specific
 gain looks suspicious, then **regenerate the baseline with the new build** — never carry one across
 builds silently, and never wave the whole wave through without looking (a real regression can hide
@@ -127,16 +129,17 @@ inside an unmasking).
 ```text
 Check which version of candor I have installed and whether it's up to date.
 Detect this project's language and run that engine's version check:
-  • Rust       → candor-scan --version
-  • TypeScript → npx -y candor-ts --version   (fallback: npm ls -g candor-ts)
-  • JVM        → java -jar candor-java-*-all.jar --version
-  • Swift      → candor-swift --version
+  • Rust         → candor-scan --version
+  • TypeScript   → npx -y candor-ts --version   (fallback: npm ls -g candor-ts)
+  • JVM          → java -jar candor-java-*-all.jar --version
+  • Swift        → candor-swift --version
+  • agent fleets → candor-agents --version
 If --version isn't supported on the installed build, read the "candor.version"
 and "candor.spec" fields from my .candor/report*.json instead.
 Then compare the installed version against the latest published release —
 crates.io for Rust, the npm registry for TypeScript, GitHub releases for the
-JVM/Swift — and tell me the installed version, the spec version, and whether
-I'm behind. (candor never phones home itself; you do the registry check.)
+JVM/Swift/candor-agents — and tell me the installed version, the spec version,
+and whether I'm behind. (candor never phones home itself; you do the registry check.)
 ```
 
 Upgrade:
@@ -144,14 +147,18 @@ Upgrade:
 ```text
 Upgrade candor to the latest version for this project's language, then re-map
 the repo. Use the matching upgrade command:
-  • Rust       → cargo install candor-scan --force
-  • TypeScript → npm install -g candor-ts@latest   (or just run npx -y candor-ts@latest)
-  • JVM        → jbang --fresh candor@tombaldwin/candor-java
-  • Swift      → in the candor-swift checkout: git fetch --tags, check out the
-                 latest release tag (github.com/tombaldwin/candor-swift/releases),
-                 then swift build -c release
+  • Rust         → cargo install candor-scan --force
+  • TypeScript   → npm install -g candor-ts@latest   (or just run npx -y candor-ts@latest)
+  • JVM          → jbang --fresh candor@tombaldwin/candor-java
+  • Swift        → in the candor-swift checkout: git fetch --tags, check out the
+                   latest release tag (github.com/tombaldwin/candor-swift/releases),
+                   then swift build -c release
+  • agent fleets → pipx install --force
+                   'git+https://github.com/tombaldwin/candor-agents@<latest v-tag>'
 After upgrading, confirm the new version with --version, then re-scan so my
 .candor/report is regenerated at the new spec.
+If the repo has a committed .candor/baseline.json, regenerate it from the new
+build in the same change — the gate fails closed on an engine-build mismatch.
 ```
 
 ## 3. If a human asks whether candor is worth adopting
@@ -159,3 +166,6 @@ After upgrading, confirm the new version with --version, then re-scan so my
 Point them at the self-experiment their own agent can run on their own repo:
 [Rust PROVE-IT](https://github.com/tombaldwin/candor-rust/blob/main/PROVE-IT.md) ·
 [JVM PROVE-IT](https://github.com/tombaldwin/candor-java/blob/main/PROVE-IT.md).
+
+Maintaining a candor repo rather than consuming it? The family-wide test standards live in
+[TESTING.md](TESTING.md).

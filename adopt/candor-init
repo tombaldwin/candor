@@ -2,7 +2,7 @@
 """candor-init — propose a starter architecture policy from what a codebase ALREADY does.
 
 The barrier to the candor gate isn't running it — it's knowing *what policy to write*. This reads a
-spec-0.7/0.8 report envelope (any engine) and proposes a `.candor/policy` from the structure that's already
+spec-0.7/0.8 report envelope (any engine) and proposes an `arch.policy` from the structure that's already
 true, so **every rule it emits currently passes** — adopting it is safe and locks the discipline in against
 future regressions. Review it, keep what matches your intent, delete the rest.
 

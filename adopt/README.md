@@ -9,8 +9,16 @@ This folder has everything you need:
 
 | File | What it is |
 |------|------------|
+| [`candor-init.sh`](./candor-init.sh) | The one-command scaffold — scan, propose a policy, record the baseline, drop the Action |
+| [`candor-init`](./candor-init) | The policy proposer (python3) — usable on its own against any engine's report |
 | [`arch.policy`](./arch.policy) | An annotated policy template — copy to your repo root and edit |
 | [`candor.yml`](./candor.yml) | A GitHub Actions workflow — copy to `.github/workflows/` |
+
+**Getting it:** clone the umbrella repo (`git clone https://github.com/tombaldwin/candor`) or copy this
+`adopt/` folder **plus** `integrations/github/candor-sarif` — `candor-init.sh` reads its sibling files
+(`candor-init`, `candor.yml`, the SARIF reporter) and exits 2 without them. **Prerequisites:** a JRE 17+
+(to build your project and run the engine), `python3`, `curl`; Node.js instead if you scan with the
+TypeScript engine, and for the fingerprint tool.
 
 ## 1. Try it locally first
 
@@ -36,8 +44,19 @@ a starter policy from what your code already does, records a baseline, and drops
 
 ```bash
 mvn -q compile              # (or ./gradlew classes) — candor reads bytecode
-./candor-init.sh            # → arch.policy + .candor/baseline.json + .github/workflows/candor.yml
+./candor-init.sh            # scaffolds the five artifacts below
 ```
+
+It writes **five artifacts** — commit **all** of them (the AS-EFF-005 regression ratchet bites only when
+the baseline is committed):
+
+| Artifact | Role |
+|----------|------|
+| `arch.policy` | the proposed starter policy — review it first |
+| `.candor/baseline.json` | the regression-ratchet baseline |
+| `.candor/config` | policy + baseline wiring (spec §3.4) — local runs need no env vars |
+| `.candor/candor-sarif` | the vendored SARIF reporter — pinned with your repo, immune to upstream churn |
+| `.github/workflows/candor.yml` | the pinned CI gate |
 
 Every rule it proposes *currently passes* (safe to adopt, and it catches future regressions): it finds the
 layers that are pure today (`pure com.shop.domain`) and the boundary effects each layer doesn't reach
@@ -91,7 +110,8 @@ The rule kinds (full grammar + examples in [`arch.policy`](./arch.policy)):
 Copy [`candor.yml`](./candor.yml) to `.github/workflows/candor.yml` and edit the three
 marked spots (your build command, your compiled-classes directory —
 `target/classes` for Maven, `build/classes/java/main` for Gradle — and your source
-root). That's it — every push and pull request now runs the gate, and the architecture
+root) plus, occasionally, the fourth: the pinned engine version (`CANDOR_JAVA_VERSION`).
+That's it — every push and pull request now runs the gate, and the architecture
 rule fails the build when someone breaks it.
 
 The workflow also writes the violations as **SARIF**, so they surface **inline on the

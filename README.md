@@ -6,7 +6,7 @@
 bytecode (Java, Kotlin, Scala, Groovy) and knows which functions reach the network, filesystem, a
 database, a subprocess — *transitively, across packages* — then turns invariants like *"the domain
 layer does no I/O"* into a policy that fails the build when an edit breaks them. The same spec runs as
-full engines in Rust, TypeScript and Swift, kept in lockstep by a machine-checked conformance suite — so
+full engines in Rust, TypeScript and Swift, kept in agreement by a machine-checked conformance suite — so
 one mental model and one policy file work across your whole stack. **candor-java is the reference
 implementation; the others are first-class, conformance-checked engines.**
 
@@ -48,18 +48,26 @@ tracing by hand at equal completeness).
 
 ## Get the gate on your repo
 
-One command, no annotations or source changes ([`adopt/candor-init.sh`](adopt/candor-init.sh)):
+One command, no annotations or source changes ([`adopt/candor-init.sh`](adopt/candor-init.sh)). To get
+it, clone this repo (or copy `adopt/` plus `integrations/github/candor-sarif` — the script needs its
+sibling files and exits 2 without them). Prerequisites: a JRE 17+, `python3`, and `curl` (Node.js
+instead for the TypeScript engine, and for the fingerprint tool):
 
 ```bash
-mvn -q compile         # (or ./gradlew classes) — candor reads bytecode
-./candor-init.sh       # → arch.policy + .candor/baseline.json + .github/workflows/candor.yml
+git clone https://github.com/tombaldwin/candor        # (once, anywhere)
+cd your-repo
+mvn -q compile                     # (or ./gradlew classes) — candor reads bytecode
+/path/to/candor/adopt/candor-init.sh
 ```
 
 It scans your compiled classes with the exact engine release the dropped workflow pins, **proposes** a
 starter policy from what your code already does (every proposed rule currently passes — review it, keep
 what matches your intent), records the regression-ratchet baseline, and drops the GitHub Action that
-fails the build (pointing at the exact method) when an architecture rule is broken. Prefer to assemble
-it by hand? [**`adopt/`**](adopt/) also has the pieces as a copy-paste starter — the annotated
+fails the build (pointing at the exact method) when an architecture rule is broken. It writes **five
+artifacts** — `arch.policy`, `.candor/baseline.json`, `.candor/config`, `.candor/candor-sarif` (the
+vendored SARIF reporter), and `.github/workflows/candor.yml` — **commit all of them**: the regression
+ratchet bites only when the baseline is committed. Prefer to assemble it by hand?
+[**`adopt/`**](adopt/) also has the pieces as a copy-paste starter — the annotated
 [policy template](adopt/arch.policy) and the [workflow](adopt/candor.yml). See it running end-to-end on
 real Spring, Kotlin, and Quarkus apps in the [case studies](docs/case-studies.md).
 
@@ -95,3 +103,7 @@ doctrine (unit for pure logic, process for contracts), the non-negotiable pins (
 surface tested in-repo, every fail-closed path negative-tested, anti-fabrication twins, emission-path
 tests), byte-identity-gated refactors, and the coverage policy (no percentage gate; the
 zero-coverage-gate list stays empty).
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

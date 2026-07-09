@@ -2,7 +2,8 @@
 #
 # Copy this file to .github/workflows/candor.yml in your repo, drop an `arch.policy`
 # at the repo root (see adopt/arch.policy for a template), and edit the three marked
-# spots: your build step, your compiled-classes directory, and your source root.
+# spots: your build step, your compiled-classes directory, and your source root —
+# plus, on upgrades, the fourth: the pinned engine version (CANDOR_JAVA_VERSION, EDIT 4).
 #
 # What it does: builds your project, runs candor-java over the compiled bytecode with
 # your policy, and — the PR-native part — writes the violations as SARIF so they show up

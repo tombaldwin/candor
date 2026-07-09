@@ -31,10 +31,9 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "candor init: python3 is required for policy inference."; exit 2; }
 
 # Resolve the scanner. Default = the EXACT candor-java release the workflow pins (CANDOR_JAVA_VERSION in
-# candor.yml). ONE pin source is load-bearing: the AS-EFF-005 ratchet fails CLOSED on an engine-build
-# mismatch, so a baseline recorded by a floating "latest" scan would make the pinned Action exit 2 on the
-# adopter's first CI run the moment a newer engine ships. Prefer the workflow already in the repo (a
-# re-run must match what CI actually runs), else the copy this scaffold is about to drop.
+# candor.yml). ONE pin source is load-bearing — the ratchet fails CLOSED on an engine-build mismatch;
+# full rationale in adopt/README §2 ("One pin, one engine build"). Prefer the workflow already in the
+# repo (a re-run must match what CI actually runs), else the copy this scaffold is about to drop.
 SCAN="${CANDOR_SCAN_CMD:-}"
 if [ -n "$SCAN" ]; then
   SCAN_CMD=($SCAN)   # deliberate word-split: the env var is a command line

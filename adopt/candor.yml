@@ -82,9 +82,10 @@ jobs:
           SRC: src/main/java     # ← EDIT 3: your source root (for repo-relative line links)
         run: |
           # Prefer the VENDORED reporter (candor-init.sh drops it at .candor/candor-sarif — pinned with
-          # your repo, immune to upstream churn); fall back to fetching the umbrella repo's main.
+          # your repo, immune to upstream churn); fall back to a SHA-PINNED raw URL (never a floating
+          # `main` — an upstream push must not change what this repo's CI runs).
           if [ -f .candor/candor-sarif ]; then cp .candor/candor-sarif candor-sarif;
-          else curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/main/integrations/github/candor-sarif -o candor-sarif; fi
+          else curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/6e61e0afba8e90b4ada1ef0038ba56dbeb8b22a5/integrations/github/candor-sarif -o candor-sarif; fi
           python3 candor-sarif candor-report.json --gate candor-gate.json --src-root "$SRC" -o candor.sarif
           # For a clickable "how the effect reaches here" trace on each finding, add:
           #   --query-cmd "jbang candor@tombaldwin/candor-java"   (one query per violation — slower)

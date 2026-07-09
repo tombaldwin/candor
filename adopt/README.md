@@ -44,6 +44,15 @@ layers that are pure today (`pure com.shop.domain`) and the boundary effects eac
 (`deny Db Net … com.shop.repo`). Review `arch.policy`, keep what matches your intent, delete the rest. It
 never clobbers an existing policy or workflow.
 
+**One pin, one engine build.** The scaffold scans with the *exact* candor-java release the dropped
+workflow pins (`CANDOR_JAVA_VERSION` in `candor.yml` — the jar is fetched once into `~/.cache/candor`),
+so the recorded baseline and the CI gate always come from the same engine build. That matters because the
+baseline guard fails **closed** on an engine-build mismatch — a baseline from a floating "latest" scan
+would fail your first CI run the moment a newer engine ships. Upgrading stays a deliberate PR: bump the
+pin in the workflow, re-scan with it (`candor-init.sh` follows your repo's workflow pin, not the adopt
+copy's), review the effect delta, and refresh the baseline in the same PR
+(`cp .candor/report.json .candor/baseline.json` — a re-run never clobbers it silently).
+
 **Just the policy** (engine-agnostic — works on a `candor-ts`/`candor-scan`/`candor-swift` report too;
 NB the file-output flag differs: candor-java takes `--json <file>`, the scan-source engines take
 `--out <prefix>` — their `--json` streams to stdout):

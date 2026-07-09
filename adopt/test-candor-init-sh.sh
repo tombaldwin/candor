@@ -90,6 +90,56 @@ CANDOR_SCAN_CMD="$OUTMOCK" bash "$INIT" classes >"$WORK/outlog" 2>&1; rco=$?
 ok "--out engine detected via --help, scaffold ok" '[ "$rco" = 0 ] && [ -f arch.policy ]'
 ok "--out engine: prefix-named report found"       'grep -qE "^pure com\.shop\.domain" arch.policy'
 
+# PIN SKEW: with no CANDOR_SCAN_CMD, the init scan must run the EXACT candor-java release the dropped
+# workflow pins (parsed from candor.yml's CANDOR_JAVA_VERSION) — a floating "latest" scan records a
+# baseline the pinned, fail-closed Action rejects (exit 2) the moment a newer engine ships. Hermetic:
+# a fake `java` on PATH records its argv and writes the canned report; the jar cache is pre-seeded so
+# curl is never needed.
+PINV=$(sed -nE 's/^[[:space:]]*CANDOR_JAVA_VERSION:[[:space:]]*"?([0-9A-Za-z.+-]+)"?.*$/\1/p' "$HERE/candor.yml" | head -1)
+ok "candor.yml carries a parseable engine pin"     '[ -n "$PINV" ]'
+BIN="$WORK/bin"; mkdir -p "$BIN"
+cat > "$BIN/java" <<'FAKE'
+#!/usr/bin/env bash
+echo "$@" >> "${JAVA_ARGLOG:?}"
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out="$2"; shift; }; shift; done
+[ -n "$out" ] || exit 0     # the --help probe
+cat > "$out" <<'JSON'
+{"candor":{"spec":"0.8"},"functions":[{"fn":"com.shop.repo.Repo.save","inferred":["Fs"]}]}
+JSON
+cat > "${out%.json}.callgraph.json" <<'JSON'
+{"com.shop.domain.Order.total":[],"com.shop.repo.Repo.save":[]}
+JSON
+FAKE
+chmod +x "$BIN/java"
+CACHE="$WORK/jarcache"; mkdir -p "$CACHE"
+echo "fake jar" > "$CACHE/candor-java-$PINV-all.jar"   # pre-seeded → no download attempted
+PINP="$WORK/pinproj"; mkdir -p "$PINP/classes"; cd "$PINP"
+JAVA_ARGLOG="$WORK/java-args" PATH="$BIN:$PATH" CANDOR_JAR_CACHE="$CACHE" bash "$INIT" classes >"$WORK/pinlog" 2>&1; rcp=$?
+ok "pinned scan: scaffold succeeds"                '[ "$rcp" = 0 ] && [ -f arch.policy ] && [ -f .candor/baseline.json ]'
+ok "pinned scan: runs the workflow's exact jar"    'grep -q -- "-jar $CACHE/candor-java-$PINV-all.jar" "$WORK/java-args"'
+ok "pinned scan: says which pin it uses"           'grep -q "candor-java $PINV" "$WORK/pinlog" || grep -q "candor-java-$PINV" "$WORK/pinlog"'
+# an EXISTING workflow in the repo wins over the adopt copy (a re-run must match what CI actually runs)
+PINP2="$WORK/pinproj2"; mkdir -p "$PINP2/classes" "$PINP2/.github/workflows"; cd "$PINP2"
+sed 's/CANDOR_JAVA_VERSION: .*/CANDOR_JAVA_VERSION: 9.9.9/' "$HERE/candor.yml" > .github/workflows/candor.yml
+echo "fake jar" > "$CACHE/candor-java-9.9.9-all.jar"
+JAVA_ARGLOG="$WORK/java-args2" PATH="$BIN:$PATH" CANDOR_JAR_CACHE="$CACHE" bash "$INIT" classes >/dev/null 2>&1
+ok "existing workflow's pin wins over the adopt copy" 'grep -q "candor-java-9.9.9-all.jar" "$WORK/java-args2"'
+# an unparseable pin is a clear STOP, not a silent fall-back to a floating engine.
+BADHERE="$WORK/badhere"; mkdir -p "$BADHERE"
+cp "$INIT" "$HERE/candor-init" "$BADHERE/"
+grep -v 'CANDOR_JAVA_VERSION' "$HERE/candor.yml" > "$BADHERE/candor.yml"
+NOPINP="$WORK/nopinproj"; mkdir -p "$NOPINP/classes"; cd "$NOPINP"
+bash "$BADHERE/candor-init.sh" classes >"$WORK/nopinlog" 2>&1; rcnp=$?
+ok "unparseable pin → exit 2"                      '[ "$rcnp" = 2 ]'
+ok "unparseable pin → names the fix"               'grep -q "CANDOR_JAVA_VERSION" "$WORK/nopinlog" && grep -q "CANDOR_SCAN_CMD" "$WORK/nopinlog"'
+
+# SARIF vendoring: skipped (partial checkout) → a clear WARNING, never a silent no-op.
+ok "vendored SARIF reporter dropped when available" '[ -f "$WORK/proj/.candor/candor-sarif" ]'
+cp "$HERE/candor.yml" "$BADHERE/candor.yml"   # restore the pin; badhere still has no ../integrations → vendor skip
+VENDP="$WORK/vendproj"; mkdir -p "$VENDP/classes"; cd "$VENDP"
+JAVA_ARGLOG="$WORK/java-args3" PATH="$BIN:$PATH" CANDOR_JAR_CACHE="$CACHE" bash "$BADHERE/candor-init.sh" classes >"$WORK/vendlog" 2>&1
+ok "vendor skip → prints a WARNING"                'grep -q "WARNING" "$WORK/vendlog" && grep -qi "sarif" "$WORK/vendlog"'
+
 # [max-review 15] a re-run must NOT clobber the ratchet baseline (that would grandfather every
 # regression since adoption).
 cd "$WORK/proj"

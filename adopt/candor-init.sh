@@ -8,11 +8,12 @@
 # clobbered. Non-JVM projects: see adopt/README for the engine-agnostic flow (scan → candor-init → gate).
 #
 #   Usage:  candor-init.sh [<classes-dir>]
-#   The scanner defaults to `jbang candor@tombaldwin/candor-java`; override with CANDOR_SCAN_CMD
-#   (e.g. a pinned jar, or a non-JVM engine like `npx -y candor-ts` for a source tree).
+#   The scanner defaults to the EXACT candor-java release the dropped workflow pins (parsed from
+#   candor.yml's CANDOR_JAVA_VERSION — one pin source, so the recorded baseline and the CI gate always
+#   run the same build); override with CANDOR_SCAN_CMD (e.g. a local jar, or a non-JVM engine like
+#   `npx -y candor-ts` for a source tree — then keeping the scan and the gate on one build is on you).
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-SCAN="${CANDOR_SCAN_CMD:-jbang candor@tombaldwin/candor-java}"
 
 # Locate what to scan: an explicit arg, else the conventional compiled-output dir.
 TARGET="${1:-}"
@@ -29,20 +30,57 @@ if [ -z "$TARGET" ] || { [ ! -d "$TARGET" ] && [ ! -f "$TARGET" ]; }; then
 fi
 command -v python3 >/dev/null 2>&1 || { echo "candor init: python3 is required for policy inference."; exit 2; }
 
+# Resolve the scanner. Default = the EXACT candor-java release the workflow pins (CANDOR_JAVA_VERSION in
+# candor.yml). ONE pin source is load-bearing: the AS-EFF-005 ratchet fails CLOSED on an engine-build
+# mismatch, so a baseline recorded by a floating "latest" scan would make the pinned Action exit 2 on the
+# adopter's first CI run the moment a newer engine ships. Prefer the workflow already in the repo (a
+# re-run must match what CI actually runs), else the copy this scaffold is about to drop.
+SCAN="${CANDOR_SCAN_CMD:-}"
+if [ -n "$SCAN" ]; then
+  SCAN_CMD=($SCAN)   # deliberate word-split: the env var is a command line
+else
+  PIN_SRC=".github/workflows/candor.yml"
+  [ -f "$PIN_SRC" ] || PIN_SRC="$HERE/candor.yml"
+  CJV=$(sed -nE 's/^[[:space:]]*CANDOR_JAVA_VERSION:[[:space:]]*["'"'"']?([0-9A-Za-z.+-]+)["'"'"']?[[:space:]]*(#.*)?$/\1/p' "$PIN_SRC" 2>/dev/null | head -1)
+  if [ -z "$CJV" ]; then
+    echo "candor init: could not parse CANDOR_JAVA_VERSION from $PIN_SRC."
+    echo "  The scaffold records a baseline that the PINNED Action re-checks fail-closed, so the init scan"
+    echo "  must run the exact pinned release. Restore the pin line there, or set CANDOR_SCAN_CMD."
+    exit 2
+  fi
+  command -v java >/dev/null 2>&1 || { echo "candor init: java is required to run the pinned candor-java engine."; exit 2; }
+  command -v curl >/dev/null 2>&1 || { echo "candor init: curl is required to fetch the pinned candor-java release."; exit 2; }
+  # Same URL construction as candor.yml's gate step; cached so re-runs don't re-download.
+  CACHE="${CANDOR_JAR_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/candor}"
+  JAR="$CACHE/candor-java-$CJV-all.jar"
+  if [ ! -s "$JAR" ]; then
+    URL="https://github.com/tombaldwin/candor-java/releases/download/v$CJV/candor-java-$CJV-all.jar"
+    echo "candor init: fetching the pinned engine candor-java $CJV (the version $PIN_SRC pins) ..."
+    mkdir -p "$CACHE"
+    if ! curl -fsSL "$URL" -o "$JAR.tmp" || ! mv "$JAR.tmp" "$JAR"; then
+      rm -f "$JAR.tmp"
+      echo "candor init: could not download the pinned engine: $URL"
+      exit 2
+    fi
+  fi
+  SCAN="java -jar $JAR"
+  SCAN_CMD=(java -jar "$JAR")
+fi
+
 mkdir -p .candor
 
 # Engine-agnostic report output: candor-java writes a file via `--json <file>`; the scan-source engines
 # (ts/scan/swift) write files via `--out <prefix>` and treat `--json` as a STDOUT boolean — passing it a
 # filename there silently produces no report (max-review find). Probe the engine's --help for --out.
-if $SCAN --help 2>&1 | grep -q -- '--out'; then
+if "${SCAN_CMD[@]}" --help 2>&1 | grep -q -- '--out'; then
   SCAN_ARGS=(--out .candor/report)
 else
   SCAN_ARGS=(--json .candor/report.json)
 fi
 
 echo "candor init: scanning $TARGET ($SCAN) ..."
-if ! $SCAN "$TARGET" "${SCAN_ARGS[@]}" >/dev/null 2>&1; then
-  echo "candor init: the scan failed — is the engine installed (jbang / npx)? Run it manually to see why:"
+if ! "${SCAN_CMD[@]}" "$TARGET" "${SCAN_ARGS[@]}" >/dev/null 2>&1; then
+  echo "candor init: the scan failed — is the engine runnable (java / npx)? Run it manually to see why:"
   echo "  $SCAN $TARGET ${SCAN_ARGS[*]}"
   exit 2
 fi
@@ -88,9 +126,15 @@ else
 fi
 
 # 3b. vendor the SARIF reporter beside the baseline (never clobber) — the Action prefers this copy over
-# a curl of the umbrella repo's unpinned main, so a breaking upstream push can't affect this repo's CI.
-if [ ! -f .candor/candor-sarif ] && [ -f "$HERE/../integrations/github/candor-sarif" ]; then
-  cp "$HERE/../integrations/github/candor-sarif" .candor/candor-sarif
+# curling the umbrella repo, so upstream churn can't affect this repo's CI. Skipping silently would be a
+# no-op the adopter only discovers in CI — say so (the Action then falls back to a SHA-pinned raw URL).
+if [ ! -f .candor/candor-sarif ]; then
+  if [ -f "$HERE/../integrations/github/candor-sarif" ]; then
+    cp "$HERE/../integrations/github/candor-sarif" .candor/candor-sarif
+  else
+    echo "candor init: WARNING — SARIF reporter not vendored ($HERE/../integrations/github/candor-sarif is"
+    echo "  missing; a partial checkout?). The Action will curl a pinned copy from the umbrella repo instead."
+  fi
 fi
 
 # 4. drop the GitHub Action (never clobber).

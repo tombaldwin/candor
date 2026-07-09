@@ -1,0 +1,70 @@
+name: jetbrains plugin
+
+# The JetBrains plugin (integrations/jetbrains) — compile + package so the thin client can't rot while
+# it iterates on the Marketplace. Path-filtered: the IntelliJ SDK build is heavy (~1GB SDK, cached by
+# setup-gradle; steady state ~3 min), so it only runs when the plugin changes. Node is needed by the
+# bundleServer task (npm+esbuild). Plugin Verifier (binary compatibility against real IDE releases —
+# the same check the Marketplace runs on upload) downloads whole IDEs, so it runs on a WEEKLY schedule
+# (+ manual dispatch), not per push.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/jetbrains/**'
+      - '.github/workflows/jetbrains.yml'
+  pull_request:
+    paths:
+      - 'integrations/jetbrains/**'
+      - '.github/workflows/jetbrains.yml'
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays 04:17 UTC — the weekly Plugin Verifier run
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the plugin (compile + embed server bundle + engine jar + package)
+        working-directory: integrations/jetbrains
+        run: ./gradlew buildPlugin --no-daemon
+      - name: The packaged zip embeds both artifacts, and the engine IS the pinned version
+        working-directory: integrations/jetbrains
+        run: |
+          unzip -p build/distributions/candor-intellij-*.zip 'candor-intellij/lib/candor-intellij-*.jar' > /tmp/inner.jar
+          unzip -l /tmp/inner.jar | grep -q 'server/candor-lsp.mjs' || { echo 'FAIL: server bundle missing'; exit 1; }
+          unzip -l /tmp/inner.jar | grep -q 'engine/candor-java-all.jar' || { echo 'FAIL: engine jar missing'; exit 1; }
+          # the shipped-a-stale-engine class (a 0.8.2 embed under a 0.8.4 pin): the jar INSIDE the
+          # packaged zip must self-report the gradle.properties pin, same assertion as verifyEngineJar.
+          unzip -o -q -d /tmp/zip-engine /tmp/inner.jar 'engine/candor-java-all.jar'
+          V=$(sed -n 's/^candorJavaVersion=//p' gradle.properties)
+          OUT=$(java -jar /tmp/zip-engine/engine/candor-java-all.jar --version)
+          echo "$OUT" | grep -q "candor-java $V" || { echo "FAIL: packaged engine is not the pinned $V:"; echo "$OUT"; exit 1; }
+          echo "both embedded artifacts present; packaged engine self-reports $V"
+
+  # The pre-publish gate the Marketplace runs, on our schedule instead of on upload day.
+  plugin-verifier:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Plugin Verifier (binary compatibility against the recommended IDE releases)
+        working-directory: integrations/jetbrains
+        run: ./gradlew verifyPlugin --no-daemon

@@ -1,10 +1,12 @@
 # candor for JetBrains IDEs — plugin skeleton
 
-**Status: COMPILE-VERIFIED + PACKAGED (2026-07-02)** — `gradle buildPlugin` produces
-`build/distributions/candor-intellij-0.8.0.zip` (sideloadable via Settings → Plugins → ⚙ → Install
-from disk) against IC 2024.3 + LSP4IJ 0.20.1, with both artifacts embedded and verified: the
-single-file server bundle (`server/candor-lsp.mjs`, ~18 KB, handshakes with full capabilities) and
-the released engine (`engine/candor-java-all.jar`). Not yet `runIde`-smoked or Marketplace-published.
+**Status: UPLOADED to the JetBrains Marketplace (2026-07-03; first-plugin moderation pending).**
+`./gradlew buildPlugin` produces `build/distributions/candor-intellij-<pluginVersion>.zip`
+(sideloadable via Settings → Plugins → ⚙ → Install from disk) against IC 2024.3 + LSP4IJ 0.20.1,
+with both artifacts embedded and verified at build time: the single-file server bundle
+(`server/candor-lsp.mjs`, handshake-gated by `verifyServerBundle`) and the pinned released engine
+(`engine/candor-java-all.jar`, self-report-gated by `verifyEngineJar` against `candorJavaVersion`).
+Not yet `runIde`-smoked.
 
 ## What it is
 
@@ -27,14 +29,19 @@ the patch floats per plugin release.
 ## Build
 
 ```bash
-gradle buildPlugin          # first run downloads the IntelliJ SDK (large)
+./gradlew buildPlugin       # first run downloads Gradle + the IntelliJ SDK (large)
 # → build/distributions/candor-intellij-<version>.zip (install via Settings → Plugins → ⚙ → Install from disk)
 ```
 
-## Remaining before Marketplace
+The engine + server pins live in `gradle.properties` (`candorJavaVersion`, `candorTsVersion`); both are
+build-task inputs, so bumping a pin re-stages and re-verifies the embed on the next build.
 
-1. `runIde` smoke (compile-verification done — the build listener uses the modern
-   `finished(ProjectTaskManager.Result)` + declarative `<projectListeners>` with constructor injection).
-2. Multi-module JVM projects: scan a report SET (one per output root) — the LSP already merges a prefix.
-3. A "propose a policy" first-run notification (the `candor-init` logic as an IDE action).
-4. Marketplace publishing (needs the vendor account) + plugin icon (Beaky).
+## Remaining
+
+1. Marketplace moderation (uploaded 2026-07-03) → on approval, wire `publishPlugin` + the token as a
+   repo secret so 0.8.1+ ship headlessly.
+2. `runIde` smoke (compile-verification done — the build listener uses the modern
+   `finished(ProjectTaskManager.Result)` + declarative `<projectListeners>` with constructor injection);
+   an install-from-disk smoke in a real IDE is worthwhile whenever convenient.
+3. Multi-module JVM projects: scan a report SET (one per output root) — the LSP already merges a prefix.
+4. A "propose a policy" first-run notification (the `candor-init` logic as an IDE action).

@@ -18,9 +18,9 @@
 #   JVM (build first — candor-java reads BYTECODE):
 #     "command": "CANDOR_CLASSES=target/classes CANDOR_POLICY=arch.policy /abs/path/to/stop-hook.sh"
 #   SCAN-SOURCE engines (ts/swift/rust — NO build step) — point CANDOR_REVIEW at the source variant:
-#     "command": "CANDOR_REVIEW=/abs/.../candor-review-source.sh CANDOR_SCAN='npx -y candor-ts' CANDOR_QUERY='npx -y candor-ts-query' CANDOR_SRC=src CANDOR_POLICY=arch.policy /abs/.../stop-hook.sh"
+#     "command": "CANDOR_REVIEW=/abs/.../candor-review-source.sh CANDOR_SCAN='npx -y candor-ts' CANDOR_SRC=src CANDOR_POLICY=arch.policy /abs/.../stop-hook.sh"
 # (JVM: CANDOR_CLASSES must be ALREADY BUILT — add your build to the command, e.g. `mvn -q compile && ...`.
-#  Scan-source: nothing to build; see README.md for the per-engine CANDOR_SCAN/CANDOR_QUERY wiring.)
+#  Scan-source: nothing to build; see README.md for the per-engine CANDOR_SCAN wiring.)
 #
 # CANDOR_REVIEW selects the review script — defaults to candor-review.sh (JVM/bytecode); set it to
 # candor-review-source.sh for the scan-source engines. Both share the exit contract (0 clean / 1 block / 2 setup).

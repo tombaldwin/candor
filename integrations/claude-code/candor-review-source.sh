@@ -35,7 +35,7 @@ CUR=$(ls "$PREFIX"*.json 2>/dev/null | grep -ve callgraph -e hierarchy | head -1
 [ -n "$CUR" ] && [ -s "$CUR" ] || { echo "candor-review-source: scan produced no report — $(tail -1 "$SCANLOG")"; exit 2; }
 candor_emit_summary "$CUR"   # CANDOR_SUMMARY trailer for the stop hook (no-op unless CANDOR_EMIT_SUMMARY=1)
 
-# The delta vs the baseline, computed directly from the two spec-0.7 report files (engine-agnostic — the
+# The delta vs the baseline, computed directly from the two spec-0.8 report files (engine-agnostic — the
 # envelope is standard, so no per-engine query CLI / prefix-vs-file quirks). INTRODUCERS = functions whose
 # `direct` set gained an effect (the new sources); BLAST RADIUS = functions whose `inferred` (transitive)
 # set gained one. Crucially this catches the dominant case — a function that was PURE (omitted from the

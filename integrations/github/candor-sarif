@@ -2,7 +2,7 @@
 """candor-sarif — turn a candor policy verdict into SARIF 2.1.0 so architecture-gate violations
 surface WHERE code review happens: inline on the PR diff AND in the GitHub Code-scanning / Security tab.
 
-It is a reporter over the STANDARD outputs — the spec-0.7 report envelope + the engine's structured
+It is a reporter over the STANDARD outputs — the spec-0.8 report envelope + the engine's structured
 `gate --json` verdict — so one implementation serves every engine (nothing here is JVM-specific except
 the loc→path resolution note below). It does NOT re-run analysis and never changes the pass/fail verdict;
 the engine's exit code stays the source of truth. See PR-GATE-DESIGN.md.
@@ -10,7 +10,7 @@ the engine's exit code stays the source of truth. See PR-GATE-DESIGN.md.
 Usage:
     candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD"] [-o out.sarif]
 
-    <report.json>   the spec-0.7 report (carries each function's `loc`)
+    <report.json>   the spec-0.8 report (carries each function's `loc`)
     --gate FILE     the engine's `gate --json` output: {"violations":[{fn,rule,effects,loc,...}],"ok":bool}
                     ('-' or omitted → read from stdin)
     --src-root DIR  source root the SARIF `uri` is relative to (default "."). candor-java's `loc` is a bare
@@ -53,18 +53,42 @@ def level_of(rule):
 
 
 def load_json(path, what):
+    """Load a JSON OBJECT. Anything else (unreadable, unparsable, a top-level list/scalar) is disclosed
+    on stderr and degrades to {} — the docstring's crash contract: malformed input never tracebacks."""
     try:
         raw = sys.stdin.read() if path in (None, "-") else open(path, encoding="utf-8").read()
-        return json.loads(raw)
+        data = json.loads(raw)
     except Exception as e:
         print(f"candor-sarif: could not read {what} ({path}): {e}", file=sys.stderr)
-        return None
+        return {}
+    if not isinstance(data, dict):
+        print(f"candor-sarif: {what} ({path}) is not a JSON object (got {type(data).__name__}) — ignoring it",
+              file=sys.stderr)
+        return {}
+    return data
+
+
+def dict_items(container, key, what):
+    """`container[key]` as a list of dicts; a non-list value or non-dict item is disclosed and skipped
+    (per-item — one malformed entry must not drop the well-formed rest)."""
+    items = (container or {}).get(key, [])
+    if not isinstance(items, list):
+        print(f"candor-sarif: {what}.{key} is not a list — ignoring it", file=sys.stderr)
+        return []
+    out = []
+    for it in items:
+        if isinstance(it, dict):
+            out.append(it)
+        else:
+            print(f"candor-sarif: skipping a non-object entry in {what}.{key} ({type(it).__name__})",
+                  file=sys.stderr)
+    return out
 
 
 def fn_loc_index(report):
     """fn name -> its `loc` string, from the report envelope."""
     idx = {}
-    for f in (report or {}).get("functions", []):
+    for f in dict_items(report, "functions", "report"):
         if "fn" in f and f.get("loc"):
             idx[f["fn"]] = f["loc"]
     return idx
@@ -74,7 +98,7 @@ def fn_effects_index(report):
     """fn name -> its `direct` effect names, from the report envelope (the effects it performs itself —
     what a codeFlow to the source should trace). Used when the gate verdict doesn't carry effects."""
     idx = {}
-    for f in (report or {}).get("functions", []):
+    for f in dict_items(report, "functions", "report"):
         if "fn" in f:
             idx[f["fn"]] = f.get("direct") or f.get("inferred") or []
     return idx
@@ -158,12 +182,14 @@ def code_flow(query_cmd, report_path, fn, effect, src_root, loc_idx):
 def build_sarif(report, report_path, gate, src_root, query_cmd):
     loc_idx = fn_loc_index(report)
     eff_idx = fn_effects_index(report)
-    violations = (gate or {}).get("violations", []) or []
+    violations = dict_items(gate, "violations", "gate")
     seen_rules, results = {}, []
     for v in violations:
         fn, rule = v.get("fn"), v.get("rule", "AS-EFF-006")
-        if not fn:
+        if not fn or not isinstance(fn, str):
             continue
+        if not isinstance(rule, str):
+            rule = "AS-EFF-006"    # a malformed rule id degrades to the generic policy code, never crashes
         # effects: trust the verdict's denied set when the KEY is present — an explicit [] means "no single
         # effect" (a 009 layer-flow / 003 unresolved) and MUST be respected, not overwritten by the report's
         # (superset) direct set. Only fall back to the report when a verdict omits the key entirely (a pre-0.8
@@ -177,6 +203,8 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         # `detail` (from the engine's own diagnostic) is authoritative and already names fn/effect/rule;
         # only compose a message when the verdict didn't carry one.
         detail = v.get("detail")
+        if not isinstance(detail, str):
+            detail = None          # a non-string detail degrades to the composed message, never crashes
         if detail:
             text = detail
         else:

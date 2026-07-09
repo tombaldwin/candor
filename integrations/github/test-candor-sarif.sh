@@ -121,6 +121,23 @@ OUTB=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/bad.json" 2>/dev/null)
 ok "malformed gate: exit 0"                    '[ "$rc" = 0 ]'
 ok "malformed gate: valid empty SARIF"         'printf "%s" "$OUTB" | jq -e ".runs[0].results|length==0" >/dev/null'
 
+# crash contract, structural malformations: the docstring promises malformed input NEVER crashes —
+# each of these produced a traceback (exit 1) before the isinstance guards.
+echo '[]' > "$WORK/gate-list.json"                       # gate JSON that is a list, not an object
+OUTG=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate-list.json" 2>"$WORK/glerr"); rcg=$?
+ok "gate-is-a-list: exit 0, empty SARIF, disclosed"     '[ "$rcg" = 0 ] && printf "%s" "$OUTG" | jq -e ".runs[0].results|length==0" >/dev/null && grep -q "not a JSON object" "$WORK/glerr"'
+# a violation ITEM that is a string — skipped + disclosed; the well-formed sibling still surfaces.
+echo '{"spec":"0.8","ok":false,"violations":["oops",{"rule":"AS-EFF-006","fn":"app.domain.Order.audit","effects":["Fs"],"detail":"x"}]}' > "$WORK/gate-strv.json"
+OUTS=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/gate-strv.json" 2>"$WORK/sverr"); rcs=$?
+ok "string violation item: skipped, sibling kept"       '[ "$rcs" = 0 ] && [ "$(printf "%s" "$OUTS" | jq ".runs[0].results|length")" = 1 ] && grep -q "non-object entry" "$WORK/sverr"'
+echo '[{"fn":"x.y"}]' > "$WORK/report-list.json"         # report that is a list, not an envelope
+OUTR=$(python3 "$SARIF" "$WORK/report-list.json" --gate "$WORK/gate.json" 2>/dev/null); rcr=$?
+ok "report-is-a-list: exit 0, violations still emitted" '[ "$rcr" = 0 ] && [ "$(printf "%s" "$OUTR" | jq ".runs[0].results|length")" = 2 ]'
+# a non-dict entry in functions — skipped + disclosed; the dict sibling still indexes its loc.
+echo '{"candor":{"spec":"0.8"},"functions":["oops",{"fn":"app.domain.Order.checkout","loc":"Order.java:9","direct":["Fs"]}]}' > "$WORK/report-badfns.json"
+OUTX=$(python3 "$SARIF" "$WORK/report-badfns.json" --gate "$WORK/gate.json" --src-root src 2>"$WORK/bferr"); rcx=$?
+ok "non-dict functions entry: skipped, sibling indexed" '[ "$rcx" = 0 ] && [ "$(printf "%s" "$OUTX" | jq -r ".runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri")" = "src/app/domain/Order.java" ] && grep -q "non-object entry" "$WORK/bferr"'
+
 # SARIF 2.1.0 schema validation against the vendored OASIS schema (the contract GitHub ingests).
 # Skips gracefully if `jsonschema` isn't installed — offline, no network.
 SCHEMA="$HERE/sarif-2.1.0.schema.json"

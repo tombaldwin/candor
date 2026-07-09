@@ -1,5 +1,9 @@
 # Unknown density — the cross-engine review (2026-06-12)
 
+Status: **historical** — a measurement as of the 0.6-era engines (2026-06-12). Several of the
+reducible items below have since shipped (Swift accessor units / callback_named, the candor-java
+κ-coverage batches); the numbers are kept as the record of that review, not as current density.
+
 Tom's question: can we get Unknown density down, and is it a family-wide problem? Measured on each
 engine's hardest reference target, with the top `unknownWhy` origins:
 

@@ -28,6 +28,8 @@ also named the 13 third-party packages it doesn't model as `invisible` rather th
 
 **→ Full write-up: [case-study-realworld-spring.md](./case-study-realworld-spring.md)**
 
+*Run with candor-java 0.7.9 (2026-06).*
+
 ---
 
 ## 2. Spring PetClinic — Spring Data JPA
@@ -56,6 +58,9 @@ deny Db org.springframework.samples.petclinic.owner.PetTypeFormatter
 directly (it looks up pet types to convert a form field). That is exactly the kind of layering drift an
 architecture gate exists to catch — surfaced from the bytecode, pinned to the method, with no annotations.
 
+*Run with candor-java 0.8.6 (2026-07) — every number above (47 functions, `Db` ×21 + `Clock` ×6, zero
+`Unknown`, `Db` 77% contained, the gate's exit 1) is unchanged from the original 2026-06 run.*
+
 ---
 
 ## 3. PetClinic, Kotlin — language-agnostic
@@ -64,6 +69,8 @@ The same app rebuilt in Kotlin. candor reads the *compiled* `.class` files, so t
 irrelevant: **47 functions, `Db` ×21**, the same repository→controller shape, `Db` 80% contained in the
 `owner` layer. The architecture signal survives the language change because the analysis is on bytecode,
 not source — one engine covers Java, Kotlin, Scala, and Groovy on the JVM.
+
+*Run with candor-java 0.7.9 (2026-06).*
 
 ---
 
@@ -97,6 +104,8 @@ candor-java's κ effect classifier as a direct result of an earlier run of this 
 disclosed the whole `org.hibernate` surface as `invisible`. The disclosure contract turned a blind spot
 into a worklist.)*
 
+*Run with candor-java 0.7.9 (2026-06).*
+
 ---
 
 ## 5. gson — a supply-chain audit
@@ -114,10 +123,15 @@ touch in a library most people think of as pure parsing, found with zero fabrica
 resolves to pure or `Unknown` via reflection). That is the supply-chain question candor answers directly:
 not "is this library popular" but "what can it reach".
 
+*Run with candor-java 0.8.6 (2026-07) — 386 functions, exactly one `Net`, the same method as the
+original 2026-06 run.*
+
 ---
 
 *candor-java is the JVM flagship of the candor family — per-method effect disclosure from bytecode, with a
-policy DSL that fails the build when the architecture drifts. Install: `jbang candor@tombaldwin/candor-java`.*
+policy DSL that fails the build when the architecture drifts. Install: `jbang candor@tombaldwin/candor-java`.
+Historical context on the `Unknown` counts you'll see on library jars:
+[unknown-density.md](./unknown-density.md) (the 2026-06 cross-engine review).*
 
 **Want this on your repo?** The [`adopt/`](../adopt/) starter has a copy-paste `arch.policy` template and a
 GitHub Actions workflow — three steps to the gate running on every push.

@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-02. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-09. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -45,19 +45,20 @@ both site items resolved — see *Deferred*.
   `candor-mcp` — SHIPPED same day:** one engine-agnostic MCP server (candor-ts pkg, `candor-mcp` bin)
   serving all four engines' reports, with the gate verdict (resolves the checked-in `.candor/config`
   policy), containment, blindspots, diff, gains + MCP resources (report + policy); verified across all
-  four engines' real reports; the rust python server deprecated. Rides the next candor-ts publish.
+  four engines' real reports; the rust python server deprecated. On npm since candor-ts 0.8.3
+  (current 0.8.7).
   **Bet 2 — `candor-lsp` — P1 SHIPPED (2026-07-02):** CodeLens `⚡ effects · blast radius N` + the live
   gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
   freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
   _Remaining P2 slices:_ a thin VS Code client extension, the whatif code-action, large-repo lens
-  performance (hover provenance shipped 2026-07-02; rides the next candor-ts publish). **JetBrains
+  performance (hover provenance shipped 2026-07-02, published in candor-ts 0.8.3+). **JetBrains
   slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
   → auto npm-install) — **PR OPEN:
   [redhat-developer/lsp4ij#1609](https://github.com/redhat-developer/lsp4ij/pull/1609)** (watch for
   maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — **PACKAGED + gated
-  (refreshed 2026-07-09):** `./gradlew buildPlugin` (wrapper pinned 9.5.1) → `candor-intellij-0.8.1.zip`
+  (refreshed 2026-07-09):** `./gradlew buildPlugin` (wrapper pinned 9.5.1) → `candor-intellij-0.8.2.zip`
   (sideloadable) against IC 2024.3 + LSP4IJ 0.20.1, embedding the handshake-verified server bundle
-  (candor-ts pinned 0.8.5) + the pinned v0.8.4 engine jar (both pins are build-task inputs, and
+  (candor-ts pinned 0.8.7) + the pinned v0.8.6 engine jar (both pins are build-task inputs, and
   `verifyEngineJar` fails the build unless the staged jar self-reports the pin); the JVM freshness
   loop uses the modern ProjectTaskListener API. **Verifier-clean (Compatible × 6 IDE targets, IC-243 →
   IU-262** — it caught the em-dash plugin-name Marketplace blocker); Beaky pluginIcon.svg; a
@@ -102,7 +103,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    `candor-init.sh` scaffolds it (policy + baseline wired, never clobbered). An additive amendment
    within 0.8 — configuration, not the wire contract. **First shipped in every engine's 2026-07-02
    release** (ts 0.8.3 / scan 0.8.3 / java v0.8.2 / swift v0.8.2) and carried by every release since
-   (ts 0.8.5 / scan 0.8.3 / java v0.8.4 / swift v0.8.3 as of 2026-07-09).
+   (wave 2, 2026-07-10: ts 0.8.7 / scan 0.8.5 / query 0.8.1 / java v0.8.6 / swift v0.8.5 /
+   agents v0.8.1).
 
 4. **Distribution — CLEARED (2026-07-02).** The proven wedge is now on the site:
    [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (the five studies, deployed) and

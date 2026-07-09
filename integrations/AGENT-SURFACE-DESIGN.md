@@ -70,7 +70,7 @@ channel) that supersedes both per-engine servers:
 - **Resources, not just tools:** expose the report + policy as MCP resources so a capable agent reads
   the map directly instead of twenty tool calls.
 - **Freshness:** generalize `watch.mjs` — scan-source engines rescan on content change (proven); the
-  JVM watches the classes dir and refreshes on build (stale-until-build is honest and disclosed via the
+  JVM watches the classes dir and refreshes on build (stale-until-build is disclosed via the
   report's own provenance header).
 - **Discovery:** `.candor/config` makes setup near-zero — point the server at a repo, it finds the
   report prefix/policy the way the engines do. (Open item: the §config vocabulary may want a `scan`

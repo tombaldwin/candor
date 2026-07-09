@@ -41,6 +41,10 @@ jobs:
       - name: candor-init.sh one-command scaffolder contract
         run: bash adopt/test-candor-init-sh.sh
 
+      # node + jq are preinstalled on the runner; the test is SVG/JSON only (no rasterizer).
+      - name: fingerprint determinism + metadata contract
+        run: bash fingerprint/test-fingerprint.sh
+
   # The JetBrains plugin (integrations/jetbrains) — compile + package so the thin client can't rot
   # while it iterates toward the Marketplace. The IntelliJ SDK (~1GB) is cached by setup-gradle; the
   # first run is slow, the steady state ~3 min. Node is needed by the bundleServer task (npm+esbuild).

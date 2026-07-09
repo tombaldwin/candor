@@ -91,7 +91,7 @@ FruitResource.update   inferred=[Db]   invisible=[]
 candor containment   Db   100%   1 layer
 ```
 
-Two things make this the honest study of the set. First, the analysis crosses frameworks — the same engine
+Two things make this the disclosure study of the set. First, the analysis crosses frameworks — the same engine
 that maps Spring Data and MyBatis also models the Jakarta Data / Hibernate-6 persistence path, so `Db`
 lands without a single annotation. Second, look at the residual `invisible`: the *pure* criteria-builder
 packages (`org.hibernate.query.criteria`, `…specification`) that candor doesn't model are still

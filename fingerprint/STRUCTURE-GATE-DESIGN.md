@@ -3,7 +3,7 @@
 Status: **not built — designed 2026-07-01, go/no-go pending (Tom); historical design otherwise.**
 Turns the fingerprint tool's existing `--baseline` diff into an opt-in,
 PR-over-PR **regression gate**. It does **not** touch the candor effect contract (candor-spec) and does
-**not** get an AS-EFF code — it stays a fingerprint-tool feature (see *Honesty & boundaries*).
+**not** get an AS-EFF code — it stays a fingerprint-tool feature (see *Disclosure & boundaries*).
 
 ## Why
 
@@ -113,7 +113,7 @@ Never a silent pass on a can't-compute: a degenerate or too-small input says so 
   The two bets compose — the effect-policy violations are the **hard** failures; the structure delta is a
   **soft** "trending tangled" note (configurable: annotate vs. fail).
 
-## Honesty & boundaries (what keeps it defensible)
+## Disclosure & boundaries (what keeps it defensible)
 
 - **A trend tripwire, not a proof.** The descriptor is a heuristic composite; the gate flags a PR-over-PR
   *direction*, not a truth about code quality. Framed like `risk` / `blindspots` — a nudge, not a verdict.

@@ -53,7 +53,7 @@ mental model.
 The map is the result they asked for — not the JSON file. Once the report exists, report it back in
 plain language. The engine already prints a one-glance coverage line to the console as it runs
 (`candor — N functions reach effects, across M classes` + the per-effect counts + `Unknown K
-(disclosed)`) — relay that verbatim, then add the headline and honesty notes below. End with:
+(disclosed)`) — relay that verbatim, then add the headline and disclosure notes below. End with:
 
 - **Coverage** — total functions analysed, and how many reach each effect (`Net`, `Fs`, `Db`, `Exec`, …)
   — the printed summary line.
@@ -61,7 +61,7 @@ plain language. The engine already prints a one-glance coverage line to the cons
   subprocess **transitively**, through hops that wouldn't show in a diff (exactly what review misses).
   Name the function and the path — e.g. *"`PricingService.quote` reaches `Db` three hops down, via
   `billing.charge` → `OrderRepo.find`."*
-- **Honesty** — how many entries are `Unknown`/`unresolved`; never present the map as complete when any
+- **Disclosure** — how many entries are `Unknown`/`unresolved`; never present the map as complete when any
   are present (candor discloses what it could not see — say so).
 - **What they can ask next** — *"who reaches the DB?"*, *"what does editing X touch?"* (the blast radius)
   — answered instantly from the cached report, no re-scan.
@@ -79,7 +79,7 @@ and the user — or you, next session — can re-query it without re-scanning.
   crossed with the policy — the gate's verdict without writing code.
 - **The trust rule (never skip):** if `unresolved` is true or `Unknown` is in the set, the effect
   list may be incomplete — read the source before relying on it. Never conclude "pure" from an
-  unresolved entry. candor is deliberately honest about what it cannot see.
+  unresolved entry. candor deliberately discloses what it cannot see.
 - **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` — same grammar in
   every language, spec §6.2) that fails the build deterministically.
 - **Prefer MCP over shelling out, if your harness speaks it:** `candor-mcp`

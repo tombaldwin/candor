@@ -14,7 +14,7 @@ engine's hardest reference target, with the top `unknownWhy` origins:
 | Rust (scan) | actix-http | 25/33 (75%) | `MessageBody` local-trait dispatch over the 12-impl CHA bound |
 | JVM | commons-io | 657/1263 (52%) | reflection (`reflect:` — `Method.invoke` and friends) |
 
-## The structural finding: most of this density is HONEST, not lazy
+## The structural finding: most of this density is disclosed-irreducible, not lazy
 
 Every dominant origin above is a §4 case where resolving would mean guessing:
 
@@ -22,7 +22,7 @@ Every dominant origin above is a §4 case where resolving would mean guessing:
   family line — drawn three times independently and now enforced by the Swift fuzzer, which went
   14/40 red when a port tried to relax it — is that only ALL-NAMED call sites resolve. The
   closure's effects are charged to its passer (so nothing is *lost*); the receiver's Unknown is
-  the honest residue.
+  the disclosed residue.
 - **Reflection** (JVM): irreducible opacity, correctly tagged `reflect:` so consumers can triage.
 - **Over-bound CHA** (Rust): a 15-impl trait is genuinely wide dispatch; resolving all 15 would
   smear, per the cross-engine ≤12 bound.

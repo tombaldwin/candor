@@ -4,7 +4,7 @@ _Last reviewed 2026-07-09. Per-engine detail: `candor-java/BACKLOG.md`, `candor-
 
 ## Direction — next strategic bets (family-level)
 
-Correctness/honesty is well-shored and **cross-engine-verified**: the inherited-into-project silent-pure
+Correctness and disclosure are well-shored and **cross-engine-verified**: the inherited-into-project silent-pure
 vein class was found and closed across all major JVM persistence (candor-java κ batches 24–27) and
 confirmed not a shared blind spot; the **real-world corpus campaign (2026-06-22)** fixed the last live
 silent-under-reports in every engine, each gated by per-engine probes + the cross-engine conformance

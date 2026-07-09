@@ -166,7 +166,7 @@ wrong — exactly the credibility candor can't spend. So:
   cost** (its result enters the agent's context — not free), and links the methodology. Never
   shown without that caveat; never a default.
 
-**Honesty contract (applied harder than v1):** candor cannot measure the counterfactual; the
+**Disclosure contract (applied harder than v1):** candor cannot measure the counterfactual; the
 comparison is a model; measured (B) and modelled (C) are never blended; the session sum is off
 by default because its external validity is weak. A fabricated or fake-precise ROI number
 would directly contradict candor's disclosure-not-fabrication claim and is the first thing a
@@ -177,7 +177,7 @@ skeptic attacks.
 ## Cross-agent (non-Claude-Code)
 
 The per-turn notice is **Claude-Code-specific** — other agents have no Stop-hook equivalent,
-so there's no clean per-turn trigger for them (honest gap, not papered over). What transfers:
+so there's no clean per-turn trigger for them (a disclosed gap, not papered over). What transfers:
 the **activity log is written whenever the review runs** (any caller — MCP, other CLI agents),
 so `candor-agents stats` works anywhere; and the review's summary line is on stdout for agents
 that capture tool output.

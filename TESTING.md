@@ -76,7 +76,8 @@ to make every contract's regression un-shippable — not to maximize a coverage 
 
 - **Name tests by feature, never by review round or date.** Provenance goes in a docstring
   ("originally review round 12"), not the class name — `Round12FixesTest` made "which test pins the
-  Exec cliff?" an archaeology task.
+  Exec cliff?" an archaeology task. (Applied retroactively too: candor-java's `KappaBatchNN` suites
+  are being renamed to feature names under this rule.)
 - **One shared fixture/compile helper per repo** (candor-java's `TestCompiler` replaced ~15 verbatim
   copies); temp dirs via the framework (`@TempDir` / `mktemp` under trap), never `deleteOnExit`.
 - **Hermetic**: no network (vendor stub packages like the fake `node_modules/dep-pkg`); no
@@ -103,6 +104,8 @@ to make every contract's regression un-shippable — not to maximize a coverage 
   list must be empty), **defensive/platform** (kept uncovered deliberately — say why when a
   measurement flags it), or **dead** (delete it). When coverage is measured, uncovered lines get
   triaged into those bins; bin one empty is the invariant CI-adjacent reviews hold.
+  The zero-coverage-gate list lives as a section in each measurement's SOUNDNESS-LOG entry.
+  The triage record lives in the measuring commit's message.
 - **When measuring, instrument the children.** The process suites carry 20–30 points of real
   coverage (java 67%→90%, swift 61%→88%, candor-query 32%→67%); a unit-only number must be labeled
   as such. Mechanisms that work here: `NODE_V8_COVERAGE` (inherited by spawnSync children),
@@ -135,9 +138,8 @@ to make every contract's regression un-shippable — not to maximize a coverage 
 - **Pin the class, not just the instance, where a class exists**: the twin fixture (lookalike stays
   pure), the table row, the sibling shapes (batch 26's probe found four more silent-pure frameworks
   by testing the *shape*, not waiting for the next report).
-- **Sweep the siblings before shipping**: the same-shape check runs against the other engines — the
-  dangerous case is the shared blind spot that cross-engine agreement hides (write-fmt: silent in
-  four engines; pure-vs-Unknown: wrong in three).
+- **Sweep the siblings before shipping** — the same-shape check against the other engines, per §3's
+  shared-blind-spot rule.
 - **Soundness-class bugs additionally get**: a SOUNDNESS-LOG entry (+ register line for a cardinal
   class), and — when the class is generative — a probe/fuzzer form so the class stays gated, not
   just the instance (the seam→matrix pattern).
@@ -192,5 +194,4 @@ probes; candor-rust `cargo test --workspace` + `tests/integration.sh` + `ci/wrap
 nightly self-guard); candor-ts `npm test` (unit/behavioral/mcp/lsp/watch/fuzz/probe); candor-swift
 `swift test` + `smoke.sh` + `fuzz.py` + `fabrication_probe.py`; candor-agents `test.py` + `fuzz.py`
 + contract regen; umbrella `integrations/*/test-*.sh` + `fingerprint/test-fingerprint.sh`; and the
-cross-engine floor, `candor-spec/conformance/run.sh` (16 parts), after any classifier or gate
-change.
+cross-engine floor, `candor-spec/conformance/run.sh`, after any classifier or gate change.

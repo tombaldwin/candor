@@ -66,9 +66,10 @@ both site items resolved — see *Deferred*.
   analysis / code quality / security; source URL → integrations/jetbrains) — first-plugin moderation
   pending.** On approval: wire `publishPlugin` + the Marketplace token as a repo secret so 0.8.1+ ship
   headlessly; an install-from-disk smoke in a real IDE remains worthwhile whenever convenient.
-  **Released engines (as of 2026-07-09):** candor-ts 0.8.5 (npm), candor-scan 0.8.3 (crates.io),
-  candor-java v0.8.4, candor-swift v0.8.3 (GitHub) — all spec-0.8, carrying the MCP/LSP surfaces
-  (ts) + the config layer.
+  **Released engines (as of 2026-07-10, ship wave 2):** candor-ts 0.8.7 (npm), candor-scan 0.8.5 +
+  candor-query 0.8.1 (crates.io), candor-java v0.8.6, candor-swift v0.8.5, candor-agents v0.8.1
+  (GitHub) — all spec-0.8; plugin 0.8.2 zip staged for Marketplace. Family test standards now
+  codified in TESTING.md (coverage measured + every zero-coverage gate surface closed).
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor

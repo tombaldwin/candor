@@ -1,11 +1,6 @@
 # PR-native gate surfacing — GitHub Check + SARIF (design / scope)
 
-Status: **P1–P3 built on the JVM flagship (2026-07-01); spec stays 0.7.** Adoption feature (arch-gate
-track #1, "highest leverage"). Does **not** touch the candor effect contract (candor-spec) or any engine's
-analysis — it is a **reporter over the spec-0.7 report envelope + a structured gate verdict**, plus Action
-wiring. `candor-sarif` + its test + the `adopt/candor.yml` wiring ship; the structured verdict is a
-candor-java `--gate-json` **engine feature at spec 0.7** (below). Remaining: roll `--gate-json` to
-ts/scan/swift + conformance, then promote to spec 0.8; P4 baseline-delta; optional Check-Runs API.
+Status: **shipped as spec 0.8 (2026-07-02, conformance PART 12); P4/P5 not built; historical design below.**
 
 ## Why
 

@@ -1,6 +1,7 @@
 # Agent-visible feedback — spec ("candor checked this" + session stats)
 
-Status: **design / not built.** Adoption feature. Does **not** touch the candor effect
+Status: **SHIPPED (P0–P4, 2026-06-23…07-01; contract locked by `test-stop-hook.sh`). Remaining:
+`maxHops`, standalone/CI logging.** Adoption feature. Does **not** touch the candor effect
 contract (candor-spec); it surfaces and aggregates what the review already computes.
 
 > **P0 RESOLVED (2026-06-23).** The user-visible, non-blocking channel is the Stop hook's

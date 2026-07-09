@@ -48,11 +48,20 @@ tracing by hand at equal completeness).
 
 ## Get the gate on your repo
 
-Three steps, no annotations or source changes: build your project, drop an `arch.policy`, wire one CI
-job. [**`adopt/`**](adopt/) has a copy-paste starter — an annotated [policy template](adopt/arch.policy)
-and a [GitHub Actions workflow](adopt/candor.yml) that fails the build (pointing at the exact method)
-when an architecture rule is broken. See it running end-to-end on real Spring, Kotlin, and Quarkus apps
-in the [case studies](docs/case-studies.md).
+One command, no annotations or source changes ([`adopt/candor-init.sh`](adopt/candor-init.sh)):
+
+```bash
+mvn -q compile         # (or ./gradlew classes) — candor reads bytecode
+./candor-init.sh       # → arch.policy + .candor/baseline.json + .github/workflows/candor.yml
+```
+
+It scans your compiled classes with the exact engine release the dropped workflow pins, **proposes** a
+starter policy from what your code already does (every proposed rule currently passes — review it, keep
+what matches your intent), records the regression-ratchet baseline, and drops the GitHub Action that
+fails the build (pointing at the exact method) when an architecture rule is broken. Prefer to assemble
+it by hand? [**`adopt/`**](adopt/) also has the pieces as a copy-paste starter — the annotated
+[policy template](adopt/arch.policy) and the [workflow](adopt/candor.yml). See it running end-to-end on
+real Spring, Kotlin, and Quarkus apps in the [case studies](docs/case-studies.md).
 
 For coding agents, [`integrations/claude-code/`](integrations/claude-code/) closes the loop at edit time: a
 Claude Code **Stop hook** scans the agent's result, diffs the effects against a baseline, and hands back any

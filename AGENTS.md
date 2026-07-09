@@ -102,7 +102,7 @@ candor doesn't self-update; you do (it has no network). Per language:
 | Rust | `candor-scan --version` | `cargo install candor-scan --force` |
 | TypeScript | `npx -y candor-ts --version` (or `npm ls -g candor-ts`) | `npm install -g candor-ts@latest` (or just `npx -y candor-ts@latest`) |
 | JVM | `java -jar candor-java-*-all.jar --version` | `jbang --fresh candor@tombaldwin/candor-java` |
-| Swift | `candor-swift --version` | `git pull && swift build -c release` |
+| Swift | `candor-swift --version` | check out the latest [release](https://github.com/tombaldwin/candor-swift/releases) tag and rebuild: `git fetch --tags && git checkout <latest vX.Y.Z> && swift build -c release` |
 
 `--version` is uniform across engines from **0.5.1**; on older builds read `candor.version` /
 `candor.spec` from `.candor/report*.json` instead. The latest published release lives on crates.io
@@ -143,7 +143,9 @@ the repo. Use the matching upgrade command:
   • Rust       → cargo install candor-scan --force
   • TypeScript → npm install -g candor-ts@latest   (or just run npx -y candor-ts@latest)
   • JVM        → jbang --fresh candor@tombaldwin/candor-java
-  • Swift      → git pull && swift build -c release
+  • Swift      → in the candor-swift checkout: git fetch --tags, check out the
+                 latest release tag (github.com/tombaldwin/candor-swift/releases),
+                 then swift build -c release
 After upgrading, confirm the new version with --version, then re-scan so my
 .candor/report is regenerated at the new spec.
 ```

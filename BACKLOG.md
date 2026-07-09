@@ -54,18 +54,21 @@ both site items resolved — see *Deferred*.
   slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
   → auto npm-install) — **PR OPEN:
   [redhat-developer/lsp4ij#1609](https://github.com/redhat-developer/lsp4ij/pull/1609)** (watch for
-  maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — **COMPILE-VERIFIED + PACKAGED
-  (2026-07-02):** `gradle buildPlugin` → `candor-intellij-0.1.0.zip` (sideloadable) against IC 2024.3 +
-  LSP4IJ 0.20.1, embedding the verified 18KB server bundle + the v0.8.2 engine jar; the JVM freshness
+  maintainer review); (b) [`integrations/jetbrains/`](integrations/jetbrains/) — **PACKAGED + gated
+  (refreshed 2026-07-09):** `./gradlew buildPlugin` (wrapper pinned 9.5.1) → `candor-intellij-0.8.1.zip`
+  (sideloadable) against IC 2024.3 + LSP4IJ 0.20.1, embedding the handshake-verified server bundle
+  (candor-ts pinned 0.8.5) + the pinned v0.8.4 engine jar (both pins are build-task inputs, and
+  `verifyEngineJar` fails the build unless the staged jar self-reports the pin); the JVM freshness
   loop uses the modern ProjectTaskListener API. **Verifier-clean (Compatible × 6 IDE targets, IC-243 →
   IU-262** — it caught the em-dash plugin-name Marketplace blocker); Beaky pluginIcon.svg; a
-  `jetbrains-plugin` CI job in the umbrella (green). **UPLOADED to the
-  JetBrains Marketplace 2026-07-03 (Apache-2.0, tags: static analysis / code quality / security; source
-  URL → integrations/jetbrains) — first-plugin moderation pending (~2-3 business days).** On approval:
-  wire `publishPlugin` + the Marketplace token as a repo secret so 0.1.1+ ship headlessly; an
-  install-from-disk smoke in a real IDE remains worthwhile whenever convenient. **SHIPPED 2026-07-02:** candor-ts 0.8.3 (npm) carries both surfaces +
-  the config layer; candor-scan 0.8.3, candor-java v0.8.2, candor-swift v0.8.2 carry the config layer —
-  every released artifact is current with main.
+  path-filtered `jetbrains.yml` CI workflow (build per plugin change + weekly scheduled Plugin
+  Verifier). **UPLOADED to the JetBrains Marketplace 2026-07-03 (as 0.8.0; Apache-2.0, tags: static
+  analysis / code quality / security; source URL → integrations/jetbrains) — first-plugin moderation
+  pending.** On approval: wire `publishPlugin` + the Marketplace token as a repo secret so 0.8.1+ ship
+  headlessly; an install-from-disk smoke in a real IDE remains worthwhile whenever convenient.
+  **Released engines (as of 2026-07-09):** candor-ts 0.8.5 (npm), candor-scan 0.8.3 (crates.io),
+  candor-java v0.8.4, candor-swift v0.8.3 (GitHub) — all spec-0.8, carrying the MCP/LSP surfaces
+  (ts) + the config layer.
 
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor
@@ -96,8 +99,9 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    overrides), precedence CLI → env → config → default, fail-closed when configured-but-unusable.
    Conformance **PART 13** pins discovery/precedence/fail-closed per engine (1/0/2, all four green);
    `candor-init.sh` scaffolds it (policy + baseline wired, never clobbered). An additive amendment
-   within 0.8 — configuration, not the wire contract. **Shipped in every engine's release 2026-07-02**
-   (ts 0.8.3 / scan 0.8.3 / java v0.8.2 / swift v0.8.2).
+   within 0.8 — configuration, not the wire contract. **First shipped in every engine's 2026-07-02
+   release** (ts 0.8.3 / scan 0.8.3 / java v0.8.2 / swift v0.8.2) and carried by every release since
+   (ts 0.8.5 / scan 0.8.3 / java v0.8.4 / swift v0.8.3 as of 2026-07-09).
 
 4. **Distribution — CLEARED (2026-07-02).** The proven wedge is now on the site:
    [candor.poly.io/case-studies/](https://candor.poly.io/case-studies/) (the five studies, deployed) and

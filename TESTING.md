@@ -91,9 +91,18 @@ to make every contract's regression un-shippable — not to maximize a coverage 
 
 ## 6. Coverage policy
 
-- **No blanket percentage gate.** The standing invariant is the **zero-coverage gate list stays
-  empty**: no documented gate surface with 0% coverage in its own repo. Chasing a number invites
-  padding the easy files; the invariant targets exactly the class that ships incidents.
+- **No blanket percentage gate, and 100% is explicitly not the goal.** The last ~10 points are
+  defensive error exits, platform-only paths (the native-image supertype loader is untestable on a
+  JVM by construction — the native==jar parity gate owns it), and deliberately-unreachable
+  conservative arms; covering them means mock-heavy tests that pin implementation, not contract.
+  And line coverage cannot touch this project's real failure mode — a *missing* classifier rule has
+  no lines to cover; the probes and corpus rounds own that. Since the maintainers are agents, a
+  percentage target would also invite exactly the padding it cannot detect.
+- **The standard is 100% *accounted-for*.** Every uncovered line is one of three things:
+  **contract** (a documented behavior — must gain coverage, no exceptions; the zero-coverage gate
+  list must be empty), **defensive/platform** (kept uncovered deliberately — say why when a
+  measurement flags it), or **dead** (delete it). When coverage is measured, uncovered lines get
+  triaged into those bins; bin one empty is the invariant CI-adjacent reviews hold.
 - **When measuring, instrument the children.** The process suites carry 20–30 points of real
   coverage (java 67%→90%, swift 61%→88%, candor-query 32%→67%); a unit-only number must be labeled
   as such. Mechanisms that work here: `NODE_V8_COVERAGE` (inherited by spawnSync children),
@@ -115,7 +124,57 @@ to make every contract's regression un-shippable — not to maximize a coverage 
 - **A probe is itself a κ surface**: its anchors name specific code. Re-run and re-anchor after any
   refactor that moves rule text; a probe passing against code it no longer targets is a green lie.
 
-## 8. Ship verification
+## 8. Bug fixes carry their regression test
+
+- **Every bug fix ships with a test that demonstrably failed before the fix and passes after — in
+  the same commit.** "Demonstrably" means it was run against the pre-fix code (trivial in the fix
+  workflow: write the pin first, watch it fail, fix, watch it pass), not assumed.
+- **The test lives at the layer that owns the broken contract.** A fail-open gets a process-level
+  exit-code test; a matcher bug gets a unit pin; a wrong report byte gets a fixture diff. Testing a
+  helper when the CLI contract broke leaves the contract unpinned.
+- **Pin the class, not just the instance, where a class exists**: the twin fixture (lookalike stays
+  pure), the table row, the sibling shapes (batch 26's probe found four more silent-pure frameworks
+  by testing the *shape*, not waiting for the next report).
+- **Sweep the siblings before shipping**: the same-shape check runs against the other engines — the
+  dangerous case is the shared blind spot that cross-engine agreement hides (write-fmt: silent in
+  four engines; pure-vs-Unknown: wrong in three).
+- **Soundness-class bugs additionally get**: a SOUNDNESS-LOG entry (+ register line for a cardinal
+  class), and — when the class is generative — a probe/fuzzer form so the class stays gated, not
+  just the instance (the seam→matrix pattern).
+- The one escape hatch: a bug that genuinely cannot be pinned by a test (toolchain-environmental,
+  CI-only timing) documents why in the commit and adds the nearest structural guard instead — the
+  swift CI hang's "test" is the timeout + concurrency-cancel + the NSString-walk rule.
+
+## 9. Operational rules
+
+- **Flakiness is a bug, not weather.** A test or probe that flakes gets fixed or deleted the week
+  it flakes — never wrapped in a retry loop (the fabrication probe flaked for a week on
+  directory-listing order; the fix was the probe's glob, not a retry).
+- **A red scheduled gate is owned, not ambient.** A scheduled probe/oracle that goes red gets
+  triaged within the week or the schedule is theater — the deep-engine oracle once sat red from its
+  landing and was hiding a real cardinal sin the whole time.
+- **Load-bearing doc claims get drift gates.** Any documentation string that makes a checkable
+  claim about the artifact — the embedded agent contract's spec version, a README's spec string, a
+  version example — gets a gate asserting doc == artifact (the embedded-AGENTS.md==file==binary
+  pattern). A self-describing tool whose self-description drifts is worse than none.
+- **Generators gitignore their litter the day they land.** Any test, probe, or tool that writes
+  files into the repo tree ships with the ignore rule in the same commit — sweep-in-by-`git add -A`
+  has happened twice; make it impossible, not careful.
+- **Direction, not yet a rule**: extending the mutation-probe pattern (candor-java's
+  `mutation_probe`) to the other engines is the right long-term anti-padding guard for
+  agent-written tests — worth doing opportunistically, not mandated while the probe ecosystem
+  carries the load.
+
+## 10. A new engine's birth certificate
+
+A new engine (the planned C#/Go ports, any future domain engine) joins the family with all of this
+on day one — the floor is a checklist, not an aspiration: both test layers (§1); the fail-closed
+negative matrix and exact exit codes (§2); anti-fabrication twins for every classifier rule (§2);
+κ-ledger emission tests (§2); a fuzzer and a fabrication probe wired into its CI (§7); conformance
+suite membership with its rows required-when-present (§3); drift gates on its self-describing
+surfaces (§9); and its generated artifacts ignored (§9).
+
+## 11. Ship verification
 
 - **Verify the artifact you ship, from the shipped artifact**: unzip the plugin zip and run the
   inner jar's `--version`; download the release URL; `npm pack` and test the tarball. Never a

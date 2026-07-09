@@ -68,6 +68,14 @@ Claude Code **Stop hook** scans the agent's result, diffs the effects against a 
 newly-introduced effect (with its transitive blast radius) or policy violation so the agent fixes it *before
 yielding to you* — the deterministic counterpart to "the model will probably notice."
 
+The reports are also served live, one `npx` away, by two servers in the candor-ts npm package —
+**`candor-mcp`** (an MCP server: blast radius, whatif, the gate verdict, containment, blindspots — for
+any MCP-speaking agent) and **`candor-lsp`** (a language server: per-function effect CodeLens, provenance
+hover, the live gate verdict as diagnostics — helix/neovim natively, JetBrains via
+[`integrations/jetbrains/`](integrations/jetbrains/)). Both read **any** engine's report (JVM, Rust,
+TypeScript, Swift), so one server covers the whole stack:
+`npx -y -p candor-ts candor-mcp` · `npx -y -p candor-ts candor-lsp`.
+
 ## Effects fingerprint
 
 <p align="center"><img src="assets/fingerprint-example.png" alt="A candor effects fingerprint" width="300"></p>

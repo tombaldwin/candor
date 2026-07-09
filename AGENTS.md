@@ -83,6 +83,10 @@ and the user — or you, next session — can re-query it without re-scanning.
   unresolved entry. candor is deliberately honest about what it cannot see.
 - **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` — same grammar in
   every language, spec §6.2) that fails the build deterministically.
+- **Prefer MCP over shelling out, if your harness speaks it:** `candor-mcp`
+  (`npx -y -p candor-ts candor-mcp`) serves **any** engine's report — blast radius, `whatif`, the gate
+  verdict, containment, blindspots — as MCP tools, with the report and policy as resources. One server,
+  all four languages; the CLI queries remain equivalent.
 - **Staying current is *your* job, not candor's.** candor never phones home — it audits the `Net`
   effect and denies it in its own self-gate policy (`deny Net Db Exec Ipc`, spec §7.12), so checking
   for updates would make it perform the effect it forbids and turn its own gate red. You have network

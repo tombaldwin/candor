@@ -5,7 +5,7 @@ pull-request diff and in the repo's **Code-scanning / Security** tab — on the 
 boundary is crossed. A red CI check says *"something failed"*; this says *"`OrderService.quote`
 now reaches `Db`, crossing the domain→infra boundary you declared."*
 
-This is a **reporter over candor's standard outputs**, not a new analysis: it reads the spec-0.7
+This is a **reporter over candor's standard outputs**, not a new analysis: it reads the spec-0.8
 report envelope + the engine's structured gate verdict and writes [SARIF 2.1.0](https://sarifweb.azurewebsites.net/).
 It never changes the pass/fail decision — the engine's exit code stays the source of truth.
 
@@ -14,7 +14,7 @@ It never changes the pass/fail decision — the engine's exit code stays the sou
 | File | What it is |
 |------|------------|
 | [`candor-sarif`](./candor-sarif) | The reporter: `report.json` + `gate.json` → `candor.sarif`. Python 3, stdlib only. |
-| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (16 assertions — no engine, no network). |
+| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (33 assertions — no engine, no network). |
 | [`PR-GATE-DESIGN.md`](./PR-GATE-DESIGN.md) | The design + scope. |
 
 The GitHub Action wiring lives in [`../../adopt/candor.yml`](../../adopt/candor.yml) (copy-paste starter).

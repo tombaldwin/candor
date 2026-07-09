@@ -72,8 +72,9 @@ node candor-fingerprint.mjs ./report --no-svg --baseline ./report.main
 
 ## Metadata & the structure descriptor
 
-`--json` emits the DNA behind the image, including a single **structure descriptor** (0–100, order vs
-chaos) and its components:
+`--json` emits the DNA behind the image, including a single **structure descriptor** (order vs chaos)
+and its components. Two scales, one number: the top-level `structure` field is **0–1**;
+`structure_detail.value` is the same number **×100** (0–100, the display form):
 
 ```json
 {
@@ -85,7 +86,8 @@ chaos) and its components:
 }
 ```
 
-`structure = 1 − (0.30·smear + 0.26·unknownShare + 0.24·tangleExcess + 0.20·cycleRatio)`, where:
+`structure = 1 − (0.30·smear + 0.26·unknownShare + 0.24·tangleExcess + 0.20·min(1, 3·cycleRatio))` —
+the cycle term saturates once a third of functions sit in call cycles — where:
 
 - **smear** — share of functions carrying ≥3 distinct effects (god-functions that do everything),
 - **unknownShare** — share of effect incidences candor couldn't resolve (analysis opacity),

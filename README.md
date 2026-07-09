@@ -79,3 +79,11 @@ emits the DNA as JSON — a single 0–100 **structure** descriptor (order vs ch
 (effect smear, `Unknown` opacity, call-graph tangle, cycles). These are *structural descriptors, not a
 quality grade*: candor deliberately doesn't score a codebase (spec §6.1). Works identically across all
 engines. See [`fingerprint/README.md`](fingerprint/README.md).
+
+## For maintainers
+
+[`TESTING.md`](TESTING.md) — the family-wide test standards every candor repo holds: the two-layer
+doctrine (unit for pure logic, process for contracts), the non-negotiable pins (every documented gate
+surface tested in-repo, every fail-closed path negative-tested, anti-fabrication twins, emission-path
+tests), byte-identity-gated refactors, and the coverage policy (no percentage gate; the
+zero-coverage-gate list stays empty).

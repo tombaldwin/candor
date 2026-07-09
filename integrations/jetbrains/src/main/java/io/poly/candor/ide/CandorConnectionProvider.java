@@ -14,8 +14,9 @@ import java.util.List;
 /**
  * Spawns {@code node <extracted candor-lsp.mjs>} for the project. The server is the single-file esbuild
  * bundle of candor-ts's lsp.mjs, shipped inside this plugin (resources/server/candor-lsp.mjs) and
- * extracted once per plugin version to the system cache — the same server every other editor runs, so
- * no IDE-specific logic can drift from the spec.
+ * re-extracted to a stable tmp path on every server start (REPLACE_EXISTING — so a plugin update can
+ * never serve a stale bundle) — the same server every other editor runs, so no IDE-specific logic can
+ * drift from the spec.
  *
  * <p>Node is the one runtime prerequisite (most dev machines have it; the plugin description says so).
  * Resolution: $CANDOR_NODE, else "node" on PATH. A missing node surfaces as LSP4IJ's start failure with
@@ -33,7 +34,11 @@ public class CandorConnectionProvider extends ProcessStreamConnectionProvider {
         }
     }
 
-    /** Extract the bundled server to a stable per-plugin-version path (idempotent). */
+    /**
+     * Extract the bundled server to a stable tmp path, replacing any previous copy (idempotent per start).
+     * A failed extraction THROWS — returning the path anyway would hand LSP4IJ a nonexistent file and
+     * surface as an opaque node startup error instead of the actual cause.
+     */
     static Path extractedServer() {
         Path dir = Path.of(System.getProperty("java.io.tmpdir"), "candor-intellij");
         Path out = dir.resolve("candor-lsp.mjs");
@@ -42,7 +47,10 @@ public class CandorConnectionProvider extends ProcessStreamConnectionProvider {
             Files.createDirectories(dir);
             Files.copy(in, out, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            LOG.warn("candor: could not extract the bundled language server", e);
+            String msg = "candor: could not extract the bundled language server to " + out
+                    + " — check that the temp directory is writable, or reinstall the plugin";
+            LOG.error(msg, e);
+            throw new IllegalStateException(msg, e);
         }
         return out;
     }

@@ -1,6 +1,10 @@
 # The next agent-loop bet — one candor core, two delivery surfaces
 
-Status: **decision made (Tom, 2026-07-02): the recommended sequence — and bet 1 is BUILT.** The unified
+Status: **partially shipped** — bet 1 (`candor-mcp`) shipped 2026-07-02; bet 2 (`candor-lsp`) P1
+shipped 2026-07-02, P2 slices open (VS Code client, whatif code-action, large-repo lens performance);
+both published on npm in candor-ts. Historical design below.
+
+Decision (Tom, 2026-07-02): the recommended sequence — and bet 1 is BUILT. The unified
 `candor-mcp` ships in the candor-ts package (the read layer was already engine-agnostic, so the "core
 extraction" collapsed to enrichment): five new tools (gate / containment / blindspots / diff / gains),
 MCP resources (report + checked-in policy), `.candor/config` policy discovery for `candor_gate`, the

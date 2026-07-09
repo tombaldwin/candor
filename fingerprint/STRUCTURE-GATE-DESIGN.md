@@ -1,6 +1,7 @@
 # Structure-delta gate — design
 
-Status: **design / not built.** Turns the fingerprint tool's existing `--baseline` diff into an opt-in,
+Status: **not built — designed 2026-07-01, go/no-go pending (Tom); historical design otherwise.**
+Turns the fingerprint tool's existing `--baseline` diff into an opt-in,
 PR-over-PR **regression gate**. It does **not** touch the candor effect contract (candor-spec) and does
 **not** get an AS-EFF code — it stays a fingerprint-tool feature (see *Honesty & boundaries*).
 

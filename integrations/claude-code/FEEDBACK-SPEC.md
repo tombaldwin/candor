@@ -76,9 +76,14 @@ A line every turn risks becoming wallpaper — tuned out, the opposite of the go
 `CANDOR_HOOK_NOTICE`:
 
 - `summary` — one short line every turn (max legibility; best for first use / demos).
-- `changes` — speak only when effects are present/changed or a boundary is involved.
-- `quiet` — only on a block (today's behaviour).
-- `off`.
+- `changes` — silent on every clean turn (`rc=0`, even one whose effects changed within policy);
+  speaks only when something fired — the block `⚠` notice and setup errors.
+- `quiet` — no per-turn and no block notice (the block still reaches the **agent** as the
+  `reason`; the human sees nothing for it); only setup errors surface.
+- `off` — nothing, ever.
+
+(These are the tested semantics — `test-stop-hook.sh` locks them, including the suppressed
+block `systemMessage` under `quiet`.)
 
 The durable "it's working" signal is really **B**; the per-turn line is reassurance. Default
 **`summary`** for first-run legibility, but `changes` is the saner long-term per-project

@@ -136,5 +136,5 @@ gate activity) and `candor-agents savings` (a labelled estimate from your `cando
   builds once per turn; the scan-source path skips the build entirely.
 - Either review script is also a fine **git pre-commit hook** or CI step on its own — same verdict, no Claude
   Code required.
-- The effect delta is computed straight from the two spec-0.7 report files (the standard envelope), so it's
+- The effect delta is computed straight from the two spec-0.8 report files (the standard envelope), so it's
   engine-agnostic and catches the dominant case: a function that was pure and is now effectful.

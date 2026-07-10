@@ -1,0 +1,63 @@
+# candor digest — the OWNER-facing protection report, on a schedule (integrations/DIGEST-SPEC.md).
+#
+# Drop this in .github/workflows/. Weekly (and on demand), it renders CANDOR-REPORT.md from candor's
+# activity log — the aggregate, plain-language record of what the silent gate did: violations held before
+# merge, capabilities introduced, coverage gaps disclosed, and the quiet majority that crossed no line.
+# It publishes the report two ways: to the Actions run summary (visible immediately) and as a committed
+# CANDOR-REPORT.md (a durable, readable artifact in the repo). Aggregate counts only — never file paths.
+#
+# WHERE THE LOG COMES FROM (pick one; both write the path-free record `candor-agents digest` reads):
+#   • The gate on push-to-main: give your candor gate step `CANDOR_ACTIVITY_LOG: .candor/gate-log.jsonl`
+#     (the candor-review*.sh scripts append a path-free record — no transcript in CI, so no paths), and
+#     commit that log line on merge. One record per merged change → "held the line in CI" is real.
+#   • Developer machines: the Stop-hook writes `.candor/activity.jsonl` locally (gitignored — it holds
+#     paths). That log stays local; use `candor-agents digest` on your own machine for a personal report.
+# This workflow digests the COMMITTED `.candor/gate-log.jsonl` (override with CANDOR_LOG below).
+
+name: candor digest
+on:
+  schedule:
+    - cron: "0 13 * * 1"    # Mondays 13:00 UTC — a weekly protection report
+  workflow_dispatch: {}      # …and on demand
+
+permissions:
+  contents: write            # to commit CANDOR-REPORT.md
+
+concurrency:
+  group: candor-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    env:
+      CANDOR_LOG: .candor/gate-log.jsonl   # ← the committed, path-free gate log this report summarises
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install candor-agents
+        run: pipx install "git+https://github.com/tombaldwin/candor-agents@v0.8.1"
+
+      - name: Render the protection report
+        run: |
+          if [ ! -f "$CANDOR_LOG" ]; then
+            echo "No gate log at $CANDOR_LOG yet — nothing to report." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # to the run summary (visible now) AND to the committed file (durable)
+          candor-agents digest . --log "$CANDOR_LOG" --out CANDOR-REPORT.md
+          cat CANDOR-REPORT.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the report if it changed
+        run: |
+          if [ -n "$(git status --porcelain CANDOR-REPORT.md)" ]; then
+            git config user.name  "candor-digest[bot]"
+            git config user.email "candor-digest@users.noreply.github.com"
+            git add CANDOR-REPORT.md
+            git commit -m "candor: weekly protection report"
+            git push
+          else
+            echo "CANDOR-REPORT.md unchanged — nothing to commit."
+          fi

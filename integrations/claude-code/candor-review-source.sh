@@ -17,6 +17,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 [ -f "$HERE/lib-candor-summary.sh" ] && . "$HERE/lib-candor-summary.sh"
 command -v candor_emit_summary >/dev/null 2>&1 || candor_emit_summary() { :; }   # no-op if the lib is absent
+command -v candor_log_activity >/dev/null 2>&1 || candor_log_activity() { :; }
 SCAN=${CANDOR_SCAN:-}
 SRC=${CANDOR_SRC:-.}
 BASELINE=${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}
@@ -33,7 +34,9 @@ $SCAN "$SRC" --out "$PREFIX" >"$SCANLOG" 2>&1; gate=$?
 # `<prefix>.<member>.scan.json`. `<prefix>*.json` matches all; drop the .callgraph/.hierarchy sidecars.
 CUR=$(ls "$PREFIX"*.json 2>/dev/null | grep -ve callgraph -e hierarchy | head -1)
 [ -n "$CUR" ] && [ -s "$CUR" ] || { echo "candor-review-source: scan produced no report — $(tail -1 "$SCANLOG")"; exit 2; }
-candor_emit_summary "$CUR"   # CANDOR_SUMMARY trailer for the stop hook (no-op unless CANDOR_EMIT_SUMMARY=1)
+# CANDOR_SUMMARY trailer — computed always (so a self-logged record is rich), printed only when asked.
+SUMMARY=$(CANDOR_EMIT_SUMMARY=1 candor_emit_summary "$CUR")
+[ "${CANDOR_EMIT_SUMMARY:-}" = "1" ] && [ -n "$SUMMARY" ] && printf '%s\n' "$SUMMARY"
 
 # The delta vs the baseline, computed directly from the two spec-0.8 report files (engine-agnostic — the
 # envelope is standard, so no per-engine query CLI / prefix-vs-file quirks). INTRODUCERS = functions whose
@@ -64,24 +67,32 @@ PY
 )
 fi
 
-if [ "$gate" -ne 0 ]; then
-  # A real policy violation (an AS-EFF line) vs a tool/scan failure that also exits nonzero.
-  if grep -qE "AS-EFF" "$SCANLOG"; then
-    echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
-    grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
-    [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
-    echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
-    exit 1
+# One verdict, one exit — body captured so we can print it AND (standalone/CI, not under the hook) self-log.
+verdict_body() {
+  if [ "$gate" -ne 0 ]; then
+    if grep -qE "AS-EFF" "$SCANLOG"; then
+      echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
+      grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
+      [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
+      echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
+      return 1
+    fi
+    echo "candor-review-source: the scan exited $gate with no policy finding — a scan/setup error, not a violation:"
+    tail -3 "$SCANLOG" | sed 's/^/  /'
+    return 2
   fi
-  echo "candor-review-source: the scan exited $gate with no policy finding — a scan/setup error, not a violation:"
-  tail -3 "$SCANLOG" | sed 's/^/  /'
-  exit 2
+  if [ -n "$delta" ]; then
+    echo "candor: this change introduced new effects (no policy violation):"
+    echo "$delta"
+    echo "review them; if intended, refresh the baseline."
+    return 1
+  fi
+  echo "candor: no new effects vs baseline ✓"
+  return 0
+}
+BODY=$(verdict_body); rc=$?
+printf '%s\n' "$BODY"
+if [ -n "${CANDOR_ACTIVITY_LOG:-}" ] && [ "${CANDOR_ACTIVITY_LOG:-}" != "off" ] && [ -z "${CANDOR_HOOK:-}" ]; then
+  candor_log_activity "$rc" "$SUMMARY"$'\n'"$BODY"
 fi
-if [ -n "$delta" ]; then
-  echo "candor: this change introduced new effects (no policy violation):"
-  echo "$delta"
-  echo "review them; if intended, refresh the baseline."
-  exit 1
-fi
-echo "candor: no new effects vs baseline ✓"
-exit 0
+exit "$rc"

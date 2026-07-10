@@ -1,0 +1,34 @@
+name: vscode extension
+
+# The VS Code extension (integrations/vscode) — build + package + verify FROM the artifact so the thin
+# client can't rot. Path-filtered (mirrors jetbrains.yml); needs Node only (npm staging of the pinned
+# candor-ts server, esbuild, vsce). test-vscode.sh is the whole gate: the staged server equals the pin,
+# the packaged .vsix contains the bundle/icon/licenses, the bundle EXTRACTED from the .vsix passes the
+# full LSP lifecycle handshake, and the manifest's activation/commands/settings match the README.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/vscode/**'
+      - '.github/workflows/vscode.yml'
+  pull_request:
+    paths:
+      - 'integrations/vscode/**'
+      - '.github/workflows/vscode.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build + package + verify the .vsix (pin, handshake-from-artifact, contents, README drift)
+        run: bash integrations/vscode/test-vscode.sh
+      # The verified artifact — the same .vsix a user sideloads (Marketplace publishing is manual for now).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candor-vscode-vsix
+          path: integrations/vscode/candor-vscode-*.vsix

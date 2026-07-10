@@ -1,8 +1,10 @@
 # The next agent-loop bet — one candor core, two delivery surfaces
 
 Status: **partially shipped** — bet 1 (`candor-mcp`) shipped 2026-07-02; bet 2 (`candor-lsp`) P1
-shipped 2026-07-02, P2 slices open (VS Code client, whatif code-action, large-repo lens performance);
-both published on npm in candor-ts. Historical design below.
+shipped 2026-07-02, the VS Code client shipped 2026-07-10 (`integrations/vscode/` — a thin
+`vscode-languageclient` extension bundling the pinned server, .vsix artifact-verified); P2 slices
+still open (whatif code-action — landing in candor-ts, rides the next server pin; large-repo lens
+performance); both bins published on npm in candor-ts. Historical design below.
 
 Decision (Tom, 2026-07-02): the recommended sequence — and bet 1 is BUILT. The unified
 `candor-mcp` ships in the candor-ts package (the read layer was already engine-agnostic, so the "core
@@ -14,8 +16,9 @@ one server; the rust python server carries a deprecation pointer. **Bet 2 (the L
 the live §6.2 gate verdict as diagnostics (config-discovered policy), over the same read layer; verified
 against candor-ts AND candor-java reports (bare bytecode locs resolve via package segments); freshness by
 re-reading reports per request (watch/stop-hook/build refresh the lenses; the server never scans, §7.12).
-Editor wiring documented for helix/neovim (native LSP clients). Remaining P2 slices: a thin VS Code client
-extension, the `whatif` code-action, large-repo lens performance. (Hover provenance SHIPPED 2026-07-02:
+Editor wiring documented for helix/neovim (native LSP clients); the thin VS Code client shipped
+2026-07-10 (`integrations/vscode/`). Remaining P2 slices: the `whatif` code-action, large-repo lens
+performance. (Hover provenance SHIPPED 2026-07-02:
 the path hop chain per inherited effect + unknownWhy/invisible disclosure + the blast-radius count.)
 Original scoping below.
 

@@ -50,8 +50,16 @@ both site items resolved — see *Deferred*.
   **Bet 2 — `candor-lsp` — P1 SHIPPED (2026-07-02):** CodeLens `⚡ effects · blast radius N` + the live
   gate verdict as diagnostics (config-discovered policy), any engine's report (java bytecode locs verified),
   freshness via report re-reads (watch/stop-hook/build). helix/neovim wire it natively; 9 behavioral tests.
-  _Remaining P2 slices:_ a thin VS Code client extension, the whatif code-action, large-repo lens
-  performance (hover provenance shipped 2026-07-02, published in candor-ts 0.8.3+). **JetBrains
+  **The VS Code client SHIPPED 2026-07-10** ([`integrations/vscode/`](integrations/vscode/)): a thin
+  `vscode-languageclient` extension bundling the handshake-verified candor-lsp (candor-ts pinned 0.8.8,
+  the JetBrains stage→bundle→verify chain in npm-script form), runs the server on VS Code's own Node
+  (no system node); `candor-vscode-0.8.8.vsix` packaged + verified FROM the artifact (`test-vscode.sh`:
+  pin, LSP lifecycle handshake on the extracted bundle, contents, README drift; path-filtered
+  `vscode.yml` CI) and smoke-installed/uninstalled via the real `code` CLI. Sideload the .vsix (works
+  in Cursor/Windsurf too); Marketplace publisher setup pending. _Remaining P2 slices:_ the whatif
+  code-action (landing in candor-ts — the extension picks it up with the next `candorTsVersion` pin
+  bump, no client change), large-repo lens performance (hover provenance shipped 2026-07-02, published
+  in candor-ts 0.8.3+). **JetBrains
   slice STAGED (2026-07-02):** (a) an LSP4IJ template for the catalog (install LSP4IJ → pick "Candor"
   → auto npm-install) — **PR OPEN:
   [redhat-developer/lsp4ij#1609](https://github.com/redhat-developer/lsp4ij/pull/1609)** (watch for

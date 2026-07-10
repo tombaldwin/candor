@@ -3,8 +3,10 @@
 # Drop this in .github/workflows/. Weekly (and on demand), it renders CANDOR-REPORT.md from candor's
 # activity log — the aggregate, plain-language record of what the silent gate did: violations held before
 # merge, capabilities introduced, coverage gaps disclosed, and the quiet majority that crossed no line.
-# It publishes the report two ways: to the Actions run summary (visible immediately) and as a committed
-# CANDOR-REPORT.md (a durable, readable artifact in the repo). Aggregate counts only — never file paths.
+# It publishes the report up to three ways: to the Actions run summary (visible immediately), as a committed
+# CANDOR-REPORT.md (a durable, readable artifact in the repo), and — if a CANDOR_SLACK_WEBHOOK secret is set —
+# posted to Slack (the optional PUSH surface, for a channel an owner watches). Aggregate counts only — never
+# file paths.
 #
 # WHERE THE LOG COMES FROM (pick one; both write the path-free record `candor-agents digest` reads):
 #   • The gate on push-to-main: give your candor gate step `CANDOR_ACTIVITY_LOG: .candor/gate-log.jsonl`
@@ -61,3 +63,23 @@ jobs:
           else
             echo "CANDOR-REPORT.md unchanged — nothing to commit."
           fi
+
+      # Optional PUSH delivery — post the report to a channel an owner actually watches. Enabled only when
+      # the CANDOR_SLACK_WEBHOOK repo secret is set (a Slack Incoming Webhook URL); a no-op otherwise, so
+      # this step is safe to leave in. For EMAIL, point a Slack-to-email bridge at the same webhook, or
+      # swap the curl for any marketplace email action reading CANDOR-REPORT.md — the artifact is the report.
+      - name: Post the report to Slack (optional)
+        if: always()
+        env:
+          CANDOR_SLACK_WEBHOOK: ${{ secrets.CANDOR_SLACK_WEBHOOK }}
+        run: |
+          if [ -z "$CANDOR_SLACK_WEBHOOK" ]; then
+            echo "No CANDOR_SLACK_WEBHOOK secret — skipping Slack push (set it to enable)."; exit 0
+          fi
+          if [ ! -f CANDOR-REPORT.md ]; then
+            echo "No report to post."; exit 0
+          fi
+          # jq -Rs safely JSON-encodes the whole report as the Slack message text (no shell-quoting hazard).
+          payload=$(jq -Rs '{text: .}' < CANDOR-REPORT.md)
+          curl -fsS -X POST -H 'Content-type: application/json' --data "$payload" "$CANDOR_SLACK_WEBHOOK" \
+            && echo "Posted the protection report to Slack."

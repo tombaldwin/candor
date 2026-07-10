@@ -5,8 +5,11 @@ Status: **Phases 1–2 BUILT (2026-07-10).** P1: `candor-agents digest` → comm
 record when run standalone/CI (the writer factored into the shared `lib-candor-summary.sh`, one shape
 for both, no double-log under the hook; +5 tests), plus `adopt/candor-digest.yml`, a scheduled Action
 that renders the report to the run summary and commits `CANDOR-REPORT.md`. So "held the line in CI"
-is real. P3 (Slack/email push; the gains dependency line) below, not built. No new analysis throughout
-— a delivery surface over data candor already keeps.
+is real. P3: the jar `--gate-json` PR path now logs too (`candor-agents log-gate`, wired opt-in in
+adopt/candor.yml) and the digest Action gained an optional Slack push — so the WHOLE gate feeds the
+report and it can reach a channel an owner watches. The one deferred line is the gains dependency
+source (blocked until a gains monitor produces records). No new analysis throughout — a delivery
+surface over data candor already keeps.
 
 ## The problem it solves
 
@@ -87,8 +90,9 @@ Quiet is good   308 of 312 changes crossed no boundary. That silence is the prod
    the owner reads it in the repo or a scheduled CI job commits/updates it. Ship this first.
 2. **A PR / issue comment or a CI job summary** on a schedule (a weekly Action posting the digest):
    still no new service, lands where the team already looks.
-3. **Slack / email** (a thin webhook wrapper): the push channel an owner actually notices. One step of
-   infra; do it only if 1–2 show the digest is read.
+3. **Slack / email** (a thin webhook wrapper): the push channel an owner actually notices. BUILT — an
+   optional `CANDOR_SLACK_WEBHOOK`-gated step in `adopt/candor-digest.yml` (a no-op when the secret is
+   unset). Enable it once 1–2 show the digest is read.
 
 Each step is the same rendered text through a different pipe. Start at 1.
 
@@ -112,7 +116,20 @@ verdict, not the raw log.
   review-script path; +5 tests in test-stop-hook.sh) + `adopt/candor-digest.yml` (weekly + dispatch →
   run summary + committed CANDOR-REPORT.md). "Held the line in CI" is real. Remaining: the jar
   `--gate-json` path logging.
-- **Phase 3 (if pulled):** Slack/email push; the gains dependency line when that wedge is live.
+- **Phase 3 — DONE (2026-07-10), except the gains line (correctly deferred).** Two of the three:
+  (a) **jar `--gate-json` logging** — `candor-agents log-gate <gate.json> [<report.json>]` maps a pure-jar
+      gate verdict to the SAME activity-record shape (path-free by construction — a CI gate has no
+      transcript; `blastRadius`/`reviewMs` the jar can't compute are 0/null, never fabricated; `gained`
+      = the AS-EFF-005 baseline-ratchet effects). Wired as an opt-in step (EDIT 5) in `adopt/candor.yml`
+      so the flagship's own PR gate feeds the digest. 12 tests, incl. a PARITY test that the jar-path
+      record keys equal the review-path (bash) writer's — the two producers can't drift.
+  (b) **Slack push** — an optional `CANDOR_SLACK_WEBHOOK`-gated step in `adopt/candor-digest.yml` posts the
+      report (a no-op when the secret is unset). Email: point a Slack-to-email bridge at the same webhook,
+      or swap the curl for a marketplace email action reading `CANDOR-REPORT.md` — no SMTP built.
+  (c) **The gains dependency line stays DEFERRED** — it needs a `candor-gains` MONITORING pipeline to
+      produce dependency records, which doesn't exist yet (gains is a local demand-probe prototype).
+      Building the digest receiver before any producer is the speculative surface TESTING.md forbids;
+      it activates when gains logs. So P3's delivery is complete; the one open line is blocked upstream.
 
 ## What NOT to build
 

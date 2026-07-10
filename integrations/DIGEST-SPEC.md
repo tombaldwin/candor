@@ -1,8 +1,10 @@
 # candor digest — making the silent gate visible (spec)
 
-Status: **spec / not built.** Builds on the shipped `.candor/activity.jsonl` log and the
-`candor-agents stats` summarizer. No new analysis — this is a delivery surface over data candor
-already keeps.
+Status: **Phase 1 BUILT (2026-07-10)** — `candor-agents digest` renders the owner report to a
+committable `CANDOR-REPORT.md` (13 tests, on data the stop-hook already logs). Phases 2–3 (log CI /
+standalone runs; scheduled + Slack/email delivery) below, not built. Builds on the shipped
+`.candor/activity.jsonl` log and the `candor-agents stats` summarizer — no new analysis, a delivery
+surface over data candor already keeps.
 
 ## The problem it solves
 
@@ -96,9 +98,12 @@ verdict, not the raw log.
 
 ## Build order
 
-- **Phase 1 (small, on existing data):** `candor-agents digest` — render the owner-facing narrative
-  from `stats --json`; a committed `CANDOR-REPORT.md` output. Ships on the agent-loop data that already
-  logs. *This is the whole "make it visible" win at its cheapest.*
+- **Phase 1 — DONE (2026-07-10).** `candor-agents digest [<dir>] [--since] [--out <path|->] [--title]`
+  renders the owner narrative (single-sourced on `stats._load`/`_summary`) to a committable
+  `CANDOR-REPORT.md`: leads with the catches, splits **caught** (blocked) from **allowed** (clean
+  introductions), always carries the coverage/honesty line (in both directions — "couldn't resolve N"
+  or "resolved everything"), closes with silence-as-coverage, aggregate-only (no paths), honest on a
+  quiet period and on an empty log (exit 0, a note, no misleading file). 13 tests.
 - **Phase 2:** log CI-gate + standalone runs (close gap 1) so "held the line in CI" is real, and add
   the scheduled-Action delivery (option 2).
 - **Phase 3 (if pulled):** Slack/email push; the gains dependency line when that wedge is live.

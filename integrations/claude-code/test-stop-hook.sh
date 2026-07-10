@@ -90,6 +90,34 @@ printf '%s' "$(jq -nc '{session_id:"s2",hook_event_name:"Stop"}')" \
 ok "activity log appends one clean record"          '[ "$(jq -r .verdict "$LOG" 2>/dev/null)" = clean ]'
 ok "activity log record is valid JSON"              'jq -e . "$LOG" >/dev/null 2>&1'
 
+# ── P2: standalone / CI self-logging (candor-review.sh writes the SAME record shape when run outside the
+#       hook, so "held the line in CI" is real). Uses a mock ENGINE (CANDOR_CMD), no network.
+ENG="$WORK/mock-engine.sh"
+cat > "$ENG" <<'ENGEOF'
+#!/usr/bin/env bash
+if [ "$1" = "diff" ]; then echo '{"changes":[]}'; exit 0; fi
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && printf '{"candor":{"version":"mock","spec":"0.8"},"functions":[{"fn":"a","inferred":["Log"]}]}' > "$out"
+exit 0
+ENGEOF
+chmod +x "$ENG"
+REV="$HERE/candor-review.sh"; CLS="$WORK/classes"; mkdir -p "$CLS"
+SLOG="$LOGDIR/gate-log.jsonl"
+
+: > "$SLOG"
+CANDOR_CMD="bash $ENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent CANDOR_ACTIVITY_LOG="$SLOG" "$REV" >/dev/null 2>&1
+ok "review self-logs a record when run standalone with CANDOR_ACTIVITY_LOG"  '[ -s "$SLOG" ] && jq -e . "$SLOG" >/dev/null 2>&1'
+ok "the standalone record is PATH-FREE (edited=null — committable/CI-safe)"  '[ "$(jq -r ".edited" "$SLOG" 2>/dev/null)" = null ]'
+ok "the standalone record's verdict is clean (no baseline, no delta)"        '[ "$(jq -r ".verdict" "$SLOG" 2>/dev/null)" = clean ]'
+
+: > "$SLOG"
+CANDOR_HOOK=1 CANDOR_CMD="bash $ENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent CANDOR_ACTIVITY_LOG="$SLOG" "$REV" >/dev/null 2>&1
+ok "under the hook (CANDOR_HOOK=1) the review does NOT self-log (no double record)"  '[ ! -s "$SLOG" ]'
+
+: > "$SLOG"
+CANDOR_CMD="bash $ENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" >/dev/null 2>&1
+ok "with no CANDOR_ACTIVITY_LOG set, the review writes nothing (opt-in)"      '[ ! -s "$SLOG" ]'
+
 echo
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

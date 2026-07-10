@@ -1,10 +1,12 @@
 # candor digest — making the silent gate visible (spec)
 
-Status: **Phase 1 BUILT (2026-07-10)** — `candor-agents digest` renders the owner report to a
-committable `CANDOR-REPORT.md` (13 tests, on data the stop-hook already logs). Phases 2–3 (log CI /
-standalone runs; scheduled + Slack/email delivery) below, not built. Builds on the shipped
-`.candor/activity.jsonl` log and the `candor-agents stats` summarizer — no new analysis, a delivery
-surface over data candor already keeps.
+Status: **Phases 1–2 BUILT (2026-07-10).** P1: `candor-agents digest` → committable `CANDOR-REPORT.md`
+(13 tests). P2: the gate now logs OUTSIDE the agent hook — `candor-review*.sh` self-log a path-free
+record when run standalone/CI (the writer factored into the shared `lib-candor-summary.sh`, one shape
+for both, no double-log under the hook; +5 tests), plus `adopt/candor-digest.yml`, a scheduled Action
+that renders the report to the run summary and commits `CANDOR-REPORT.md`. So "held the line in CI"
+is real. P3 (Slack/email push; the gains dependency line) below, not built. No new analysis throughout
+— a delivery surface over data candor already keeps.
 
 ## The problem it solves
 
@@ -39,13 +41,15 @@ line — here is the month that proves it.*
 violations by code; effects introduced; largest blast radius; sessions; time span). The digest is a
 **renderer over `stats --json`**, plus the two gaps below.
 
-**Two gaps to close for a complete picture** (both small):
-1. **CI-gate and standalone runs don't log yet** (FEEDBACK-SPEC notes this deferred). The digest's
-   most valuable line — "held the line on N violations in CI" — needs the PR-gate and
-   `candor-review*.sh` standalone paths to append the same record shape. A one-function addition,
-   reusing the existing log writer.
-2. **Dependency checks (`candor-gains`) are a future source.** When the gains wedge is in use, "N
-   dependency updates scanned, 1 gained a capability" is a digest line. Out of scope until gains ships.
+**Gap 1 — CLOSED (P2).** `candor-review*.sh` now self-log a path-free record (`edited:null` — no
+transcript in CI) when `CANDOR_ACTIVITY_LOG` is set and they're not under the hook (`CANDOR_HOOK=1`,
+which the hook sets so it never double-logs). The record writer lives once in `lib-candor-summary.sh`,
+shared with the hook, so the shape can't drift. Feed the digest by giving your CI gate step
+`CANDOR_ACTIVITY_LOG: .candor/gate-log.jsonl` and committing that path-free log (one record per merged
+change). **Remaining:** the jar `--gate-json` PR path (adopt/candor.yml) doesn't log yet — teams using
+`candor-review*.sh` in CI already do; wiring the jar path is a small follow-on.
+**Gap 2 — dependency checks (`candor-gains`) are a future source.** When gains is in use, "N dependency
+updates scanned, 1 gained a capability" is a digest line. Out of scope until that wedge ships.
 
 ## What it says (owner-facing narrative, not a dev stats dump)
 
@@ -104,8 +108,10 @@ verdict, not the raw log.
   introductions), always carries the coverage/honesty line (in both directions — "couldn't resolve N"
   or "resolved everything"), closes with silence-as-coverage, aggregate-only (no paths), honest on a
   quiet period and on an empty log (exit 0, a note, no misleading file). 13 tests.
-- **Phase 2:** log CI-gate + standalone runs (close gap 1) so "held the line in CI" is real, and add
-  the scheduled-Action delivery (option 2).
+- **Phase 2 — DONE (2026-07-10).** Standalone/CI logging via the shared writer (gap 1 closed for the
+  review-script path; +5 tests in test-stop-hook.sh) + `adopt/candor-digest.yml` (weekly + dispatch →
+  run summary + committed CANDOR-REPORT.md). "Held the line in CI" is real. Remaining: the jar
+  `--gate-json` path logging.
 - **Phase 3 (if pulled):** Slack/email push; the gains dependency line when that wedge is live.
 
 ## What NOT to build

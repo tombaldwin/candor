@@ -28,6 +28,8 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 input=$(cat 2>/dev/null || true)
 have_jq() { command -v jq >/dev/null 2>&1; }
+# the shared activity-log writer (one record shape for the hook AND the standalone/CI review path)
+[ -f "$HERE/lib-candor-summary.sh" ] && . "$HERE/lib-candor-summary.sh"
 
 # Re-invoked after a previous block → allow the stop, never loop (Claude Code sets stop_hook_active).
 active=false
@@ -44,27 +46,19 @@ emit_notice() {
   else printf '{"systemMessage":"candor checked this turn."}\n'; fi
 }
 
-# Append one record to the activity log (P2; powers `candor stats`). Best-effort: needs jq, only writes when
-# the log's dir already exists (so we never create .candor/), CANDOR_ACTIVITY_LOG=off disables. session_id +
-# the turn's edited files come from the hook input; blast/gained/violations are parsed from the review's
-# output (stats-only — if a field doesn't parse it logs 0/[], the notice and gate are unaffected).
+# Log one activity record (P2; powers `candor-agents stats`/`digest`). The RECORD WRITER lives in
+# lib-candor-summary.sh (shared with the standalone/CI review path so the shape can't drift); the hook's
+# only job is to derive the two hook-specific inputs — the session id and the turn's edited files — and
+# hand them to it. The turn's edited files: the Stop hook stdin does NOT carry tool_calls (only Pre/Post
+# ToolUse do), so read the transcript for Edit/Write/MultiEdit/NotebookEdit file_paths since the last
+# human message. null = couldn't determine (no transcript / parse failed); [] = genuinely no edits.
 log_activity() {
   local rc=$1 review=$2
-  local log=${CANDOR_ACTIVITY_LOG:-.candor/activity.jsonl}
-  [ "$log" = "off" ] && return
+  command -v candor_log_activity >/dev/null 2>&1 || return 0   # lib absent → skip (stats-only)
   have_jq || return
-  [ -d "$(dirname "$log")" ] || return
-  local verdict; case "$rc" in 0) verdict=clean;; 1) verdict=blocked;; *) verdict=setup;; esac
-  local engine=java
-  if [ -n "${CANDOR_SCAN:-}" ]; then engine=$(printf '%s' "$CANDOR_SCAN" | grep -oE 'candor-ts|candor-swift|candor-scan' | head -1); [ -z "$engine" ] && engine=source; fi
-  local ts sid edited blast gained viol
-  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  local sid edited tx
   sid=$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || echo "")
-  # The turn's edited files. The Stop hook stdin does NOT carry tool_calls (only Pre/PostToolUse do —
-  # verified against the docs), so read the transcript: Edit/Write/MultiEdit/NotebookEdit file_paths since
-  # the last human (string-content) message. null = couldn't determine (no transcript / parse failed); [] =
-  # genuinely no edits this turn. (Never a misleading [] when we simply don't know.)
-  local tx; tx=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null)
+  tx=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null)
   edited=
   if [ -n "$tx" ] && [ -f "$tx" ]; then
     edited=$(jq -cs '(map(.type=="user" and ((.message.content|type)=="string"))|rindex(true)) as $h
@@ -74,29 +68,12 @@ log_activity() {
           | (.input.file_path // .input.notebook_path) ] | map(select(.!=null)) | unique' "$tx" 2>/dev/null)
   fi
   [ -z "$edited" ] && edited=null
-  blast=$(printf '%s' "$review" | sed -nE 's/.*blast radius: ([0-9]+) function.*/\1/p' | head -1); [ -z "$blast" ] && blast=0
-  gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
-  viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
-  # richer fields from the review's CANDOR_SUMMARY trailer (P2.1): Unknown count, effects present, wall-time.
-  local summ unknowns effects reviewms
-  summ=$(printf '%s' "$review" | grep '^CANDOR_SUMMARY ' | tail -1 | sed 's/^CANDOR_SUMMARY //')
-  unknowns=$(printf '%s' "$summ" | jq -r '.unknowns // empty' 2>/dev/null); [ -z "$unknowns" ] && unknowns=null
-  effects=$(printf '%s' "$summ" | jq -c '.effects // empty' 2>/dev/null); [ -z "$effects" ] && effects='[]'
-  reviewms=$(printf '%s' "$summ" | jq -r '.reviewMs // empty' 2>/dev/null); [ -z "$reviewms" ] && reviewms=null
-  jq -nc --arg ts "$ts" --arg sid "$sid" --arg engine "$engine" --arg verdict "$verdict" \
-     --argjson edited "$edited" --argjson gained "$gained" --argjson viol "$viol" --argjson blast "$blast" \
-     --argjson unknowns "$unknowns" --argjson effects "$effects" --argjson reviewms "$reviewms" \
-     '{ts:$ts, sessionId:(if $sid=="" then null else $sid end), engine:$engine, edited:$edited,
-       gained:$gained, blastRadius:$blast, verdict:$verdict, violations:$viol,
-       unknowns:$unknowns, effects:$effects, reviewMs:$reviewms}' >> "$log" 2>/dev/null || true
-  # cap the log (keep the last N lines) so it can't grow without bound — best-effort.
-  local cap=${CANDOR_ACTIVITY_CAP:-5000} n
-  case "$cap" in ''|*[!0-9]*) cap=5000 ;; esac   # non-numeric cap → default, never error the -gt test
-  n=$(wc -l < "$log" 2>/dev/null || echo 0)
-  if [ "$n" -gt "$cap" ]; then tail -n "$cap" "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null || true; fi
+  candor_log_activity "$rc" "$review" "$edited" "$sid"
 }
 
-review=$(CANDOR_EMIT_SUMMARY=1 "${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
+# CANDOR_HOOK=1 tells the review script "the hook owns logging" — so it must NOT self-log (else every
+# hook-driven turn would log twice: once here, once in the script). Standalone/CI callers leave it unset.
+review=$(CANDOR_HOOK=1 CANDOR_EMIT_SUMMARY=1 "${CANDOR_REVIEW:-$HERE/candor-review.sh}" 2>&1); rc=$?
 log_activity "$rc" "$review"   # log first — it reads the CANDOR_SUMMARY trailer for richer fields
 review=$(printf '%s' "$review" | grep -v '^CANDOR_SUMMARY ' || true)   # then strip the machine line from the human text
 

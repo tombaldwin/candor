@@ -80,6 +80,18 @@ both site items resolved — see *Deferred*.
   (GitHub) — all spec-0.8; plugin 0.8.2 zip staged for Marketplace. Family test standards now
   codified in TESTING.md (coverage measured + every zero-coverage gate surface closed).
 
+- **[P1 — NEW, 2026-07-10] The candor digest — make the silent gate VISIBLE.** Adoption/retention
+  problem Tom named: the tool is silent by design (good — never muted), but the OWNER who renews never
+  sees it work → "why are we running this?" is easy to ask. Fix is NOT more dev-channel noise — it's a
+  separate periodic OWNER-facing digest over the activity log candor already keeps
+  (.candor/activity.jsonl + candor-agents stats). Spec: `integrations/DIGEST-SPEC.md`. Leads with the
+  catches, closes with "N clean = the product working", ALWAYS carries the coverage/honesty line (what
+  candor couldn't see — its own disclosure ethos pointed at itself), counts-not-a-leaderboard,
+  aggregate-only (paths stay local, privacy tier = the gate verdict). Build order: P1 `candor-agents
+  digest` → committed CANDOR-REPORT.md (cheapest, on data that already logs); P2 log CI/standalone runs
+  (close the FEEDBACK-SPEC "standalone/CI logging" deferred gap) + a scheduled Action; P3 Slack/email +
+  the gains dependency line. Cheapest-first, each step the same rendered text through a different pipe.
+
 - **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
   a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor
   surface also shows the arch-gate boundary live. Bigger build (a language server, ideally one shared over

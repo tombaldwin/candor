@@ -139,8 +139,18 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   CVE-2022-0235 redirect fix → ⚠ Net in `finalize`/`abortAndFinalize`; control `ms 2.0.0→2.1.3` → clean).
   Prototype findings feeding productization: (1) bundled dist reads as Unknown — prefer un-bundled source;
   (2) the JVM/Maven driver is the flagship-aligned follow-on (a `.jar` is already compiled — no bundler
-  noise); (3) the exit-1 alarm is inherently a CI gate / registry-watcher trigger. NEXT DECISIONS (Tom's):
-  commercial commitment y/n; if yes → the JVM driver + a hosted/CI alarm surface + repo home + licensing.
+  noise); (3) the exit-1 alarm is inherently a CI gate / registry-watcher trigger.
+  **STRATEGY (Tom, 2026-07-10): run it as a marketing WEDGE, but don't miss a SaaS if one surfaces.**
+  The SaaS (if real) is NOT the diff tool (copyable, npm-crowded — Socket owns that) — it's the
+  always-on/stateful/compounding layer a CLI structurally can't be: **continuous monitoring over an
+  accumulated cross-language effect-history CORPUS**, JVM-first (no incumbent has a head start there).
+  Full build spec: `candor-gains/PRODUCT-SPEC.md`. The one architectural commitment made now:
+  **the cache and the corpus are the same store** — the wedge retains every scan (exhaust = moat seed;
+  cheap now, expensive to retrofit). Phasing with decision gates: **P0** JVM/Maven driver + corpus store
+  (cheap, no infra, no commitment — the differentiated path); **P1** a candor.poly.io/gains landing page
+  = the demand probe (waitlist + ecosystem analytics, no backend) → GATE 1 (JVM/enterprise pull? go/no);
+  **P2** the live runner + continuous-monitoring service on the already-accruing corpus → GATE 2 (the
+  commercial decision, priced against demonstrated pull). Corpus accrues from P0 so P2 starts warm.
 
 ## fingerprint
 

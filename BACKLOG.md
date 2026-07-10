@@ -151,11 +151,14 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   accumulated cross-language effect-history CORPUS**, JVM-first (no incumbent has a head start there).
   Full build spec: `candor-gains/PRODUCT-SPEC.md`. The one architectural commitment made now:
   **the cache and the corpus are the same store** — the wedge retains every scan (exhaust = moat seed;
-  cheap now, expensive to retrofit). Phasing with decision gates: **P0** JVM/Maven driver + corpus store
-  (cheap, no infra, no commitment — the differentiated path); **P1** a candor.poly.io/gains landing page
-  = the demand probe (waitlist + ecosystem analytics, no backend) → GATE 1 (JVM/enterprise pull? go/no);
-  **P2** the live runner + continuous-monitoring service on the already-accruing corpus → GATE 2 (the
-  commercial decision, priced against demonstrated pull). Corpus accrues from P0 so P2 starts warm.
+  cheap now, expensive to retrofit). Phasing with decision gates: **P0 DONE** (JVM/Maven driver + corpus
+  store — the differentiated path); **P1 DONE 2026-07-10** — `candor.poly.io/gains/` demand-probe landing
+  page (`~/git/web` src/candor/gains, JVM-led exhibits + a "watch, don't just check" waitlist via
+  pre-filled labelled GitHub issues, 3 ecosystem variants = the signal; no backend, no third-party;
+  third door on the candor index; label `gains-waitlist` on tombaldwin/candor = the count). **GATE 1 NOW
+  OPEN (Tom's, evidence-based):** do waitlist issues arrive, and are they JVM/enterprise (defensible →
+  build P2) or npm-only (wedge only → stop)? **P2** (only past Gate 1) the live runner + continuous-
+  monitoring service on the already-accruing corpus → GATE 2 (the commercial decision, priced to pull).
 
 ## fingerprint
 

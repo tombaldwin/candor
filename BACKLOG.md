@@ -87,7 +87,7 @@ both site items resolved — see *Deferred*.
   (.candor/activity.jsonl + candor-agents stats). Spec: `integrations/DIGEST-SPEC.md`. Leads with the
   catches, closes with "N clean = the product working", ALWAYS carries the coverage/honesty line (what
   candor couldn't see — its own disclosure ethos pointed at itself), counts-not-a-leaderboard,
-  aggregate-only (paths stay local, privacy tier = the gate verdict). Build order: P1 `candor-agents
+  aggregate-only (paths stay local, privacy tier = the gate verdict). Build order: **P1 DONE 2026-07-10** — `candor-agents digest` renders CANDOR-REPORT.md (owner narrative, caught-vs-allowed split, always the coverage/honesty line, aggregate-only, 13 tests, 391 total). P2/P3 below. Was: P1 `candor-agents
   digest` → committed CANDOR-REPORT.md (cheapest, on data that already logs); P2 log CI/standalone runs
   (close the FEEDBACK-SPEC "standalone/CI logging" deferred gap) + a scheduled Action; P3 Slack/email +
   the gains dependency line. Cheapest-first, each step the same rendered text through a different pipe.

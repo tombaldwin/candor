@@ -129,8 +129,18 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   stand as its own wedge / landing page. **Business model (Tom, 2026-07-01): appealing enough to consider as
   candor's first _commercial, closed-source add-on_** — a paid layer over the open `gains` primitive.
   candor's engines are fully open source, so a closed paid layer is a deliberate business-model departure
-  (the open engines stay the credibility base; this rides on top), flagged as such. Needs a version-pair
-  driver + a focused alarm surface over `gains`. No next action scheduled — needs one, or explicit parking.
+  (the open engines stay the credibility base; this rides on top), flagged as such.
+  **PROTOTYPE BUILT 2026-07-10 (`~/git/candor-gains`, local only — NOT a public repo, licensing/home
+  deferred).** A version-pair driver (`candor-gains.mjs`): fetch two npm releases (`npm pack`), scan each
+  with candor-ts `--allow-js`, run `gains`, tier the delta — ⚠ boundary capability gained (exit 1,
+  gate-able) / △ unresolved surface grew (bundler/dynamic) / · cross-cutting (informative). Two working
+  exhibits: a deterministic offline synthetic (`greet` 1.0.0→1.1.0 adds an `https.get` phone-home →
+  ⚠ Net in `greet`+`track`, via `./run-demo.sh`) and a REAL true-positive (`node-fetch 2.6.6→2.6.7`, the
+  CVE-2022-0235 redirect fix → ⚠ Net in `finalize`/`abortAndFinalize`; control `ms 2.0.0→2.1.3` → clean).
+  Prototype findings feeding productization: (1) bundled dist reads as Unknown — prefer un-bundled source;
+  (2) the JVM/Maven driver is the flagship-aligned follow-on (a `.jar` is already compiled — no bundler
+  noise); (3) the exit-1 alarm is inherently a CI gate / registry-watcher trigger. NEXT DECISIONS (Tom's):
+  commercial commitment y/n; if yes → the JVM driver + a hosted/CI alarm surface + repo home + licensing.
 
 ## fingerprint
 

@@ -107,3 +107,24 @@ jobs:
             candor-gate.json
             candor.sarif
           if-no-files-found: ignore
+
+      # ── OPT-IN (EDIT 5): feed the OWNER DIGEST from this gate ────────────────────────────────────
+      # candor-digest.yml renders a weekly "what the gate did" report (integrations/DIGEST-SPEC.md) from a
+      # committed, PATH-FREE activity log. This step turns each merge's `--gate-json` verdict into one such
+      # record (no file paths — a CI gate has no transcript) and commits it, so "held the line in CI" is real.
+      # Runs on push-to-main ONLY (one record per MERGED change, not per PR push). To enable:
+      #   1. uncomment this step, AND
+      #   2. add `contents: write` to the top-level `permissions:` (this commits the log line).
+      # Then add adopt/candor-digest.yml to render the report on a schedule.
+      # - name: candor → digest log (push to main)
+      #   if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('candor-gate.json') != ''
+      #   run: |
+      #     pipx run --spec "git+https://github.com/tombaldwin/candor-agents@v0.8.1" \
+      #       candor-agents log-gate candor-gate.json candor-report.json --log .candor/gate-log.jsonl
+      #     if [ -n "$(git status --porcelain .candor/gate-log.jsonl)" ]; then
+      #       git config user.name  "candor-gate[bot]"
+      #       git config user.email "candor-gate@users.noreply.github.com"
+      #       git add .candor/gate-log.jsonl
+      #       git commit -m "candor: gate log (one record per merged change)"
+      #       git push
+      #     fi

@@ -1,9 +1,9 @@
 {
   "name": "candor-vscode",
   "displayName": "candor: effects & architecture gate",
-  "description": "Every function's side-effect map, where the code is — CodeLens (effects + blast radius), your architecture policy enforced live as diagnostics, and effect-provenance hover, from candor's per-function effect analysis (JVM bytecode, TypeScript/JavaScript, Rust, Swift).",
-  "version": "0.8.8",
-  "candorTsVersion": "0.8.8",
+  "description": "Every function's side-effect map, where the code is \u2014 CodeLens (effects + blast radius), your architecture policy enforced live as diagnostics, and effect-provenance hover, from candor's per-function effect analysis (JVM bytecode, TypeScript/JavaScript, Rust, Swift).",
+  "version": "0.8.9",
+  "candorTsVersion": "0.8.9",
   "publisher": "polymorphism",
   "license": "(MIT OR Apache-2.0)",
   "icon": "icon.png",
@@ -46,7 +46,7 @@
         "candor.policyPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Override the architecture policy the diagnostics enforce (exported as `CANDOR_POLICY` to the server). Absolute, or relative to the first workspace folder. Empty = the server discovers the checked-in `.candor/config` policy (spec §3.4)."
+          "markdownDescription": "Override the architecture policy the diagnostics enforce (exported as `CANDOR_POLICY` to the server). Absolute, or relative to the first workspace folder. Empty = the server discovers the checked-in `.candor/config` policy (spec \u00a73.4)."
         },
         "candor.trace.server": {
           "type": "string",

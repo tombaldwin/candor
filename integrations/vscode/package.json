@@ -1,0 +1,76 @@
+{
+  "name": "candor-vscode",
+  "displayName": "candor: effects & architecture gate",
+  "description": "Every function's side-effect map, where the code is — CodeLens (effects + blast radius), your architecture policy enforced live as diagnostics, and effect-provenance hover, from candor's per-function effect analysis (JVM bytecode, TypeScript/JavaScript, Rust, Swift).",
+  "version": "0.8.8",
+  "candorTsVersion": "0.8.8",
+  "publisher": "polymorphism",
+  "license": "(MIT OR Apache-2.0)",
+  "icon": "icon.png",
+  "homepage": "https://candor.poly.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tombaldwin/candor",
+    "directory": "integrations/vscode"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "static analysis",
+    "architecture",
+    "effects",
+    "code quality",
+    "lsp"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "workspaceContains:**/.candor/config",
+    "workspaceContains:**/.candor/*.json",
+    "onCommand:candor.start"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "candor.start",
+        "title": "candor: start"
+      }
+    ],
+    "configuration": {
+      "title": "candor",
+      "properties": {
+        "candor.policyPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Override the architecture policy the diagnostics enforce (exported as `CANDOR_POLICY` to the server). Absolute, or relative to the first workspace folder. Empty = the server discovers the checked-in `.candor/config` policy (spec §3.4)."
+        },
+        "candor.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the LSP traffic between VS Code and the candor language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "stage-server": "node scripts/stage-server.mjs",
+    "verify-server": "node scripts/verify-server.mjs dist/candor-lsp.mjs",
+    "build": "npm run stage-server && npm run verify-server && esbuild src/extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
+    "vscode:prepublish": "npm run build",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.0",
+    "vscode-languageclient": "^9.0.1"
+  }
+}

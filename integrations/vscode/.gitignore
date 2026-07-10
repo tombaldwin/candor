@@ -1,0 +1,6 @@
+# Build state (staged npm server, bundles, packaged extension) — never committed; `npm run build` +
+# `npm run package` regenerate everything (the pin in package.json is the input).
+node_modules/
+build/
+dist/
+*.vsix

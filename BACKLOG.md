@@ -130,16 +130,21 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   candor's first _commercial, closed-source add-on_** — a paid layer over the open `gains` primitive.
   candor's engines are fully open source, so a closed paid layer is a deliberate business-model departure
   (the open engines stay the credibility base; this rides on top), flagged as such.
-  **PROTOTYPE BUILT 2026-07-10 (`~/git/candor-gains`, local only — NOT a public repo, licensing/home
-  deferred).** A version-pair driver (`candor-gains.mjs`): fetch two npm releases (`npm pack`), scan each
-  with candor-ts `--allow-js`, run `gains`, tier the delta — ⚠ boundary capability gained (exit 1,
+  **PROTOTYPE — PHASE 0 BUILT 2026-07-10 (`~/git/candor-gains`, local only — NOT a public repo).**
+  A version-pair driver (`candor-gains.mjs`) over BOTH ecosystems: npm (`npm pack` → candor-ts
+  `--allow-js`) AND the differentiated JVM path (Maven Central jar → candor-java, no bundler noise).
+  Tiers the delta — ⚠ boundary capability gained (exit 1,
   gate-able) / △ unresolved surface grew (bundler/dynamic) / · cross-cutting (informative). Two working
   exhibits: a deterministic offline synthetic (`greet` 1.0.0→1.1.0 adds an `https.get` phone-home →
   ⚠ Net in `greet`+`track`, via `./run-demo.sh`) and a REAL true-positive (`node-fetch 2.6.6→2.6.7`, the
   CVE-2022-0235 redirect fix → ⚠ Net in `finalize`/`abortAndFinalize`; control `ms 2.0.0→2.1.3` → clean).
   Prototype findings feeding productization: (1) bundled dist reads as Unknown — prefer un-bundled source;
-  (2) the JVM/Maven driver is the flagship-aligned follow-on (a `.jar` is already compiled — no bundler
-  noise); (3) the exit-1 alarm is inherently a CI gate / registry-watcher trigger.
+  (2) `gains` alone is too blunt — it can't tell "a function that shipped PURE now does Net" (the
+  attack) from "a new function does Net" (a feature) because reports omit pure fns; the driver fixes
+  this by keying existence on the CALLGRAPH (⚠⚠ existing-code-gained vs ⚠ new-function tiers) — a
+  candidate improvement to open `gains`/`diff` too; (3) adjacent bumps are clean, large spans are
+  refactor churn (→ watch releases incrementally); (4) the corpus==cache retains report+callgraph
+  (the moat seed); (5) the exit-1 ⚠⚠ alarm is a CI gate / registry-watcher trigger.
   **STRATEGY (Tom, 2026-07-10): run it as a marketing WEDGE, but don't miss a SaaS if one surfaces.**
   The SaaS (if real) is NOT the diff tool (copyable, npm-crowded — Socket owns that) — it's the
   always-on/stateful/compounding layer a CLI structurally can't be: **continuous monitoring over an

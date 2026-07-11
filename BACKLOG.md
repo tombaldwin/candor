@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-09. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-11 (the measure-and-surface arc — see Recently shipped). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -235,6 +235,21 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   (clippy `-D warnings` / eslint / Error-Prone + `-Xlint`) plus a warnings-as-errors equivalent.
 
 ## Recently shipped (context; older entries pruned from the per-engine files)
+
+- **The measure-and-surface arc (2026-07-11).** A full loop, end to end: (a) the **owner digest** (P1–P3)
+  — `candor-agents digest` renders an aggregate protection report over the gate log; the gate now logs
+  outside the agent hook (`log-gate`) and delivers on a schedule (candor-agents 0.8.2/0.8.3). (b) **Family
+  changelogs + `candor.poly.io/releases`** (link-out) + a standing "always cut a gh release" rule
+  (RELEASING.md). (c) A **soundness wave**: ten cardinal-sin fixes across two engines — swift R22–R29 +
+  R28 (0.8.7→0.8.10, the accessor + generic + conditional-conformance veins) and rust-scan R30/R31 (0.8.8,
+  trait-default + generic-field) — **every FIXABLE silent under-report now closed+gated; the 7 remaining
+  (R2–R8) are fundamental syntactic limits.** Validated on real third-party code (swift-argument-parser: no
+  fabrication, Env ground-truth-correct) + the kernel oracle. (d) **Cross-model evals**: completeness holds
+  tier-flat (~14–15/16, control 0–6, largest lift for the weakest model) and the token saving is consistent
+  (~1.37×) from Haiku 4.5 to Fable 5 — pre-registered, 160 agents, blind-judged (`candor-rust/eval/scaled`,
+  RESULTS-xmodel + RESULTS-speed-xmodel). The speed A/B is now runnable via subagents (per-agent telemetry
+  is exposed). (e) The measured case is **surfaced** at `candor.poly.io/evidence/`. Soundness instrument
+  (candor-spec/SOUNDNESS.md) fully updated throughout.
 
 - **Spec 0.8 + the PR-native gate + the adoption funnel (2026-07-01/02).** The week's arc, end to end:
   (a) **versioning ladder** adopted (minor rungs reference-led, floor conformance-pinned; SPEC.md

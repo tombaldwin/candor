@@ -116,6 +116,11 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   clean), and names the `deny E Unknown <scope>` upgrade. Advisory; `--strict` → exit 1 so CI can require
   provable purity. It turns the disclosure ethos on the policy itself: "your `pure` layer passes, but is it
   provably pure, or only pure as far as candor could resolve?"
+  A plain `--policy` **gate scan auto-emits the same disclosure** (candor-scan 0.8.9 / java 0.8.15 / ts 0.8.17 /
+  swift 0.8.16): after the verdict, the engine prints an advisory stderr note naming each unverified-purity hole
+  and its `deny E Unknown <scope>` upgrade — so an author learns their `pure` layer isn't *provably* pure without
+  knowing to run the subcommand. Note only: the verdict, exit code, and `--gate-json` are untouched. Pinned
+  four-way by conformance PART 12d (the gate note discloses the same holes as `unverified` in every engine).
 
 ## Phasing
 

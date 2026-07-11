@@ -218,26 +218,19 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
-- **`unverified`/disclosure real-world SIGNAL (0.9 dogfood, 2026-07-11)** — dogfooding the published 0.9 on
-  real code (xh/Rust, zx/TS) found the provable-purity disclosure is honest but its *signal* is bounded by
-  each engine's Unknown behavior: **INERT on candor-scan** (the syntactic floor routes dep-invisibility
-  through the κ ledger, NOT `Unknown` — xh: 0/139 Unknown, so `unverified` finds nothing even with 36
-  invisible deps), and **DILUTED on resolving engines** (candor-ts on zx: 82/84 Unknown, but 54 are
-  external lib-method calls (`chalk.grey`), 23 dispatch, 3 pure array-HOF builtins, and only a handful are
-  genuine fn-value ports (`param#0`) — the real DI-port case buried in sound-but-conservative noise). Two
-  follow-ups: (a) **precision** — resolve the immediately-passed local lambda in array HOFs (`arr.reduce`/
-  `.map`/`.filter`): `zx util.bufArrJoin` (`arr.reduce((acc,buf)=>acc+bufToString(buf),'')`) is genuinely
-  PURE but reads `callback:arr.reduce` Unknown. **SCOPED** in `candor-ts/HOF-PRECISION-DESIGN.md` — recon
-  narrowed it: candor-ts already resolves array HOFs (incl. calling callbacks); the miss is *receiver-type
-  recognition* (indexed-access/imported array types read opaque). Soundness line: `any`/opaque MUST stay
-  Unknown. **candor-ts-only** (not cross-engine — no shared conformance fixture hits it), baseline-
-  invalidating. Honest ROI: small (3/82 on zx) — the dominant `unverified` noise is external lib-method
-  Unknowns (54, `chalk.grey`), a separate + bigger lever (κ-style disclosed-invisible or a curated pure-lib
-  table). (b) **positioning** — document that
-  `unverified` targets *unresolvable in-crate dispatch* (deep engines / DI-heavy code), not the syntactic
-  floor. NOT a cardinal sin — everything stayed honest (over-approximation, disclosed); this is precision +
-  docs. Validated the 0.9 remedial loop too: `candor fix` on a real xh Net violation produced a correct,
-  useful hoist-frontier remedy.
+- **0.9 dogfood — RETRACTED precision finding + the real fix + a methodology lesson (2026-07-11/12).** The
+  dogfood on real code did its job: it validated the release (candor-scan on xh honest via the κ ledger; the
+  `candor fix` remedy on a real xh Net violation was correct + useful) — but its two candor-ts "precision"
+  findings (`chalk.grey`→Unknown, `bufArrJoin`→Unknown) turned out to be a **testing artifact**: `zx` was
+  scanned on `zx/src` **without `npm install`**, so imports/types didn't resolve → conservative Unknown.
+  Proven by controlled fixtures: a *resolvable* uncovered package member-access → `invisible` (κ) not Unknown;
+  the exact `bufArrJoin` shape is PURE when the type resolves. candor-ts was already correct; the scope doc
+  (`candor-ts/HOF-PRECISION-DESIGN.md`) is **RETRACTED** (correction at its top). **Real fix shipped**:
+  candor-ts's "no node_modules → npm install" warning was silent here because it only checked the scan *root*
+  (I scanned `src/`) and only counted `dependencies` (chalk is a devDependency) — now walks up to the manifest
+  + counts devDependencies + regression test, so an un-installed scan is warned instead of silently reading as
+  spurious Unknowns. **Methodology lesson** (see [[feedback-dogfood-proactively]]): always resolve deps
+  (`npm install` / build) before scanning a real project — unresolved imports invalidate the results.
 - **`candor-action-demo` workflow drift** — the live demo repo carries a **copy** of `adopt/candor.yml`;
   a change to the adopt starter does not propagate. Re-copy on adopt changes (it has already been
   re-copied twice), or add a sync check.

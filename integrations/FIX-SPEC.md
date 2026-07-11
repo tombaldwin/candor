@@ -112,10 +112,14 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   source, the pure span is the affected∩denied set, the hoist frontier is the allowed-layer callers of that
   span. Ground-truth-tested on the `orderflow` worked example (Net into the domain → site `infra::fetch_rate`,
   span the two `domain` fns, hoist to `api::get_quote`) and a no-clean-hoist fixture (→ port + `allow` edit).
-  Six regression tests in `tests/cli.rs` pin the plan, both no-op branches, and the fail-loud contracts
-  (unreadable/absent policy → exit 2). Limits, as designed: "allowed" = not-denied (allow-rule *exemptions*
-  from a deny aren't yet modelled as hoist targets); a single hoist frontier, no higher-vs-lower trade-off
-  surfacing yet — both are P2/P3 refinements, not soundness gaps (the gate re-scan still verifies any fix).
+  Regression tests in `tests/cli.rs` pin the plan, both no-op branches, and the fail-loud contracts
+  (unreadable/absent policy → exit 2). **The higher-vs-lower hoist trade-off now ships** (2026-07-11): the
+  remedy carries `hoistTo` (the minimal frontier) AND `hoistHigher` — the allowed-layer transitive callers of
+  the frontier that also route the effect, i.e. every place you could originate it further up; the text
+  surfaces the trade-off (hoisting higher keeps the frontier pure too, at the cost of threading through more
+  signatures). All four engines compute it identically (pinned by conformance PART 12b's leaf-normalized
+  tuple). Remaining as-designed limit: "allowed" = not-denied (allow-rule *exemptions* from a deny aren't yet
+  modelled as hoist targets) — not a soundness gap (the gate re-scan still verifies any fix).
 - **P2 — the loop. ✅ SHIPPED (2026-07-11).** `candor-query fix-gate <prefix> [policy] [0|1]` (candor-query
   0.8.3): a remedy for EVERY deny/`pure` crossing in a report, collapsing the inheritors of one root cause to
   a single plan (keyed by effect/layer/site/hoist). `candor-review-source.sh` folds it into the block message

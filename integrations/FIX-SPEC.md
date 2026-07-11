@@ -116,8 +116,16 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   (unreadable/absent policy → exit 2). Limits, as designed: "allowed" = not-denied (allow-rule *exemptions*
   from a deny aren't yet modelled as hoist targets); a single hoist frontier, no higher-vs-lower trade-off
   surfacing yet — both are P2/P3 refinements, not soundness gaps (the gate re-scan still verifies any fix).
-- **P2 — the loop.** The `--gate-json` `remedy` field + `candor-review*.sh` folding the plan into the block
-  message. This is where the agent-loop value lands.
+- **P2 — the loop. ✅ SHIPPED (2026-07-11).** `candor-query fix-gate <prefix> [policy] [0|1]` (candor-query
+  0.8.3): a remedy for EVERY deny/`pure` crossing in a report, collapsing the inheritors of one root cause to
+  a single plan (keyed by effect/layer/site/hoist). `candor-review-source.sh` folds it into the block message
+  — when the gate fails and a policy is set, the loop appends the fix under the finding, so the agent self-
+  corrects toward the right architecture. Graceful no-op when candor-query is absent or can't read the
+  engine's report (`CANDOR_QUERY` overrides the binary). Design note: the machine-readable remedy is emitted
+  by `fix-gate --json` (`{ok, remedies[]}`) over the MERGED report, NOT bolted onto the per-member scanner's
+  `--gate-json` — the hoist frontier is a whole-graph computation, so it belongs where the whole graph is
+  assembled (candor-query), keeping the scanner's per-member gate simple and drift-free. Reach today is the
+  candor-scan report shape (candor-review-source.sh); ts/swift/java is P3.
 - **P3 — the surfaces + the reference engine.** The LSP code-action, MCP `candor_fix`, and the port to
   candor-java (the JVM reference engine, where the layer model is richest — Spring layers).
 

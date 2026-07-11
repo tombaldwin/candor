@@ -12,9 +12,11 @@ differential. Undirected corpus probing is mined out (multiple consecutive clean
 deployability gate is shipped end-to-end (AS-EFF-005 ratchet, 006/008/009 policy, 010 containment,
 conformance-pinned). The spec advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md
 §"Versioning policy"): the reference engine may lead a minor/additive rung, the floor stays
-conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder ran its first
-full cycle with **spec 0.8** (the `--gate-json` gate verdict): candor-java led, scan/ts/swift followed,
-the **floor rose to 0.8 and all four are published** (2026-07-02, tag `v0.8`; see *Recently shipped*).
+conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder's first
+full cycle was **spec 0.8** (the `--gate-json` gate verdict; published 2026-07-02, tag `v0.8`); its second,
+**spec 0.9** (2026-07-11), promotes the remedial tool loop (`fix`/`unverified`/gate auto-disclosure) into
+the pinned surface — a **tier-2 rung**, tier 1 untouched. The **floor is now 0.9** (all engines at 0.9.0,
+conformance-tagged by tier); 0.9 is committed but not yet published (see *Recently shipped*).
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -236,6 +238,18 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Recently shipped (context; older entries pruned from the per-engine files)
 
+- **Spec 0.9 — the remedial-loop rung (2026-07-11).** The ladder's second full cycle. 0.9 is a **tier-2
+  (pinned-tool-surface) rung** (SPEC.md §"Conformance tiers", new): no report-schema or verdict change — a
+  0.8 report and a 0.8 `--gate-json` verdict are byte-identical under 0.9 — but the **remedial tool loop**
+  (`fix`/`fix-gate`, `unverified`, and the gate's provable-purity auto-disclosure) is promoted from
+  shipped-but-optional into the pinned §3.1/§3.3 contract, so a 0.9-conformant engine MUST carry it. All
+  code engines declare `0.9` at **0.9.0** (candor-java, candor-scan+candor-query, candor-ts, candor-swift;
+  candor-agents rides behind at 0.9.0), per the convention that release major.minor tracks the spec. The
+  **conformance suite now tags every PART tier-1 (interop floor) or tier-2 (tool surface)** — making the
+  version trigger unambiguous: a tier-1 change bumps the floor, a tier-2 addition promoted to required does
+  too, a patch touches neither. Conformance green four-way (incl. the 0.9 tool parts 12b/12c/12d).
+  Committed across all repos; **not yet published** (awaiting an explicit ship — a re-publish of
+  candor-query needs candor-classify 0.5.10 out first, the shared-predicate fold's new public API).
 - **The measure-and-surface arc (2026-07-11).** A full loop, end to end: (a) the **owner digest** (P1–P3)
   — `candor-agents digest` renders an aggregate protection report over the gate log; the gate now logs
   outside the agent hook (`log-gate`) and delivers on a schedule (candor-agents 0.8.2/0.8.3). (b) **Family

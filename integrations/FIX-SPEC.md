@@ -103,6 +103,14 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   site candor can't resolve (an `Unknown` in the chain) → said plainly, never a confident wrong plan.
 - **Scope: effect-boundary hoisting only.** Not a general refactoring engine — just the one refactor candor
   uniquely has the information to compute. That narrowness is the point.
+- **The port purity hierarchy** (validated by the fix-loop eval — candor-rust/eval/fixloop/DISPATCH-NOTE.md).
+  For a no-clean-hoist violation the three fix shapes are NOT equivalent, and the advice says so: (1) hoisting
+  the effect out and threading the value as DATA makes the layer *provably pure* (candor verifies no effect —
+  clean under any policy); (2) injecting a *fn/closure* clears `deny E`/`pure` but candor can't see through the
+  function, so the layer reads `Unknown` — a hole only `deny E Unknown` closes; (3) a *trait/interface* port
+  does NOT clear the gate at all — candor soundly resolves the dispatch back to the effect-performing impl, so
+  the layer still violates. Rejecting the trait port is correct, not a bug: treating it as clean would silently
+  under-report the effect the layer reaches at runtime (the cardinal sin). The remedy leads with (1).
 
 ## Phasing
 

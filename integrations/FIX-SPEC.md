@@ -106,9 +106,16 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
 
 ## Phasing
 
-- **P1 — the engine.** `candor fix` in candor-rust (where `where`/`path`/`callers` live): the cut algorithm
-  + text/JSON output, ground-truth-tested on the `orderflow` eval fixture (Net into the domain → hoist to
-  `api`) and a no-clean-hoist fixture (→ port + policy-edit alternatives). Pin it with a regression test.
+- **P1 — the engine. ✅ SHIPPED (2026-07-11).** `candor fix <prefix> <fn> <Effect> [policy] [0|1]` in
+  candor-query (`src/fix.rs`): the cut algorithm + text/JSON output. `denied_layer` mirrors `whatif`'s
+  violation predicate exactly; the direct site is a BFS through the effect-carrying subgraph to the direct
+  source, the pure span is the affected∩denied set, the hoist frontier is the allowed-layer callers of that
+  span. Ground-truth-tested on the `orderflow` worked example (Net into the domain → site `infra::fetch_rate`,
+  span the two `domain` fns, hoist to `api::get_quote`) and a no-clean-hoist fixture (→ port + `allow` edit).
+  Six regression tests in `tests/cli.rs` pin the plan, both no-op branches, and the fail-loud contracts
+  (unreadable/absent policy → exit 2). Limits, as designed: "allowed" = not-denied (allow-rule *exemptions*
+  from a deny aren't yet modelled as hoist targets); a single hoist frontier, no higher-vs-lower trade-off
+  surfacing yet — both are P2/P3 refinements, not soundness gaps (the gate re-scan still verifies any fix).
 - **P2 — the loop.** The `--gate-json` `remedy` field + `candor-review*.sh` folding the plan into the block
   message. This is where the agent-loop value lands.
 - **P3 — the surfaces + the reference engine.** The LSP code-action, MCP `candor_fix`, and the port to

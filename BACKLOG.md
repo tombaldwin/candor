@@ -218,6 +218,11 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **candor-ts κ-batch: common CLI-tool packages — ✅ DONE (candor-ts 0.9.2, 2026-07-12).** `which`→Fs,
+  `@webpod/ps`→Exec, `envapi`→Fs (member-precise: parse stays pure); zx `useBash`/`usePwsh` now Fs, κ ledger
+  7→4. Pure libs (chalk/minimist/depseek) left as honest `invisible` (not curated to a pure claim). 6
+  regression tests incl. the parse-pure fabrication guard. Committed+pushed; **not yet published** (npm ships
+  with the next candor-ts release, alongside 0.9.1's warning fix). Origin dogfood detail:
 - **candor-ts κ-batch: model common CLI-tool packages (from the VALID 0.9 dogfood, 2026-07-12).** Re-scanned
   `zx` WITH deps installed (the honest redo) — the correction held (chalk/bufArrJoin → `invisible`, Unknown
   82→55, all 55 genuine `dispatch:`/`callback:`; Exec/Net/Fs attributed honestly even through the invisible

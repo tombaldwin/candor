@@ -111,6 +111,11 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   does NOT clear the gate at all — candor soundly resolves the dispatch back to the effect-performing impl, so
   the layer still violates. Rejecting the trait port is correct, not a bug: treating it as clean would silently
   under-report the effect the layer reaches at runtime (the cardinal sin). The remedy leads with (1).
+  **`candor unverified <prefix> [policy] [--strict]`** (candor-query) is the policy-guidance companion: it
+  discloses every function that PASSES a `pure`/`deny E` layer but is `Unknown` (case (2) — not provably
+  clean), and names the `deny E Unknown <scope>` upgrade. Advisory; `--strict` → exit 1 so CI can require
+  provable purity. It turns the disclosure ethos on the policy itself: "your `pure` layer passes, but is it
+  provably pure, or only pure as far as candor could resolve?"
 
 ## Phasing
 

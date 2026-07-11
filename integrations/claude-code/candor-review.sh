@@ -25,7 +25,8 @@ BASELINE=${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}
 # mktemp portably (BSD/macOS `-t` treats the arg as a prefix, not a template, and an appended `.json` would
 # point at a path mktemp never created → an orphaned temp every run). A bare mktemp + a trap is portable.
 CUR=$(mktemp); SCANLOG=$(mktemp)
-trap 'rm -f "$CUR" "$SCANLOG"' EXIT
+# `$CUR.callgraph.json` / `.hierarchy.json` sidecars are written beside the report — clean them too.
+trap 'rm -f "$CUR" "$CUR".* "$SCANLOG"' EXIT
 # One scan (the --json path needs no extension). If CANDOR_POLICY is set it gates inline → nonzero + an
 # [AS-EFF-…] line on a violation.
 $CANDOR "$CLASSES" --json "$CUR" >"$SCANLOG" 2>&1; gate=$?
@@ -51,6 +52,16 @@ elif true; then
   fi
 fi
 
+# The REMEDY (integrations/FIX-SPEC.md): for each boundary crossing, the architectural fix — where the
+# effect belongs + the hoist refactor — folded into the block message so the loop hands the agent the FIX,
+# not just the finding. candor-java computes it (`fix-gate`) over the report + its callgraph sidecar; a
+# graceful no-op when no policy is set. $CANDOR is the same engine that just scanned, so no extra install.
+remedy=""
+if [ "$gate" -ne 0 ] && grep -qE "AS-EFF" "$SCANLOG" && [ -n "${CANDOR_POLICY:-}" ]; then
+  R=$($CANDOR fix-gate "$CUR" "$CANDOR_POLICY" 2>/dev/null)
+  case "$R" in *"candor fix — "*) remedy="$R" ;; esac   # a real plan, not the "no crossings" / error line
+fi
+
 # One verdict, one exit — the human body is built into a variable so we can print it AND (when run
 # standalone/CI, not via the hook) self-log the same record the hook would have written.
 verdict_body() {   # echoes the human verdict; returns the exit code
@@ -61,6 +72,7 @@ verdict_body() {   # echoes the human verdict; returns the exit code
       echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
       grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
       [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
+      [ -n "$remedy" ] && { echo; printf '%s\n' "$remedy"; }
       echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
       return 1
     fi

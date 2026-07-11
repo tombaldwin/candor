@@ -227,8 +227,13 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   genuine fn-value ports (`param#0`) — the real DI-port case buried in sound-but-conservative noise). Two
   follow-ups: (a) **precision** — resolve the immediately-passed local lambda in array HOFs (`arr.reduce`/
   `.map`/`.filter`): `zx util.bufArrJoin` (`arr.reduce((acc,buf)=>acc+bufToString(buf),'')`) is genuinely
-  PURE but reads `callback:arr.reduce` Unknown; if the callback resolves pure, keep the HOF pure (must land
-  cross-engine + conformance-pinned, so a project, not a quick fix). (b) **positioning** — document that
+  PURE but reads `callback:arr.reduce` Unknown. **SCOPED** in `candor-ts/HOF-PRECISION-DESIGN.md` — recon
+  narrowed it: candor-ts already resolves array HOFs (incl. calling callbacks); the miss is *receiver-type
+  recognition* (indexed-access/imported array types read opaque). Soundness line: `any`/opaque MUST stay
+  Unknown. **candor-ts-only** (not cross-engine — no shared conformance fixture hits it), baseline-
+  invalidating. Honest ROI: small (3/82 on zx) — the dominant `unverified` noise is external lib-method
+  Unknowns (54, `chalk.grey`), a separate + bigger lever (κ-style disclosed-invisible or a curated pure-lib
+  table). (b) **positioning** — document that
   `unverified` targets *unresolvable in-crate dispatch* (deep engines / DI-heavy code), not the syntactic
   floor. NOT a cardinal sin — everything stayed honest (over-approximation, disclosed); this is precision +
   docs. Validated the 0.9 remedial loop too: `candor fix` on a real xh Net violation produced a correct,

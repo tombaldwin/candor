@@ -118,14 +118,14 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   the frontier that also route the effect, i.e. every place you could originate it further up; the text
   surfaces the trade-off (hoisting higher keeps the frontier pure too, at the cost of threading through more
   signatures). All four engines compute it identically (pinned by conformance PART 12b's leaf-normalized
-  tuple). Remaining as-designed limits, neither a soundness gap (the gate re-scan still verifies any fix):
-  (a) "allowed" = not-denied (allow-rule *exemptions* from a deny aren't yet modelled as hoist targets);
-  (b) **the sandwiched layer** (/code-review) — when an ALLOWED layer sits between two DENIED layers on the
-  same effect chain (`D1 → A → D2 → site`), the up-walk stops at `A`, so `D1` is omitted from the span and the
-  plan names `A` as the hoist target; but hoisting to `A` doesn't clear `D1` (it still calls `A`). The advice
-  is INCOMPLETE for this shape (identical in all four engines) — the re-scan blocks again on `D1`, so it's not
-  silently wrong, and the honest remedy is usually a port or a de-sandwiched policy. A future refinement can
-  detect "the hoist target has a denied caller that still routes the effect" and downgrade to no-clean-hoist.
+  tuple). **The sandwiched layer is now handled** (2026-07-11): when an ALLOWED layer is CALLED BY a DENIED
+  one (`D1 → A → D2 → site`), hoisting the effect to the nearest allowed frontier `A` would leave `D1` still
+  inheriting it — so `cleanHoist` is now `false` (a forbidden fn calls into the frontier), and the message
+  says so ("the nearest allowed layer is itself called by a forbidding layer … a forbidden layer sandwiching
+  an allowed one") and offers the port/relax options rather than a misleading "hoist to A". All four engines
+  detect it in the same upward climb that gathers `hoistHigher`; pinned four-way by conformance PART 12b's
+  sandwiched sub-check. Remaining as-designed limit (not a soundness gap — the re-scan verifies any fix):
+  "allowed" = not-denied (allow-rule *exemptions* from a deny aren't yet modelled as hoist targets).
 - **P2 — the loop. ✅ SHIPPED (2026-07-11).** `candor-query fix-gate <prefix> [policy] [0|1]` (candor-query
   0.8.3): a remedy for EVERY deny/`pure` crossing in a report, collapsing the inheritors of one root cause to
   a single plan (keyed by effect/layer/site/hoist). `candor-review-source.sh` folds it into the block message

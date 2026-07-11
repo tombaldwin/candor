@@ -21,10 +21,14 @@ Swift): whatever refreshes `.candor/report*` (candor-ts-watch, the Claude Code s
 step) refreshes the lenses. It never scans, and it runs on VS Code's **own** Node runtime — no
 system Node, npm, or candor install required.
 
-**Coming with the next server pin bump:** the `whatif` code-action ("what if this function gained
-Net?") is landing in candor-ts `main`; it arrives here when `candorTsVersion` is bumped past the
-next npm release — the client needs no change (code actions flow through `vscode-languageclient`
-natively; `scripts/verify-server.mjs` prints whether the bundled server advertises them).
+**Code actions (candor-ts ≥ 0.8.10, bundled here):** two, both plain LSP (no client code — they flow
+through `vscode-languageclient` natively; `scripts/verify-server.mjs` confirms the bundled server
+advertises `codeAction`):
+- the **pre-edit whatif** — "candor: what if `<fn>` performed `<E>`?" for each boundary effect the
+  function doesn't yet have (its blast radius + the policy rule that would fire);
+- the **boundary fix** — when the cursor sits in a function that actually violates the policy, "candor
+  fix: hoist `<E>` out of `<fn>`" computes where the effect belongs + the hoist refactor (the remedial
+  inverse of whatif). Both surface as a `showMessage` + a transient diagnostic, cleared on save.
 
 ## Install (from .vsix)
 
@@ -69,6 +73,6 @@ major.minor agreement.
    [marketplace.visualstudio.com](https://marketplace.visualstudio.com/manage) (+ an Azure DevOps
    PAT), then `vsce publish` — the packaging path is already gated. Open VSX (`ovsx publish`) is
    worth doing at the same time for the forks that default to it.
-2. Bump `candorTsVersion` when the next candor-ts ships to pick up the `whatif` code-action
-   (verify-server will start reporting `codeAction`).
+2. Bump `candorTsVersion` when a new candor-ts ships to pick up server changes (verify-server reports
+   the advertised capabilities; the whatif + fix code actions are in ≥ 0.8.10).
 3. Large-repo lens performance rides the server, not this client.

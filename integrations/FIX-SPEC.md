@@ -126,8 +126,18 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   `--gate-json` — the hoist frontier is a whole-graph computation, so it belongs where the whole graph is
   assembled (candor-query), keeping the scanner's per-member gate simple and drift-free. Reach today is the
   candor-scan report shape (candor-review-source.sh); ts/swift/java is P3.
-- **P3 — the surfaces + the reference engine.** The LSP code-action, MCP `candor_fix`, and the port to
-  candor-java (the JVM reference engine, where the layer model is richest — Spring layers).
+- **P3 — the surfaces + the reference engine. ◐ PARTLY SHIPPED (2026-07-11).**
+  - ✅ **MCP + wrapper** (candor-rust): `cargo candor fix <fn> <Effect>` mirrors `whatif`; `candor-mcp.py`
+    gains a `candor_fix` tool (thin wrapper over `candor-query fix --json`) — the remedy is reachable to any
+    MCP agent, told to it as "call this instead of guessing a fix".
+  - ✅ **candor-java port** (0.8.8): native `fix` / `fix-gate` in the JVM reference engine, byte-for-byte the
+    same remedy shape as candor-query (verified on real bytecode). `candor-review.sh` (the JVM edit-time
+    loop) folds the plan into the block message. The cut is **site-anchored** (walks up from the direct site
+    through the denied layer), so the pure span is root-independent — the same refinement landed back in
+    candor-query 0.8.4 so both engines share the algorithm.
+  - ◻ **LSP code-action + candor-ts MCP tool** — remaining. These ride candor-ts's own `whatif` code-action,
+    which is itself still pending a candor-ts server pin (integrations/AGENT-SURFACE-DESIGN.md); the `fix`
+    code-action lands as a fast follow once that surface exists.
 
 ## What NOT to build
 

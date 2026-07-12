@@ -24,6 +24,8 @@ qdir qr scan;  ok "rust report → candor-query"       "WOULD-RUN: candor-query 
 qdir qt JS;    ok "ts report → candor-ts-query"       "WOULD-RUN: candor-ts-query where Net" bash -c "cd '$T/qt'  && '$D' where Net"
 qdir qj jvm;   ok "java report → candor-java"         "WOULD-RUN: candor-java path f Net"    bash -c "cd '$T/qj'  && '$D' path f Net"
 qdir qs Swift; ok "swift report → candor-swift"       "WOULD-RUN: candor-swift fix-gate"     bash -c "cd '$T/qs'  && '$D' fix-gate --policy p"
+qdir ql lib;   ok "rust lint report → candor-query"   "WOULD-RUN: candor-query where Net"    bash -c "cd '$T/ql'  && '$D' where Net"
+qdir qx Executable; ok "rust Executable → candor-query" "WOULD-RUN: candor-query show f"    bash -c "cd '$T/qx'  && '$D' show f"
 
 echo "scan routing (by manifest):"
 sdir sr Cargo.toml;        ok "Cargo.toml → candor-scan"    "WOULD-RUN: candor-scan"  bash -c "cd '$T/sr' && '$D' scan ."

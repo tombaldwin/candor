@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Hermetic routing test for the `candor` dispatcher. Uses CANDOR_DISPATCH_DRYRUN + fake engine stubs on PATH,
+# so it asserts WHICH engine each invocation resolves to without any engine actually installed. No network,
+# no builds.  Run:  bash bin/candor.test.sh
+set -u
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+D="$HERE/candor"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+export CANDOR_DISPATCH_DRYRUN=1
+mkdir -p "$T/fakebin"; for e in candor-query candor-scan candor-ts candor-ts-query candor-swift candor-java; do printf '#!/bin/sh\n' > "$T/fakebin/$e"; chmod +x "$T/fakebin/$e"; done
+export PATH="$T/fakebin:$PATH"
+
+fails=0
+ok() { # $1 label ; $2 expected-substring ; $3… command
+  local label="$1" want="$2"; shift 2
+  local got; got="$("$@" 2>&1)"
+  if [[ "$got" == *"$want"* ]]; then echo "  ok   $label"; else echo "  FAIL $label"; echo "       want: *$want*"; echo "       got:  $got"; fails=$((fails+1)); fi
+}
+qdir() { mkdir -p "$T/$1/.candor"; : > "$T/$1/.candor/report.pkg.$2.json"; }
+sdir() { mkdir -p "$T/$1"; : > "$T/$1/$2"; }
+
+echo "query routing (by report backend):"
+qdir qr scan;  ok "rust report → candor-query"       "WOULD-RUN: candor-query where Net"    bash -c "cd '$T/qr'  && '$D' where Net"
+qdir qt JS;    ok "ts report → candor-ts-query"       "WOULD-RUN: candor-ts-query where Net" bash -c "cd '$T/qt'  && '$D' where Net"
+qdir qj jvm;   ok "java report → candor-java"         "WOULD-RUN: candor-java path f Net"    bash -c "cd '$T/qj'  && '$D' path f Net"
+qdir qs Swift; ok "swift report → candor-swift"       "WOULD-RUN: candor-swift fix-gate"     bash -c "cd '$T/qs'  && '$D' fix-gate --policy p"
+
+echo "scan routing (by manifest):"
+sdir sr Cargo.toml;        ok "Cargo.toml → candor-scan"    "WOULD-RUN: candor-scan"  bash -c "cd '$T/sr' && '$D' scan ."
+sdir st package.json;      ok "package.json → candor-ts"    "WOULD-RUN: candor-ts"    bash -c "cd '$T/st' && '$D' ."
+sdir sj build.gradle.kts;  ok "gradle → candor-java"        "WOULD-RUN: candor-java"  bash -c "cd '$T/sj' && '$D' scan ."
+sdir sm pom.xml;           ok "maven → candor-java"         "WOULD-RUN: candor-java"  bash -c "cd '$T/sm' && '$D' scan ."
+sdir sv Package.swift;     ok "Package.swift → candor-swift" "WOULD-RUN: candor-swift" bash -c "cd '$T/sv' && '$D' scan ."
+
+echo "loud failures (never a silent wrong-engine run):"
+mkdir -p "$T/amb"; : > "$T/amb/Cargo.toml"; : > "$T/amb/package.json"
+ok "polyglot scan → error"      "mixes languages"      bash -c "cd '$T/amb' && '$D' scan ."
+mkdir -p "$T/mx/.candor"; : > "$T/mx/.candor/report.a.scan.json"; : > "$T/mx/.candor/report.b.JS.json"
+ok "polyglot report → error"    "disambiguate"         bash -c "cd '$T/mx' && '$D' where Net"
+ok "no report → error"          "no report"            bash -c "cd '$T' && '$D' where Net"
+ok "--report override wins"     "WOULD-RUN: candor-query where Net --report" bash -c "cd /tmp && '$D' where Net --report '$T/qr'"
+
+echo
+if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

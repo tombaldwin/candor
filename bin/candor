@@ -2,7 +2,8 @@
 # candor — the umbrella dispatcher (candor-spec §3.3.1). ONE `candor` command across every language.
 #
 #   • a QUERY (where/path/show/…) is routed by the DISCOVERED report's backend — the filename tail
-#     `.scan`/`.lint` → Rust, `.JS` → TypeScript, `.jvm` → Java, `.Swift` → Swift.
+#     `.JS` → TypeScript, `.jvm` → Java, `.Swift` → Swift, and everything else (Rust's `.scan` syntactic
+#     backend plus the nightly-lint crate-types `.lib`/`.Executable`/`.Rlib`/…) → Rust.
 #   • a SCAN (`candor scan .`, or `candor <dir>`) is routed by the project's manifest — Cargo.toml → Rust,
 #     package.json / tsconfig.json → TypeScript, build.gradle / pom.xml / *.java → Java, Package.swift → Swift.
 #
@@ -58,12 +59,15 @@ route_query() {
   [ "$n" -ge 1 ] || die "no report in $dir — run \`candor scan\` first."
   [ "$n" -eq 1 ] || die "multiple engines' reports in $dir (${uniq# }) — disambiguate with --report <locator>."
 
+  # TS/Java/Swift use FIXED backend tokens; Rust owns the open remainder — `scan` (syntactic backend) plus
+  # the nightly-lint crate-types (`lib`, `Executable`, `Rlib`, `Dylib`, `bin`, …). So match the three fixed
+  # tokens explicitly and route everything else to candor-query, exactly as the Rust engine's own
+  # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
   case "${uniq# }" in
-    scan|lint) local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
-    JS)        have candor-ts-query || die "a TypeScript report, but candor-ts-query isn't installed — \`npm i -g candor-ts\`."; run candor-ts-query "$verb" "$@";;
-    jvm)       run_java "$verb" "$@";;
-    Swift)     have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
-    *)         die "unrecognized report backend in $dir (.${uniq# }.json).";;
+    JS)    have candor-ts-query || die "a TypeScript report, but candor-ts-query isn't installed — \`npm i -g candor-ts\`."; run candor-ts-query "$verb" "$@";;
+    jvm)   run_java "$verb" "$@";;
+    Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
+    *)     local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
   esac
 }
 

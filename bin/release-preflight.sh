@@ -29,7 +29,7 @@ grab() { # $1 label ; $2 file ; $3 regex capturing the version
   [ -n "$v" ] || { bad "$1: no spec string in $2"; return; }
   note "$1: spec $v"; specs+=("$v")
 }
-grab "rust " "candor-rust/crates/candor-report/src/lib.rs" 'SPEC_VERSION *[:=] *"?[0-9]+\.[0-9]+'
+grab "rust " "candor-rust/crates/candor-report/src/lib.rs" 'SPEC_VERSION[^0-9]*[0-9]+\.[0-9]+'
 grab "ts   " "candor-ts/query.mjs"                          'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
 grab "java " "candor-java/src/main/java/io/poly/candor/Candor.java" 'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
 grab "swift" "candor-swift/Sources/candor-swift/main.swift" 'specVersion *= *"[0-9]+\.[0-9]+'
@@ -43,21 +43,29 @@ if [ "${#specs[@]}" -gt 0 ]; then
 fi
 [ -n "$WANT_SPEC" ] && { [ "$FLOOR" = "$WANT_SPEC" ] && ok "floor == requested $WANT_SPEC" || bad "floor '$FLOOR' != requested '$WANT_SPEC'"; }
 
-# --- 2. no STALE spec string in shipped code / tests / CI scripts / docs ---------------------------------
-# The bug class: a bump updates the SPEC_VERSION constant but misses a `spec 0.9` baked into smoke.sh /
-# integration.sh / a golden / a README. Sweep for any `spec <X.Y>` that isn't the floor. Excluded: CHANGELOG
-# history, the ⟨X⟩ rung/era markers, dependency version strings, and build/vendor dirs.
-echo "[2] no stale spec strings (all 'spec X.Y' == floor $FLOOR)"
+# --- 2. no LEFTOVER PRIOR-FLOOR spec string in shipped code / tests / CI scripts -------------------------
+# The bug class: a bump moves the SPEC_VERSION constant but misses a `spec 0.9` baked into a CI-only script
+# (smoke.sh / integration.sh) or a golden. The precise signature is a leftover string of the PRIOR floor
+# (0.10 → 0.9) — distinct from intentionally-OLDER fixtures (a SARIF converter tested against a spec-0.7
+# envelope) and CHANGELOG/design history, which are NOT flagged. Excludes vendor/build dirs, CHANGELOG,
+# narrative docs, ⟨X⟩ era markers.
+PRIOR=""
 if [ -n "$FLOOR" ]; then
-  strays="$(cd "$ROOT" && grep -rInE 'spec[ :"]+[0-9]+\.[0-9]+' \
-      candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -vE "spec[ :\"]+${FLOOR//./\\.}([^0-9]|$)" \
-    | grep -viE 'CHANGELOG|/target/|/node_modules/|/\.build/|/build/|/\.git/|/eval/|package-lock|Cargo\.lock' \
-    | grep -vE '⟨[0-9]' \
-    | grep -vE 'spec[ :"]+0\.[0-9]+/0\.[0-9]+' )"   # "spec-0.7/0.8" range phrasings are historical
-  if [ -z "$strays" ]; then ok "no stale spec strings found"
-  else bad "stale spec strings (bump missed these — they only fail in CI):"; echo "$strays" | sed 's/^/      /'; fi
+  maj="${FLOOR%%.*}"; min="${FLOOR#*.}"
+  [ "$min" -gt 0 ] 2>/dev/null && PRIOR="$maj.$((min-1))"
 fi
+echo "[2] no leftover prior-floor (${PRIOR:-?}) spec strings — the bump-miss signature"
+if [ -n "$PRIOR" ]; then
+  strays="$(cd "$ROOT" && grep -rInE "spec[ :\"]+${PRIOR//./\\.}([^0-9]|$)" \
+      --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
+      --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs \
+      --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude=release-preflight.sh \
+      candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
+    | grep -vE '⟨[0-9]' )"
+  if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
+  else bad "leftover 'spec $PRIOR' (a bump missed these — they only fail in CI):"; echo "$strays" | sed 's/^/      /'; fi
+else note "(no prior floor to check)"; fi
 
 # --- 3. cross-repo RELEASE PINS point at the current release --------------------------------------------
 # adopt/ drops a pinned engine into a user's repo; jbang points at a release jar. A bump must move these
@@ -71,7 +79,7 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
     bad "$1: pin does not reference $WANT_VER (update AFTER the release is published)"
   fi
 }
-checkpin "adopt java  " "candor/adopt/candor.yml"        'CANDOR_JAVA_VERSION'
+checkpin "adopt java  " "candor/adopt/candor.yml"        'CANDOR_JAVA_VERSION:[[:space:]]*[0-9]'
 checkpin "adopt agents" "candor/adopt/candor-digest.yml" 'candor-agents@'
 checkpin "jbang       " "candor-java/jbang-catalog.json" 'releases/download'
 

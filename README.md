@@ -46,6 +46,17 @@ does it break policy?"* — in one query (measured on the Rust engine:
 [~1.8× faster](https://github.com/tombaldwin/candor-rust/blob/main/eval/scaled/RESULTS-speed.md) than
 tracing by hand at equal completeness).
 
+## One `candor` across every language
+
+Every engine drives a query the same way (candor-spec §3.3.1): the report is discovered from a `.candor/`
+ancestor, so `candor where Net`, `candor path <fn> Net`, and `candor scan .` are one command regardless of
+language. [`bin/candor`](bin/candor) is a thin dispatcher that routes a **query** to the engine whose backend
+the discovered report declares, and a **scan** to the engine whose manifest the target holds
+(`Cargo.toml`/`package.json`/Gradle/`Package.swift`). It owns the bare `candor` name so the four language
+engines — which keep their qualified names `candor-query`, `candor-ts-query`, `candor-java`, `candor-swift` —
+don't collide on `PATH`. A polyglot project or a missing engine is a loud error, never a silent wrong-engine
+run. Put `bin/` on your `PATH`; the routing is covered by [`bin/candor.test.sh`](bin/candor.test.sh).
+
 ## Get the gate on your repo
 
 One command, no annotations or source changes ([`adopt/candor-init.sh`](adopt/candor-init.sh)). To get

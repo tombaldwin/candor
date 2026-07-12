@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# candor — the umbrella dispatcher (candor-spec §3.3.1). ONE `candor` command across every language.
+#
+#   • a QUERY (where/path/show/…) is routed by the DISCOVERED report's backend — the filename tail
+#     `.scan`/`.lint` → Rust, `.JS` → TypeScript, `.jvm` → Java, `.Swift` → Swift.
+#   • a SCAN (`candor scan .`, or `candor <dir>`) is routed by the project's manifest — Cargo.toml → Rust,
+#     package.json / tsconfig.json → TypeScript, build.gradle / pom.xml / *.java → Java, Package.swift → Swift.
+#
+# It execs the matching engine's QUALIFIED CLI (candor-query, candor-ts-query, candor-java, candor-swift) —
+# they all speak the same §3.3.1 grammar, so every flag and verb passes straight through. This owns the bare
+# `candor` name so four language packages don't fight over it, and it NEVER guesses silently: an ambiguous
+# project (or a missing engine) is a loud, actionable error, not a wrong-engine run.
+#
+# Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
+
+CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
+QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path whatif fix fix-gate unverified rewire parsepolicy agents "
+
+die()  { echo "candor: $*" >&2; exit 2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+# a Rust raw bin lives on PATH or under ~/.candor/bin
+rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$CDBIN/$1"; else return 1; fi; }
+# run (or, in dry-run, just announce) the resolved engine command
+run() { if [ -n "${CANDOR_DISPATCH_DRYRUN:-}" ]; then echo "WOULD-RUN: $*"; exit 0; fi; exec "$@"; }
+
+# candor-java is a jar: prefer a `candor-java` launcher on PATH, else `java -jar <jar>` (CANDOR_JAVA_JAR or a
+# jar stashed under ~/.candor).
+run_java() {
+  if have candor-java; then run candor-java "$@"; fi
+  local jar="${CANDOR_JAVA_JAR:-}"
+  [ -n "$jar" ] || jar="$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)"
+  [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java launcher and no jar — install a candor-java launcher or set CANDOR_JAVA_JAR."
+  run java -jar "$jar" "$@"
+}
+
+# ---- QUERY: route by the discovered report's backend ---------------------------------------------------
+route_query() {
+  local verb="$1"; shift
+  # honor an explicit --report <loc>; else discover a `.candor/` ancestor from $PWD (the §3.3.1 rule)
+  local a prev="" loc="" dir=""
+  for a in "$@"; do [ "$prev" = "--report" ] && loc="$a"; prev="$a"; done
+  if [ -n "$loc" ]; then
+    if [ -d "$loc" ]; then dir="$loc/.candor"; else dir="$(dirname "$loc")"; fi
+  else
+    local d="$PWD"
+    while :; do [ -d "$d/.candor" ] && { dir="$d/.candor"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+  fi
+  [ -n "$dir" ] && [ -d "$dir" ] || die "no report — run \`candor scan\` first, or pass --report <locator>. (no .candor/ from $PWD upward)"
+
+  # the distinct backends present (the token before .json), excluding the sidecars
+  local f b uniq="" n=0
+  for f in "$dir"/report.*.json; do
+    [ -e "$f" ] || continue
+    case "$f" in *.callgraph.json|*.hierarchy.json) continue;; esac
+    b="${f%.json}"; b="${b##*.}"
+    case " $uniq " in *" $b "*) ;; *) uniq="$uniq $b"; n=$((n+1));; esac
+  done
+  [ "$n" -ge 1 ] || die "no report in $dir — run \`candor scan\` first."
+  [ "$n" -eq 1 ] || die "multiple engines' reports in $dir (${uniq# }) — disambiguate with --report <locator>."
+
+  case "${uniq# }" in
+    scan|lint) local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
+    JS)        have candor-ts-query || die "a TypeScript report, but candor-ts-query isn't installed — \`npm i -g candor-ts\`."; run candor-ts-query "$verb" "$@";;
+    jvm)       run_java "$verb" "$@";;
+    Swift)     have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
+    *)         die "unrecognized report backend in $dir (.${uniq# }.json).";;
+  esac
+}
+
+# ---- SCAN: route by the project manifest ---------------------------------------------------------------
+route_scan() {
+  local a target="."
+  for a in "$@"; do case "$a" in -*) ;; *) target="$a"; break;; esac; done
+  local dir; if [ -d "$target" ]; then dir="$target"; else dir="$(dirname "$target")"; fi
+
+  # a Java project = any Gradle/Maven manifest, or a loose *.java (checked one at a time — a single
+  # `ls a b c` fails whenever ANY pattern is unmatched, which would hide a real match).
+  java_manifest() {
+    local g
+    for g in "$dir/build.gradle" "$dir/build.gradle.kts" "$dir/settings.gradle" "$dir/settings.gradle.kts" "$dir/pom.xml"; do
+      [ -f "$g" ] && return 0
+    done
+    for g in "$dir"/*.java; do [ -e "$g" ] && return 0; done
+    return 1
+  }
+  local langs="" n=0
+  add() { case " $langs " in *" $1 "*) ;; *) langs="$langs $1"; n=$((n+1));; esac; }
+  [ -f "$dir/Cargo.toml" ] && add rust
+  { [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; } && add ts
+  java_manifest && add java
+  [ -f "$dir/Package.swift" ] && add swift
+
+  [ "$n" -ge 1 ] || die "can't tell what language $dir is (no Cargo.toml / package.json / build.gradle / Package.swift). Run the engine directly: candor-scan | candor-ts | candor-java | candor-swift."
+  [ "$n" -eq 1 ] || die "$dir mixes languages (${langs# }) — scan a specific subdirectory, or run the engine directly."
+
+  case "${langs# }" in
+    rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but candor-scan isn't installed — install candor-rust."; run "$c" "$@";;
+    ts)    have candor-ts || die "a TypeScript project, but candor-ts isn't installed — \`npm i -g candor-ts\`."; run candor-ts "$@";;
+    java)  run_java "$@";;
+    swift) have candor-swift || die "a Swift project, but candor-swift isn't installed."; run candor-swift "$@";;
+  esac
+}
+
+verb="${1:-}"
+case "$QUERY_VERBS" in
+  *" $verb "*) route_query "$@"; exit $?;;
+esac
+case "$verb" in
+  ""|-h|--help)
+    cat <<'H'
+candor — one command across every language (candor-spec §3.3.1). Routes to the matching engine.
+  candor scan <dir>            scan a project (engine picked by its manifest)
+  candor where <Effect>        which functions perform an effect   (report discovered from .candor/)
+  candor path <fn> <Effect>    how a function comes to perform an effect
+  candor <verb> … [--report <locator>] [--policy <file>] [--json]
+Query verbs: show where callers map containment diff reachable impact blindspots gains path whatif fix
+             fix-gate unverified rewire. Engines: candor-scan/-query, candor-ts(-query), candor-java, candor-swift.
+H
+    exit 0;;
+  -V|--version) echo "candor dispatcher (umbrella) — routes queries by report backend, scans by manifest"; exit 0;;
+  scan) shift; route_scan "$@";;
+  *)    route_scan "$@";;
+esac

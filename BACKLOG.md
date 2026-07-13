@@ -12,11 +12,13 @@ differential. Undirected corpus probing is mined out (multiple consecutive clean
 deployability gate is shipped end-to-end (AS-EFF-005 ratchet, 006/008/009 policy, 010 containment,
 conformance-pinned). The spec advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md
 §"Versioning policy"): the reference engine may lead a minor/additive rung, the floor stays
-conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder's first
-full cycle was **spec 0.8** (the `--gate-json` gate verdict; published 2026-07-02, tag `v0.8`); its second,
-**spec 0.9** (2026-07-11), promotes the remedial tool loop (`fix`/`unverified`/gate auto-disclosure) into
-the pinned surface — a **tier-2 rung**, tier 1 untouched. The **floor is now 0.9** (all engines at 0.9.0,
-conformance-tagged by tier); 0.9 is committed but not yet published (see *Recently shipped*).
+conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder has run
+four full cycles: **0.8** (the `--gate-json` gate verdict, 2026-07-02), **0.9** (the remedial tool loop
+promoted, 2026-07-11), **0.10** (the §3.3.1 canonical query grammar, 2026-07-12), and **0.11** (the
+surprising-reach surface — scan opener + `tour` + `path` human default — plus corrupt-report loudness and
+the `classifier doesn't cover` marker, 2026-07-13). The **floor is now 0.11** (all engines at 0.11.0,
+conformance-tagged by tier, **published + release-verified live**: crates.io, npm, gh releases; IDE
+integrations rebundled on 0.11.0 the same day).
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -26,7 +28,7 @@ the 2026-06-18 repositioning as *demoting* the agent angle — that made the gat
 not a reason to stop investing in the agent loop, which stays P0 below.
 
 Value runs in **two parallel tracks**; within each, new work is **surface, not depth** — capability is
-mined-out; the spec advances only on the ladder (now at 0.8). The arch-gate track's build-out is
+mined-out; the spec advances only on the ladder (now at 0.11). The arch-gate track's build-out is
 **complete** (items 1–3 below shipped), and the distribution backlog is now **cleared too** (2026-07-02):
 both site items resolved — see *Deferred*.
 

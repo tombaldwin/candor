@@ -45,26 +45,43 @@ route_query() {
   # a bare PREFIX (`<prefix>.<pkg>.<backend>.json`). No --report → discover a `.candor/` ancestor. The old
   # code always globbed `<dir>/report.*.json`, so a --report naming a non-`report`-basename prefix or a
   # direct .json file died with "no report" — a locator every engine accepts but the dispatcher refused.
-  local files=()
+  local files=() famprefix=""
   if [ -n "$loc" ]; then
-    if [ -d "$loc" ]; then files=("$loc/.candor/report".*.json)
+    if [ -d "$loc" ]; then famprefix="$loc/.candor/report"; files=("$famprefix".*.json)
     elif [ "${loc%.json}" != "$loc" ] && [ -f "$loc" ]; then files=("$loc")
-    else files=("$loc".*.json); fi
+    else famprefix="$loc"; files=("$loc".*.json); fi
   else
     local d="$PWD" base=""
     while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
     [ -n "$base" ] || die "no report — run \`candor scan\` first, or pass --report <locator>. (no .candor/ from $PWD upward)"
-    files=("$base".*.json)
+    famprefix="$base"; files=("$base".*.json)
   fi
 
-  # the distinct backends present (the token before .json), excluding the sidecars
+  # the distinct backends present (the token before .json), excluding EVERY non-report sidecar the
+  # engines write beside the reports — not just the callgraph/hierarchy pair: candor-scan also writes
+  # `report.calibrated.json` + `report.encountered-<crate>.json` ledgers and `--gate-json` verdicts,
+  # which previously counted as phantom "engines" and made the dispatcher refuse its own scan output
+  # ("multiple engines' reports … disambiguate"). Same discrimination rule as the engines' loaders.
   local f b uniq="" n=0
   for f in "${files[@]}"; do
     [ -e "$f" ] || continue
-    case "$f" in *.callgraph.json|*.hierarchy.json) continue;; esac
-    b="${f%.json}"; b="${b##*.}"
+    case "$f" in
+      *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;;
+    esac
+    b="${f%.json}"
+    case "$(basename "$b")" in
+      *.*) b="${b##*.}";;
+      # a token-less `<name>.json` is candor-ts's PRIMARY report shape (scan.mjs writes
+      # `.candor/report.json` — no backend infix); every other engine always writes a token.
+      *)   b="JS";;
+    esac
     case " $uniq " in *" $b "*) ;; *) uniq="$uniq $b"; n=$((n+1));; esac
   done
+  # a family prefix whose only report is the token-less `<prefix>.json` (the candor-ts shape) — the
+  # `<prefix>.*.json` glob can never match it (it has no inner dot segment), so probe it directly.
+  if [ "$n" -eq 0 ] && [ -n "$famprefix" ] && [ -f "$famprefix.json" ]; then
+    uniq=" JS"; n=1
+  fi
   [ "$n" -ge 1 ] || die "no report at ${loc:-the discovered .candor/} — run \`candor scan\` first, or check the --report locator."
   [ "$n" -eq 1 ] || die "multiple engines' reports at ${loc:-the discovered .candor/} (${uniq# }) — disambiguate with --report <locator>."
 

@@ -15,7 +15,7 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path whatif fix fix-gate unverified rewire parsepolicy agents "
+QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 
 die()  { echo "candor: $*" >&2; exit 2; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -38,26 +38,35 @@ run_java() {
 route_query() {
   local verb="$1"; shift
   # honor an explicit --report <loc>; else discover a `.candor/` ancestor from $PWD (the §3.3.1 rule)
-  local a prev="" loc="" dir=""
+  local a prev="" loc=""
   for a in "$@"; do [ "$prev" = "--report" ] && loc="$a"; prev="$a"; done
+  # Resolve the locator to the report FILES by the ONE §3.3.1 rule (the same rule every engine applies):
+  # a DIRECTORY → its `.candor/report` family; a `.json` path → that single report file; anything else →
+  # a bare PREFIX (`<prefix>.<pkg>.<backend>.json`). No --report → discover a `.candor/` ancestor. The old
+  # code always globbed `<dir>/report.*.json`, so a --report naming a non-`report`-basename prefix or a
+  # direct .json file died with "no report" — a locator every engine accepts but the dispatcher refused.
+  local files=()
   if [ -n "$loc" ]; then
-    if [ -d "$loc" ]; then dir="$loc/.candor"; else dir="$(dirname "$loc")"; fi
+    if [ -d "$loc" ]; then files=("$loc/.candor/report".*.json)
+    elif [ "${loc%.json}" != "$loc" ] && [ -f "$loc" ]; then files=("$loc")
+    else files=("$loc".*.json); fi
   else
-    local d="$PWD"
-    while :; do [ -d "$d/.candor" ] && { dir="$d/.candor"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+    local d="$PWD" base=""
+    while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+    [ -n "$base" ] || die "no report — run \`candor scan\` first, or pass --report <locator>. (no .candor/ from $PWD upward)"
+    files=("$base".*.json)
   fi
-  [ -n "$dir" ] && [ -d "$dir" ] || die "no report — run \`candor scan\` first, or pass --report <locator>. (no .candor/ from $PWD upward)"
 
   # the distinct backends present (the token before .json), excluding the sidecars
   local f b uniq="" n=0
-  for f in "$dir"/report.*.json; do
+  for f in "${files[@]}"; do
     [ -e "$f" ] || continue
     case "$f" in *.callgraph.json|*.hierarchy.json) continue;; esac
     b="${f%.json}"; b="${b##*.}"
     case " $uniq " in *" $b "*) ;; *) uniq="$uniq $b"; n=$((n+1));; esac
   done
-  [ "$n" -ge 1 ] || die "no report in $dir — run \`candor scan\` first."
-  [ "$n" -eq 1 ] || die "multiple engines' reports in $dir (${uniq# }) — disambiguate with --report <locator>."
+  [ "$n" -ge 1 ] || die "no report at ${loc:-the discovered .candor/} — run \`candor scan\` first, or check the --report locator."
+  [ "$n" -eq 1 ] || die "multiple engines' reports at ${loc:-the discovered .candor/} (${uniq# }) — disambiguate with --report <locator>."
 
   # TS/Java/Swift use FIXED backend tokens; Rust owns the open remainder — `scan` (syntactic backend) plus
   # the nightly-lint crate-types (`lib`, `Executable`, `Rlib`, `Dylib`, `bin`, …). So match the three fixed
@@ -116,9 +125,10 @@ candor — one command across every language (candor-spec §3.3.1). Routes to th
   candor scan <dir>            scan a project (engine picked by its manifest)
   candor where <Effect>        which functions perform an effect   (report discovered from .candor/)
   candor path <fn> <Effect>    how a function comes to perform an effect
+  candor tour [N]              the N (default 10) most surprising transitive reaches
   candor <verb> … [--report <locator>] [--policy <file>] [--json]
-Query verbs: show where callers map containment diff reachable impact blindspots gains path whatif fix
-             fix-gate unverified rewire. Engines: candor-scan/-query, candor-ts(-query), candor-java, candor-swift.
+Query verbs: show where callers map containment diff reachable impact blindspots gains path tour whatif
+             fix fix-gate unverified rewire. Engines: candor-scan/-query, candor-ts(-query), candor-java, candor-swift.
 H
     exit 0;;
   -V|--version) echo "candor dispatcher (umbrella) — routes queries by report backend, scans by manifest"; exit 0;;

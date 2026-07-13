@@ -158,7 +158,10 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   (2) `gains` alone is too blunt — it can't tell "a function that shipped PURE now does Net" (the
   attack) from "a new function does Net" (a feature) because reports omit pure fns; the driver fixes
   this by keying existence on the CALLGRAPH (⚠⚠ existing-code-gained vs ⚠ new-function tiers) — a
-  candidate improvement to open `gains`/`diff` too; (3) adjacent bumps are clean, large spans are
+  candidate improvement to open `gains`/`diff` too **(DONE 2026-07-13, spec 0.12 staged: `gains --json`
+  byFunction entries carry `origin: existing|new|unknown` in ALL FOUR engines — swift gained the whole
+  verb — keyed on the baseline callgraph, pinned by conformance PART 5b; the driver can now consume
+  `origin` instead of computing existence itself)**; (3) adjacent bumps are clean, large spans are
   refactor churn (→ watch releases incrementally); (4) the corpus==cache retains report+callgraph
   (the moat seed); (5) the exit-1 ⚠⚠ alarm is a CI gate / registry-watcher trigger.
   **STRATEGY (Tom, 2026-07-10): run it as a marketing WEDGE, but don't miss a SaaS if one surfaces.**

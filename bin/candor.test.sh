@@ -42,5 +42,16 @@ ok "polyglot report → error"    "disambiguate"         bash -c "cd '$T/mx' && 
 ok "no report → error"          "no report"            bash -c "cd '$T' && '$D' where Net"
 ok "--report override wins"     "WOULD-RUN: candor-query where Net --report" bash -c "cd /tmp && '$D' where Net --report '$T/qr'"
 
+echo "§3.3.1 locator forms + tour (the scan opener's suggested commands must route):"
+# tour is a query verb (was missing from QUERY_VERBS — `candor tour` fell through to SCAN routing and died)
+ok "tour routes as a query"     "WOULD-RUN: candor-query tour 5"       bash -c "cd '$T/qr' && '$D' tour 5"
+# a --report pointing at a DIRECT .json report file (any basename — not just `report.*`)
+: > "$T/loose.pkg.scan.json"
+ok "--report <file.json> routes" "WOULD-RUN: candor-query tour --report" bash -c "cd /tmp && '$D' tour --report '$T/loose.pkg.scan.json'"
+: > "$T/loosej.pkg.jvm.json"
+ok "--report <jvm file> → java" "WOULD-RUN: candor-java where Net"     bash -c "cd /tmp && '$D' where Net --report '$T/loosej.pkg.jvm.json'"
+# a --report naming a BARE PREFIX whose basename isn't `report`
+ok "--report <bare prefix> routes" "WOULD-RUN: candor-query where Net" bash -c "cd /tmp && '$D' where Net --report '$T/loose'"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

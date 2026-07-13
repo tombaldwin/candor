@@ -51,6 +51,11 @@ elif true; then
       "  blast radius: \([.changes[]? | select((.gained|length)>0) | .fn] | length) function(s) transitively gained an effect"' 2>/dev/null)
   fi
 fi
+# The graph-depth of the change (shared BFS in lib-candor-summary.sh) — see candor-review-source.sh.
+if [ -n "$delta" ] && command -v candor_max_hops >/dev/null 2>&1; then
+  H=$(candor_max_hops "$CUR" "$BASELINE" "$CUR.callgraph.json")
+  [ -n "$H" ] && delta="$delta"$'\n'"  deepest propagation: $H hop(s) from the new source"
+fi
 
 # The REMEDY (integrations/FIX-SPEC.md): for each boundary crossing, the architectural fix — where the
 # effect belongs + the hoist refactor — folded into the block message so the loop hands the agent the FIX,

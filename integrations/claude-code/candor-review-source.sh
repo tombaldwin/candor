@@ -66,6 +66,13 @@ if intro or blast:
 PY
 )
 fi
+# The graph-depth of the change (shared BFS in lib-candor-summary.sh): how far the furthest gained
+# effect sits from its source. Appended to the delta so the agent SEES the propagation depth, and
+# parsed into the activity log's maxHops by candor_log_activity.
+if [ -n "$delta" ] && command -v candor_max_hops >/dev/null 2>&1; then
+  H=$(candor_max_hops "$CUR" "$BASELINE" "$PREFIX"*.callgraph.json)
+  [ -n "$H" ] && delta="$delta"$'\n'"  deepest propagation: $H hop(s) from the new source"
+fi
 
 # The REMEDY (integrations/FIX-SPEC.md): for each boundary crossing, candor computes the architectural fix
 # — where the effect belongs + the hoist refactor — so the loop hands the agent the FIX, not just the

@@ -53,5 +53,26 @@ ok "--report <jvm file> → java" "WOULD-RUN: candor-java where Net"     bash -c
 # a --report naming a BARE PREFIX whose basename isn't `report`
 ok "--report <bare prefix> routes" "WOULD-RUN: candor-query where Net" bash -c "cd /tmp && '$D' where Net --report '$T/loose'"
 
+echo "max-review regressions (phantom-engine sidecars; the token-less candor-ts report shape):"
+# candor-scan's own ledger sidecars must NOT count as engine backends (they made the dispatcher
+# refuse a completely standard scan family with "multiple engines' reports").
+mkdir -p "$T/scanfam/.candor"
+: > "$T/scanfam/.candor/report.demo.scan.json"
+: > "$T/scanfam/.candor/report.demo.scan.callgraph.json"
+: > "$T/scanfam/.candor/report.calibrated.json"
+: > "$T/scanfam/.candor/report.encountered-demo.json"
+: > "$T/scanfam/.candor/report.gate.json"
+ok "scan family + ledgers → candor-query (not 'multiple engines')" "WOULD-RUN: candor-query where Net" \
+   bash -c "cd '$T/scanfam' && '$D' where Net"
+# candor-ts writes a TOKEN-LESS primary report (.candor/report.json) — the family glob can't see it.
+mkdir -p "$T/tsfam/.candor"
+: > "$T/tsfam/.candor/report.json"
+: > "$T/tsfam/.candor/report.callgraph.json"
+ok "token-less report.json → candor-ts-query" "WOULD-RUN: candor-ts-query tour" \
+   bash -c "cd '$T/tsfam' && '$D' tour"
+# and a --report pointing directly at a token-less .json file routes to ts too
+ok "--report <token-less .json> → candor-ts-query" "WOULD-RUN: candor-ts-query where Net" \
+   bash -c "cd /tmp && '$D' where Net --report '$T/tsfam/.candor/report.json'"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

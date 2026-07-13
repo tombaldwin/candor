@@ -1,7 +1,7 @@
 # Agent-visible feedback — spec ("candor checked this" + session stats)
 
 Status: **SHIPPED (P0–P4, 2026-06-23…07-01; contract locked by `test-stop-hook.sh`). Remaining:
-`maxHops`, standalone/CI logging.** Adoption feature. Does **not** touch the candor effect
+(both now closed — see P2.2).** Adoption feature. Does **not** touch the candor effect
 contract (candor-spec); it surfaces and aggregates what the review already computes.
 
 > **P0 RESOLVED (2026-06-23).** The user-visible, non-blocking channel is the Stop hook's
@@ -128,9 +128,18 @@ needs jq, writes only when the log's dir already exists (never creates `.candor/
 **P2.1 — DONE (the richer fields).** `candor-review*.sh` now emit a `CANDOR_SUMMARY {…}` trailer
 (gated on `CANDOR_EMIT_SUMMARY`, so standalone callers never see it) carrying `unknowns`, the
 distinct `effects` present, and `reviewMs`; the hook reads it into the log and strips it from the
-user notice + the agent reason. **Still deferred:** `maxHops` (needs graph-depth, not cheap) and
-logging on **standalone / CI** runs (the trailer flag + logging are hook-side; a standalone review
-doesn't log).
+user notice + the agent reason.
+
+**P2.2 — DONE (2026-07-14): `maxHops` + the standalone/CI logging note corrected.** The "needs
+graph-depth, not cheap" deferral predated the 0.11 surface machinery — the callgraph sidecar is on
+disk beside every review scan, so one BFS is cheap. `candor_max_hops` (lib-candor-summary.sh) computes
+the change's graph-depth: over every (fn, effect) the edit's blast radius gained, the max distance to
+the nearest DIRECT source. Both review flavors append `deepest propagation: N hop(s) from the new
+source` to the delta (the agent sees how far its edit reaches, not just how many functions), and the
+activity record carries `maxHops` (null when not computable — no gained pairs / no local source /
+no callgraph). Standalone/CI logging was ALREADY built (both scripts self-log via
+`candor_log_activity` when `CANDOR_ACTIVITY_LOG` is set outside the hook — the earlier "still out"
+note here was stale; test-stop-hook.sh pins it).
 
 ### Command — built (P3)
 
@@ -145,7 +154,7 @@ doesn't log).
 
 All directly counted, no model. Corrupt log lines are skipped, a missing log is a clean no-op,
 an unknown flag exits 2 (7 tests in candor-agents). Unknowns disclosed and candor's own wall-time
-are now surfaced too (P2.1 trailer). Still out: `maxHops` (not cheap to compute).
+are now surfaced too (P2.1 trailer); `maxHops` landed with P2.2 (2026-07-14).
 
 ---
 
@@ -199,7 +208,8 @@ that capture tool output.
   active-guard doesn't re-run the review, the activity log appends).
 - **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
   gained/violations, rotation, privacy. **P2.1 ✓** — a `CANDOR_SUMMARY` trailer from the reviews
-  adds `effects`/`unknowns`/`reviewMs`. Still out: `maxHops`, standalone/CI logging.
+  adds `effects`/`unknowns`/`reviewMs`. **P2.2 ✓** — `maxHops` (the change's graph-depth) in the
+  delta + the record; standalone/CI self-logging confirmed built and pinned.
 - **P3 — `candor-agents stats`** ✓ built — measured gate activity over the log (edits checked,
   blocks, violations by AS-EFF code, effects introduced, blast radius, files, sessions, span);
   `--json` / `--session` / `--since` / `--log`; corrupt-line/missing-log/bad-flag handled; 7 tests.

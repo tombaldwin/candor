@@ -39,6 +39,8 @@ candor_log_activity() {
   local ts blast gained viol
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   blast=$(printf '%s' "$review" | sed -nE 's/.*blast radius: ([0-9]+) function.*/\1/p' | head -1); [ -z "$blast" ] && blast=0
+  local maxhops
+  maxhops=$(printf '%s' "$review" | sed -nE 's/.*deepest propagation: ([0-9]+) hop.*/\1/p' | head -1); [ -z "$maxhops" ] && maxhops=null
   gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
   viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
   local summ unknowns effects reviewms
@@ -50,11 +52,55 @@ candor_log_activity() {
   jq -nc --arg ts "$ts" --arg sid "$sid" --arg engine "$engine" --arg verdict "$verdict" \
      --argjson edited "$edited" --argjson gained "$gained" --argjson viol "$viol" --argjson blast "$blast" \
      --argjson unknowns "$unknowns" --argjson effects "$effects" --argjson reviewms "$reviewms" \
+     --argjson maxhops "$maxhops" \
      '{ts:$ts, sessionId:(if $sid=="" then null else $sid end), engine:$engine, edited:$edited,
-       gained:$gained, blastRadius:$blast, verdict:$verdict, violations:$viol,
+       gained:$gained, blastRadius:$blast, maxHops:$maxhops, verdict:$verdict, violations:$viol,
        unknowns:$unknowns, effects:$effects, reviewMs:$reviewms}' >> "$log" 2>/dev/null || true
   local cap=${CANDOR_ACTIVITY_CAP:-5000} n
   case "$cap" in ''|*[!0-9]*) cap=5000 ;; esac
   n=$(wc -l < "$log" 2>/dev/null || echo 0)
   if [ "$n" -gt "$cap" ]; then tail -n "$cap" "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null || true; fi
+}
+
+# candor_max_hops <cur-report> <baseline-report> <callgraph-json>…
+# The graph-depth of THIS change: over every (fn, effect) pair the edit's blast radius gained
+# (cur.inferred minus baseline.inferred), the maximum BFS distance from the fn down the callgraph to
+# the nearest function carrying the effect DIRECTLY. 0 = the introducer itself; bigger = the effect
+# surfaces further from where the agent made it appear. Prints the max as a bare integer, or nothing
+# when it can't be computed (no gained pairs, no reachable local source — cross-crate/Unknown — or no
+# callgraph). Deferred in FEEDBACK-SPEC as "needs graph-depth, not cheap" — that predated the 0.11
+# surface work; the sidecar is on disk and one BFS is cheap.
+candor_max_hops() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$@" <<'PY' 2>/dev/null || true
+import json, sys
+from collections import deque
+cur_p, base_p, cgs = sys.argv[1], sys.argv[2], sys.argv[3:]
+def load(p):
+    try: fns = json.load(open(p)).get("functions", [])
+    except Exception: return {}, {}
+    return ({f["fn"]: set(f.get("inferred", [])) for f in fns if isinstance(f, dict) and "fn" in f},
+            {f["fn"]: set(f.get("direct", []))   for f in fns if isinstance(f, dict) and "fn" in f})
+cinf, cdir = load(cur_p)
+binf, _ = load(base_p)
+calls = {}
+for p in cgs:
+    try:
+        g = json.load(open(p))
+        if isinstance(g, dict):
+            for k, v in g.items(): calls.setdefault(k, []).extend(x for x in v if isinstance(x, str))
+    except Exception: pass
+best = None
+for fn, effs in cinf.items():
+    for e in effs - binf.get(fn, set()):
+        seen, q = {fn}, deque([(fn, 0)])
+        while q:
+            n, d = q.popleft()
+            if e in cdir.get(n, set()):
+                best = d if best is None else max(best, d)
+                break
+            for c in calls.get(n, []):
+                if c not in seen: seen.add(c); q.append((c, d + 1))
+if best is not None: print(best)
+PY
 }

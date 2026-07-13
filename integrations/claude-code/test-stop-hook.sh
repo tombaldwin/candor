@@ -118,6 +118,27 @@ ok "under the hook (CANDOR_HOOK=1) the review does NOT self-log (no double recor
 CANDOR_CMD="bash $ENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" >/dev/null 2>&1
 ok "with no CANDOR_ACTIVITY_LOG set, the review writes nothing (opt-in)"      '[ ! -s "$SLOG" ]'
 
+# ── maxHops: the graph-depth of a change (FEEDBACK-SPEC's last deferred field, unlocked by the 0.11
+#    surface machinery). A 2-hop chain (top → mid → leaf) where leaf gains Fs must print "deepest
+#    propagation: 2 hop(s)" and land maxHops:2 in the self-logged record. Real candor-scan when
+#    present; skipped (not failed) when the binary isn't built.
+SCANBIN="$HERE/../../../candor-rust/target/debug/candor-scan"
+if [ -x "$SCANBIN" ]; then
+  MH="$WORK/mh"; mkdir -p "$MH/src" "$MH/.candor"
+  printf '[package]\nname = "mh"\nversion = "0.0.0"\nedition = "2021"\n' > "$MH/Cargo.toml"
+  printf 'pub fn top() -> u32 { mid() }\nfn mid() -> u32 { leaf() }\nfn leaf() -> u32 { 7 }\n' > "$MH/src/lib.rs"
+  "$SCANBIN" "$MH" --out "$MH/.candor/base" >/dev/null 2>&1
+  MHBASE=$(ls "$MH/.candor"/base*.json 2>/dev/null | grep -ve callgraph -e hierarchy | head -1)
+  printf 'pub fn top() -> u32 { mid() }\nfn mid() -> u32 { leaf() }\nfn leaf() -> u32 { std::fs::read("/tmp/x").map(|v| v.len() as u32).unwrap_or(7) }\n' > "$MH/src/lib.rs"
+  : > "$SLOG"
+  OUT=$(CANDOR_SCAN="$SCANBIN" CANDOR_SRC="$MH" CANDOR_REVIEW_BASELINE="$MHBASE" CANDOR_ACTIVITY_LOG="$SLOG" "$HERE/candor-review-source.sh" 2>&1)
+  ok "maxHops: the human delta names the propagation depth (2 hops)"  'printf "%s" "$OUT" | grep -q "deepest propagation: 2 hop"'
+  ok "maxHops: the self-logged record carries maxHops=2"              '[ "$(jq -r ".maxHops" "$SLOG" 2>/dev/null)" = 2 ]'
+  ok "maxHops: blastRadius still logged alongside (3 fns)"            '[ "$(jq -r ".blastRadius" "$SLOG" 2>/dev/null)" = 3 ]'
+else
+  echo "  skip maxHops fixture (candor-scan not built at $SCANBIN)"
+fi
+
 echo
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -149,8 +149,10 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   generate/VERIFY from code-level truth. SHIPPED (2026-07-14, code green): the
   privacy/1 SPEC EXTENSION (candor-swift/SPEC-EXTENSION-privacy.md + impl, 183 tests, envelope
   extensions disclosure, PART 4n tolerance pin). Six effects Location/Camera/Mic/Contacts/Photos/
-  Notify. spec strings still 0.12 — rides the 0.13 floor bump with Llm. _Remaining:_ the
-  privacy-manifest generate/verify verb (the product surface) + a real-iOS-app marketing exhibit.
+  Notify. spec strings still 0.12 — rides the 0.13 floor bump with Llm. SHIPPED (2026-07-14): the privacy-manifest
+  generate/verify verb (candor-swift b9a68a6, 196 tests) — the real-app exhibit is LIVE (pollen's iOS
+  Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
+  per-target scoping (whole-tree scan caveat); a public marketing writeup.
 - **[P2] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
   rust — mark ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
   3,345 disclosed calls across three real repos — the single loudest noise source) and CLASSIFY

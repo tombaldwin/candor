@@ -34,6 +34,26 @@ run_java() {
   run java -jar "$jar" "$@"
 }
 
+# Sniff a token-less report FILE's backend from its §2.1 envelope (candor.toolchain / candor.version;
+# meta.* for older rust shapes): jdk-* → jvm, swiftsyntax|candor-swift-* → Swift, node-*|candor-ts-* →
+# JS, stable/nightly/scan-* → the open remainder (rust). Unreadable/absent envelope → JS (candor-ts is
+# the only engine whose NATIVE primary shape is token-less, so it's the honest unreadable default).
+sniff_backend() {
+  python3 - "$1" 2>/dev/null <<'PYEOF' || echo JS
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    env = d.get("candor") or d.get("meta") or {}
+    tc = str(env.get("toolchain", "")); v = str(env.get("version", ""))
+except Exception:
+    print("JS"); raise SystemExit
+if tc.startswith("jdk"): print("jvm")
+elif tc == "swiftsyntax" or v.startswith("candor-swift"): print("Swift")
+elif tc.startswith("node") or v.startswith("candor-ts"): print("JS")
+else: print("scan")
+PYEOF
+}
+
 # ---- QUERY: route by the discovered report's backend ---------------------------------------------------
 route_query() {
   local verb="$1"; shift
@@ -71,16 +91,22 @@ route_query() {
     b="${f%.json}"
     case "$(basename "$b")" in
       *.*) b="${b##*.}";;
-      # a token-less `<name>.json` is candor-ts's PRIMARY report shape (scan.mjs writes
-      # `.candor/report.json` — no backend infix); every other engine always writes a token.
-      *)   b="JS";;
+      # a token-less `<name>.json` carries no backend in its NAME (candor-ts's primary shape — but
+      # ALSO any engine's `--json > baseline.json` style direct output, which the old JS assumption
+      # misrouted; max-review find). Sniff the §2.1 envelope's `candor.toolchain` instead: jdk-* →
+      # java, swiftsyntax → swift, node-* → ts; anything else (stable/nightly/unreadable) follows
+      # the family rule's open remainder → rust falls out of the sniffer's default below.
+      *)   b="$(sniff_backend "$f")";;
     esac
     case " $uniq " in *" $b "*) ;; *) uniq="$uniq $b"; n=$((n+1));; esac
   done
-  # a family prefix whose only report is the token-less `<prefix>.json` (the candor-ts shape) — the
-  # `<prefix>.*.json` glob can never match it (it has no inner dot segment), so probe it directly.
-  if [ "$n" -eq 0 ] && [ -n "$famprefix" ] && [ -f "$famprefix.json" ]; then
-    uniq=" JS"; n=1
+  # a family prefix may ALSO carry the token-less `<prefix>.json` (the candor-ts shape) — the
+  # `<prefix>.*.json` glob can never match it (no inner dot segment), so probe it directly. This runs
+  # UNCONDITIONALLY (not only when n==0): a ts report.json beside a tokened engine's reports must
+  # trip the multiple-engines ambiguity check, never be silently shadowed (max-review find).
+  if [ -n "$famprefix" ] && [ -f "$famprefix.json" ]; then
+    b="$(sniff_backend "$famprefix.json")"
+    case " $uniq " in *" $b "*) ;; *) uniq="$uniq $b"; n=$((n+1));; esac
   fi
   [ "$n" -ge 1 ] || die "no report at ${loc:-the discovered .candor/} — run \`candor scan\` first, or check the --report locator."
   [ "$n" -eq 1 ] || die "multiple engines' reports at ${loc:-the discovered .candor/} (${uniq# }) — disambiguate with --report <locator>."

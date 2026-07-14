@@ -138,6 +138,24 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
    live). Remaining distribution is ongoing marketing, not a backlog item: keep the adopt starter + site
    current as the tools change (the site's engine versions self-update at build; fallbacks refreshed 0.8.x).
 
+### Vocabulary + breadth track (opened 2026-07-14 — Tom: "yes, and privacy")
+
+- **[P1] The `Llm` effect** — design done (candor-spec/LLM-EFFECT-DESIGN.md): a standalone boundary
+  effect (the Db precedent) from SDK surfaces + the host literals we already extract; java-led minor
+  rung; the sharpest gains/origin alarm ("your dep bump added an LLM call"). Next: Tom settles the
+  open questions, then the java reference implementation.
+- **[P1] The privacy-sensor cluster** (Location/Camera/Mic/Contacts/Photos/Notify) — design done
+  (candor-spec/PRIVACY-EFFECTS-DESIGN.md): swift-led; the product shape is privacy-manifest
+  generate/VERIFY from code-level truth. BLOCKED on one ladder decision (may a motivated engine lead
+  an ecosystem-specific rung?) — flagged in the doc.
+- **[P2] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
+  rust — mark ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
+  3,345 disclosed calls across three real repos — the single loudest noise source) and CLASSIFY
+  crossterm (terminal I/O) + tracing_subscriber (Log/Fs); jvm — classify the AWS SDK surfaces
+  (S3 → Net/Fs, SES → Net; uflexi's top uncovered) + commons-io → Fs; swift — the uncovered list is
+  the privacy cluster's fixture set (falls out of P1); ts — sweep came back fully covered.
+  Practice: batch by ledger call-count, never speculative.
+
 ### New-capability bet — a possible commercial add-on
 
 - **Supply-chain effect diff (productize `gains`).** The `gains` query already computes "effects a

@@ -62,7 +62,7 @@ if [ -n "$PRIOR" ]; then
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude=release-preflight.sh \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -vE '⟨[0-9]' )"
+    | grep -vE '⟨(spec )?[0-9]' )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
   else bad "leftover 'spec $PRIOR' (a bump missed these — they only fail in CI):"; echo "$strays" | sed 's/^/      /'; fi
 else note "(no prior floor to check)"; fi

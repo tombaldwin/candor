@@ -209,7 +209,9 @@ that capture tool output.
 - **P2 — activity log.** ✓ built (hook-side) — `sessionId` + edited from hook input, verdict/blast/
   gained/violations, rotation, privacy. **P2.1 ✓** — a `CANDOR_SUMMARY` trailer from the reviews
   adds `effects`/`unknowns`/`reviewMs`. **P2.2 ✓** — `maxHops` (the change's graph-depth) in the
-  delta + the record; standalone/CI self-logging confirmed built and pinned.
+  delta + the record; standalone/CI self-logging confirmed built and pinned. **P2.3 ✓ (2026-07-14)** —
+  the MCP push: `candor_activity` on candor-mcp (self-inspection of the gate log; see
+  integrations/AGENT-SURFACE-DESIGN.md); the LSP push is staged there as P2.
 - **P3 — `candor-agents stats`** ✓ built — measured gate activity over the log (edits checked,
   blocks, violations by AS-EFF code, effects introduced, blast radius, files, sessions, span);
   `--json` / `--session` / `--since` / `--log`; corrupt-line/missing-log/bad-flag handled; 7 tests.

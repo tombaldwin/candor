@@ -41,9 +41,9 @@ both site items resolved — see *Deferred*.
   the exit contract; the delta is computed from the spec report envelope so it's engine-agnostic and
   catches pure→effectful. Agent-visible feedback (the `candor: ✓ checked` notice, `.candor/activity.jsonl`
   stats, the labelled `savings` model) also shipped — see *Recently shipped* and
-  [`FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md). _Remaining polish:_ a richer in-IDE/MCP push
-  (`maxHops` + standalone/CI logging closed 2026-07-14 — FEEDBACK-SPEC P2.2; the "not cheap" deferral
-  predated the 0.11 surface machinery).
+  [`FEEDBACK-SPEC.md`](integrations/claude-code/FEEDBACK-SPEC.md). _Remaining polish:_ the LSP push slice only
+  (staged in AGENT-SURFACE-DESIGN.md — the MCP half shipped 2026-07-14 as `candor_activity`;
+  `maxHops` + standalone/CI logging closed the same week, FEEDBACK-SPEC P2.2/P2.3).
 
 - **The agent-surface sequence (decided by Tom 2026-07-02; design in
   [`integrations/AGENT-SURFACE-DESIGN.md`](integrations/AGENT-SURFACE-DESIGN.md)). Bet 1 — the unified

@@ -141,7 +141,7 @@ EMPTY result with a wiring note (absence ≠ corruption — the loop just isn't 
 skipped; the log path is --root-confined like every client-supplied path; the tool needs NO report
 (usable before any scan — the `noReport` dispatch flag). 7 pins in test-mcp.mjs.
 
-**P2 — the LSP push (STAGED, not built).** candor-lsp watches `.candor/activity.jsonl` and, on a new
+**P2 — the LSP push (SHIPPED 2026-07-14, candor-ts ≥0.12.1).** candor-lsp watches `.candor/activity.jsonl` and, on a new
 `blocked` record, publishes the delta (gained effects + blast + deepest propagation + the AS-EFF
 cause) as a transient workspace diagnostic/notification — the same payload the Stop hook shows the
 agent, surfaced to the human in-editor. Build note: reuse the report-freshness watch machinery; clear

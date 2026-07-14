@@ -124,3 +124,26 @@ binary for other editors.
 
 *The go/no-go — and the choice of sequence vs LSP-first — is Tom's; this doc exists so the decision has
 concrete shapes and costs.*
+
+
+## The richer in-IDE/MCP push (2026-07-14 — the last FEEDBACK-SPEC polish item)
+
+The gate's feedback loop was write-only from the agent's side: the Stop hook pushes a notice, the
+activity log accrues, but an agent could not ASK "what has the gate caught?" without shelling out to
+`candor-agents stats`. Two slices:
+
+**P1 — `candor_activity` (SHIPPED 2026-07-14, candor-ts ≥0.12.1).** A log-only MCP tool on the
+unified candor-mcp: measured activity from `.candor/activity.jsonl` — edits checked, verdicts,
+violations by AS-EFF code, effects introduced, largest blast radius, deepest propagation — plus the
+most recent records; `session`/`since`/`limit` filters. Field semantics mirror `candor-agents stats`
+(both count the ONE pinned record shape lib-candor-summary.sh writes). Postures: a missing log is an
+EMPTY result with a wiring note (absence ≠ corruption — the loop just isn't wired); corrupt lines are
+skipped; the log path is --root-confined like every client-supplied path; the tool needs NO report
+(usable before any scan — the `noReport` dispatch flag). 7 pins in test-mcp.mjs.
+
+**P2 — the LSP push (STAGED, not built).** candor-lsp watches `.candor/activity.jsonl` and, on a new
+`blocked` record, publishes the delta (gained effects + blast + deepest propagation + the AS-EFF
+cause) as a transient workspace diagnostic/notification — the same payload the Stop hook shows the
+agent, surfaced to the human in-editor. Build note: reuse the report-freshness watch machinery; clear
+on the next clean record; respect the privacy posture (paths stay local — the LSP is local by
+construction).

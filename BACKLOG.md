@@ -142,12 +142,13 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 - **[P1] The `Llm` effect** — design done (candor-spec/LLM-EFFECT-DESIGN.md): a standalone boundary
   effect (the Db precedent) from SDK surfaces + the host literals we already extract; java-led minor
-  rung; the sharpest gains/origin alarm ("your dep bump added an LLM call"). Next: Tom settles the
-  open questions, then the java reference implementation.
+  rung; the sharpest gains/origin alarm ("your dep bump added an LLM call"). DECIDED (Tom 2026-07-14, all
+  recommendations accepted). Next: the java reference implementation.
 - **[P1] The privacy-sensor cluster** (Location/Camera/Mic/Contacts/Photos/Notify) — design done
   (candor-spec/PRIVACY-EFFECTS-DESIGN.md): swift-led; the product shape is privacy-manifest
-  generate/VERIFY from code-level truth. BLOCKED on one ladder decision (may a motivated engine lead
-  an ecosystem-specific rung?) — flagged in the doc.
+  generate/VERIFY from code-level truth. UNBLOCKED (Tom 2026-07-14): proceeds as a
+  swift SPEC EXTENSION (SPEC.md §Versioning, the engine-extensions clause). Next: draft
+  candor-swift/SPEC-EXTENSION-privacy.md, then implement + the privacy-manifest verb.
 - **[P2] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
   rust — mark ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
   3,345 disclosed calls across three real repos — the single loudest noise source) and CLASSIFY

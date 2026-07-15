@@ -8,6 +8,7 @@ _candor() {
   local -a actions effects
   actions=(
     'engines:list the engines, their source and status'
+    'outdated:check release channels for newer engine versions'
     'update:fetch / refresh the engines (optionally: jvm rust ts swift)'
     'init:stand up the gate — scan, propose a policy, set the baseline'
     'scan:analyse a project (engine picked by its manifest)'

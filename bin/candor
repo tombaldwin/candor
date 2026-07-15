@@ -172,6 +172,22 @@ route_query() {
   [ "$n" -ge 1 ] || die "no report at ${loc:-the discovered .candor/} — run \`candor scan\` first, or check the --report locator."
   [ "$n" -eq 1 ] || die "multiple engines' reports at ${loc:-the discovered .candor/} (${uniq# }) — disambiguate with --report <locator>."
 
+  # freshness note (daily-use trap: query answers silently drift after edits). One stderr line when any
+  # source file is newer than the report; discovery-only (an explicit --report is a deliberate pin), and
+  # a single -quit find so it stays fast on big repos. CANDOR_NO_FRESHNESS=1 silences it.
+  if [ -z "$loc" ] && [ -z "${CANDOR_NO_FRESHNESS:-}" ]; then
+    local repfile="" newer=""
+    for f in "${files[@]}"; do [ -e "$f" ] && { repfile="$f"; break; }; done
+    [ -z "$repfile" ] && [ -f "$famprefix.json" ] && repfile="$famprefix.json"
+    if [ -n "$repfile" ]; then
+      local root; root="$(dirname "$(dirname "$repfile")")"
+      newer=$(find "$root" \( -name .git -o -name .candor -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist \) -prune -o \
+        -type f \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.kt' -o -name '*.scala' -o -name '*.swift' \) \
+        -newer "$repfile" -print -quit 2>/dev/null)
+      [ -n "$newer" ] && echo "candor: note — source has changed since this report (${newer#"$root"/} is newer); re-run \`candor scan\` for current answers." >&2
+    fi
+  fi
+
   # TS/Java/Swift use FIXED backend tokens; Rust owns the open remainder — `scan` (syntactic backend) plus
   # the nightly-lint crate-types (`lib`, `Executable`, `Rlib`, `Dylib`, `bin`, …). So match the three fixed
   # tokens explicitly and route everything else to candor-query, exactly as the Rust engine's own
@@ -222,7 +238,18 @@ engine_scan() {
   case "$lang" in
     rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
     ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y candor-ts "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
-    java)  run_java "$@";;
+    java)
+      # the JVM engine's bare run prints the table but persists nothing (its --json writes the report).
+      # Every other engine persists by default, and the whole query flow (tour/where/path) reads the
+      # persisted report — so when no output flag is given, write the report where discovery looks.
+      case " $* " in
+        *" --json "*|*" --gate-json "*) run_java "$@";;
+        *)
+          local jt="." a2
+          for a2 in "$@"; do case "$a2" in -*) ;; *) jt="$a2"; break;; esac; done
+          if [ -d "$jt" ]; then mkdir -p "$jt/.candor"; run_java "$@" --json "$jt/.candor/report.json"
+          else run_java "$@"; fi;;
+      esac;;
     swift) have candor-swift || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS + a Swift toolchain)."; run candor-swift "$@";;
     *) die "no engine for '$lang'.";;
   esac
@@ -481,9 +508,9 @@ PY
       fi
     }
     rb="$(rust_bin candor-scan 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
-    report "rust scan" "$v" "cargo install candor-scan (or candor-rust/install.sh)"
+    report "rust scan" "$v" "run \`candor update rust\` (needs a Rust toolchain)"
     rb="$(rust_bin candor-query 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
-    report "rust query" "$v" "cargo install candor-query"
+    report "rust query" "$v" "run \`candor update rust\`"
     if have candor-java; then v=$(candor-java --version 2>/dev/null | head -1)
     elif [ -x "$CDBIN/candor-java" ]; then v=$("$CDBIN/candor-java" --version 2>/dev/null | head -1)
     else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
@@ -491,7 +518,7 @@ PY
     report "jvm" "$v" "run \`candor update\` to fetch it"
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
     else v=$(npx -y candor-ts --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
-    report "ts" "$v" "npx -y candor-ts (needs node) or npm i -g candor-ts"
+    report "ts" "$v" "install Node — the ts engine then runs via npx, no install"
     if have candor-swift; then report "swift" "$(candor-swift --version 2>/dev/null | head -1)" ""
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
     u=$(printf "%s\n" $specs | sort -u | grep -c .)
@@ -520,10 +547,11 @@ PY
     for lang in $langs; do ensure_engine "$lang" >/dev/null 2>&1 || echo "  · could not set up the $lang engine automatically — run \`candor update $lang\` and re-run"; done
     # SCAN each detected language (a mixed repo → one report per language in .candor/).
     for lang in $langs; do
-      ( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 engine_scan "$lang" . ) >/dev/null 2>&1 || echo "  · $lang scan failed (is its engine installed?)"
+      scanout="$( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 engine_scan "$lang" . 2>&1 )" || {
+        echo "  ✘ $lang scan failed:"; printf '%s\n' "$scanout" | tail -4 | sed 's/^/      /'; }
     done
     reps="$(ls -t "$idir"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy')"
-    [ -n "$reps" ] || die "init: no report written under $idir/.candor — check the engine set up"
+    [ -n "$reps" ] || die "init: no report was written — fix the failure above and re-run"
     echo "  ✔ scanned → $(printf '%s\n' "$reps" | grep -c .) report(s)"
     tooldir="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
     # PROPOSE a policy from every report (concatenated into one arch.policy — each engine only matches
@@ -572,5 +600,27 @@ PY
     else echo "and gate each language in CI (one step per engine). Templates: the adopt/ dir of the candor repo."; fi
     exit 0;;
   scan) shift; route_scan "$@";;
-  *)    route_scan "$@";;
+  *)
+    # not a known action: a real path/dir is a scan target (candor <dir> = scan); anything else is
+    # almost certainly a typo'd action — suggest the nearest match instead of handing it to a scanner.
+    if [ ! -e "$verb" ]; then
+      sugg=$(python3 - "$verb" <<'PY' 2>/dev/null
+import sys
+actions = "init scan doctor engines update install upgrade outdated check config show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents".split()
+v = sys.argv[1]
+def d(a, b):
+    if abs(len(a)-len(b)) > 2: return 99
+    m = [[i+j if i*j==0 else 0 for j in range(len(b)+1)] for i in range(len(a)+1)]
+    for i in range(1, len(a)+1):
+        for j in range(1, len(b)+1):
+            m[i][j] = min(m[i-1][j]+1, m[i][j-1]+1, m[i-1][j-1]+(a[i-1]!=b[j-1]))
+    return m[-1][-1]
+best = min(actions, key=lambda a: d(v, a))
+if d(v, best) <= 2: print(best)
+PY
+)
+      [ -n "$sugg" ] && die "unknown action '$verb' — did you mean \`candor $sugg\`? (\`candor --help\` lists them)"
+      die "unknown action '$verb' and no such path — \`candor --help\` lists the actions; \`candor scan <dir>\` scans."
+    fi
+    route_scan "$@";;
 esac

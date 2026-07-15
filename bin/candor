@@ -181,6 +181,7 @@ target is a loud error, never a silent guess.
 
 USAGE
   candor engines                       list the engines, where each comes from, and its status
+  candor outdated                      check the release channels for newer engine versions
   candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
   candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
@@ -233,6 +234,48 @@ H
       have candor-ts && candor-ts --version 2>/dev/null | head -1
       have candor-swift && candor-swift --version 2>/dev/null | head -1
     } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
+    exit 0;;
+  outdated|check)
+    # Ask each engine's release channel whether a newer version exists. EXPLICIT network (user-invoked,
+    # never a silent beacon) — same provenance as `update`. Classifies per engine: up to date / a POINT
+    # update within your spec line (safe — same spec, `candor update` fetches it) / a NEW spec line (a
+    # minor bump — adopt it by upgrading the umbrella so the whole family moves together).
+    have curl || die "outdated needs curl on PATH."
+    echo "candor: querying release channels (github.com · crates.io · npm) — explicit check, no telemetry."
+    echo ""
+    printf "  %-7s %-12s %-12s %s\n" "ENGINE" "INSTALLED" "LATEST" "STATUS"
+    # installed versions (build number = field 2 of the --version line)
+    ivjvm=""; if have candor-java; then ivjvm=$(candor-java --version 2>/dev/null | head -1 | awk '{print $2}')
+      elif [ -x "$CDBIN/candor-java" ]; then ivjvm=$("$CDBIN/candor-java" --version 2>/dev/null | head -1 | awk '{print $2}'); fi
+    ivrust=""; rb="$(rust_bin candor-scan 2>/dev/null)" && ivrust=$("$rb" --version 2>/dev/null | head -1 | awk '{print $2}')
+    ivts=""; tsnpx=""; if have candor-ts; then ivts=$(candor-ts --version 2>/dev/null | head -1 | awk '{print $2}'); elif have node; then tsnpx=1; fi
+    ivsw=""; have candor-swift && ivsw=$(candor-swift --version 2>/dev/null | head -1 | awk '{print $2}')
+    # latest from each channel (best-effort; a channel we can't reach says so, never a false "up to date")
+    ljvm=$(curl -fsSL "https://api.github.com/repos/tombaldwin/candor-java/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    lrust=$(curl -fsSL -H "User-Agent: candor-cli" "https://crates.io/api/v1/crates/candor-scan" 2>/dev/null | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    lts=$(curl -fsSL "https://registry.npmjs.org/candor-ts/latest" 2>/dev/null | sed -n 's/.*"version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    lsw=$(curl -fsSL "https://api.github.com/repos/tombaldwin/candor-swift/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    # classify: same → up to date; same major.minor, higher patch → point update; higher minor → new spec line
+    classify() { python3 - "$1" "$2" <<'PY'
+import sys
+inst, lat = sys.argv[1], sys.argv[2]
+if not inst: print("not installed"); raise SystemExit
+if not lat:  print("? channel unreachable"); raise SystemExit
+def t(v): return tuple(int(x) for x in (v.split(".")+["0","0","0"])[:3])
+i, l = t(inst), t(lat)
+if l <= i: print("up to date")
+elif l[:2] == i[:2]: print(f"point update {lat} available — same spec; `candor update`")
+else: print(f"NEW spec line {lat} — `brew upgrade candor` to move the family")
+PY
+    }
+    printf "  %-7s %-12s %-12s %s\n" "jvm"   "${ivjvm:--}"  "${ljvm:--}"  "$(classify "$ivjvm" "$ljvm")"
+    printf "  %-7s %-12s %-12s %s\n" "rust"  "${ivrust:--}" "${lrust:--}" "$(classify "$ivrust" "$lrust")"
+    if [ -n "$tsnpx" ]; then printf "  %-7s %-12s %-12s %s\n" "ts" "via npx" "${lts:--}" "always latest on run (npx)"
+    else printf "  %-7s %-12s %-12s %s\n" "ts" "${ivts:--}" "${lts:--}" "$(classify "$ivts" "$lts")"; fi
+    printf "  %-7s %-12s %-12s %s\n" "swift" "${ivsw:--}"   "${lsw:--}"   "$(classify "$ivsw" "$lsw")"
+    echo ""
+    echo "  A point update keeps your spec line (safe). A new spec line moves the whole family — take it"
+    echo "  by upgrading the umbrella, so every engine stays in agreement (candor doctor verifies)."
     exit 0;;
   engines)
     # List the engines the umbrella manages: what each is, where it comes from, and its status.

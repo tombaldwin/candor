@@ -168,7 +168,7 @@ case "$verb" in
     cat <<'H'
 candor — the effect analyzer. One command across every language.
 
-Each invocation routes to the matching engine (candor-spec §3.3.1): a scan by the
+Each invocation routes to the matching engine: a scan by the
 project's manifest, a query by the discovered report's backend. Every engine speaks
 the same grammar, so verbs and flags pass straight through — and an ambiguous
 target is a loud error, never a silent guess.
@@ -191,7 +191,7 @@ ALL ACTIONS
   show  where  callers  map  containment  diff  reachable  impact  blindspots
   gains  path  tour  whatif  fix  fix-gate  unverified  rewire  parsepolicy  agents
 
-OPTIONS  (uniform across engines, §3.3.1)
+OPTIONS  (uniform across every engine)
   --report <locator>        use this report instead of discovering .candor/
   --policy <file>           evaluate a policy — exit 1 on a violation
   --json                    machine-readable output

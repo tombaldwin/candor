@@ -15,6 +15,7 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
+UMBRELLA_VERSION="0.15.0"                    # the umbrella's own version; tracks the family release line
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 
 die()  { echo "candor: $*" >&2; exit 2; }
@@ -212,16 +213,17 @@ Docs: candor.poly.io   ·   Verify an install: candor doctor
 H
     exit 0;;
   -V|--version)
-    # version details for every locally-installed engine (fast paths only — no npx;
-    # `candor doctor` does the full check including the npx fallback). Always exit 0.
-    echo "candor (umbrella dispatcher)"
-    rb="$(rust_bin candor-scan 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1 | sed 's/^/  /'
-    rb="$(rust_bin candor-query 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1 | sed 's/^/  /'
-    if have candor-java; then candor-java --version 2>/dev/null | head -1 | sed 's/^/  /'
-    else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
-         { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1 | sed 's/^/  /'; fi
-    have candor-ts && candor-ts --version 2>/dev/null | head -1 | sed 's/^/  /'
-    have candor-swift && candor-swift --version 2>/dev/null | head -1 | sed 's/^/  /'
+    # version details for every locally-installed engine, one aligned table (fast paths
+    # only — no npx; `candor doctor` does the full check incl. the npx fallback). Exit 0.
+    { echo "candor $UMBRELLA_VERSION (umbrella)"
+      rb="$(rust_bin candor-scan 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1
+      rb="$(rust_bin candor-query 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1
+      if have candor-java; then candor-java --version 2>/dev/null | head -1
+      else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
+           { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1; fi
+      have candor-ts && candor-ts --version 2>/dev/null | head -1
+      have candor-swift && candor-swift --version 2>/dev/null | head -1
+    } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
     exit 0;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop

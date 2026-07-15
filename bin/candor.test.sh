@@ -76,18 +76,18 @@ ok "--report <token-less .json> → candor-ts-query" "WOULD-RUN: candor-ts-query
 
 echo "max-review r2: token-less files sniff the ENVELOPE (never blind-JS); mixed families disambiguate:"
 # a java `--json > baseline.json` direct file (the AGENTS-doc workflow) must route to JAVA, not ts
-printf '{"candor":{"version":"abc1234","toolchain":"jdk-21","spec":"0.14"},"functions":[]}' > "$T/baseline.json"
+printf '{"candor":{"version":"abc1234","toolchain":"jdk-21","spec":"0.15"},"functions":[]}' > "$T/baseline.json"
 ok "token-less java baseline.json -> candor-java (envelope sniff)" "WOULD-RUN: candor-java where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/baseline.json'"
-printf '{"candor":{"version":"candor-swift-0.14.0","toolchain":"swiftsyntax","spec":"0.14"},"functions":[]}' > "$T/swbase.json"
+printf '{"candor":{"version":"candor-swift-0.15.0","toolchain":"swiftsyntax","spec":"0.15"},"functions":[]}' > "$T/swbase.json"
 ok "token-less swift baseline -> candor-swift (envelope sniff)" "WOULD-RUN: candor-swift where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/swbase.json'"
-printf '{"meta":{"version":"scan-0.14.0","toolchain":"stable","spec":"0.14"},"functions":[]}' > "$T/rbase.json"
+printf '{"meta":{"version":"scan-0.15.0","toolchain":"stable","spec":"0.15"},"functions":[]}' > "$T/rbase.json"
 ok "token-less rust baseline -> candor-query (envelope sniff)" "WOULD-RUN: candor-query where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/rbase.json'"
 # a ts report.json BESIDE a tokened engine's reports must trip the ambiguity check, never be shadowed
 mkdir -p "$T/mixed/.candor"
-printf '{"candor":{"version":"candor-ts-0.14.0","toolchain":"node-23.0.0","spec":"0.14"},"functions":[]}' > "$T/mixed/.candor/report.json"
+printf '{"candor":{"version":"candor-ts-0.15.0","toolchain":"node-23.0.0","spec":"0.15"},"functions":[]}' > "$T/mixed/.candor/report.json"
 : > "$T/mixed/.candor/report.demo.scan.json"
 ok "ts report.json beside a scan family -> disambiguate (not silently shadowed)" "disambiguate" \
    bash -c "cd '$T/mixed' && '$D' where Net"

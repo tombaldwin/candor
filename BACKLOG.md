@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-11 (the measure-and-surface arc — see Recently shipped). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-15 (the vocabulary + coverage arc: floors 0.12→0.15 in three days). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -13,12 +13,16 @@ deployability gate is shipped end-to-end (AS-EFF-005 ratchet, 006/008/009 policy
 conformance-pinned). The spec advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md
 §"Versioning policy"): the reference engine may lead a minor/additive rung, the floor stays
 conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder has run
-four full cycles: **0.8** (the `--gate-json` gate verdict, 2026-07-02), **0.9** (the remedial tool loop
-promoted, 2026-07-11), **0.10** (the §3.3.1 canonical query grammar, 2026-07-12), and **0.11** (the
-surprising-reach surface — scan opener + `tour` + `path` human default — plus corrupt-report loudness and
-the `classifier doesn't cover` marker, 2026-07-13). The **floor is now 0.11** (all engines at 0.11.0,
-conformance-tagged by tier, **published + release-verified live**: crates.io, npm, gh releases; IDE
-integrations rebundled on 0.11.0 the same day).
+eight full cycles: **0.8** (the `--gate-json` gate verdict), **0.9** (the remedial tool loop), **0.10**
+(the canonical query grammar), **0.11** (the surprising-reach surface + corrupt-report loudness),
+**0.12** (the gains `origin` field), **0.13** (the `Llm` effect + the `extensions` field / the
+candor-swift `privacy/1` sensor extension + `privacy-manifest` verb), **0.14** (the top-level/initializer
+unit — a cardinal-sin closure), and **0.15** (the coverage envelope — the κ ledger travels with the
+report, verdict-preserving verb conditionality — plus host-resolution recall and four corpus-found
+soundness fixes). The **floor is now 0.15** (all engines at 0.15.0, conformance-pinned through PART 4s,
+**published + release-verified live** 2026-07-15: crates.io, npm — candor-ts now publishes via the
+tag-triggered OIDC action with SLSA provenance — gh releases; IDE bundles rebundled same-day; the site's
+effect vocabulary + gains/privacy/coverage content refreshed).
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -28,9 +32,16 @@ the 2026-06-18 repositioning as *demoting* the agent angle — that made the gat
 not a reason to stop investing in the agent loop, which stays P0 below.
 
 Value runs in **two parallel tracks**; within each, new work is **surface, not depth** — capability is
-mined-out; the spec advances only on the ladder (now at 0.11). The arch-gate track's build-out is
-**complete** (items 1–3 below shipped), and the distribution backlog is now **cleared too** (2026-07-02):
-both site items resolved — see *Deferred*.
+mined-out; the spec advances only on the ladder (now at 0.15). **Both tracks' build-outs are complete**:
+the arch-gate funnel end-to-end (items 1–3 below), and the agent-loop polish closed 2026-07-14 (the
+`candor_activity` MCP + LSP push — no polish items remain). The 2026-07-15 autonomous corpus+audit run
+confirmed the engines sound across ~20 real repos (4 real finds, all fixed and shipped in 0.15). What
+remains open, by kind: **externally blocked** — the JetBrains Marketplace first-plugin moderation
+(uploaded 2026-07-03, still pending 2026-07-15), the lsp4ij catalog PR #1609 (no review yet), the VS Code
+Marketplace publisher (needs Tom's Azure DevOps PAT); **Tom's commercial call** — gains productionization
+(the hosted watch layer; waitlist buttons live on the site with the sharpened Llm hook, 0 signups as of
+2026-07-15); **candidate next bets** — the fingerprint structure-gate (designed,
+`fingerprint/STRUCTURE-GATE-DESIGN.md`, not built) and whatever the next planning pass ranks.
 
 ### Agent-loop track — the north-star
 
@@ -98,10 +109,9 @@ both site items resolved — see *Deferred*.
   (close the FEEDBACK-SPEC "standalone/CI logging" deferred gap) + a scheduled Action; P3 Slack/email +
   the gains dependency line. Cheapest-first, each step the same rendered text through a different pipe.
 
-- **[later] IDE inline effects (LSP).** Gutter/inline annotations ("reaches `Db`, 3 hops") turn candor from
-  a batch tool into an always-on ambient signal — primarily the agent/dev loop, though the same in-editor
-  surface also shows the arch-gate boundary live. Bigger build (a language server, ideally one shared over
-  the report envelope); a later bet, listed so it isn't lost. Surfaced 2026-07-01.
+- **[SHIPPED — was "later"] IDE inline effects (LSP).** This landed as the `candor-lsp` CodeLens
+  (`⚡ effects · blast radius N`) + live gate diagnostics + hover provenance, in VS Code, JetBrains
+  (LSP4IJ), helix and neovim — the Bet-2 sequence above. The item predates the ship; kept for the record.
 
 ### Arch-gate adoption track — the solid-engineering wedge
 

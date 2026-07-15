@@ -40,6 +40,61 @@ run_java() {
   run java -jar "$jar" "$@"
 }
 
+# ---- update notifications (OPT-IN, off by default; privacy: the network CHECK rides only the admin
+# commands update/outdated/doctor, throttled to once/day and CACHED; the notice itself is a local cache
+# read, so it never adds a network call to scan/query/gate). Enable: `candor config update-check on`. ----
+SETTINGS="${CANDOR_CACHE:-$HOME/.candor}/settings"
+UPDATE_CACHE="${CANDOR_CACHE:-$HOME/.candor}/update-check"
+setting() { [ -f "$SETTINGS" ] && sed -n "s/^$1=//p" "$SETTINGS" | head -1; }
+# refresh the cached "latest per channel" — the ONE network action here; callers gate it on opt-in+staleness
+refresh_update_cache() {
+  have curl || return 0
+  local ljvm lrust lts now
+  ljvm=$(curl -fsSL "https://api.github.com/repos/tombaldwin/candor-java/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1)
+  lrust=$(curl -fsSL -H "User-Agent: candor-cli" "https://crates.io/api/v1/crates/candor-scan" 2>/dev/null | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
+  lts=$(curl -fsSL "https://registry.npmjs.org/candor-ts/latest" 2>/dev/null | sed -n 's/.*"version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
+  now=$(date +%s 2>/dev/null || echo 0)
+  mkdir -p "$(dirname "$UPDATE_CACHE")"
+  { echo "checked=$now"; echo "jvm=$ljvm"; echo "rust=$lrust"; echo "ts=$lts"; } > "$UPDATE_CACHE" 2>/dev/null || true
+}
+# on an admin command, when opted in and the cache is >24h old, refresh it (network). Silent otherwise.
+maybe_refresh_update_cache() {
+  [ "$(setting update-check)" = on ] || return 0
+  local checked=0 now
+  [ -f "$UPDATE_CACHE" ] && checked=$(sed -n 's/^checked=//p' "$UPDATE_CACHE" | head -1)
+  now=$(date +%s 2>/dev/null || echo 0)
+  [ $((now - ${checked:-0})) -ge 86400 ] && refresh_update_cache
+}
+# the newest cached channel version greater than the umbrella pin (empty if none / no cache) — no network.
+newest_beyond_pin() {
+  [ -f "$UPDATE_CACHE" ] || return 0
+  python3 - "$UPDATE_CACHE" "$UMBRELLA_VERSION" <<'PY' 2>/dev/null || true
+import sys
+cache, pin = sys.argv[1], sys.argv[2]
+def t(v):
+    try: return tuple(int(x) for x in (v.split(".")+["0","0","0"])[:3])
+    except Exception: return (0,0,0)
+latest = {}
+for line in open(cache):
+    if "=" in line and not line.startswith("checked"):
+        k,v = line.strip().split("=",1)
+        if v: latest[k]=v
+newer = [v for v in latest.values() if t(v) > t(pin)]
+if newer: print(sorted(newer, key=t)[-1])
+PY
+}
+# describe a version beyond the pin as a spec-compatible point release or a new line
+newer_kind() { case "$1" in "${UMBRELLA_VERSION%.*}".*) echo "a point release ($1, spec-compatible)";; *) echo "a new version ($1)";; esac; }
+# print a one-line notice FROM CACHE (no network) if a newer version than the pin is known. Silent when
+# opted out, no cache, or up to date. stderr, so it never corrupts --json on stdout.
+show_update_notice() {
+  [ "$(setting update-check)" = on ] || return 0
+  [ -n "${CANDOR_DISPATCH_DRYRUN:-}" ] && return 0
+  local newest; newest=$(newest_beyond_pin)
+  [ -n "$newest" ] || return 0
+  echo "candor: $(newer_kind "$newest") is available — \`candor outdated\` for detail, \`brew upgrade candor\` to update." >&2
+}
+
 # Sniff a token-less report FILE's backend from its §2.1 envelope (candor.toolchain / candor.version;
 # meta.* for older rust shapes): jdk-* → jvm, swiftsyntax|candor-swift-* → Swift, node-*|candor-ts-* →
 # JS, stable/nightly/scan-* → the open remainder (rust). Unreadable/absent envelope → JS (candor-ts is
@@ -166,10 +221,28 @@ route_scan() {
 }
 
 verb="${1:-}"
+# opt-in, cache-only (no network here) — a one-line "newer version available" nudge, silent by default.
+show_update_notice
 case "$QUERY_VERBS" in
   *" $verb "*) route_query "$@"; exit $?;;
 esac
 case "$verb" in
+  config)
+    # tiny global settings store (~/.candor/settings). Currently one key: update-check on|off (default off).
+    shift || true; key="${1:-}"; val="${2:-}"
+    case "$key" in
+      ""|list) echo "update-check=$([ "$(setting update-check)" = on ] && echo on || echo off)   # opt-in daily check for newer engine versions (off by default; the check only runs on update/outdated/doctor and is cached)"; exit 0;;
+      update-check)
+        case "$val" in
+          on|off) mkdir -p "$(dirname "$SETTINGS")"; touch "$SETTINGS"
+            tmp=$(mktemp); grep -v "^update-check=" "$SETTINGS" 2>/dev/null > "$tmp" || true; echo "update-check=$val" >> "$tmp"; mv "$tmp" "$SETTINGS"
+            [ "$val" = on ] && echo "update-check on — candor will check for newer versions at most once/day (only when you run update/outdated/doctor) and show a one-line notice. No code or reports are ever sent; it queries the public package registries only. Turn off: candor config update-check off"
+            [ "$val" = off ] && echo "update-check off — no automatic version checks. (candor outdated still checks on demand.)"
+            exit 0;;
+          *) die "usage: candor config update-check on|off";;
+        esac;;
+      *) die "unknown config key '$key' (known: update-check). \`candor config\` to list.";;
+    esac;;
   ""|-h|--help)
     cat <<'H'
 candor — the effect analyzer. One command across every language.
@@ -182,6 +255,7 @@ target is a loud error, never a silent guess.
 USAGE
   candor engines                       list the engines, where each comes from, and its status
   candor outdated                      check the release channels for newer engine versions
+  candor config update-check on        opt in to a once/day newer-version notice (off by default)
   candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
   candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
@@ -255,6 +329,8 @@ H
     lrust=$(curl -fsSL -H "User-Agent: candor-cli" "https://crates.io/api/v1/crates/candor-scan" 2>/dev/null | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
     lts=$(curl -fsSL "https://registry.npmjs.org/candor-ts/latest" 2>/dev/null | sed -n 's/.*"version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
     lsw=$(curl -fsSL "https://api.github.com/repos/tombaldwin/candor-swift/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    # refresh the nudge cache from this explicit check (so an opted-in notice reflects the latest)
+    { echo "checked=$(date +%s 2>/dev/null || echo 0)"; echo "jvm=$ljvm"; echo "rust=$lrust"; echo "ts=$lts"; } > "$UPDATE_CACHE" 2>/dev/null || true
     # classify: same → up to date; same major.minor, higher patch → point update; higher minor → new spec line
     classify() { python3 - "$1" "$2" <<'PY'
 import sys
@@ -362,11 +438,22 @@ PY
         echo "  swift  → optional (macOS + Swift toolchain; build from the candor-swift repo)"
       fi
     fi
+    # We're already online — refresh the version cache and report any release beyond the pin (a point
+    # release is spec-compatible; a new line moves the family). Adopt either by moving the umbrella.
+    refresh_update_cache
+    newest=$(newest_beyond_pin)
+    if [ -n "$newest" ]; then
+      echo ""
+      echo "  ↑ $(newer_kind "$newest") is available on the channel, beyond the pinned $UMBRELLA_VERSION."
+      echo "    Adopt it by moving the whole family together: brew upgrade candor"
+    fi
     echo ""
     exec "$0" doctor;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).
+    # If update-check is opted in and the cache is stale, this is where the (once/day) refresh happens.
+    maybe_refresh_update_cache
     rc=0; specs=""
     report() { # $1 name, $2 version-line-or-empty, $3 hint
       if [ -n "$2" ]; then

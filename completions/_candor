@@ -9,6 +9,7 @@ _candor() {
   actions=(
     'engines:list the engines, their source and status'
     'outdated:check release channels for newer engine versions'
+    'config:view or set settings (update-check on|off)'
     'update:fetch / refresh the engines (optionally: jvm rust ts swift)'
     'init:stand up the gate — scan, propose a policy, set the baseline'
     'scan:analyse a project (engine picked by its manifest)'
@@ -52,6 +53,7 @@ _candor() {
       case ${words[1]} in
         init|scan)    _files -/ ;;
         update|install|upgrade) _values 'engine' jvm rust ts swift ;;
+        config) _values 'setting' update-check ;;
         where)        _describe -t effects 'effect' effects ;;
         path|fix)     # <fn> then <Effect>
           if (( CURRENT == 3 )); then _describe -t effects 'effect' effects

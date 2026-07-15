@@ -175,10 +175,10 @@ target is a loud error, never a silent guess.
 
 USAGE
   candor scan <dir>                    analyse a project (engine picked by its manifest)
-  candor <verb> [args] [options]       query the discovered report (.candor/, walk-up)
+  candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
   candor doctor                        check every engine install + spec agreement
 
-COMMON VERBS
+COMMON ACTIONS
   where <Effect>            the functions that perform an effect
   path <fn> <Effect>        the call path by which a function reaches an effect
   callers <fn>              who calls a function, direct and transitive
@@ -187,7 +187,7 @@ COMMON VERBS
   gains <current> <base>    what a new version newly reaches (the supply-chain diff)
   fix <fn> <Effect>         the boundary hoist that would clear a violation
 
-ALL VERBS
+ALL ACTIONS
   show  where  callers  map  containment  diff  reachable  impact  blindspots
   gains  path  tour  whatif  fix  fix-gate  unverified  rewire  parsepolicy  agents
 

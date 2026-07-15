@@ -46,6 +46,41 @@ does it break policy?"* — in one query (measured on the Rust engine:
 [~1.8× faster](https://github.com/tombaldwin/candor-rust/blob/main/eval/scaled/RESULTS-speed.md) than
 tracing by hand at equal completeness).
 
+## Install
+
+Install the umbrella; it manages the analysis engines for you.
+
+```bash
+brew install tombaldwin/tap/candor   # the one thing you install
+candor update                        # fetch the engines — the JVM engine as a
+                                     #   native binary (no JVM); ts runs via npx
+```
+
+First result, in any repo:
+
+```bash
+cd your-project
+candor scan .        # analyse (engine picked by the manifest)
+candor tour          # the most surprising transitive reaches
+candor where Db      # which functions reach the database
+```
+
+Manage it:
+
+```bash
+candor engines       # what's installed, and where each engine comes from
+candor outdated      # is a newer version available? (explicit check)
+candor update rust   # fetch one engine  (no args = all of them)
+candor init          # stand up the effect gate for every language present
+candor doctor        # verify installs + spec agreement
+```
+
+**Latest version:** `brew upgrade candor && candor update`. The umbrella pins the whole family to one
+version, so every engine stays in spec agreement (`candor doctor` confirms it) — you move them together,
+never one at a time. An optional, off-by-default notice (`candor config update-check on`) tells you when a
+newer version is out; it only ever queries the public package registries (github.com · crates.io · npm) —
+the analysis itself makes no network calls.
+
 ## One `candor` across every language
 
 Every engine drives a query the same way (candor-spec §3.3.1): the report is discovered from a `.candor/`

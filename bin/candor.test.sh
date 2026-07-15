@@ -92,5 +92,25 @@ printf '{"candor":{"version":"candor-ts-0.15.0","toolchain":"node-23.0.0","spec"
 ok "ts report.json beside a scan family -> disambiguate (not silently shadowed)" "disambiguate" \
    bash -c "cd '$T/mixed' && '$D' where Net"
 
+echo "code-review regressions (2026-07-15):"
+# want()/token bugs (bare update skipped every engine; `update java` was a no-op) — asserted network-free
+# by checking the RESOLVED engine set the update case would fetch, via CANDOR_UPDATE_DRYRUN (prints the
+# `want`-selected engines and exits before any curl).
+ok "bare update selects all engines" "jvm rust ts swift" \
+   bash -c "CANDOR_UPDATE_DRYRUN=1 '$D' update"
+ok "update java → the jvm engine (token synonym, not a no-op)" "jvm" \
+   bash -c "CANDOR_UPDATE_DRYRUN=1 '$D' update java"
+ok "update rust ts → only those" "rust ts" \
+   bash -c "CANDOR_UPDATE_DRYRUN=1 '$D' update rust ts"
+# bare `candor` on a structurally-corrupt-but-valid-JSON report degrades to 'unreadable', no traceback.
+# (DRYRUN doesn't affect the status dashboard — it reads the report directly, no engine needed.)
+mkdir -p "$T/corruptshape/.candor"
+printf '{"functions":{"a":1},"candor":"nope","coverage":"nope"}' > "$T/corruptshape/.candor/report.json"
+notrace="$(cd "$T/corruptshape" && CANDOR_DISPATCH_DRYRUN= "$D" 2>&1)"
+if [[ "$notrace" != *Traceback* ]]; then echo "  ok   corrupt-shape report → no python traceback in status"; else echo "  FAIL corrupt-shape traceback"; echo "$notrace"; fails=$((fails+1)); fi
+# (init's report iteration is space-safe now — reps is a quoted bash array, not an unquoted string —
+# but a real scan is needed to produce reports to iterate, which this DRYRUN harness can't do; that path
+# is covered by the manual UX probes instead.)
+
 echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

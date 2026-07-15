@@ -116,7 +116,8 @@ route_query() {
   # tokens explicitly and route everything else to candor-query, exactly as the Rust engine's own
   # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
   case "${uniq# }" in
-    JS)    have candor-ts-query || die "a TypeScript report, but candor-ts-query isn't installed — \`npm i -g candor-ts\`."; run candor-ts-query "$verb" "$@";;
+    JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
+           else run npx -y -p candor-ts candor-ts-query "$verb" "$@"; fi;;
     jvm)   run_java "$verb" "$@";;
     Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
     *)     local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
@@ -151,7 +152,8 @@ route_scan() {
 
   case "${langs# }" in
     rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but candor-scan isn't installed — install candor-rust."; run "$c" "$@";;
-    ts)    have candor-ts || die "a TypeScript project, but candor-ts isn't installed — \`npm i -g candor-ts\`."; run candor-ts "$@";;
+    ts)    if have candor-ts; then run candor-ts "$@"
+           else run npx -y candor-ts "$@"; fi;;
     java)  run_java "$@";;
     swift) have candor-swift || die "a Swift project, but candor-swift isn't installed."; run candor-swift "$@";;
   esac
@@ -170,11 +172,44 @@ candor — one command across every language (candor-spec §3.3.1). Routes to th
   candor path <fn> <Effect>    how a function comes to perform an effect
   candor tour [N]              the N (default 10) most surprising transitive reaches
   candor <verb> … [--report <locator>] [--policy <file>] [--json]
+  candor doctor                check every engine install + spec agreement
 Query verbs: show where callers map containment diff reachable impact blindspots gains path tour whatif
              fix fix-gate unverified rewire. Engines: candor-scan/-query, candor-ts(-query), candor-java, candor-swift.
 H
     exit 0;;
   -V|--version) echo "candor dispatcher (umbrella) — routes queries by report backend, scans by manifest"; exit 0;;
+  doctor)
+    # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
+    # contract — matching `spec` matters; build versions may differ per the versioning ladder).
+    rc=0; specs=""
+    report() { # $1 name, $2 version-line-or-empty, $3 hint
+      if [ -n "$2" ]; then
+        printf "  %-14s %s\n" "$1" "$2"
+        s=$(printf "%s" "$2" | sed -n 's/.*(spec \([0-9.]*\)).*/\1/p'); [ -n "$s" ] && specs="$specs $s"
+      else
+        printf "  %-14s MISSING — %s\n" "$1" "$3"; rc=1
+      fi
+    }
+    rb="$(rust_bin candor-scan 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
+    report "rust scan" "$v" "cargo install candor-scan (or candor-rust/install.sh)"
+    rb="$(rust_bin candor-query 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
+    report "rust query" "$v" "cargo install candor-query"
+    if have candor-java; then v=$(candor-java --version 2>/dev/null | head -1)
+    else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
+         { [ -n "$jar" ] && [ -f "$jar" ]; } && v=$(java -jar "$jar" --version 2>/dev/null | head -1) || v=""; fi
+    report "jvm" "$v" "stash the release jar in ~/.candor/ or set CANDOR_JAVA_JAR"
+    if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
+    else v=$(npx -y candor-ts --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
+    report "ts" "$v" "npx -y candor-ts (needs node) or npm i -g candor-ts"
+    if have candor-swift; then report "swift" "$(candor-swift --version 2>/dev/null | head -1)" ""
+    else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
+    u=$(printf "%s\n" $specs | sort -u | grep -c .)
+    if [ "$u" -gt 1 ]; then
+      echo "  ✘ SPEC DRIFT: installed engines declare different spec versions ($(printf "%s" "$specs" | tr ' ' ',' | sed 's/^,//')) — upgrade the stragglers."; rc=1
+    elif [ "$u" -eq 1 ]; then
+      echo "  ✔ all installed engines agree on spec $(printf "%s\n" $specs | sort -u)"
+    fi
+    exit $rc;;
   scan) shift; route_scan "$@";;
   *)    route_scan "$@";;
 esac

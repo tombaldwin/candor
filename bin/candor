@@ -180,7 +180,8 @@ the same grammar, so verbs and flags pass straight through — and an ambiguous
 target is a loud error, never a silent guess.
 
 USAGE
-  candor update                        fetch / refresh the engines (JVM native binary, no JVM needed)
+  candor engines                       list the engines, where each comes from, and its status
+  candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
   candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
@@ -233,14 +234,40 @@ H
       have candor-swift && candor-swift --version 2>/dev/null | head -1
     } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
     exit 0;;
+  engines)
+    # List the engines the umbrella manages: what each is, where it comes from, and its status.
+    # A pure read — checks what's installed locally; makes NO network calls (unlike `update`).
+    echo "candor engines — pinned to umbrella $UMBRELLA_VERSION"
+    echo ""
+    printf "  %-7s %-30s %s\n" "ENGINE" "STATUS" "SOURCE"
+    jstat="not installed — run \`candor update\`"
+    if have candor-java; then jstat="installed $(candor-java --version 2>/dev/null | head -1 | awk '{print $2}') (PATH)"
+    elif [ -x "$CDBIN/candor-java" ]; then jstat="installed $("$CDBIN/candor-java" --version 2>/dev/null | head -1 | awk '{print $2}') (native)"
+    elif ls "$HOME"/.candor/candor-java*-all.jar >/dev/null 2>&1; then jstat="installed (jar — needs a JVM)"; fi
+    printf "  %-7s %-30s %s\n" "jvm" "$jstat" "github release — native binary (flagship)"
+    rstat="not installed"; rb="$(rust_bin candor-scan 2>/dev/null)" && rstat="installed $("$rb" --version 2>/dev/null | head -1 | awk '{print $2}')"
+    printf "  %-7s %-30s %s\n" "rust" "$rstat" "crates.io — cargo install (needs rust)"
+    tstat="not installed"; if have candor-ts; then tstat="installed (global)"; elif have node; then tstat="available via npx (no install)"; else tstat="needs Node"; fi
+    printf "  %-7s %-30s %s\n" "ts" "$tstat" "npm — runs via npx"
+    sstat="not installed (optional)"; have candor-swift && sstat="installed $(candor-swift --version 2>/dev/null | head -1 | awk '{print $2}')"
+    printf "  %-7s %-30s %s\n" "swift" "$sstat" "source build (macOS + swift)"
+    echo ""
+    echo "  candor update [jvm|rust|ts|swift ...]   fetch/refresh (all if none named)"
+    echo "  candor doctor                           verify installs + spec agreement"
+    exit 0;;
   install|update|upgrade)
     # Fetch/refresh the engines the umbrella manages, pinned to UMBRELLA_VERSION so the whole family
     # moves together (spec agreement guaranteed). The flagship JVM engine ships a native binary — no
     # JVM needed — which is what most people want; ts runs via npx with no install; rust/swift need a
     # toolchain and are set up only when one is present (else a note, never a hard failure).
+    # Optional args select engines: `candor update jvm rust` (default: all).
     shift || true
+    want() { [ $# -eq 0 ] && return 0; case " $REQ " in *" $1 "*) return 0;; *) return 1;; esac; }
+    REQ="$*"
     have curl || die "install needs curl on PATH."
     mkdir -p "$CDBIN"
+    # Provenance, stated up front — `update` is the ONE network action; the analysis itself never is.
+    echo "candor: fetching from package registries only (github.com · crates.io · npm) — no candor server, no telemetry, no version-check ping."
     tag="v$UMBRELLA_VERSION"
     base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
     # the native asset for this platform (GraalVM binaries: macos-arm64, linux-x64), else fall to the jar
@@ -251,6 +278,7 @@ H
     esac
     echo "candor: syncing engines to $UMBRELLA_VERSION (the umbrella's pinned line)"
     # --- JVM engine (flagship) ---
+    if want jvm; then
     if [ -n "$asset" ]; then
       echo "  jvm    → native binary ($asset), no JVM required"
       if curl -fsSL -o "$CDBIN/candor-java.tmp" "$base/$asset"; then
@@ -268,21 +296,28 @@ H
         rm -f "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp"; echo "         ✘ jar download failed"
       fi
     fi
+    fi
     # --- TypeScript engine: zero-install via npx ---
-    if have node; then echo "  ts     → runs via npx on demand (no install needed)"
-    else echo "  ts     → install Node to enable the TypeScript engine (then it runs via npx)"; fi
+    if want ts; then
+      if have node; then echo "  ts     → runs via npx on demand (no install needed)"
+      else echo "  ts     → install Node to enable the TypeScript engine (then it runs via npx)"; fi
+    fi
     # --- Rust engine: needs a toolchain; set up only when present ---
-    if have cargo; then
-      echo "  rust   → cargo install candor-scan candor-query"
-      cargo install -q candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install candor-scan candor-query)"
-    else
-      echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
+    if want rust; then
+      if have cargo; then
+        echo "  rust   → cargo install candor-scan candor-query"
+        cargo install -q candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install candor-scan candor-query)"
+      else
+        echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
+      fi
     fi
     # --- Swift engine: macOS + toolchain, source build ---
-    if [ "$os" = Darwin ] && have swift; then
-      echo "  swift  → build from the candor-swift repo (macOS): swift build -c release"
-    else
-      echo "  swift  → optional (macOS + Swift toolchain; build from the candor-swift repo)"
+    if want swift; then
+      if [ "$os" = Darwin ] && have swift; then
+        echo "  swift  → build from the candor-swift repo (macOS): swift build -c release"
+      else
+        echo "  swift  → optional (macOS + Swift toolchain; build from the candor-swift repo)"
+      fi
     fi
     echo ""
     exec "$0" doctor;;

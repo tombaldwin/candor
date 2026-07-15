@@ -176,7 +176,7 @@ target is a loud error, never a silent guess.
 USAGE
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
-  candor doctor                        check every engine install + spec agreement
+  candor doctor                        check every engine is installed and compatible
 
 COMMON ACTIONS
   where <Effect>            the functions that perform an effect

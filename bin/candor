@@ -29,13 +29,14 @@ run() {
   exec "$@"
 }
 
-# candor-java is a jar: prefer a `candor-java` launcher on PATH, else `java -jar <jar>` (CANDOR_JAVA_JAR or a
-# jar stashed under ~/.candor).
+# candor-java resolution, in preference order: a `candor-java` launcher on PATH → the native binary the
+# umbrella stashes (`candor update`, no JVM needed) → `java -jar <jar>` (CANDOR_JAVA_JAR or a stashed jar).
 run_java() {
   if have candor-java; then run candor-java "$@"; fi
+  [ -x "$CDBIN/candor-java" ] && run "$CDBIN/candor-java" "$@"
   local jar="${CANDOR_JAVA_JAR:-}"
   [ -n "$jar" ] || jar="$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)"
-  [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java launcher and no jar — install a candor-java launcher or set CANDOR_JAVA_JAR."
+  [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java engine — run \`candor update\` to fetch it (or set CANDOR_JAVA_JAR)."
   run java -jar "$jar" "$@"
 }
 
@@ -179,6 +180,7 @@ the same grammar, so verbs and flags pass straight through — and an ambiguous
 target is a loud error, never a silent guess.
 
 USAGE
+  candor update                        fetch / refresh the engines (JVM native binary, no JVM needed)
   candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
@@ -224,12 +226,66 @@ H
       rb="$(rust_bin candor-scan 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1
       rb="$(rust_bin candor-query 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1
       if have candor-java; then candor-java --version 2>/dev/null | head -1
+      elif [ -x "$CDBIN/candor-java" ]; then "$CDBIN/candor-java" --version 2>/dev/null | head -1
       else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
            { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1; fi
       have candor-ts && candor-ts --version 2>/dev/null | head -1
       have candor-swift && candor-swift --version 2>/dev/null | head -1
     } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
     exit 0;;
+  install|update|upgrade)
+    # Fetch/refresh the engines the umbrella manages, pinned to UMBRELLA_VERSION so the whole family
+    # moves together (spec agreement guaranteed). The flagship JVM engine ships a native binary — no
+    # JVM needed — which is what most people want; ts runs via npx with no install; rust/swift need a
+    # toolchain and are set up only when one is present (else a note, never a hard failure).
+    shift || true
+    have curl || die "install needs curl on PATH."
+    mkdir -p "$CDBIN"
+    tag="v$UMBRELLA_VERSION"
+    base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
+    # the native asset for this platform (GraalVM binaries: macos-arm64, linux-x64), else fall to the jar
+    os=$(uname -s); arch=$(uname -m); asset=""
+    case "$os:$arch" in
+      Darwin:arm64)          asset="candor-macos-arm64" ;;
+      Linux:x86_64|Linux:amd64) asset="candor-linux-x64" ;;
+    esac
+    echo "candor: syncing engines to $UMBRELLA_VERSION (the umbrella's pinned line)"
+    # --- JVM engine (flagship) ---
+    if [ -n "$asset" ]; then
+      echo "  jvm    → native binary ($asset), no JVM required"
+      if curl -fsSL -o "$CDBIN/candor-java.tmp" "$base/$asset"; then
+        chmod +x "$CDBIN/candor-java.tmp" && mv "$CDBIN/candor-java.tmp" "$CDBIN/candor-java"
+        echo "         ✔ $("$CDBIN/candor-java" --version 2>/dev/null | head -1)"
+      else
+        rm -f "$CDBIN/candor-java.tmp"; echo "         ✘ download failed ($base/$asset)"
+      fi
+    else
+      echo "  jvm    → no native binary for $os/$arch; fetching the jar (needs a JVM at runtime)"
+      if curl -fsSL -o "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp" "$base/candor-java-$UMBRELLA_VERSION-all.jar"; then
+        mv "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp" "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar"
+        echo "         ✔ jar stashed in ~/.candor/"
+      else
+        rm -f "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp"; echo "         ✘ jar download failed"
+      fi
+    fi
+    # --- TypeScript engine: zero-install via npx ---
+    if have node; then echo "  ts     → runs via npx on demand (no install needed)"
+    else echo "  ts     → install Node to enable the TypeScript engine (then it runs via npx)"; fi
+    # --- Rust engine: needs a toolchain; set up only when present ---
+    if have cargo; then
+      echo "  rust   → cargo install candor-scan candor-query"
+      cargo install -q candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install candor-scan candor-query)"
+    else
+      echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
+    fi
+    # --- Swift engine: macOS + toolchain, source build ---
+    if [ "$os" = Darwin ] && have swift; then
+      echo "  swift  → build from the candor-swift repo (macOS): swift build -c release"
+    else
+      echo "  swift  → optional (macOS + Swift toolchain; build from the candor-swift repo)"
+    fi
+    echo ""
+    exec "$0" doctor;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).
@@ -247,9 +303,10 @@ H
     rb="$(rust_bin candor-query 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
     report "rust query" "$v" "cargo install candor-query"
     if have candor-java; then v=$(candor-java --version 2>/dev/null | head -1)
+    elif [ -x "$CDBIN/candor-java" ]; then v=$("$CDBIN/candor-java" --version 2>/dev/null | head -1)
     else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
          { [ -n "$jar" ] && [ -f "$jar" ]; } && v=$(java -jar "$jar" --version 2>/dev/null | head -1) || v=""; fi
-    report "jvm" "$v" "stash the release jar in ~/.candor/ or set CANDOR_JAVA_JAR"
+    report "jvm" "$v" "run \`candor update\` to fetch it"
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
     else v=$(npx -y candor-ts --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
     report "ts" "$v" "npx -y candor-ts (needs node) or npm i -g candor-ts"

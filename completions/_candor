@@ -7,6 +7,7 @@
 _candor() {
   local -a actions effects
   actions=(
+    'update:fetch / refresh the engines to the umbrella version'
     'init:stand up the gate — scan, propose a policy, set the baseline'
     'scan:analyse a project (engine picked by its manifest)'
     'doctor:check every engine is installed and compatible'

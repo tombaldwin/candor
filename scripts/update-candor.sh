@@ -45,9 +45,11 @@ echo "fetching $URL for the checksum…"
 SHA="$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}')"
 [ -n "$SHA" ] || { echo "could not checksum the release tarball."; exit 1; }
 
-# 5. write + commit + push the formula
-perl -0pi -e "s{url \"[^\"]*\"}{url \"$ENV{URL}\"}" "$FORMULA"
-URL="$URL" perl -0pi -e "s{sha256 \"[0-9a-f]{64}\"}{sha256 \"$ENV{SHA}\"}" "$FORMULA"
+# 5. write + commit + push the formula. SINGLE-quote the perl so bash leaves $ENV{...} to perl, and
+# pass url/sha through the environment (a double-quoted "$ENV{URL}" would make bash expand the unset
+# $ENV — fatal under set -u — and never reach perl).
+URL="$URL" perl -0pi -e 's{url "[^"]*"}{url "$ENV{URL}"}' "$FORMULA"
+SHA="$SHA" perl -0pi -e 's{sha256 "[0-9a-f]{64}"}{sha256 "$ENV{SHA}"}' "$FORMULA"
 ( cd "$TAP" && git add Formula/candor.rb \
   && git commit -m "candor $VER" \
   && git push )

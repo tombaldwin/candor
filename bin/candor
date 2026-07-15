@@ -32,8 +32,10 @@ run() {
 # candor-java resolution, in preference order: a `candor-java` launcher on PATH → the native binary the
 # umbrella stashes (`candor update`, no JVM needed) → `java -jar <jar>` (CANDOR_JAVA_JAR or a stashed jar).
 run_java() {
-  if have candor-java; then run candor-java "$@"; fi
-  [ -x "$CDBIN/candor-java" ] && run "$CDBIN/candor-java" "$@"
+  # each tier RETURNS after running (under NOEXEC run() returns; under exec it never gets here) — without
+  # the returns, NOEXEC callers (init) fall through every tier and re-run the engine / die after success.
+  if have candor-java; then run candor-java "$@"; return $?; fi
+  [ -x "$CDBIN/candor-java" ] && { run "$CDBIN/candor-java" "$@"; return $?; }
   local jar="${CANDOR_JAVA_JAR:-}"
   [ -n "$jar" ] || jar="$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)"
   [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java engine — run \`candor update\` to fetch it (or set CANDOR_JAVA_JAR)."
@@ -194,7 +196,8 @@ route_query() {
   # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
   case "${uniq# }" in
     JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
-           else run npx -y -p candor-ts candor-ts-query "$verb" "$@"; fi;;
+           elif have node; then run npx -y -p candor-ts candor-ts-query "$verb" "$@"
+           else die "a TypeScript report, but neither candor-ts-query nor Node is installed — install Node (the engine then runs via npx)."; fi;;
     jvm)   run_java "$verb" "$@";;
     Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
     *)     local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
@@ -308,21 +311,28 @@ if os.path.exists(cfg):
         elif line and not line.startswith("#"):
             keys[line] = True
 for p in sorted(reps):
-    try: r = json.load(open(p))
+    # ONE guard around the whole per-report body — a report can be valid JSON of the wrong SHAPE
+    # (functions not a list of dicts, candor/coverage a string) and every access below must degrade
+    # to "unreadable", never spill a traceback into the dashboard.
+    try:
+        r = json.load(open(p))
+        env = r.get("candor") or r.get("meta") or {}
+        if not isinstance(env, dict): env = {}
+        fns = r.get("functions", [])
+        if not isinstance(fns, list): fns = []
+        tally = {}
+        for f in fns:
+            if not isinstance(f, dict): continue
+            for e in f.get("inferred", []) or []: tally[e] = tally.get(e, 0) + 1
+        age = time.time() - os.path.getmtime(p)
+        ages = f"{int(age/60)}m ago" if age < 3600 else (f"{int(age/3600)}h ago" if age < 172800 else f"{int(age/86400)}d ago")
+        ts = ", ".join(f"{k} {v}" for k, v in sorted(tally.items(), key=lambda kv: -kv[1])[:6]) or "no effects"
+        cov = (r.get("coverage") if isinstance(r.get("coverage"), dict) else {}).get("uncovered", []) or []
+        covs = f" · {len(cov)} uncovered dep(s)" if cov else ""
+        print(f"  report   {os.path.basename(p)} — {len(fns)} effectful fns ({ts}){covs}")
+        print(f"  scanned  {ages} (engine {env.get('version','?')}, spec {env.get('spec','?')})")
     except Exception:
-        print(f"  {os.path.basename(p)}: unreadable"); continue
-    env = r.get("candor") or r.get("meta") or {}
-    fns = r.get("functions", [])
-    tally = {}
-    for f in fns:
-        for e in f.get("inferred", []): tally[e] = tally.get(e, 0) + 1
-    age = time.time() - os.path.getmtime(p)
-    ages = f"{int(age/60)}m ago" if age < 3600 else (f"{int(age/3600)}h ago" if age < 172800 else f"{int(age/86400)}d ago")
-    ts = ", ".join(f"{k} {v}" for k, v in sorted(tally.items(), key=lambda kv: -kv[1])[:6]) or "no effects"
-    cov = (r.get("coverage") or {}).get("uncovered", [])
-    covs = f" · {len(cov)} uncovered dep(s)" if cov else ""
-    print(f"  report   {os.path.basename(p)} — {len(fns)} effectful fns ({ts}){covs}")
-    print(f"  scanned  {ages} (engine {env.get('version','?')}, spec {env.get('spec','?')})")
+        print(f"  {os.path.basename(p)}: unreadable")
 print(f"  policy   {'wired: ' + str(keys.get('policy')) if keys.get('policy') else 'none — `candor init` proposes one'}")
 print(f"  baseline {'wired: ' + str(keys.get('baseline')) if keys.get('baseline') else ('per-engine files present' if glob.glob(cd + '/baseline*.json') else 'none — the regression ratchet is off')}")
 PY
@@ -476,8 +486,13 @@ PY
     # toolchain and are set up only when one is present (else a note, never a hard failure).
     # Optional args select engines: `candor update jvm rust` (default: all).
     shift || true
-    want() { [ $# -eq 0 ] && return 0; case " $REQ " in *" $1 "*) return 0;; *) return 1;; esac; }
-    REQ="$*"
+    # want <engine>: true if the user named it (or named none → all). Gate on REQ, not $# ($# is want's
+    # own arg count, always 1). Accept the language token `java` as a synonym for the `jvm` engine.
+    REQ="$*"; REQ="${REQ//java/jvm}"
+    want() { [ -z "$REQ" ] && return 0; case " $REQ " in *" $1 "*) return 0;; *) return 1;; esac; }
+    if [ -n "${CANDOR_UPDATE_DRYRUN:-}" ]; then   # test hook: print the resolved engine set, no network
+      sel=""; for e in jvm rust ts swift; do want "$e" && sel="$sel $e"; done; echo "${sel# }"; exit 0
+    fi
     have curl || die "install needs curl on PATH."
     mkdir -p "$CDBIN"
     # Provenance, stated up front — `update` is the ONE network action; the analysis itself never is.
@@ -543,7 +558,10 @@ PY
       echo "    Adopt it by moving the whole family together: brew upgrade candor"
     fi
     echo ""
-    exec "$0" doctor;;
+    # doctor as an informational summary — but update must NOT inherit its exit 1 for a merely-absent
+    # OPTIONAL engine (rust/swift needing a toolchain). A real download failure already printed "✘".
+    "$0" doctor || true
+    exit 0;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).
@@ -601,9 +619,16 @@ PY
       scanout="$( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 engine_scan "$lang" . 2>&1 )" || {
         echo "  ✘ $lang scan failed:"; printf '%s\n' "$scanout" | tail -4 | sed 's/^/      /'; }
     done
-    reps="$(ls -t "$idir"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy')"
-    [ -n "$reps" ] || die "init: no report was written — fix the failure above and re-run"
-    echo "  ✔ scanned → $(printf '%s\n' "$reps" | grep -c .) report(s)"
+    # collect the report files into an ARRAY (per-element quoted — a path with a space must not split),
+    # with the SAME full sidecar/ledger exclusion the query router uses (not just callgraph/hierarchy).
+    reps=()
+    for f in "$idir"/.candor/report*.json; do
+      [ -e "$f" ] || continue
+      case "$f" in *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;; esac
+      reps+=("$f")
+    done
+    [ "${#reps[@]}" -gt 0 ] || die "init: no report was written — fix the failure above and re-run"
+    echo "  ✔ scanned → ${#reps[@]} report(s)"
     tooldir="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
     # PROPOSE a policy from every report (concatenated into one arch.policy — each engine only matches
     # its own layers, so a combined polyglot policy is safe). Never clobber an existing one.
@@ -611,7 +636,7 @@ PY
       echo "  · .candor/arch.policy exists — kept (delete it and re-run to re-propose)"
     elif [ -x "$tooldir/adopt/candor-init" ] || [ -f "$tooldir/adopt/candor-init" ]; then
       : > "$idir/.candor/arch.policy.tmp"
-      for r in $reps; do python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; done
+      for r in "${reps[@]}"; do python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; done
       if [ -s "$idir/.candor/arch.policy.tmp" ]; then mv "$idir/.candor/arch.policy.tmp" "$idir/.candor/arch.policy"
         echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"
       else rm -f "$idir/.candor/arch.policy.tmp"; echo "  · policy proposal skipped (the inference tool could not read the report)"; fi
@@ -620,8 +645,7 @@ PY
     fi
     # BASELINE each report → its sibling baseline (never clobber; per-engine, since a baseline is only
     # comparable to its OWN engine's report — a shared one would fail-closed on the others).
-    for f in $reps; do
-      case "$f" in *callgraph*|*hierarchy*) continue;; esac
+    for f in "${reps[@]}"; do
       b="$(dirname "$f")/$(basename "$f" | sed 's/^report/baseline/')"
       cgf="${f%.json}.callgraph.json"; cgb="${b%.json}.callgraph.json"
       if [ -f "$b" ]; then echo "  · $(basename "$b") exists — kept"

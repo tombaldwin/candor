@@ -594,6 +594,16 @@ PY
         echo "      CANDOR_BASELINE=.candor/$(basename "$f") $eng . --gate-json v.json"
       done
     fi
+    # FIRST LOOK: end the first minute with an insight, not file paths — the tour opener, inline
+    # (single-language only: a polyglot .candor/ holds several reports and tour needs one).
+    if [ "$nlang" -eq 1 ]; then
+      firstlook="$( cd "$idir" && CANDOR_NO_FRESHNESS=1 CANDOR_DISPATCH_NOEXEC=1 route_query tour 3 2>/dev/null | head -14 )"
+      if [ -n "$firstlook" ]; then
+        echo ""
+        echo "First look — the most surprising reaches in this code:"
+        printf '%s\n' "$firstlook" | sed 's/^/  /'
+      fi
+    fi
     echo ""
     echo "Next: review .candor/arch.policy, commit .candor/ (config, arch.policy, baseline*),"
     if [ "$nlang" -eq 1 ]; then echo "and gate CI with:  candor scan . --gate-json verdict.json   (exit 1 on a violation)."

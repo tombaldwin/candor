@@ -1,0 +1,64 @@
+#compdef candor
+# zsh completion for the candor umbrella dispatcher.
+# Install: copy (or symlink) into a directory on $fpath — e.g.
+#   ln -s <repo>/completions/_candor /opt/homebrew/share/zsh/site-functions/_candor
+# then `rehash` (or open a new terminal).
+
+_candor() {
+  local -a actions effects
+  actions=(
+    'scan:analyse a project (engine picked by its manifest)'
+    'doctor:check every engine is installed and compatible'
+    'where:the functions that perform an effect'
+    'path:the call path by which a function reaches an effect'
+    'callers:who calls a function, direct and transitive'
+    'tour:the most surprising transitive reaches'
+    'blindspots:the Unknown sources worth resolving, ranked by reach'
+    'gains:what a new version newly reaches (the supply-chain diff)'
+    'fix:the boundary hoist that would clear a violation'
+    'fix-gate:every policy crossing and its remedy'
+    'show:everything the report knows about a function'
+    'map:the module-by-module effect map'
+    'containment:how contained each boundary effect is'
+    'diff:what changed between two reports'
+    'reachable:everything a function transitively reaches'
+    'impact:what reaches a function (the blast radius)'
+    'whatif:the verdict if a policy rule changed'
+    'unverified:scopes that pass the policy but contain Unknown'
+    'rewire:call-graph edges that changed between two reports'
+    'parsepolicy:dump a parsed policy as canonical JSON'
+    'agents:the agent contract for the routed engine'
+  )
+  effects=(Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown)
+
+  _arguments -C \
+    '(-h --help)'{-h,--help}'[show help]' \
+    '(-V --version)'{-V,--version}'[version details for every installed engine]' \
+    '--report[use this report instead of discovering .candor/]:report locator:_files' \
+    '--policy[evaluate a policy file]:policy file:_files' \
+    '--json[machine-readable output]' \
+    '1: :->action' \
+    '*:: :->args' && return
+
+  case $state in
+    action)
+      _describe -t actions 'candor action' actions
+      ;;
+    args)
+      case ${words[1]} in
+        scan)         _files -/ ;;
+        where)        _describe -t effects 'effect' effects ;;
+        path|fix)     # <fn> then <Effect>
+          if (( CURRENT == 3 )); then _describe -t effects 'effect' effects
+          else _message 'function (qualified name)'; fi ;;
+        gains|diff|rewire) _files ;;
+        tour)         _message 'N (how many, default 10)' ;;
+        callers|show|reachable|impact) _message 'function (qualified name)' ;;
+        parsepolicy)  _files ;;
+        *)            _files ;;
+      esac
+      ;;
+  esac
+}
+
+_candor "$@"

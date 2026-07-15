@@ -211,7 +211,18 @@ ENGINES
 Docs: candor.poly.io   ·   Verify an install: candor doctor
 H
     exit 0;;
-  -V|--version) echo "candor dispatcher (umbrella) — routes queries by report backend, scans by manifest"; exit 0;;
+  -V|--version)
+    # version details for every locally-installed engine (fast paths only — no npx;
+    # `candor doctor` does the full check including the npx fallback). Always exit 0.
+    echo "candor (umbrella dispatcher)"
+    rb="$(rust_bin candor-scan 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1 | sed 's/^/  /'
+    rb="$(rust_bin candor-query 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1 | sed 's/^/  /'
+    if have candor-java; then candor-java --version 2>/dev/null | head -1 | sed 's/^/  /'
+    else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
+         { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1 | sed 's/^/  /'; fi
+    have candor-ts && candor-ts --version 2>/dev/null | head -1 | sed 's/^/  /'
+    have candor-swift && candor-swift --version 2>/dev/null | head -1 | sed 's/^/  /'
+    exit 0;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).

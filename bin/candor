@@ -196,7 +196,7 @@ route_query() {
   # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
   case "${uniq# }" in
     JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
-           elif have node; then run npx -y -p candor-ts candor-ts-query "$verb" "$@"
+           elif have node; then run npx -y -p "candor-ts@$UMBRELLA_VERSION" candor-ts-query "$verb" "$@"
            else die "a TypeScript report, but neither candor-ts-query nor Node is installed — install Node (the engine then runs via npx)."; fi;;
     jvm)   run_java "$verb" "$@";;
     Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
@@ -240,7 +240,7 @@ engine_scan() {
   local lang="$1"; shift
   case "$lang" in
     rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
-    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y candor-ts "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
+    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$UMBRELLA_VERSION" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
       # the JVM engine's bare run prints the table but persists nothing (its --json writes the report).
       # Every other engine persists by default, and the whole query flow (tour/where/path) reads the
@@ -250,7 +250,9 @@ engine_scan() {
         *)
           local jt="." a2
           for a2 in "$@"; do case "$a2" in -*) ;; *) jt="$a2"; break;; esac; done
-          if [ -d "$jt" ]; then mkdir -p "$jt/.candor"; run_java "$@" --json "$jt/.candor/report.json"
+          # persist only if we can create .candor/ (a read-only checkout, e.g. CI, falls back to a bare
+          # run — print the table, don't try to --json to an unwritable path and fail the engine).
+          if [ -d "$jt" ] && mkdir -p "$jt/.candor" 2>/dev/null; then run_java "$@" --json "$jt/.candor/report.json"
           else run_java "$@"; fi;;
       esac;;
     swift) have candor-swift || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS + a Swift toolchain)."; run candor-swift "$@";;
@@ -586,7 +588,7 @@ PY
          { [ -n "$jar" ] && [ -f "$jar" ]; } && v=$(java -jar "$jar" --version 2>/dev/null | head -1) || v=""; fi
     report "jvm" "$v" "run \`candor update\` to fetch it"
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
-    else v=$(npx -y candor-ts --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
+    else v=$(npx -y "candor-ts@$UMBRELLA_VERSION" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
     report "ts" "$v" "install Node — the ts engine then runs via npx, no install"
     if have candor-swift; then report "swift" "$(candor-swift --version 2>/dev/null | head -1)" ""
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi

@@ -7,6 +7,7 @@
 _candor() {
   local -a actions effects
   actions=(
+    'init:stand up the gate — scan, propose a policy, set the baseline'
     'scan:analyse a project (engine picked by its manifest)'
     'doctor:check every engine is installed and compatible'
     'where:the functions that perform an effect'
@@ -46,7 +47,7 @@ _candor() {
       ;;
     args)
       case ${words[1]} in
-        scan)         _files -/ ;;
+        init|scan)    _files -/ ;;
         where)        _describe -t effects 'effect' effects ;;
         path|fix)     # <fn> then <Effect>
           if (( CURRENT == 3 )); then _describe -t effects 'effect' effects

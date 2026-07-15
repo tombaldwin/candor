@@ -23,7 +23,11 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # a Rust raw bin lives on PATH or under ~/.candor/bin
 rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$CDBIN/$1"; else return 1; fi; }
 # run (or, in dry-run, just announce) the resolved engine command
-run() { if [ -n "${CANDOR_DISPATCH_DRYRUN:-}" ]; then echo "WOULD-RUN: $*"; exit 0; fi; exec "$@"; }
+run() {
+  if [ -n "${CANDOR_DISPATCH_DRYRUN:-}" ]; then echo "WOULD-RUN: $*"; exit 0; fi
+  if [ -n "${CANDOR_DISPATCH_NOEXEC:-}" ]; then "$@"; return $?; fi
+  exec "$@"
+}
 
 # candor-java is a jar: prefer a `candor-java` launcher on PATH, else `java -jar <jar>` (CANDOR_JAVA_JAR or a
 # jar stashed under ~/.candor).
@@ -175,6 +179,7 @@ the same grammar, so verbs and flags pass straight through — and an ambiguous
 target is a loud error, never a silent guess.
 
 USAGE
+  candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
   candor doctor                        check every engine is installed and compatible
@@ -257,6 +262,56 @@ H
       echo "  ✔ all installed engines agree on spec $(printf "%s\n" $specs | sort -u)"
     fi
     exit $rc;;
+  init)
+    # candor init — stand up the effect gate in one command (engine picked by manifest):
+    #   1. scan the project                         → .candor/report*
+    #   2. PROPOSE a starter policy from what the code already does → .candor/arch.policy
+    #   3. record the baseline (the regression ratchet)             → .candor/baseline*
+    #   4. wire .candor/config (policy + baseline keys)
+    # Existing files are never clobbered. Review arch.policy (every proposed rule currently
+    # passes), commit .candor/, and add the gate to CI (see the adopt/ dir for templates).
+    shift; idir="${1:-.}"
+    [ -d "$idir" ] || die "init: '$idir' is not a directory"
+    mkdir -p "$idir/.candor"
+    echo "candor init — $idir"
+    # 1. scan (in-process, not exec'd)
+    ( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 route_scan . ) || die "init: the scan failed — fix that first"
+    # the main report: newest report*.json that isn't a sidecar
+    rep="$(ls -t "$idir"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
+    [ -n "$rep" ] || die "init: the scan wrote no report under $idir/.candor"
+    echo "  ✔ scanned → ${rep#"$idir"/}"
+    # 2. propose the policy (the inference tool lives beside this script in the umbrella repo)
+    tooldir="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
+    if [ -f "$idir/.candor/arch.policy" ]; then
+      echo "  · .candor/arch.policy exists — kept (delete it and re-run to re-propose)"
+    elif [ -x "$tooldir/adopt/candor-init" ] || [ -f "$tooldir/adopt/candor-init" ]; then
+      python3 "$tooldir/adopt/candor-init" "$rep" --out "$idir/.candor/arch.policy" >/dev/null 2>&1         && echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"         || echo "  · policy proposal skipped (the inference tool could not read the report)"
+    else
+      echo "  · policy proposal skipped (adopt/candor-init not found beside the dispatcher)"
+    fi
+    # 3. the baseline: report* → baseline* (never clobber)
+    if ls "$idir"/.candor/baseline*.json >/dev/null 2>&1; then
+      echo "  · baseline exists — kept (regenerating a baseline is a deliberate act: copy report* → baseline* yourself)"
+      bl="$(ls "$idir"/.candor/baseline*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
+    else
+      bl=""
+      for f in "$idir"/.candor/report*.json; do
+        b="$(dirname "$f")/$(basename "$f" | sed 's/^report/baseline/')"
+        cp "$f" "$b"
+        case "$b" in *callgraph*|*hierarchy*) ;; *) bl="$b";; esac
+      done
+      echo "  ✔ baseline recorded → ${bl#"$idir"/} (an existing effectful function widening its reach now fails the gate)"
+    fi
+    # 4. wire the config (append missing keys only)
+    cfg="$idir/.candor/config"
+    touch "$cfg"
+    grep -q "^policy" "$cfg" 2>/dev/null || { [ -f "$idir/.candor/arch.policy" ] && printf 'policy .candor/arch.policy\n' >> "$cfg" && echo "  ✔ config: policy wired"; }
+    grep -q "^baseline" "$cfg" 2>/dev/null || { [ -n "$bl" ] && printf 'baseline %s\n' ".candor/$(basename "$bl")" >> "$cfg" && echo "  ✔ config: baseline wired"; }
+    echo ""
+    echo "Next: review .candor/arch.policy, commit .candor/ (config, arch.policy, baseline*),"
+    echo "and gate CI with:  candor scan . --gate-json verdict.json   (exit 1 on a violation)."
+    echo "CI templates: the adopt/ dir of the candor repo (GitHub Action, or a pipeline step)."
+    exit 0;;
   scan) shift; route_scan "$@";;
   *)    route_scan "$@";;
 esac

@@ -186,38 +186,55 @@ route_query() {
 }
 
 # ---- SCAN: route by the project manifest ---------------------------------------------------------------
+# echo the languages detected in <dir> (space-separated among: rust ts java swift), no die. Shared by
+# route_scan and init, so both see the manifest set the same way.
+detect_langs() {
+  local dir="$1" langs="" g jm=1
+  for g in "$dir/build.gradle" "$dir/build.gradle.kts" "$dir/settings.gradle" "$dir/settings.gradle.kts" "$dir/pom.xml"; do [ -f "$g" ] && jm=0; done
+  if [ "$jm" = 1 ]; then for g in "$dir"/*.java; do [ -e "$g" ] && { jm=0; break; }; done; fi
+  [ -f "$dir/Cargo.toml" ] && langs="$langs rust"
+  { [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; } && langs="$langs ts"
+  [ "$jm" = 0 ] && langs="$langs java"
+  [ -f "$dir/Package.swift" ] && langs="$langs swift"
+  echo "${langs# }"
+}
+# is the engine for <lang> resolvable right now? (mirrors engine_scan's resolution)
+engine_present() {
+  case "$1" in
+    rust)  rust_bin candor-scan >/dev/null 2>&1;;
+    ts)    have candor-ts || have node;;   # node ⇒ npx can run it
+    java)  have candor-java || [ -x "$CDBIN/candor-java" ] || [ -n "${CANDOR_JAVA_JAR:-}" ] || ls "$HOME"/.candor/candor-java*-all.jar >/dev/null 2>&1;;
+    swift) have candor-swift;;
+    *) return 1;;
+  esac
+}
+# auto-fetch a missing engine (used by init — a setup command, so a fetch is expected; scan never does this).
+ensure_engine() {
+  engine_present "$1" && return 0
+  echo "  · the $1 engine isn't installed — fetching it (candor update $1)…"
+  "$0" update "$1" >/dev/null 2>&1 || true
+  engine_present "$1"
+}
+# scan ONE named language in a dir, bypassing the mixed-repo guard (used by init per language). Carries
+# the consistent missing-engine errors — all point at `candor update <engine>`.
+engine_scan() {
+  local lang="$1"; shift
+  case "$lang" in
+    rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
+    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y candor-ts "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
+    java)  run_java "$@";;
+    swift) have candor-swift || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS + a Swift toolchain)."; run candor-swift "$@";;
+    *) die "no engine for '$lang'.";;
+  esac
+}
 route_scan() {
   local a target="."
   for a in "$@"; do case "$a" in -*) ;; *) target="$a"; break;; esac; done
   local dir; if [ -d "$target" ]; then dir="$target"; else dir="$(dirname "$target")"; fi
-
-  # a Java project = any Gradle/Maven manifest, or a loose *.java (checked one at a time — a single
-  # `ls a b c` fails whenever ANY pattern is unmatched, which would hide a real match).
-  java_manifest() {
-    local g
-    for g in "$dir/build.gradle" "$dir/build.gradle.kts" "$dir/settings.gradle" "$dir/settings.gradle.kts" "$dir/pom.xml"; do
-      [ -f "$g" ] && return 0
-    done
-    for g in "$dir"/*.java; do [ -e "$g" ] && return 0; done
-    return 1
-  }
-  local langs="" n=0
-  add() { case " $langs " in *" $1 "*) ;; *) langs="$langs $1"; n=$((n+1));; esac; }
-  [ -f "$dir/Cargo.toml" ] && add rust
-  { [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; } && add ts
-  java_manifest && add java
-  [ -f "$dir/Package.swift" ] && add swift
-
+  local langs n; langs="$(detect_langs "$dir")"; n=$(set -- $langs; echo $#)
   [ "$n" -ge 1 ] || die "can't tell what language $dir is (no Cargo.toml / package.json / build.gradle / Package.swift). Run the engine directly: candor-scan | candor-ts | candor-java | candor-swift."
-  [ "$n" -eq 1 ] || die "$dir mixes languages (${langs# }) — scan a specific subdirectory, or run the engine directly."
-
-  case "${langs# }" in
-    rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but candor-scan isn't installed — install candor-rust."; run "$c" "$@";;
-    ts)    if have candor-ts; then run candor-ts "$@"
-           else run npx -y candor-ts "$@"; fi;;
-    java)  run_java "$@";;
-    swift) have candor-swift || die "a Swift project, but candor-swift isn't installed."; run candor-swift "$@";;
-  esac
+  [ "$n" -eq 1 ] || die "$dir mixes languages ($langs) — scan one at a time (\`candor scan <subdir>\`), or \`candor init\` to set up every language at once."
+  engine_scan "$langs" "$@"
 }
 
 verb="${1:-}"
@@ -257,7 +274,7 @@ USAGE
   candor outdated                      check the release channels for newer engine versions
   candor config update-check on        opt in to a once/day newer-version notice (off by default)
   candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
-  candor init [<dir>]                  stand up the gate: scan, propose a policy, set the baseline
+  candor init [<dir>]                  stand up the gate (every language present): scan, policy, baseline
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
   candor doctor                        check every engine is installed and compatible
@@ -495,44 +512,64 @@ PY
     shift; idir="${1:-.}"
     [ -d "$idir" ] || die "init: '$idir' is not a directory"
     mkdir -p "$idir/.candor"
-    echo "candor init — $idir"
-    # 1. scan (in-process, not exec'd)
-    ( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 route_scan . ) || die "init: the scan failed — fix that first"
-    # the main report: newest report*.json that isn't a sidecar
-    rep="$(ls -t "$idir"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
-    [ -n "$rep" ] || die "init: the scan wrote no report under $idir/.candor"
-    echo "  ✔ scanned → ${rep#"$idir"/}"
-    # 2. propose the policy (the inference tool lives beside this script in the umbrella repo)
+    langs="$(detect_langs "$idir")"
+    [ -n "$langs" ] || die "init: can't tell what language $idir is (no Cargo.toml / package.json / build.gradle / Package.swift)."
+    nlang=$(set -- $langs; echo $#)
+    echo "candor init — $idir ($langs)"
+    # ENSURE the engines (init is a setup command: fetch what's missing, unlike scan which just errors).
+    for lang in $langs; do ensure_engine "$lang" >/dev/null 2>&1 || echo "  · could not set up the $lang engine automatically — run \`candor update $lang\` and re-run"; done
+    # SCAN each detected language (a mixed repo → one report per language in .candor/).
+    for lang in $langs; do
+      ( cd "$idir" && CANDOR_DISPATCH_NOEXEC=1 engine_scan "$lang" . ) >/dev/null 2>&1 || echo "  · $lang scan failed (is its engine installed?)"
+    done
+    reps="$(ls -t "$idir"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy')"
+    [ -n "$reps" ] || die "init: no report written under $idir/.candor — check the engine set up"
+    echo "  ✔ scanned → $(printf '%s\n' "$reps" | grep -c .) report(s)"
     tooldir="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
+    # PROPOSE a policy from every report (concatenated into one arch.policy — each engine only matches
+    # its own layers, so a combined polyglot policy is safe). Never clobber an existing one.
     if [ -f "$idir/.candor/arch.policy" ]; then
       echo "  · .candor/arch.policy exists — kept (delete it and re-run to re-propose)"
     elif [ -x "$tooldir/adopt/candor-init" ] || [ -f "$tooldir/adopt/candor-init" ]; then
-      python3 "$tooldir/adopt/candor-init" "$rep" --out "$idir/.candor/arch.policy" >/dev/null 2>&1         && echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"         || echo "  · policy proposal skipped (the inference tool could not read the report)"
+      : > "$idir/.candor/arch.policy.tmp"
+      for r in $reps; do python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; done
+      if [ -s "$idir/.candor/arch.policy.tmp" ]; then mv "$idir/.candor/arch.policy.tmp" "$idir/.candor/arch.policy"
+        echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"
+      else rm -f "$idir/.candor/arch.policy.tmp"; echo "  · policy proposal skipped (the inference tool could not read the report)"; fi
     else
       echo "  · policy proposal skipped (adopt/candor-init not found beside the dispatcher)"
     fi
-    # 3. the baseline: report* → baseline* (never clobber)
-    if ls "$idir"/.candor/baseline*.json >/dev/null 2>&1; then
-      echo "  · baseline exists — kept (regenerating a baseline is a deliberate act: copy report* → baseline* yourself)"
-      bl="$(ls "$idir"/.candor/baseline*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
-    else
-      bl=""
-      for f in "$idir"/.candor/report*.json; do
-        b="$(dirname "$f")/$(basename "$f" | sed 's/^report/baseline/')"
-        cp "$f" "$b"
-        case "$b" in *callgraph*|*hierarchy*) ;; *) bl="$b";; esac
-      done
-      echo "  ✔ baseline recorded → ${bl#"$idir"/} (an existing effectful function widening its reach now fails the gate)"
-    fi
-    # 4. wire the config (append missing keys only)
-    cfg="$idir/.candor/config"
-    touch "$cfg"
+    # BASELINE each report → its sibling baseline (never clobber; per-engine, since a baseline is only
+    # comparable to its OWN engine's report — a shared one would fail-closed on the others).
+    for f in $reps; do
+      case "$f" in *callgraph*|*hierarchy*) continue;; esac
+      b="$(dirname "$f")/$(basename "$f" | sed 's/^report/baseline/')"
+      cgf="${f%.json}.callgraph.json"; cgb="${b%.json}.callgraph.json"
+      if [ -f "$b" ]; then echo "  · $(basename "$b") exists — kept"
+      else cp "$f" "$b"; [ -f "$cgf" ] && cp "$cgf" "$cgb"   # copy the callgraph sidecar too (the ⟨0.16⟩ guard needs it)
+        echo "  ✔ baseline → ${b#"$idir"/}"; fi
+    done
+    # WIRE the config. policy is safe to share. The baseline key is per-engine, so only wire it for a
+    # single-language repo; a polyglot repo gates each language with its own baseline (shown below).
+    cfg="$idir/.candor/config"; touch "$cfg"
     grep -q "^policy" "$cfg" 2>/dev/null || { [ -f "$idir/.candor/arch.policy" ] && printf 'policy .candor/arch.policy\n' >> "$cfg" && echo "  ✔ config: policy wired"; }
-    grep -q "^baseline" "$cfg" 2>/dev/null || { [ -n "$bl" ] && printf 'baseline %s\n' ".candor/$(basename "$bl")" >> "$cfg" && echo "  ✔ config: baseline wired"; }
+    if [ "$nlang" -eq 1 ]; then
+      bl="$(ls "$idir"/.candor/baseline*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
+      grep -q "^baseline" "$cfg" 2>/dev/null || { [ -n "$bl" ] && printf 'baseline %s\n' ".candor/$(basename "$bl")" >> "$cfg" && echo "  ✔ config: baseline wired (a formerly-pure fn turning effectful now fails the gate)"; }
+    else
+      echo "  · polyglot repo — the baseline is per-engine (a shared one fails-closed on the others), so"
+      echo "    it isn't wired to config. Gate each language in CI with its own engine + baseline:"
+      for f in "$idir"/.candor/baseline*.json; do
+        case "$f" in *callgraph*|*hierarchy*) continue;; esac
+        [ -e "$f" ] || continue
+        eng=candor-scan; case "$f" in *.jvm.json) eng=candor-java;; *.Swift.json) eng=candor-swift;; *.JS.json|*/baseline.json) eng=candor-ts;; esac
+        echo "      CANDOR_BASELINE=.candor/$(basename "$f") $eng . --gate-json v.json"
+      done
+    fi
     echo ""
     echo "Next: review .candor/arch.policy, commit .candor/ (config, arch.policy, baseline*),"
-    echo "and gate CI with:  candor scan . --gate-json verdict.json   (exit 1 on a violation)."
-    echo "CI templates: the adopt/ dir of the candor repo (GitHub Action, or a pipeline step)."
+    if [ "$nlang" -eq 1 ]; then echo "and gate CI with:  candor scan . --gate-json verdict.json   (exit 1 on a violation)."
+    else echo "and gate each language in CI (one step per engine). Templates: the adopt/ dir of the candor repo."; fi
     exit 0;;
   scan) shift; route_scan "$@";;
   *)    route_scan "$@";;

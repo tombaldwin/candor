@@ -166,15 +166,49 @@ esac
 case "$verb" in
   ""|-h|--help)
     cat <<'H'
-candor — one command across every language (candor-spec §3.3.1). Routes to the matching engine.
-  candor scan <dir>            scan a project (engine picked by its manifest)
-  candor where <Effect>        which functions perform an effect   (report discovered from .candor/)
-  candor path <fn> <Effect>    how a function comes to perform an effect
-  candor tour [N]              the N (default 10) most surprising transitive reaches
-  candor <verb> … [--report <locator>] [--policy <file>] [--json]
-  candor doctor                check every engine install + spec agreement
-Query verbs: show where callers map containment diff reachable impact blindspots gains path tour whatif
-             fix fix-gate unverified rewire. Engines: candor-scan/-query, candor-ts(-query), candor-java, candor-swift.
+candor — the effect analyzer. One command across every language.
+
+Each invocation routes to the matching engine (candor-spec §3.3.1): a scan by the
+project's manifest, a query by the discovered report's backend. Every engine speaks
+the same grammar, so verbs and flags pass straight through — and an ambiguous
+target is a loud error, never a silent guess.
+
+USAGE
+  candor scan <dir>                    analyse a project (engine picked by its manifest)
+  candor <verb> [args] [options]       query the discovered report (.candor/, walk-up)
+  candor doctor                        check every engine install + spec agreement
+
+COMMON VERBS
+  where <Effect>            the functions that perform an effect
+  path <fn> <Effect>        the call path by which a function reaches an effect
+  callers <fn>              who calls a function, direct and transitive
+  tour [N]                  the N most surprising transitive reaches (default 10)
+  blindspots                the Unknown sources worth resolving, ranked by reach
+  gains <current> <base>    what a new version newly reaches (the supply-chain diff)
+  fix <fn> <Effect>         the boundary hoist that would clear a violation
+
+ALL VERBS
+  show  where  callers  map  containment  diff  reachable  impact  blindspots
+  gains  path  tour  whatif  fix  fix-gate  unverified  rewire  parsepolicy  agents
+
+OPTIONS  (uniform across engines, §3.3.1)
+  --report <locator>        use this report instead of discovering .candor/
+  --policy <file>           evaluate a policy — exit 1 on a violation
+  --json                    machine-readable output
+
+EXAMPLES
+  candor scan .
+  candor where Db
+  candor path OrderService.render Net
+  candor gains lib-2.0.jar lib-1.9.jar
+
+ENGINES
+  rust    candor-scan / candor-query    cargo install, or candor-rust/install.sh
+  jvm     the candor-java jar           ~/.candor/*.jar, or CANDOR_JAVA_JAR
+  ts      candor-ts                     runs via npx when not installed
+  swift   candor-swift                  build from the candor-swift repo
+
+Docs: candor.poly.io   ·   Verify an install: candor doctor
 H
     exit 0;;
   -V|--version) echo "candor dispatcher (umbrella) — routes queries by report backend, scans by manifest"; exit 0;;

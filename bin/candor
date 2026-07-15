@@ -287,7 +287,57 @@ case "$verb" in
         esac;;
       *) die "unknown config key '$key' (known: update-check). \`candor config\` to list.";;
     esac;;
-  ""|-h|--help)
+  "")
+    # bare `candor` inside an analyzed repo = a STATUS dashboard (git-style); outside one, help.
+    d="$PWD" croot=""
+    while :; do [ -d "$d/.candor" ] && { croot="$d"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+    if [ -n "$croot" ] && ls "$croot"/.candor/report*.json >/dev/null 2>&1; then
+      python3 - "$croot" <<'PY'
+import json, glob, os, sys, time
+root = sys.argv[1]; cd = os.path.join(root, ".candor")
+reps = [p for p in glob.glob(cd + "/report*.json")
+        if not any(s in p for s in (".callgraph.", ".hierarchy.", ".calibrated.", ".gate.", ".encountered-"))]
+print(f"candor status — {os.path.basename(root)}")
+cfg = os.path.join(cd, "config")
+keys = {}
+if os.path.exists(cfg):
+    for line in open(cfg):
+        line = line.strip()
+        if line and not line.startswith("#") and " " in line:
+            k, v = line.split(None, 1); keys[k] = v
+        elif line and not line.startswith("#"):
+            keys[line] = True
+for p in sorted(reps):
+    try: r = json.load(open(p))
+    except Exception:
+        print(f"  {os.path.basename(p)}: unreadable"); continue
+    env = r.get("candor") or r.get("meta") or {}
+    fns = r.get("functions", [])
+    tally = {}
+    for f in fns:
+        for e in f.get("inferred", []): tally[e] = tally.get(e, 0) + 1
+    age = time.time() - os.path.getmtime(p)
+    ages = f"{int(age/60)}m ago" if age < 3600 else (f"{int(age/3600)}h ago" if age < 172800 else f"{int(age/86400)}d ago")
+    ts = ", ".join(f"{k} {v}" for k, v in sorted(tally.items(), key=lambda kv: -kv[1])[:6]) or "no effects"
+    cov = (r.get("coverage") or {}).get("uncovered", [])
+    covs = f" · {len(cov)} uncovered dep(s)" if cov else ""
+    print(f"  report   {os.path.basename(p)} — {len(fns)} effectful fns ({ts}){covs}")
+    print(f"  scanned  {ages} (engine {env.get('version','?')}, spec {env.get('spec','?')})")
+print(f"  policy   {'wired: ' + str(keys.get('policy')) if keys.get('policy') else 'none — `candor init` proposes one'}")
+print(f"  baseline {'wired: ' + str(keys.get('baseline')) if keys.get('baseline') else ('per-engine files present' if glob.glob(cd + '/baseline*.json') else 'none — the regression ratchet is off')}")
+PY
+      # freshness marker (reuse the same pruned single-hit probe)
+      repfile="$(ls -t "$croot"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy|calibrated|gate|encountered' | head -1)"
+      newer=$(find "$croot" \( -name .git -o -name .candor -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist \) -prune -o \
+        -type f \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.kt' -o -name '*.scala' -o -name '*.swift' \) \
+        -newer "$repfile" -print -quit 2>/dev/null)
+      [ -n "$newer" ] && echo "  ⚠ stale  source changed since the scan (${newer#"$croot"/}) — re-run \`candor scan .\`"
+      echo ""
+      echo "  candor tour · candor where <Effect> · candor scan . · candor --help"
+      exit 0
+    fi
+    exec "$0" --help;;
+  -h|--help)
     cat <<'H'
 candor — the effect analyzer. One command across every language.
 
@@ -297,6 +347,7 @@ the same grammar, so verbs and flags pass straight through — and an ambiguous
 target is a loud error, never a silent guess.
 
 USAGE
+  candor                               in an analyzed repo: a status dashboard (else this help)
   candor engines                       list the engines, where each comes from, and its status
   candor outdated                      check the release channels for newer engine versions
   candor config update-check on        opt in to a once/day newer-version notice (off by default)

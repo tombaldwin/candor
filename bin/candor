@@ -21,6 +21,31 @@ QUERY_VERBS=" show where callers map containment diff reachable impact blindspot
 
 die()  { echo "candor: $*" >&2; exit 2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Resolve a path through symlinks WITHOUT relying on `realpath` (absent on stock macOS). Prefers python3;
+# falls back to a readlink loop. Used to find the real bin/candor so the hook scripts resolve through the
+# brew symlink (/opt/homebrew/bin/candor → …/Cellar/candor/<v>/bin/candor).
+resolve_path() {
+  if have python3; then python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; return; fi
+  local p="$1" d
+  while [ -L "$p" ]; do
+    local t; t="$(readlink "$p")"
+    case "$t" in /*) p="$t";; *) d="$(cd "$(dirname "$p")" && pwd)"; p="$d/$t";; esac
+  done
+  d="$(cd "$(dirname "$p")" && pwd)"; echo "$d/$(basename "$p")"
+}
+# The dir holding the Claude-Code hook scripts (stop-hook.sh …), searched in order: $CANDOR_HOOK_DIR
+# (explicit override) → <scriptdir>/../integrations/claude-code (dev/source checkout) →
+# <scriptdir>/../share/candor/hooks (brew install layout). <scriptdir> = dir of the RESOLVED bin/candor.
+# Echoes the dir containing stop-hook.sh, or nothing.
+hook_dir() {
+  local cand
+  if [ -n "${CANDOR_HOOK_DIR:-}" ] && [ -f "$CANDOR_HOOK_DIR/stop-hook.sh" ]; then echo "$CANDOR_HOOK_DIR"; return; fi
+  local self scriptdir; self="$(resolve_path "$0")"; scriptdir="$(dirname "$self")"
+  for cand in "$scriptdir/../integrations/claude-code" "$scriptdir/../share/candor/hooks"; do
+    [ -f "$cand/stop-hook.sh" ] && { (cd "$cand" && pwd); return; }
+  done
+}
 # a Rust raw bin lives on PATH or under ~/.candor/bin
 rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$CDBIN/$1"; else return 1; fi; }
 # run (or, in dry-run, just announce) the resolved engine command
@@ -378,6 +403,7 @@ USAGE
   candor config update-check on        opt in to a once/day newer-version notice (off by default)
   candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
   candor init [<dir>]                  stand up the gate: scan, policy, baseline, and a CI workflow
+  candor hook [install] [<dir>]        wire the edit-time gate into your coding agent (Claude Code)
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
   candor doctor                        check every engine is installed and compatible
@@ -765,6 +791,105 @@ PY
     if have "$bin"; then run "$bin" "$@"
     elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" "$bin" "$@"
     else die "\`candor $verb\` needs the candor-ts package — install Node (it then runs via npx), or \`npm i -g candor-ts\`."; fi;;
+  hook)
+    # candor hook — wire the edit-time Stop hook (Claude Code) into this repo in one command. It locates
+    # the shipped hook scripts (dev checkout OR brew share dir), detects the language, finds the committed
+    # baseline `candor init` wrote, composes the tailored Stop-hook COMMAND, and either PRINTS the ready
+    # .claude/settings.json snippet (`candor hook`) or MERGES it into .claude/settings.json (`candor hook install`).
+    shift || true
+    hmode=print; case "${1:-}" in install) hmode=install; shift || true;; esac
+    hdir_target="${1:-.}"
+    [ -d "$hdir_target" ] || die "hook: '$hdir_target' is not a directory"
+    hrepo="$(cd "$hdir_target" && pwd)"
+    hd="$(hook_dir)"
+    [ -n "$hd" ] || die "hook: can't find the hook scripts (looked beside the dispatcher and in share/candor/hooks). Set CANDOR_HOOK_DIR to the integrations/claude-code dir."
+    # Detect the language (single-language only — a Stop hook scans one engine's output).
+    hlangs="$(detect_langs "$hrepo")"; hn=$(set -- $hlangs; echo $#)
+    if [ "$hn" -eq 0 ]; then die "hook: can't tell what language $hrepo is (no Cargo.toml / package.json / build.gradle / Package.swift)."; fi
+    if [ "$hn" -gt 1 ]; then
+      echo "candor hook — $hrepo is polyglot ($hlangs)." >&2
+      echo "The edit-time hook scans ONE engine's output, so each language wires its own hook (one Stop entry per language)." >&2
+      echo "Re-run \`candor hook\` per language subdir, or wire them by hand from integrations/claude-code/README.md." >&2
+      exit 2
+    fi
+    # Find the committed baseline the hook diffs against (exclude the callgraph/hierarchy sidecars). No
+    # baseline → the hook has nothing to compare to; point at `candor init`.
+    hbl=""
+    for f in "$hrepo"/.candor/baseline*.json; do
+      [ -e "$f" ] || continue
+      case "$f" in *.callgraph.json|*.hierarchy.json) continue;; esac
+      hbl=".candor/$(basename "$f")"; break
+    done
+    if [ -z "$hbl" ]; then
+      echo "candor hook — no baseline in $hrepo/.candor/ (the hook needs a last-known-good to diff against)." >&2
+      echo "Run \`candor init\` here first — it scans, proposes a policy, and writes the baseline. Then re-run \`candor hook\`." >&2
+      exit 2
+    fi
+    # Only wire a policy if one exists.
+    hpol=""; [ -f "$hrepo/.candor/arch.policy" ] && hpol="CANDOR_POLICY=.candor/arch.policy "
+    # Compose the Stop-hook COMMAND, tailored to the language, pointing at the located stop-hook.sh.
+    hgradle_note=""
+    case "$hlangs" in
+      rust)  hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='candor-scan' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
+      ts)    hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='npx -y candor-ts@$ENGINE_PIN' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
+      swift) hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='candor-swift' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
+      java)  hcmd="mvn -q compile 1>&2 && CANDOR_CLASSES=target/classes ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh"
+             hgradle_note="Gradle: change the build to \`./gradlew -q classes 1>&2\` and CANDOR_CLASSES=build/classes/java/main.";;
+    esac
+    settings="$hrepo/.claude/settings.json"
+    if [ "$hmode" = print ]; then
+      # PRINT the ready .claude/settings.json Stop-hook snippet (valid JSON via python3) + where it goes.
+      CANDOR_HCMD="$hcmd" python3 - <<'PY'
+import json, os
+cmd = os.environ["CANDOR_HCMD"]
+snippet = {"hooks": {"Stop": [ {"hooks": [ {"type": "command", "command": cmd, "timeout": 120} ]} ]}}
+print(json.dumps(snippet, indent=2))
+PY
+      echo ""
+      echo "→ put this in the project's .claude/settings.json (merge into an existing \"hooks\".\"Stop\" array; keep all Stop hooks in one file)."
+      echo "→ fully restart Claude Code after editing settings.json (a /clear is not enough)."
+      [ -n "$hgradle_note" ] && echo "→ $hgradle_note"
+      exit 0
+    fi
+    # install: MERGE the candor Stop hook into <repo>/.claude/settings.json (create if absent; never clobber
+    # other hooks; skip if already wired; back up an existing file first).
+    mkdir -p "$hrepo/.claude"
+    [ -f "$settings" ] && cp "$settings" "$settings.bak"
+    hout="$(CANDOR_HCMD="$hcmd" CANDOR_SETTINGS="$settings" python3 - <<'PY'
+import json, os, sys
+cmd = os.environ["CANDOR_HCMD"]; path = os.environ["CANDOR_SETTINGS"]
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as fh: data = json.load(fh)
+        if not isinstance(data, dict): print("EXISTING settings.json is not a JSON object — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
+    except SystemExit: raise
+    except Exception as e:
+        print(f"EXISTING settings.json is not valid JSON ({e}) — fix or remove it, then re-run.", file=sys.stderr); raise SystemExit(3)
+hooks = data.setdefault("hooks", {})
+if not isinstance(hooks, dict): print("settings.json .hooks is not an object — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
+stop = hooks.setdefault("Stop", [])
+if not isinstance(stop, list): print("settings.json .hooks.Stop is not an array — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
+def has_candor(group):
+    for h in (group.get("hooks", []) if isinstance(group, dict) else []):
+        if isinstance(h, dict) and "stop-hook.sh" in str(h.get("command", "")): return True
+    return False
+if any(has_candor(g) for g in stop):
+    print("ALREADY", end=""); raise SystemExit(0)
+stop.append({"hooks": [ {"type": "command", "command": cmd, "timeout": 120} ]})
+with open(path, "w") as fh: json.dump(data, fh, indent=2); fh.write("\n")
+print("WIRED", end="")
+PY
+)"
+    prc=$?
+    [ "$prc" -eq 0 ] || exit "$prc"
+    case "$hout" in
+      ALREADY) echo "candor hook — already wired in .claude/settings.json (left as-is).";;
+      WIRED)   echo "wired → .claude/settings.json — restart Claude Code."
+               [ -n "$hgradle_note" ] && echo "$hgradle_note";;
+      *)       die "hook: unexpected result wiring settings.json.";;
+    esac
+    exit 0;;
   scan) shift; route_scan "$@";;
   *)
     # not a known action: a real path/dir is a scan target (candor <dir> = scan); anything else is

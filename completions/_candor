@@ -12,6 +12,7 @@ _candor() {
     'config:view or set settings (update-check on|off)'
     'update:fetch / refresh the engines (optionally: jvm rust ts swift)'
     'init:stand up the gate — scan, propose a policy, set the baseline'
+    'hook:wire the edit-time gate into your coding agent (Claude Code)'
     'scan:analyse a project (engine picked by its manifest)'
     'doctor:check every engine is installed and compatible'
     'mcp:run the MCP server (for coding agents)'
@@ -54,6 +55,7 @@ _candor() {
     args)
       case ${words[1]} in
         init|scan)    _files -/ ;;
+        hook)         if (( CURRENT == 2 )); then _values 'subcommand' install; else _files -/; fi ;;
         update|install|upgrade) _values 'engine' jvm rust ts swift ;;
         config) _values 'setting' update-check ;;
         where)        _describe -t effects 'effect' effects ;;

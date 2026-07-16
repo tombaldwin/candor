@@ -386,6 +386,8 @@ OPTIONS  (uniform across every engine)
   --report <locator>        use this report instead of discovering .candor/
   --policy <file>           evaluate a policy — exit 1 on a violation
   --json                    machine-readable output
+  -V, --version             version of the umbrella + every installed engine
+  -h, --help                show this help
 
 EXAMPLES
   candor scan .
@@ -415,6 +417,9 @@ H
       have candor-ts && candor-ts --version 2>/dev/null | head -1
       have candor-swift && candor-swift --version 2>/dev/null | head -1
     } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
+    echo ""
+    echo "check for a newer version:  candor outdated"
+    echo "update the whole family:    brew upgrade candor && candor update"
     exit 0;;
   outdated|check)
     # Ask each engine's release channel whether a newer version exists. EXPLICIT network (user-invoked,

@@ -68,7 +68,7 @@ jobs:
           CANDOR_BASELINE: .candor/baseline.json
           # ── EDIT 4 (occasionally): the pinned engine. Upgrade = bump this + regenerate the baseline in
           # the same PR (run the scan locally with the new version, review the effect delta, commit both).
-          CANDOR_JAVA_VERSION: 0.16.0
+          CANDOR_JAVA_VERSION: 0.17.0
           CLASSES: target/classes
         run: >
           jbang "https://github.com/tombaldwin/candor-java/releases/download/v${CANDOR_JAVA_VERSION}/candor-java-${CANDOR_JAVA_VERSION}-all.jar"
@@ -119,7 +119,7 @@ jobs:
       # - name: candor → digest log (push to main)
       #   if: github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('candor-gate.json') != ''
       #   run: |
-      #     pipx run --spec "git+https://github.com/tombaldwin/candor-agents@v0.16.0" \
+      #     pipx run --spec "git+https://github.com/tombaldwin/candor-agents@v0.17.0" \
       #       candor-agents log-gate candor-gate.json candor-report.json --log .candor/gate-log.jsonl
       #     if [ -n "$(git status --porcelain .candor/gate-log.jsonl)" ]; then
       #       git config user.name  "candor-gate[bot]"

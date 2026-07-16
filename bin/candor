@@ -15,12 +15,41 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-UMBRELLA_VERSION="0.16.2"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
-ENGINE_PIN="0.16.0"                          # the engine release line `candor update` fetches (spec floor); moves only with an engine release
+UMBRELLA_VERSION="0.17.0"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
+ENGINE_PIN="0.17.0"                          # the engine release line `candor update` fetches (spec floor); moves only with an engine release
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
+EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
 
 die()  { echo "candor: $*" >&2; exit 2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Validate an effect token against the §6 vocabulary; die with a did-you-mean on a miss. This closes the
+# silent-empty trap the persona audit found: `where Network` / `where fs` / `where Banana` used to reach the
+# engine, match nothing, and print a FALSE all-clear ("nothing performs it") — dangerous for a tool whose
+# promise is "trust that nothing reaches the network". A typo is now a loud error, not a wrong reassurance.
+check_effect() {
+  local want="$1" e lc
+  for e in $EFFECTS; do [ "$e" = "$want" ] && return 0; done   # a known §6 effect — fine
+  # ONLY a case-insensitive EXACT match to a known effect is caught here — an unambiguous wrong-CASE typo
+  # (`net`→Net, `fs`→Fs) — with a helpful did-you-mean. EVERY OTHER unknown name is DEFERRED to the engine,
+  # which validates report-aware: the engines accept a spec-extension effect PRESENT in the report and error
+  # only when the name is NEITHER known NOR present. The umbrella can't see the report, so it must NOT
+  # hard-reject an unknown name (that blocked a valid extension-effect query — e.g. `Netlify` once matched a
+  # `Net` prefix heuristic — and diverged from all three engines; review finding). A real typo like `Network`
+  # still errors, just from the (report-aware) engine rather than here.
+  lc=$(printf '%s' "$want" | tr '[:upper:]' '[:lower:]')
+  for e in $EFFECTS; do [ "$(printf '%s' "$e" | tr '[:upper:]' '[:lower:]')" = "$lc" ] && die "unknown effect '$want' — did you mean \`$e\`? Effect names are capitalised. (\`candor effects\` lists them.)"; done
+  return 0   # unknown, but not a wrong-case known effect → defer to the engine's report-aware validation
+}
+# Echo the Nth positional argument, skipping flags AND the values of value-taking flags (--report/--policy/
+# --gate-json) so `where --report r.json Net` still validates Net, not r.json.
+nth_positional() {
+  local n="$1"; shift; local skip=0 c=0 a
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in --report|--policy|--gate-json) skip=1;; -*) ;; *) c=$((c+1)); [ "$c" = "$n" ] && { echo "$a"; return; };; esac
+  done
+}
 
 # Resolve a path through symlinks WITHOUT relying on `realpath` (absent on stock macOS). Prefers python3;
 # falls back to a readlink loop. Used to find the real bin/candor so the hook scripts resolve through the
@@ -160,6 +189,12 @@ config_policy() {
 # ---- QUERY: route by the discovered report's backend ---------------------------------------------------
 route_query() {
   local verb="$1"; shift
+  # validate the effect positional up front (where <Effect> · path/fix <fn> <Effect>) so a typo'd or
+  # wrong-case effect name is a loud error, never a silent false "nothing performs it" (persona-audit fix).
+  case "$verb" in
+    where)           ve="$(nth_positional 1 "$@")"; [ -n "$ve" ] && check_effect "$ve";;
+    path|fix|whatif) ve="$(nth_positional 2 "$@")"; [ -n "$ve" ] && check_effect "$ve";;  # all take <fn> <Effect>
+  esac
   # config-driven policy: a policy-consuming verb honors .candor/config's `policy` key (the one `candor
   # init` writes) when no --policy/CANDOR_POLICY is given — so `candor fix-gate` after a violation works
   # like the scan gate, not "a policy is required".
@@ -171,6 +206,13 @@ route_query() {
   # honor an explicit --report <loc>; else discover a `.candor/` ancestor from $PWD (the §3.3.1 rule)
   local a prev="" loc=""
   for a in "$@"; do [ "$prev" = "--report" ] && loc="$a"; prev="$a"; done
+  # gains/diff take TWO positional report locators (<current> <baseline>) — discovery does NOT apply. Pick the
+  # engine from the FIRST positional so `candor gains new.json old.json` works from ANY dir; before this the
+  # dispatcher tried to discover a `.candor/` ancestor to choose the backend and died "no report — run scan"
+  # even though both reports were named explicitly (#10). --report still wins if given.
+  case "$verb" in
+    gains|diff) if [ -z "$loc" ]; then for a in "$@"; do case "$a" in -*) ;; *) loc="$a"; break;; esac; done; fi;;
+  esac
   # Resolve the locator to the report FILES by the ONE §3.3.1 rule (the same rule every engine applies):
   # a DIRECTORY → its `.candor/report` family; a `.json` path → that single report file; anything else →
   # a bare PREFIX (`<prefix>.<pkg>.<backend>.json`). No --report → discover a `.candor/` ancestor. The old
@@ -308,8 +350,20 @@ engine_scan() {
   esac
 }
 route_scan() {
-  local a target="."
-  for a in "$@"; do case "$a" in -*) ;; *) target="$a"; break;; esac; done
+  # First POSITIONAL is the scan target — skipping flags AND the VALUES of value-taking flags, so
+  # `candor scan --gate-json verdict.json` (target omitted, defaulting to `.`) does NOT mistake the
+  # gate-json OUTPUT path for the target and then fail the -e guard on it (review finding). Mirrors
+  # nth_positional's flag-value skip.
+  local a target="." skip=0
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in --report|--policy|--gate-json) skip=1;; -*) ;; *) target="$a"; break;; esac
+  done
+  # A path that doesn't exist is a "no such directory" error naming the FULL path — not a truncated,
+  # manifest-blaming message. Before this, `candor scan /does/not/exist` ran dirname (dropping `exist`) and
+  # reported "can't tell what language /does/not is (no Cargo.toml …)", conflating absent with manifest-less
+  # (#24). `.` and real files/dirs pass through unchanged.
+  [ -e "$target" ] || die "no such file or directory: $target"
   local dir; if [ -d "$target" ]; then dir="$target"; else dir="$(dirname "$target")"; fi
   local langs n; langs="$(detect_langs "$dir")"; n=$(set -- $langs; echo $#)
   [ "$n" -ge 1 ] || die "can't tell what language $dir is (no Cargo.toml / package.json / build.gradle / Package.swift). Run the engine directly: candor-scan | candor-ts | candor-java | candor-swift."
@@ -317,13 +371,71 @@ route_scan() {
   engine_scan "$langs" "$@"
 }
 
+# Per-action usage (F9: `candor <verb> --help` used to reach the engine, which read --help as an effect/fn
+# name). One line per query verb; policy-consuming verbs also name the deny/pure/allow/forbid grammar.
+verb_help() {
+  case "$1" in
+    where)    echo "candor where <Effect> — the functions that perform an effect, directly or transitively.";;
+    path)     echo "candor path <fn> <Effect> — the call path by which <fn> reaches <Effect> (an annotated call tree).";;
+    callers)  echo "candor callers <fn> — who calls <fn>, directly and transitively.";;
+    tour)     echo "candor tour [N] — the N most surprising transitive reaches (default 10).";;
+    blindspots) echo "candor blindspots — the Unknown sources worth resolving, ranked by reach.";;
+    gains)    echo "candor gains <current> <base> — what a newer report newly reaches vs a baseline (the supply-chain diff).";;
+    show)     echo "candor show <fn> — the full effect record for one function.";;
+    map)      echo "candor map — the module/layer effect map.";;
+    containment) echo "candor containment — effects grouped by the layer that contains them.";;
+    diff)     echo "candor diff <a> <b> — the effect delta between two reports.";;
+    reachable) echo "candor reachable <fn> — everything <fn> can reach.";;
+    impact)   echo "candor impact <fn> — who is affected if <fn> changes.";;
+    rewire)   echo "candor rewire — suggested edges to cut a boundary crossing.";;
+    agents)   echo "candor agents — the declared-vs-observed effect drift (agent-fleet report).";;
+    fix)      echo "candor fix <fn> <Effect> — the boundary hoist that would clear a violation."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
+    fix-gate) echo "candor fix-gate — every policy crossing in the report and its remedy."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
+    whatif)   echo "candor whatif <fn> <Effect> — the blast radius (and policy verdict) IF <fn> gained <Effect>, before you edit."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
+    unverified) echo "candor unverified — the layers a policy gates that still contain Unknown holes (coverage proof).";;
+    parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <Effect> <layer>\`.";;
+    *)        echo "candor $1 — see \`candor --help\`.";;
+  esac
+  echo ""
+  echo "Effects: $EFFECTS   ·   \`candor effects\` explains each."
+  echo "Options: --report <locator>   --policy <file>   --json   (uniform across every engine)."
+}
+
 verb="${1:-}"
 # opt-in, cache-only (no network here) — a one-line "newer version available" nudge, silent by default.
 show_update_notice
 case "$QUERY_VERBS" in
-  *" $verb "*) route_query "$@"; exit $?;;
+  *" $verb "*)
+    case " $* " in *" --help "*|*" -h "*) verb_help "$verb"; exit 0;; esac
+    route_query "$@"; exit $?;;
 esac
 case "$verb" in
+  effects|glossary)
+    # The core noun, explained. The persona audit found nothing a user naturally runs ever says what an
+    # "effect" IS or lists the names — novices finished a session fuzzy on the headline concept.
+    cat <<'H'
+An effect is something your code does to the outside world — reach the network, read a
+file, spawn a process. candor tracks which functions perform each one, directly or through
+everything they transitively call. `candor where <Effect>` lists them; `candor path <fn> <Effect>`
+shows the route.
+
+  Net        network I/O — HTTP, sockets, DNS
+  Fs         the filesystem — read, write, list, stat files
+  Db         a database or datastore
+  Llm        a model-provider / LLM API call
+  Exec       runs another process or a shell command
+  Env        reads or writes environment variables
+  Clock      reads the wall clock — time, date, timers
+  Ipc        talks to other processes — pipes, signals, local sockets
+  Log        writes logs / diagnostic output
+  Rand       draws randomness / entropy
+  Clipboard  reads or writes the system clipboard
+  Unknown    a call candor could NOT resolve to a known effect — the §4 trust marker,
+             not "no effect". `candor blindspots` ranks the ones worth resolving.
+
+Names are capitalised. Try:  candor where Net   ·   candor tour   ·   candor blindspots
+H
+    exit 0;;
   config)
     # tiny global settings store (~/.candor/settings). Currently one key: update-check on|off (default off).
     shift || true; key="${1:-}"; val="${2:-}"
@@ -413,25 +525,29 @@ PY
     cat <<'H'
 candor — the effect analyzer. One command across every language.
 
+New here?  Run  candor scan .  in a project — it finds the most surprising thing your
+code reaches and hands you the next command. (`candor effects` explains what an "effect" is.)
+
 Each invocation routes to the matching engine: a scan by the
 project's manifest, a query by the discovered report's backend. Every engine speaks
 the same grammar, so verbs and flags pass straight through — and an ambiguous
-target is a loud error, never a silent guess.
+target is a loud error, never a silent guess. No candor server, no telemetry.
 
 USAGE
   candor                               in an analyzed repo: a status dashboard (else this help)
-  candor engines                       list the engines, where each comes from, and its status
-  candor outdated                      check the release channels for newer engine versions
-  candor config update-check on        opt in to a once/day newer-version notice (off by default)
-  candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
-  candor init [<dir>]                  stand up the gate: scan, policy, baseline, and a CI workflow
-  candor hook [install] [<dir>]        wire the edit-time gate into your coding agent (Claude Code)
   candor scan <dir>                    analyse a project (engine picked by its manifest)
-  candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
-  candor doctor                        check every engine is installed and compatible
+  candor effects                       what the effect names (Net, Fs, Db, …) mean
+  candor init [<dir>]                  stand up the gate: scan, policy, baseline, and a CI workflow
+  candor hook [install] [<dir>]        wire the end-of-turn gate into your coding agent (Claude Code)
   candor mcp · candor lsp              run the MCP server / language server (for agents & editors)
+  candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
+  candor engines                       list the engines, where each comes from, and its status
+  candor update [engine...]            fetch / refresh engines (JVM native binary, no JVM needed)
+  candor outdated                      check the release channels for newer engine versions
+  candor doctor                        check every engine is installed and compatible
+  candor config update-check on        opt in to a once/day newer-version notice (off by default)
 
-COMMON ACTIONS
+COMMON ACTIONS  (add --help to any for its own usage)
   where <Effect>            the functions that perform an effect
   path <fn> <Effect>        the call path by which a function reaches an effect
   callers <fn>              who calls a function, direct and transitive
@@ -674,7 +790,17 @@ PY
     #   4. wire .candor/config (policy + baseline keys)
     # Existing files are never clobbered. Review arch.policy (every proposed rule currently
     # passes), commit .candor/, and add the gate to CI (see the adopt/ dir for templates).
-    shift; idir="${1:-.}"
+    shift
+    case "${1:-}" in
+      -h|--help)
+        echo "candor init [<dir>] — stand up the gate in one command:"
+        echo "  scan the project · propose an architecture policy from what it already does · record a"
+        echo "  baseline (the regression ratchet) · wire .candor/config · generate a CI workflow."
+        echo "Every proposed rule passes at adoption, so it's safe. Existing files are never clobbered."
+        echo "In a monorepo, run it per project subdir — each writes a root-level workflow scoped to it."
+        exit 0;;
+    esac
+    idir="${1:-.}"
     [ -d "$idir" ] || die "init: '$idir' is not a directory"
     mkdir -p "$idir/.candor"
     langs="$(detect_langs "$idir")"
@@ -738,38 +864,65 @@ PY
         echo "      CANDOR_BASELINE=.candor/$(basename "$f") $eng . --gate-json v.json"
       done
     fi
+    # .gitignore the regenerated scan artifacts so `commit .candor/` tracks only the DURABLE files
+    # (baseline*, arch.policy, config); report*.json et al. regenerate on every scan and would otherwise
+    # churn the diff and let a stale committed report mislead the dashboard (persona-audit fix).
+    gi="$idir/.candor/.gitignore"
+    if [ ! -f "$gi" ]; then
+      { echo "# candor: ignore regenerated scan output — commit baseline*, arch.policy and config only."
+        echo "report*.json"; } > "$gi"
+      echo "  ✔ .candor/.gitignore (ignores regenerated report*.json — commit baseline*/arch.policy/config)"
+    fi
     # CI WORKFLOW: the durable value is the gate ENFORCED on every push. Drop a ready GitHub Actions
     # workflow (single-language; never clobber). The gate step reads policy + baseline from .candor/config,
     # so it's just "install the pinned engine + candor <scan> --gate-json". rust/ts are no-build drop-ins;
     # java/swift carry a clearly-marked build/setup step (a starting point, not a false "it just works").
-    wf="$idir/.github/workflows/candor.yml"
+    #
+    # PLACEMENT (persona-audit fix): GitHub Actions only reads .github/workflows/ at the REPO ROOT, so a
+    # workflow written under a subdir (`candor init api`) silently never runs. If init runs in a subdir of a
+    # git repo, place the workflow at the repo root, name it + scope it per-subdir (a distinct file, so it
+    # never collides with a sibling `candor init`), and run its steps in the subdir via working-directory.
+    abs_idir="$(cd "$idir" && pwd)"; gitroot=""
+    have git && gitroot="$(cd "$idir" && git rev-parse --show-toplevel 2>/dev/null)"
+    wfdir="$idir/.github/workflows"; wfname="candor.yml"; jobname="candor"; wdir=""; wfloc=".github/workflows/candor.yml"
+    if [ -n "$gitroot" ] && [ "$gitroot" != "$abs_idir" ]; then
+      rel="${abs_idir#"$gitroot"/}"
+      slug="$(printf '%s' "$rel" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
+      wfdir="$gitroot/.github/workflows"; wfname="candor-$slug.yml"; jobname="candor-$slug"; wdir="$rel"
+      wfloc=".github/workflows/$wfname (repo root)"
+    fi
+    wf="$wfdir/$wfname"
+    pin="$ENGINE_PIN"
     if [ "$nlang" -eq 1 ] && [ "$langs" = swift ]; then
       echo "  · CI: the Swift engine needs macOS + a source build of candor-swift, so no drop-in workflow"
       echo "    is generated — see github.com/tombaldwin/candor-swift, then \`candor-swift . --gate-json\`."
     elif [ "$nlang" -eq 1 ] && [ ! -f "$wf" ]; then
-      mkdir -p "$idir/.github/workflows"
-      pin="$ENGINE_PIN"
+      mkdir -p "$wfdir"
+      [ -n "$wdir" ] && echo "  · monorepo: $rel is below the repo root — GitHub reads workflows only from the root,"
+      [ -n "$wdir" ] && echo "    so the gate is written to $wfloc, scoped to $rel/."
       { echo "# candor architecture gate — generated by \`candor init\`."
         echo "# Fails the build when an edit crosses a declared boundary (.candor/arch.policy) or a"
         echo "# function gains an effect vs the committed baseline (AS-EFF-005). Policy + baseline are"
         echo "# read from .candor/config — commit .candor/ for this to work."
-        echo "name: candor"
+        echo "name: $jobname"
         echo "on:"
         echo "  push: { branches: [main] }"
         echo "  pull_request:"
         echo "permissions: { contents: read }"
         echo "jobs:"
-        echo "  candor:"
+        echo "  $jobname:"
         echo "    runs-on: ubuntu-latest"
+        [ -n "$wdir" ] && { echo "    defaults:"; echo "      run:"; echo "        working-directory: $wdir"; }
         echo "    steps:"
         echo "      - uses: actions/checkout@v4"
         case "$langs" in
           rust)  echo "      - uses: dtolnay/rust-toolchain@stable"
-                 echo "      - run: cargo install candor-scan --version '=$pin' --locked"
+                 echo "      - uses: Swatinem/rust-cache@v2   # keep the gate off the multi-minute cold-compile path"
+                 echo "      - run: cargo install candor-scan --version '=$pin' --locked   # pin tracks .candor/baseline's engine — bump both together"
                  echo "      - run: candor-scan . --gate-json candor-verdict.json";;
           ts)    echo "      - uses: actions/setup-node@v4"
                  echo "        with: { node-version: 20 }"
-                 echo "      - run: npx -y candor-ts@$pin . --gate-json candor-verdict.json";;
+                 echo "      - run: npx -y candor-ts@$pin . --gate-json candor-verdict.json   # pin tracks .candor/baseline's engine — bump both together";;
           java)  echo "      - uses: actions/setup-java@v4"
                  echo "        with: { distribution: temurin, java-version: '21' }"
                  echo "      - run: mvn -q compile           # EDIT: your build (or ./gradlew classes)"
@@ -780,11 +933,22 @@ PY
         esac
       } > "$wf"
       case "$langs" in
-        rust|ts) echo "  ✔ CI workflow → .github/workflows/candor.yml (ready — gates on your next push)";;
-        *)       echo "  ✔ CI workflow → .github/workflows/candor.yml (review the marked EDIT lines: your build + engine setup)";;
+        rust|ts) echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)";;
+        *)       echo "  ✔ CI workflow → $wfloc (review the marked EDIT lines: your build + engine setup)";;
       esac
     elif [ -f "$wf" ]; then
-      echo "  · .github/workflows/candor.yml exists — kept"
+      echo "  · $wfloc exists — kept"
+    fi
+    # Loud notice for manifests in SUBDIRECTORIES init didn't cover (detect_langs only sees the top level) —
+    # the polyglot blind spot where a root Cargo.toml + web/package.json left the TS half silently ungated.
+    subdirs="$(find "$idir" \( -name .git -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist -o -name vendor -o -name .candor -o -name .github \) -prune -o \
+      -type f \( -name Cargo.toml -o -name package.json -o -name Package.swift -o -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print 2>/dev/null \
+      | while IFS= read -r m; do d="$(cd "$(dirname "$m")" 2>/dev/null && pwd)"; [ -n "$d" ] && [ "$d" != "$abs_idir" ] && printf '%s\n' "${d#"$abs_idir"/}"; done | sort -u | head -12)"
+    if [ -n "$subdirs" ]; then
+      echo ""
+      echo "  ⚠ other project manifests below $idir — init scanned only the top level ($langs). NOT gated:"
+      printf '%s\n' "$subdirs" | sed 's|^|      |'
+      echo "    gate each with its own:  candor init <subdir>   (writes a root-level workflow scoped to it)"
     fi
     # FIRST LOOK: end the first minute with an insight, not file paths — the tour opener, inline
     # (single-language only: a polyglot .candor/ holds several reports and tour needs one).
@@ -798,7 +962,7 @@ PY
     fi
     echo ""
     if [ "$nlang" -eq 1 ] && [ -f "$wf" ]; then
-      echo "Next: review .candor/arch.policy + .github/workflows/candor.yml, then commit .candor/ and the"
+      echo "Next: review .candor/arch.policy + $wfloc, then commit .candor/ and the"
       echo "workflow. The gate runs on your next push — a boundary crossing or a gained effect fails it."
     else
       echo "Next: review .candor/arch.policy, commit .candor/ (config, arch.policy, baseline*), and gate"
@@ -810,6 +974,66 @@ PY
     # `npx -y -p candor-ts candor-mcp` incantation. Both are hosted by the candor-ts package (they read
     # ANY engine's report). Prefer a global install; else run via npx pinned to the engine line.
     bin="candor-$verb"; shift
+    # --help/-h: the servers themselves print nothing useful, so the umbrella explains how to WIRE them
+    # (the persona audit's one place a novice was genuinely stuck — no paste-ready config anywhere).
+    case "${1:-}" in
+      -h|--help)
+        if [ "$verb" = mcp ]; then
+          cat <<'H'
+candor mcp — the MCP server, so a coding agent can query candor's reports during a turn
+(blast radius, whatif, gate verdict). It reads whatever engine's report is in .candor/, so
+run `candor scan .` (or `candor init`) first.
+
+Wire it into Claude Code (project-local .mcp.json, portable — resolves `candor` on PATH):
+
+  { "mcpServers": { "candor": { "command": "candor", "args": ["mcp"] } } }
+
+  or:  claude mcp add candor -- candor mcp
+  or:  candor mcp install         (writes/merges that .mcp.json for you, here)
+
+Any MCP client works — point its server config at `candor mcp`.
+H
+        else
+          cat <<'H'
+candor lsp — the language server: CodeLens + diagnostics from candor's reports, in your
+editor, live. It reads whatever engine's report is in .candor/, so run `candor scan .` first.
+
+Point your editor's LSP client at the command `candor lsp` (stdio). For VS Code, the candor
+extension does this for you; for a generic client, register a server with command `candor`,
+args `["lsp"]`.
+H
+        fi
+        exit 0;;
+      install)
+        [ "$verb" = mcp ] || die "candor lsp has no \`install\` (editors register the LSP their own way — \`candor lsp --help\`)."
+        shift || true; mdir="${1:-.}"; [ -d "$mdir" ] || die "mcp install: '$mdir' is not a directory"
+        mrepo="$(cd "$mdir" && pwd)"; mfile="$mrepo/.mcp.json"
+        [ -f "$mfile" ] && cp "$mfile" "$mfile.bak"
+        mout="$(CANDOR_MCP_FILE="$mfile" python3 - <<'PY'
+import json, os, sys
+path = os.environ["CANDOR_MCP_FILE"]; data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as fh: data = json.load(fh)
+        if not isinstance(data, dict): print("EXISTING .mcp.json is not a JSON object — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
+    except SystemExit: raise
+    except Exception as e:
+        print(f"EXISTING .mcp.json is not valid JSON ({e}) — fix or remove it, then re-run.", file=sys.stderr); raise SystemExit(3)
+servers = data.setdefault("mcpServers", {})
+if not isinstance(servers, dict): print(".mcp.json .mcpServers is not an object — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
+if "candor" in servers: print("ALREADY", end=""); raise SystemExit(0)
+servers["candor"] = {"command": "candor", "args": ["mcp"]}
+with open(path, "w") as fh: json.dump(data, fh, indent=2); fh.write("\n")
+print("WIRED", end="")
+PY
+)"; mrc=$?; [ "$mrc" -eq 0 ] || exit "$mrc"
+        case "$mout" in
+          ALREADY) echo "candor mcp — already wired in .mcp.json (left as-is).";;
+          WIRED)   echo "wired → .mcp.json (portable — command \`candor mcp\`). Restart your agent, and run \`candor scan .\` so there's a report to read.";;
+          *)       die "mcp install: unexpected result wiring .mcp.json.";;
+        esac
+        exit 0;;
+    esac
     if have "$bin"; then run "$bin" "$@"
     elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" "$bin" "$@"
     else die "\`candor $verb\` needs the candor-ts package — install Node (it then runs via npx), or \`npm i -g candor-ts\`."; fi;;
@@ -819,10 +1043,61 @@ PY
     # baseline `candor init` wrote, composes the tailored Stop-hook COMMAND, and either PRINTS the ready
     # .claude/settings.json snippet (`candor hook`) or MERGES it into .claude/settings.json (`candor hook install`).
     shift || true
-    hmode=print; case "${1:-}" in install) hmode=install; shift || true;; esac
+    case "${1:-}" in
+      -h|--help)
+        echo "candor hook [install|uninstall] [<dir>] — wire candor's end-of-turn gate into your coding agent (Claude Code)."
+        echo ""
+        echo "  candor hook              print the ready .claude/settings.json Stop-hook snippet (tailored to your language)"
+        echo "  candor hook install      merge it into .claude/settings.json for you (idempotent; backs up an existing file)"
+        echo "  candor hook uninstall    remove candor's Stop hook from .claude/settings.json (leaves your other hooks)"
+        echo ""
+        echo "Runs at the END of each agent turn (not per keystroke): scans the result, diffs effects vs the"
+        echo "committed baseline, and blocks the turn once so the agent fixes a new effect / boundary crossing"
+        echo "before yielding to you. Run \`candor init\` first — it writes the baseline the hook diffs against."
+        exit 0;;
+    esac
+    hmode=print
+    case "${1:-}" in
+      install)          hmode=install; shift || true;;
+      uninstall|remove) hmode=uninstall; shift || true;;
+    esac
     hdir_target="${1:-.}"
     [ -d "$hdir_target" ] || die "hook: '$hdir_target' is not a directory"
     hrepo="$(cd "$hdir_target" && pwd)"
+    settings="$hrepo/.claude/settings.json"
+    if [ "$hmode" = uninstall ]; then
+      # Remove candor's Stop hook, leaving any other Stop hooks intact. Matches both the portable
+      # `candor hook-run` wiring and any legacy `stop-hook.sh` absolute-path wiring.
+      [ -f "$settings" ] || die "hook uninstall: no .claude/settings.json in $hrepo — nothing to remove."
+      cp "$settings" "$settings.bak"
+      uout="$(CANDOR_SETTINGS="$settings" python3 - <<'PY'
+import json, os, sys
+path = os.environ["CANDOR_SETTINGS"]
+try:
+    with open(path) as fh: data = json.load(fh)
+except Exception as e:
+    print(f"settings.json is not valid JSON ({e}).", file=sys.stderr); raise SystemExit(3)
+stop = (data.get("hooks") or {}).get("Stop")
+if not isinstance(stop, list): print("NONE", end=""); raise SystemExit(0)
+def is_candor(group):
+    for h in (group.get("hooks", []) if isinstance(group, dict) else []):
+        c = str(h.get("command", "")) if isinstance(h, dict) else ""
+        if "hook-run" in c or "stop-hook.sh" in c: return True
+    return False
+kept = [g for g in stop if not is_candor(g)]
+if len(kept) == len(stop): print("NONE", end=""); raise SystemExit(0)
+data["hooks"]["Stop"] = kept
+with open(path, "w") as fh: json.dump(data, fh, indent=2); fh.write("\n")
+print("REMOVED", end="")
+PY
+)"; urc=$?; [ "$urc" -eq 0 ] || exit "$urc"
+      case "$uout" in
+        REMOVED) echo "candor hook — removed from .claude/settings.json (backup: settings.json.bak). Restart Claude Code.";;
+        NONE)    echo "candor hook — no candor Stop hook found in .claude/settings.json (nothing to remove).";;
+        *)       die "hook uninstall: unexpected result.";;
+      esac
+      exit 0
+    fi
     hd="$(hook_dir)"
     [ -n "$hd" ] || die "hook: can't find the hook scripts (looked beside the dispatcher and in share/candor/hooks). Set CANDOR_HOOK_DIR to the integrations/claude-code dir."
     # Detect the language (single-language only — a Stop hook scans one engine's output).
@@ -849,16 +1124,16 @@ PY
     fi
     # Only wire a policy if one exists.
     hpol=""; [ -f "$hrepo/.candor/arch.policy" ] && hpol="CANDOR_POLICY=.candor/arch.policy "
-    # Compose the Stop-hook COMMAND, tailored to the language, pointing at the located stop-hook.sh.
+    # Compose a PORTABLE command: `candor hook-run` (resolved on PATH) carries only repo-relative env, so the
+    # committed settings.json has no machine-specific absolute path in it. hook-run finds the scripts itself.
     hgradle_note=""
     case "$hlangs" in
-      rust)  hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='candor-scan' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
-      ts)    hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='npx -y candor-ts@$ENGINE_PIN' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
-      swift) hcmd="CANDOR_REVIEW=$hd/candor-review-source.sh CANDOR_SCAN='candor-swift' CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh";;
-      java)  hcmd="mvn -q compile 1>&2 && CANDOR_CLASSES=target/classes ${hpol}CANDOR_REVIEW_BASELINE=$hbl $hd/stop-hook.sh"
+      rust)  hcmd="CANDOR_LANG=rust CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
+      ts)    hcmd="CANDOR_LANG=ts CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
+      swift) hcmd="CANDOR_LANG=swift CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
+      java)  hcmd="mvn -q compile 1>&2 && CANDOR_LANG=java CANDOR_CLASSES=target/classes ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run"
              hgradle_note="Gradle: change the build to \`./gradlew -q classes 1>&2\` and CANDOR_CLASSES=build/classes/java/main.";;
     esac
-    settings="$hrepo/.claude/settings.json"
     if [ "$hmode" = print ]; then
       # PRINT the ready .claude/settings.json Stop-hook snippet (valid JSON via python3) + where it goes.
       CANDOR_HCMD="$hcmd" python3 - <<'PY'
@@ -869,6 +1144,8 @@ print(json.dumps(snippet, indent=2))
 PY
       echo ""
       echo "→ put this in the project's .claude/settings.json (merge into an existing \"hooks\".\"Stop\" array; keep all Stop hooks in one file)."
+      echo "→ portable — no machine-specific paths, so it's safe to COMMIT for the whole team (each teammate needs \`candor\` on PATH)."
+      echo "→ or let candor merge it for you:  candor hook install"
       echo "→ fully restart Claude Code after editing settings.json (a /clear is not enough)."
       [ -n "$hgradle_note" ] && echo "→ $hgradle_note"
       exit 0
@@ -894,7 +1171,8 @@ stop = hooks.setdefault("Stop", [])
 if not isinstance(stop, list): print("settings.json .hooks.Stop is not an array — leaving it untouched.", file=sys.stderr); raise SystemExit(3)
 def has_candor(group):
     for h in (group.get("hooks", []) if isinstance(group, dict) else []):
-        if isinstance(h, dict) and "stop-hook.sh" in str(h.get("command", "")): return True
+        c = str(h.get("command", "")) if isinstance(h, dict) else ""
+        if "hook-run" in c or "stop-hook.sh" in c: return True
     return False
 if any(has_candor(g) for g in stop):
     print("ALREADY", end=""); raise SystemExit(0)
@@ -906,12 +1184,33 @@ PY
     prc=$?
     [ "$prc" -eq 0 ] || exit "$prc"
     case "$hout" in
-      ALREADY) echo "candor hook — already wired in .claude/settings.json (left as-is).";;
-      WIRED)   echo "wired → .claude/settings.json — restart Claude Code."
-               [ -n "$hgradle_note" ] && echo "$hgradle_note";;
+      ALREADY) echo "candor hook — already wired in .claude/settings.json (left as-is; re-running install is safe).";;
+      WIRED)   echo "wired → .claude/settings.json (portable — safe to commit). Restart Claude Code."
+               echo "  try it: ask the agent to make a pure function touch the network — the hook blocks the turn so it fixes it."
+               echo "  remove it later with: candor hook uninstall"
+               [ -n "$hgradle_note" ] && echo "  $hgradle_note";;
       *)       die "hook: unexpected result wiring settings.json.";;
     esac
     exit 0;;
+  hook-run)
+    # Internal entry the wired Stop hook invokes as `candor hook-run` — the PORTABILITY fix. It resolves
+    # `candor` on PATH and finds the shipped hook scripts ITSELF, so a committed .claude/settings.json works
+    # for every teammate's brew install, not only the machine that ran `candor hook` (which used to bake in
+    # /Users/<me>/git/... absolute paths). Env in: CANDOR_LANG picks the review script + default scan
+    # command; CANDOR_REVIEW_BASELINE / CANDOR_POLICY / CANDOR_SRC / CANDOR_CLASSES pass through. stdin (the
+    # Claude Code hook JSON) flows straight into stop-hook.sh, which owns the 0/1/2 + block-once contract.
+    shift || true
+    hd="$(hook_dir)"
+    [ -n "$hd" ] || { echo "candor hook-run: the hook scripts aren't installed (looked beside the dispatcher and in share/candor/hooks). Reinstall candor, or set CANDOR_HOOK_DIR." >&2; exit 2; }
+    case "${CANDOR_LANG:-}" in
+      java)  : "${CANDOR_REVIEW:=$hd/candor-review.sh}";;
+      rust)  : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-scan}";;
+      ts)    : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=npx -y candor-ts@$ENGINE_PIN}";;
+      swift) : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-swift}";;
+      *)     : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}";;
+    esac
+    export CANDOR_REVIEW CANDOR_SCAN
+    exec "$hd/stop-hook.sh" "$@";;
   scan) shift; route_scan "$@";;
   *)
     # not a known action: a real path/dir is a scan target (candor <dir> = scan); anything else is

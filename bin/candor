@@ -15,7 +15,8 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-UMBRELLA_VERSION="0.16.0"                    # the umbrella's own version; tracks the family release line
+UMBRELLA_VERSION="0.16.1"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
+ENGINE_PIN="0.16.0"                          # the engine release line `candor update` fetches (spec floor); moves only with an engine release
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 
 die()  { echo "candor: $*" >&2; exit 2; }
@@ -70,7 +71,7 @@ maybe_refresh_update_cache() {
 # the newest cached channel version greater than the umbrella pin (empty if none / no cache) — no network.
 newest_beyond_pin() {
   [ -f "$UPDATE_CACHE" ] || return 0
-  python3 - "$UPDATE_CACHE" "$UMBRELLA_VERSION" <<'PY' 2>/dev/null || true
+  python3 - "$UPDATE_CACHE" "$ENGINE_PIN" <<'PY' 2>/dev/null || true
 import sys
 cache, pin = sys.argv[1], sys.argv[2]
 def t(v):
@@ -86,7 +87,7 @@ if newer: print(sorted(newer, key=t)[-1])
 PY
 }
 # describe a version beyond the pin as a spec-compatible point release or a new line
-newer_kind() { case "$1" in "${UMBRELLA_VERSION%.*}".*) echo "a point release ($1, spec-compatible)";; *) echo "a new version ($1)";; esac; }
+newer_kind() { case "$1" in "${ENGINE_PIN%.*}".*) echo "a point release ($1, spec-compatible)";; *) echo "a new version ($1)";; esac; }
 # print a one-line notice FROM CACHE (no network) if a newer version than the pin is known. Silent when
 # opted out, no cache, or up to date. stderr, so it never corrupts --json on stdout.
 show_update_notice() {
@@ -196,7 +197,7 @@ route_query() {
   # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
   case "${uniq# }" in
     JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
-           elif have node; then run npx -y -p "candor-ts@$UMBRELLA_VERSION" candor-ts-query "$verb" "$@"
+           elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-query "$verb" "$@"
            else die "a TypeScript report, but neither candor-ts-query nor Node is installed — install Node (the engine then runs via npx)."; fi;;
     jvm)   run_java "$verb" "$@";;
     Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
@@ -240,7 +241,7 @@ engine_scan() {
   local lang="$1"; shift
   case "$lang" in
     rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
-    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$UMBRELLA_VERSION" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
+    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
       # the JVM engine's bare run prints the table but persists nothing (its --json writes the report).
       # Every other engine persists by default, and the whole query flow (tour/where/path) reads the
@@ -480,7 +481,7 @@ PY
   engines)
     # List the engines the umbrella manages: what each is, where it comes from, and its status.
     # A pure read — checks what's installed locally; makes NO network calls (unlike `update`).
-    echo "candor engines — pinned to umbrella $UMBRELLA_VERSION"
+    echo "candor engines — engines pinned to $ENGINE_PIN (umbrella $UMBRELLA_VERSION)"
     echo ""
     printf "  %-7s %-30s %s\n" "ENGINE" "STATUS" "SOURCE"
     jstat="not installed — run \`candor update\`"
@@ -499,7 +500,7 @@ PY
     echo "  candor doctor                           verify installs + spec agreement"
     exit 0;;
   install|update|upgrade)
-    # Fetch/refresh the engines the umbrella manages, pinned to UMBRELLA_VERSION so the whole family
+    # Fetch/refresh the engines the umbrella manages, pinned to ENGINE_PIN so the whole family
     # moves together (spec agreement guaranteed). The flagship JVM engine ships a native binary — no
     # JVM needed — which is what most people want; ts runs via npx with no install; rust/swift need a
     # toolchain and are set up only when one is present (else a note, never a hard failure).
@@ -516,7 +517,7 @@ PY
     mkdir -p "$CDBIN"
     # Provenance, stated up front — `update` is the ONE network action; the analysis itself never is.
     echo "candor: fetching from package registries only (github.com · crates.io · npm) — no candor server, no telemetry, no version-check ping."
-    tag="v$UMBRELLA_VERSION"
+    tag="v$ENGINE_PIN"
     base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
     # the native asset for this platform (GraalVM binaries: macos-arm64, linux-x64), else fall to the jar
     os=$(uname -s); arch=$(uname -m); asset=""
@@ -524,7 +525,7 @@ PY
       Darwin:arm64)          asset="candor-macos-arm64" ;;
       Linux:x86_64|Linux:amd64) asset="candor-linux-x64" ;;
     esac
-    echo "candor: syncing engines to $UMBRELLA_VERSION (the umbrella's pinned line)"
+    echo "candor: syncing engines to $ENGINE_PIN (the pinned engine line)"
     # --- JVM engine (flagship) ---
     if want jvm; then
     if [ -n "$asset" ]; then
@@ -537,11 +538,11 @@ PY
       fi
     else
       echo "  jvm    → no native binary for $os/$arch; fetching the jar (needs a JVM at runtime)"
-      if curl -fsSL -o "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp" "$base/candor-java-$UMBRELLA_VERSION-all.jar"; then
-        mv "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp" "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar"
+      if curl -fsSL -o "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp" "$base/candor-java-$ENGINE_PIN-all.jar"; then
+        mv "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp" "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar"
         echo "         ✔ jar stashed in ~/.candor/"
       else
-        rm -f "$HOME/.candor/candor-java-$UMBRELLA_VERSION-all.jar.tmp"; echo "         ✘ jar download failed"
+        rm -f "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp"; echo "         ✘ jar download failed"
       fi
     fi
     fi
@@ -573,7 +574,7 @@ PY
     newest=$(newest_beyond_pin)
     if [ -n "$newest" ]; then
       echo ""
-      echo "  ↑ $(newer_kind "$newest") is available on the channel, beyond the pinned $UMBRELLA_VERSION."
+      echo "  ↑ $(newer_kind "$newest") is available on the channel, beyond the pinned $ENGINE_PIN."
       echo "    Adopt it by moving the whole family together: brew upgrade candor"
     fi
     echo ""
@@ -605,7 +606,7 @@ PY
          { [ -n "$jar" ] && [ -f "$jar" ]; } && v=$(java -jar "$jar" --version 2>/dev/null | head -1) || v=""; fi
     report "jvm" "$v" "run \`candor update\` to fetch it"
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
-    else v=$(npx -y "candor-ts@$UMBRELLA_VERSION" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
+    else v=$(npx -y "candor-ts@$ENGINE_PIN" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
     report "ts" "$v" "install Node — the ts engine then runs via npx, no install"
     if have candor-swift; then report "swift" "$(candor-swift --version 2>/dev/null | head -1)" ""
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
@@ -698,7 +699,7 @@ PY
       echo "    is generated — see github.com/tombaldwin/candor-swift, then \`candor-swift . --gate-json\`."
     elif [ "$nlang" -eq 1 ] && [ ! -f "$wf" ]; then
       mkdir -p "$idir/.github/workflows"
-      pin="$UMBRELLA_VERSION"
+      pin="$ENGINE_PIN"
       { echo "# candor architecture gate — generated by \`candor init\`."
         echo "# Fails the build when an edit crosses a declared boundary (.candor/arch.policy) or a"
         echo "# function gains an effect vs the committed baseline (AS-EFF-005). Policy + baseline are"

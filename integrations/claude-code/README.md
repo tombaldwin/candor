@@ -28,11 +28,15 @@ once (to write the baseline the hook diffs against), then
 ```sh
 candor hook            # prints the ready .claude/settings.json Stop-hook snippet (tailored to your language)
 candor hook install    # merges it into .claude/settings.json for you (backs up an existing file; idempotent)
+candor hook uninstall  # removes candor's Stop hook again (leaves any other hooks intact)
 ```
 
-`candor hook` detects the language, finds the committed baseline + optional `arch.policy`, and points the
-snippet at the hook scripts shipped with your install. Restart Claude Code after wiring. The manual sections
-below are the same wiring done by hand (and still the reference for polyglot repos — one Stop entry per language).
+`candor hook` detects the language, finds the committed baseline + optional `arch.policy`, and wires a
+**portable** command — `candor hook-run` (resolved on `PATH`), which locates the shipped hook scripts itself
+at run time. So the generated `.claude/settings.json` carries **no machine-specific path** and is safe to
+**commit for the whole team** — every teammate with `candor` installed gets the same gate (each teammate
+needs `candor` on their `PATH`). Restart Claude Code after wiring. The manual sections below are the same
+wiring done by hand (and still the reference for polyglot repos — one Stop entry per language).
 
 ## Setup — JVM (candor-java, bytecode)
 

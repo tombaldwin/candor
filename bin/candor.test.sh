@@ -76,18 +76,18 @@ ok "--report <token-less .json> → candor-ts-query" "WOULD-RUN: candor-ts-query
 
 echo "max-review r2: token-less files sniff the ENVELOPE (never blind-JS); mixed families disambiguate:"
 # a java `--json > baseline.json` direct file (the AGENTS-doc workflow) must route to JAVA, not ts
-printf '{"candor":{"version":"abc1234","toolchain":"jdk-21","spec": "0.16"},"functions":[]}' > "$T/baseline.json"
+printf '{"candor":{"version":"abc1234","toolchain":"jdk-21","spec": "0.17"},"functions":[]}' > "$T/baseline.json"
 ok "token-less java baseline.json -> candor-java (envelope sniff)" "WOULD-RUN: candor-java where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/baseline.json'"
-printf '{"candor":{"version":"candor-swift-0.15.0","toolchain":"swiftsyntax","spec": "0.16"},"functions":[]}' > "$T/swbase.json"
+printf '{"candor":{"version":"candor-swift-0.15.0","toolchain":"swiftsyntax","spec": "0.17"},"functions":[]}' > "$T/swbase.json"
 ok "token-less swift baseline -> candor-swift (envelope sniff)" "WOULD-RUN: candor-swift where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/swbase.json'"
-printf '{"meta":{"version":"scan-0.15.0","toolchain":"stable","spec": "0.16"},"functions":[]}' > "$T/rbase.json"
+printf '{"meta":{"version":"scan-0.15.0","toolchain":"stable","spec": "0.17"},"functions":[]}' > "$T/rbase.json"
 ok "token-less rust baseline -> candor-query (envelope sniff)" "WOULD-RUN: candor-query where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/rbase.json'"
 # a ts report.json BESIDE a tokened engine's reports must trip the ambiguity check, never be shadowed
 mkdir -p "$T/mixed/.candor"
-printf '{"candor":{"version":"candor-ts-0.15.0","toolchain":"node-23.0.0","spec": "0.16"},"functions":[]}' > "$T/mixed/.candor/report.json"
+printf '{"candor":{"version":"candor-ts-0.15.0","toolchain":"node-23.0.0","spec": "0.17"},"functions":[]}' > "$T/mixed/.candor/report.json"
 : > "$T/mixed/.candor/report.demo.scan.json"
 ok "ts report.json beside a scan family -> disambiguate (not silently shadowed)" "disambiguate" \
    bash -c "cd '$T/mixed' && '$D' where Net"
@@ -111,6 +111,48 @@ if [[ "$notrace" != *Traceback* ]]; then echo "  ok   corrupt-shape report → n
 # (init's report iteration is space-safe now — reps is a quoted bash array, not an unquoted string —
 # but a real scan is needed to produce reports to iterate, which this DRYRUN harness can't do; that path
 # is covered by the manual UX probes instead.)
+
+echo "persona-audit UX fixes (0.16.3):"
+# effect-name validation: the umbrella catches an unambiguous WRONG-CASE typo (`fs`→Fs, `net`→Net) with a
+# did-you-mean, BEFORE report discovery. Any OTHER unknown name (Network, Banana, a spec-EXTENSION effect) is
+# DEFERRED to the engine, which validates report-aware (accepts an extension effect present in the report,
+# errors only when it's neither known nor present) — so the umbrella must NOT hard-reject it (review fix).
+ok "where <wrong-case effect> → did-you-mean"   "did you mean \`Fs\`"  bash -c "cd /tmp && '$D' where fs"
+ok "whatif <fn> <wrong-case effect> caught too" "did you mean \`Net\`" bash -c "cd /tmp && '$D' whatif f net"
+# an unknown NON-wrong-case name is NOT rejected by the umbrella — it defers to the engine (here: no report,
+# so the report error surfaces, NOT a premature `unknown effect` from the dispatcher).
+ok "where <unknown extension-shaped> defers"    "no report"            bash -c "cd /tmp && '$D' where Netlify"
+# a VALID effect must NOT be caught by the validator — it routes on to the engine (needs a report).
+ok "where Net (valid) → no effect error"  "WOULD-RUN: candor-query where Net" bash -c "cd '$T/qr' && '$D' where Net"
+# --report's VALUE must not be mistaken for the effect positional
+ok "where --report <dir> Net (valid)"     "WOULD-RUN: candor-query where Net --report" bash -c "cd /tmp && '$D' where Net --report '$T/qr'"
+# the effect glossary
+ok "candor effects explains the concept"  "An effect is something your code does" bash -c "'$D' effects"
+ok "candor glossary is an alias"          "Unknown    a call candor could NOT"    bash -c "'$D' glossary"
+# per-action --help no longer reaches the engine as a bogus arg
+ok "where --help → its own usage"         "the functions that perform an effect"  bash -c "'$D' where --help"
+ok "path --help → its own usage"          "the call path by which"                bash -c "'$D' path --help"
+ok "fix --help names the policy source"   "Reads the wired policy"                bash -c "'$D' fix --help"
+ok "init --help → its own usage"          "stand up the gate"                     bash -c "'$D' init --help"
+ok "hook --help → end-of-turn framing"    "END of each agent turn"               bash -c "'$D' hook --help"
+ok "mcp --help → paste-ready config"      "mcpServers"                            bash -c "'$D' mcp --help"
+# hook-run resolves the scripts itself (the portability fix) and always emits contract-valid Stop-hook
+# JSON on stdout — never a crash — even with no scan/config to review (graceful non-block, rc-safe).
+ok "hook-run emits contract JSON, no crash" "systemMessage" bash -c "cd /tmp && printf '{}' | '$D' hook-run"
+
+echo "persona-audit polish (#17):"
+# #24: a nonexistent scan target is a "no such file or directory" naming the FULL path — not a dirname-
+# truncated, manifest-blaming message.
+ok "scan <nonexistent> → no such file (full path)" "no such file or directory: /does/not/exist" \
+   bash -c "cd '$T' && '$D' scan /does/not/exist"
+# #10: gains/diff route by their FIRST positional report locator (discovery does not apply), so they work
+# from any dir — the dispatcher must NOT demand a discovered .candor/ when both reports are named.
+: > "$T/gcur.pkg.scan.json"; : > "$T/gbase.pkg.scan.json"
+ok "gains <cur> <base> routes via the positional (rust)" "WOULD-RUN: candor-query gains" \
+   bash -c "cd /tmp && '$D' gains '$T/gcur.pkg.scan.json' '$T/gbase.pkg.scan.json'"
+: > "$T/gcur.pkg.jvm.json"; : > "$T/gbase.pkg.jvm.json"
+ok "gains routes by the FIRST positional's backend (jvm)" "WOULD-RUN: candor-java gains" \
+   bash -c "cd /tmp && '$D' gains '$T/gcur.pkg.jvm.json' '$T/gbase.pkg.jvm.json'"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

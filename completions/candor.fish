@@ -2,7 +2,7 @@
 # Install: copy (or symlink) into ~/.config/fish/completions/candor.fish
 # (Homebrew installs it to $(brew --prefix)/share/fish/vendor_completions.d/).
 
-set -l actions init hook scan doctor engines update outdated config where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified rewire parsepolicy agents
+set -l actions init hook scan effects doctor engines update outdated config mcp lsp where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified rewire parsepolicy agents
 set -l effects Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown
 
 complete -c candor -f
@@ -10,6 +10,9 @@ complete -c candor -f
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a init      -d 'stand up the gate (every language present)'
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a hook      -d 'wire the edit-time gate into your coding agent (Claude Code)'
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a scan      -d 'analyse a project (engine picked by its manifest)'
+complete -c candor -n "not __fish_seen_subcommand_from $actions" -a effects   -d 'what the effect names (Net, Fs, Db, …) mean'
+complete -c candor -n "not __fish_seen_subcommand_from $actions" -a mcp       -d 'run the MCP server (for coding agents)'
+complete -c candor -n "not __fish_seen_subcommand_from $actions" -a lsp       -d 'run the language server (for editors)'
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a doctor    -d 'check every engine is installed and compatible'
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a engines   -d 'list the engines, their source and status'
 complete -c candor -n "not __fish_seen_subcommand_from $actions" -a update    -d 'fetch / refresh the engines'
@@ -29,8 +32,9 @@ complete -c candor -n "__fish_seen_subcommand_from update install upgrade" -a "j
 complete -c candor -n "__fish_seen_subcommand_from config" -a "update-check"
 complete -c candor -n "__fish_seen_subcommand_from where" -a "$effects"
 complete -c candor -n "__fish_seen_subcommand_from init scan" -a "(__fish_complete_directories)"
-complete -c candor -n "__fish_seen_subcommand_from hook" -a "install"
+complete -c candor -n "__fish_seen_subcommand_from hook" -a "install uninstall"
 complete -c candor -n "__fish_seen_subcommand_from hook" -a "(__fish_complete_directories)"
+complete -c candor -n "__fish_seen_subcommand_from mcp" -a "install"
 complete -c candor -l report -d 'use this report instead of discovering .candor/' -r
 complete -c candor -l policy -d 'evaluate a policy file' -r
 complete -c candor -l json -d 'machine-readable output'

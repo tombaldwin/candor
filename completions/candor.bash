@@ -7,7 +7,7 @@ _candor() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  actions="init hook scan doctor engines update outdated config where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified rewire parsepolicy agents"
+  actions="init hook scan effects doctor engines update outdated config mcp lsp where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified rewire parsepolicy agents"
   effects="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"
   engines="jvm rust ts swift"
 
@@ -25,7 +25,8 @@ _candor() {
 
   case "${COMP_WORDS[1]}" in
     init|scan)               COMPREPLY=( $(compgen -d -- "$cur") );;
-    hook)                    if [ "$COMP_CWORD" -eq 2 ]; then COMPREPLY=( $(compgen -W "install" -- "$cur") ); else COMPREPLY=( $(compgen -d -- "$cur") ); fi;;
+    hook)                    if [ "$COMP_CWORD" -eq 2 ]; then COMPREPLY=( $(compgen -W "install uninstall" -- "$cur") ); else COMPREPLY=( $(compgen -d -- "$cur") ); fi;;
+    mcp)                     if [ "$COMP_CWORD" -eq 2 ]; then COMPREPLY=( $(compgen -W "install" -- "$cur") ); else COMPREPLY=( $(compgen -d -- "$cur") ); fi;;
     update|install|upgrade)  COMPREPLY=( $(compgen -W "$engines" -- "$cur") );;
     config)                  COMPREPLY=( $(compgen -W "update-check" -- "$cur") );;
     where)                   COMPREPLY=( $(compgen -W "$effects" -- "$cur") );;

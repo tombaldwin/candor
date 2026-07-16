@@ -20,6 +20,20 @@ Two review scripts share one exit contract (0 clean / 1 block / 2 setup) so the 
 pick the JVM script (`candor-review.sh`, scans bytecode) or the scan-source script
 (`candor-review-source.sh`, scans source — no build) via `CANDOR_REVIEW`.
 
+## Setup — one command (`candor hook`)
+
+If you installed candor via Homebrew (or run the umbrella `candor`), skip the manual wiring: `candor init`
+once (to write the baseline the hook diffs against), then
+
+```sh
+candor hook            # prints the ready .claude/settings.json Stop-hook snippet (tailored to your language)
+candor hook install    # merges it into .claude/settings.json for you (backs up an existing file; idempotent)
+```
+
+`candor hook` detects the language, finds the committed baseline + optional `arch.policy`, and points the
+snippet at the hook scripts shipped with your install. Restart Claude Code after wiring. The manual sections
+below are the same wiring done by hand (and still the reference for polyglot repos — one Stop entry per language).
+
 ## Setup — JVM (candor-java, bytecode)
 
 1. **Establish a baseline** from your last-known-good build:

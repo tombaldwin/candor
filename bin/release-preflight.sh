@@ -31,6 +31,10 @@ grab() { # $1 label ; $2 file ; $3 regex capturing the version
 }
 grab "rust " "candor-rust/crates/candor-report/src/lib.rs" 'SPEC_VERSION[^0-9]*[0-9]+\.[0-9]+'
 grab "ts   " "candor-ts/query.mjs"                          'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
+# candor-ts has TWO SPEC_VERSION constants — query.mjs (above) AND scan.mjs, which is the one that stamps the
+# REPORT ENVELOPE + gate verdict. The 0.17 bump missed scan.mjs (preflight only checked query.mjs), so reports
+# shipped declaring the old floor while --version disagreed. Check both so they can never drift apart.
+grab "ts-scn" "candor-ts/scan.mjs"                          'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
 grab "java " "candor-java/src/main/java/io/poly/candor/Candor.java" 'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
 grab "swift" "candor-swift/Sources/candor-swift/main.swift" 'specVersion *= *"[0-9]+\.[0-9]+'
 grab "agent" "candor-agents/candor_agents/scan.py"          'SPEC *= *"[0-9]+\.[0-9]+'
@@ -65,6 +69,21 @@ if [ -n "$PRIOR" ]; then
     | grep -vE '⟨(spec )?[0-9]' )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
   else bad "leftover 'spec $PRIOR' (a bump missed these — they only fail in CI):"; echo "$strays" | sed 's/^/      /'; fi
+
+  # [2b] BARE-LITERAL spec assertions the [2] grep misses: a `]`/`,`/`==`/`as? String` between "spec" and the
+  # quoted prior-floor breaks the `spec[ :"]+0.X` pattern — e.g. rust `assert_eq!(v["spec"], "0.16")`, swift
+  # `XCTAssertEqual(obj?["spec"] as? String, "0.16")`. These dodge preflight AND `cargo/npm/swift test`'s
+  # OWN default (they only fire the differential in CI / a `swift test` run). Signature: a line carrying BOTH
+  # `spec` and the bare quoted prior-floor `"0.X"`. A legit older fixture (spec "0.7") won't match the floor.
+  litstrays="$(cd "$ROOT" && grep -rIn "\"${PRIOR//./\\.}\"" \
+      --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
+      --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs \
+      --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude=release-preflight.sh \
+      candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
+    | grep -iw spec | grep -vE '⟨(spec )?[0-9]' )"
+  if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
+  else bad "bare-literal spec assertion at the prior floor (a bump missed these; only \`*test\` catches them):"; echo "$litstrays" | sed 's/^/      /'; fi
 else note "(no prior floor to check)"; fi
 
 # --- 3. cross-repo RELEASE PINS point at the current release --------------------------------------------
@@ -82,6 +101,29 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
 checkpin "adopt java  " "candor/adopt/candor.yml"        'CANDOR_JAVA_VERSION:[[:space:]]*[0-9]'
 checkpin "adopt agents" "candor/adopt/candor-digest.yml" 'candor-agents@'
 checkpin "jbang       " "candor-java/jbang-catalog.json" 'releases/download'
+
+# --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
+# The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant
+# (a SEPARATE literal in scan.py that stamps --version + the --agents header). swift's engineVersion is the
+# same shape. These aren't derived from the manifest, so a bump has to touch each — assert they all agree.
+echo "[4] self-declared build versions agree (hand-maintained constants vs the manifest)"
+declare -a builds=()
+grabver() { # $1 label ; $2 file ; $3 regex
+  local f="$ROOT/$2"; [ -f "$f" ] || return
+  local v; v="$(grep -oE "$3" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  [ -n "$v" ] && { note "$1: $v"; builds+=("$v"); }
+}
+grabver "agents VERSION" "candor-agents/candor_agents/scan.py"            'VERSION *= *"agents-[0-9.]+'
+grabver "agents pyproj " "candor-agents/pyproject.toml"                   'version *= *"[0-9.]+'
+grabver "swift engine  " "candor-swift/Sources/candor-swift/main.swift"   'engineVersion *= *"candor-swift-[0-9.]+'
+grabver "ts package    " "candor-ts/package.json"                         '"version": *"[0-9.]+'
+grabver "rust crate    " "candor-rust/crates/candor-query/Cargo.toml"     'version = "[0-9.]+'
+if [ "${#builds[@]}" -gt 0 ]; then
+  u="$(printf '%s\n' "${builds[@]}" | sort -u)"
+  if [ "$(printf '%s\n' "$u" | grep -c .)" -eq 1 ]; then ok "all self-declared build versions agree ($u)"
+  else bad "build versions DISAGREE (a hand-maintained constant lagged the release): $(echo $u)"; fi
+fi
+[ -n "$WANT_VER" ] && { printf '%s\n' "${builds[@]}" | grep -qxv "$WANT_VER" && bad "a build version != requested $WANT_VER" || ok "build versions == requested $WANT_VER"; }
 
 echo
 if [ "$fail" = 0 ]; then echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"; else echo "release-preflight: $fail check(s) FAILED — resolve before publishing"; fi

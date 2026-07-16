@@ -8,6 +8,16 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-07-16 — spec 0.18: the trust-trio (engine pin 0.18.0, umbrella 0.18.0)
+
+The family floor moves to **spec 0.18** — all engines at **0.18.0**, `ENGINE_PIN`/`UMBRELLA_VERSION` bumped.
+A pinned-tool-surface rung (no report/verdict change) closing three ways the tool could quietly mislead, each
+pinned four-way: the **`--strict` advisory-verb CI gate** (`fix-gate`/`gains`/`unverified` advisory at exit 0,
+`--strict` → exit 1 while a finding remains; a typo'd flag rejected loud, never a swallowed disarmed gate),
+and the **surface/`tour` mostly-Unknown disclosure** (never "nothing hidden" over a ≥⅓-Unknown graph; a
+`tour --json` `unknown: {count, total}` field). Hardened by a Fable-model code review that caught two latent
+cardinal-sin edges (swift's un-gated scan opener; java's single-dash flag swallow).
+
 ## 2026-07-10 — the owner digest (visibility for the silent gate)
 
 The gate is deliberately silent when nothing is wrong — so nobody sees it working. The **digest** closes

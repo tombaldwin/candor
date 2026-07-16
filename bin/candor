@@ -143,9 +143,31 @@ else: print("scan")
 PYEOF
 }
 
+# Resolve the .candor/config `policy` key (walk up from CWD), anchored to the config HOME dir (§3.4 —
+# the dir holding .candor/). Echoes the resolved path if the file exists. Lets the policy-consuming query
+# verbs (fix/fix-gate/whatif/unverified) honor the config like the scan gate already does, so the fix-gate
+# loop the violation output points at works without the user re-passing --policy.
+config_policy() {
+  local d="$PWD" cfg=""
+  while :; do [ -f "$d/.candor/config" ] && { cfg="$d/.candor/config"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+  [ -n "$cfg" ] || return 0
+  local val; val="$(sed -n 's/^policy[[:space:]][[:space:]]*//p' "$cfg" | head -1)"
+  [ -n "$val" ] || return 0
+  case "$val" in /*) ;; *) val="$(dirname "$(dirname "$cfg")")/$val";; esac
+  [ -f "$val" ] && echo "$val"
+}
+
 # ---- QUERY: route by the discovered report's backend ---------------------------------------------------
 route_query() {
   local verb="$1"; shift
+  # config-driven policy: a policy-consuming verb honors .candor/config's `policy` key (the one `candor
+  # init` writes) when no --policy/CANDOR_POLICY is given — so `candor fix-gate` after a violation works
+  # like the scan gate, not "a policy is required".
+  case " $verb " in *" fix "*|*" fix-gate "*|*" whatif "*|*" unverified "*)
+    if [ -z "${CANDOR_POLICY:-}" ]; then
+      case " $* " in *" --policy "*) ;; *) cp="$(config_policy)"; [ -n "$cp" ] && export CANDOR_POLICY="$cp";; esac
+    fi;;
+  esac
   # honor an explicit --report <loc>; else discover a `.candor/` ancestor from $PWD (the §3.3.1 rule)
   local a prev="" loc=""
   for a in "$@"; do [ "$prev" = "--report" ] && loc="$a"; prev="$a"; done

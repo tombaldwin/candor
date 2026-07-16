@@ -14,6 +14,8 @@ _candor() {
     'init:stand up the gate — scan, propose a policy, set the baseline'
     'scan:analyse a project (engine picked by its manifest)'
     'doctor:check every engine is installed and compatible'
+    'mcp:run the MCP server (for coding agents)'
+    'lsp:run the language server (for editors)'
     'where:the functions that perform an effect'
     'path:the call path by which a function reaches an effect'
     'callers:who calls a function, direct and transitive'

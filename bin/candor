@@ -381,6 +381,7 @@ USAGE
   candor scan <dir>                    analyse a project (engine picked by its manifest)
   candor <action> [args] [options]     query the discovered report (.candor/, walk-up)
   candor doctor                        check every engine is installed and compatible
+  candor mcp · candor lsp              run the MCP server / language server (for agents & editors)
 
 COMMON ACTIONS
   where <Effect>            the functions that perform an effect
@@ -756,6 +757,14 @@ PY
       echo "each language in CI (one step per engine — \`candor scan . --gate-json\` reads the config)."
     fi
     exit 0;;
+  mcp|lsp)
+    # Bring the agent/editor servers under the umbrella: `candor mcp` / `candor lsp` instead of the
+    # `npx -y -p candor-ts candor-mcp` incantation. Both are hosted by the candor-ts package (they read
+    # ANY engine's report). Prefer a global install; else run via npx pinned to the engine line.
+    bin="candor-$verb"; shift
+    if have "$bin"; then run "$bin" "$@"
+    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" "$bin" "$@"
+    else die "\`candor $verb\` needs the candor-ts package — install Node (it then runs via npx), or \`npm i -g candor-ts\`."; fi;;
   scan) shift; route_scan "$@";;
   *)
     # not a known action: a real path/dir is a scan target (candor <dir> = scan); anything else is

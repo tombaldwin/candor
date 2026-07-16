@@ -138,7 +138,7 @@ gate activity) and `candor-agents savings` (a labelled estimate from your `cando
   Code required.
 - The effect delta is computed straight from the two spec-0.8 report files (the standard envelope), so it's
   engine-agnostic and catches the dominant case: a function that was pure and is now effectful.
-- **See also:** `candor-mcp` and `candor-lsp` (both in the candor-ts npm package —
-  `npx -y -p candor-ts candor-mcp` / `…candor-lsp`) serve the same reports *during* the turn — MCP tools
+- **See also:** `candor-mcp` and `candor-lsp` (run them via the umbrella — `candor mcp` / `candor lsp`,
+  or directly `npx -y -p candor-ts candor-mcp` / `…candor-lsp`) serve the same reports *during* the turn — MCP tools
   (blast radius, whatif, gate verdict) for the agent, CodeLens/diagnostics for the editor — where this hook
   gates at turn **end**. They read any engine's report, same as the review scripts.

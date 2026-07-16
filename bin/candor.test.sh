@@ -154,5 +154,17 @@ ok "gains <cur> <base> routes via the positional (rust)" "WOULD-RUN: candor-quer
 ok "gains routes by the FIRST positional's backend (jvm)" "WOULD-RUN: candor-java gains" \
    bash -c "cd /tmp && '$D' gains '$T/gcur.pkg.jvm.json' '$T/gbase.pkg.jvm.json'"
 
+echo "0.17 re-audit fixes:"
+# [14] a polyglot repo's status dashboard must NOT suggest `candor scan .` (the scanner refuses a mixed dir)
+# — it names the per-engine gate instead. Dashboard reads the report directly, so no engine needed.
+mkdir -p "$T/polyd/.candor"; : > "$T/polyd/Cargo.toml"; : > "$T/polyd/package.json"
+printf '{"candor":{"version":"scan-0.17.0","toolchain":"stable","spec":"0.17"},"functions":[{"fn":"f","inferred":["Fs"]}]}' > "$T/polyd/.candor/report.p.scan.json"
+printf 'baseline .candor/baseline.json\n' > "$T/polyd/.candor/config"; : > "$T/polyd/.candor/baseline.json"
+ok "polyglot dashboard names per-engine gates (not \`scan .\`)" "one per language" bash -c "cd '$T/polyd' && CANDOR_DISPATCH_DRYRUN= '$D'"
+ok "polyglot dashboard: rust gate is the raw engine"  "candor-scan . --gate-json"  bash -c "cd '$T/polyd' && CANDOR_DISPATCH_DRYRUN= '$D'"
+# hook-run run interactively (a TTY on stdin) must NOT hang — it explains + exits. Here stdin is a PIPE, so
+# it does NOT take the tty branch; assert the tty-guard text is absent (proving we only gate on -t 0).
+ok "hook-run piped stdin does not print the tty guidance" "systemMessage" bash -c "cd '$T' && printf '{}' | '$D' hook-run"
+
 echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

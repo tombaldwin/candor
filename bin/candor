@@ -15,7 +15,7 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-UMBRELLA_VERSION="0.17.0"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
+UMBRELLA_VERSION="0.17.1"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
 ENGINE_PIN="0.17.0"                          # the engine release line `candor update` fetches (spec floor); moves only with an engine release
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
@@ -516,7 +516,18 @@ PY
         echo "  Explore → candor tour · candor where <Effect> · candor path <fn> <Effect>"
       else
         echo "  candor tour · candor where <Effect> · candor path <fn> <Effect>"
-        echo "  gate it in CI → candor scan . --gate-json verdict.json  (exit 1 on a violation)"
+        # `candor scan .` REFUSES a polyglot dir ("scan one at a time"), so don't hand a polyglot user a
+        # command the scanner rejects — name the per-language gate (as `candor init` did) instead (re-audit).
+        dlangs="$(detect_langs "$croot")"; dn=$(set -- $dlangs; echo $#)
+        if [ "${dn:-0}" -gt 1 ]; then
+          echo "  gate it in CI (one per language — \`candor scan .\` refuses a mixed dir; run each engine):"
+          for dl in $dlangs; do
+            deng=candor-scan; case "$dl" in ts) deng="npx -y candor-ts";; java) deng=candor-java;; swift) deng=candor-swift;; esac
+            echo "    $deng . --gate-json verdict.json   ($dl — exit 1 on a violation)"
+          done
+        else
+          echo "  gate it in CI → candor scan . --gate-json verdict.json  (exit 1 on a violation)"
+        fi
       fi
       exit 0
     fi
@@ -831,7 +842,12 @@ PY
       echo "  · .candor/arch.policy exists — kept (delete it and re-run to re-propose)"
     elif [ -x "$tooldir/adopt/candor-init" ] || [ -f "$tooldir/adopt/candor-init" ]; then
       : > "$idir/.candor/arch.policy.tmp"
-      for r in "${reps[@]}"; do python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; done
+      pi=0; for r in "${reps[@]}"; do
+        # only the FIRST report's rules carry the comment header; the rest append rules-only (re-audit #18).
+        if [ "$pi" -eq 0 ]; then python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null
+        else python3 "$tooldir/adopt/candor-init" "$r" --no-header >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; fi
+        pi=$((pi+1))
+      done
       if [ -s "$idir/.candor/arch.policy.tmp" ]; then mv "$idir/.candor/arch.policy.tmp" "$idir/.candor/arch.policy"
         echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"
       else rm -f "$idir/.candor/arch.policy.tmp"; echo "  · policy proposal skipped (the inference tool could not read the report)"; fi
@@ -869,9 +885,19 @@ PY
     # churn the diff and let a stale committed report mislead the dashboard (persona-audit fix).
     gi="$idir/.candor/.gitignore"
     if [ ! -f "$gi" ]; then
-      { echo "# candor: ignore regenerated scan output — commit baseline*, arch.policy and config only."
-        echo "report*.json"; } > "$gi"
-      echo "  ✔ .candor/.gitignore (ignores regenerated report*.json — commit baseline*/arch.policy/config)"
+      { echo "# candor: ignore regenerated / runtime output — commit baseline*, arch.policy and config only."
+        echo "report*.json"
+        echo "activity.jsonl"          # the Stop-hook's per-session runtime log (re-audit: was committed)
+        echo "verdict*.json"           # local gate-verdict runs (`--gate-json verdict.json`)
+        echo "*.gate-json"; } > "$gi"
+      echo "  ✔ .candor/.gitignore (ignores report*/activity.jsonl/verdict* — commit baseline*/arch.policy/config)"
+    fi
+    # ALSO ignore the CI verdict file the generated workflow writes at the repo root (re-audit #7).
+    rgi="$idir/.gitignore"
+    if [ -f "$rgi" ] && ! grep -q '^candor-verdict.json' "$rgi" 2>/dev/null; then
+      printf 'candor-verdict.json\n' >> "$rgi"
+    elif [ ! -f "$rgi" ]; then
+      printf '# candor: the CI gate verdict is ephemeral\ncandor-verdict.json\n' > "$rgi"
     fi
     # CI WORKFLOW: the durable value is the gate ENFORCED on every push. Drop a ready GitHub Actions
     # workflow (single-language; never clobber). The gate step reads policy + baseline from .candor/config,
@@ -1186,6 +1212,10 @@ PY
     case "$hout" in
       ALREADY) echo "candor hook — already wired in .claude/settings.json (left as-is; re-running install is safe).";;
       WIRED)   echo "wired → .claude/settings.json (portable — safe to commit). Restart Claude Code."
+               echo "  fires at the END of each agent turn (not per edit), and blocks the turn once so the agent fixes a new effect / boundary crossing before yielding to you."
+               # ts runs via npx: the FIRST hook fire pays cold npx resolution (~a minute, needs network)
+               # and can hit the hook timeout — pre-warm so the first live turn isn't a freeze (re-audit fix).
+               [ "$hlangs" = ts ] && echo "  first run fetches candor-ts via npx (needs network) — run \`candor scan .\` once now to pre-warm, or \`npm i -g candor-ts\` to drop the npx wait."
                echo "  try it: ask the agent to make a pure function touch the network — the hook blocks the turn so it fixes it."
                echo "  remove it later with: candor hook uninstall"
                [ -n "$hgradle_note" ] && echo "  $hgradle_note";;
@@ -1200,6 +1230,15 @@ PY
     # command; CANDOR_REVIEW_BASELINE / CANDOR_POLICY / CANDOR_SRC / CANDOR_CLASSES pass through. stdin (the
     # Claude Code hook JSON) flows straight into stop-hook.sh, which owns the 0/1/2 + block-once contract.
     shift || true
+    # hook-run reads the Claude Code Stop-hook JSON on stdin. Run BY HAND (a terminal), there's no JSON and
+    # no EOF, so it would hang forever with no output — and `candor hook install` literally invites "try it".
+    # If stdin is a TTY, say what it's for and exit cleanly instead of hanging silently (re-audit fix).
+    if [ -t 0 ]; then
+      echo "candor hook-run — this is the edit-time Stop hook; it expects Claude Code hook JSON on stdin and" >&2
+      echo "does nothing run by hand. It's wired by \`candor hook install\` and fires at the end of each agent" >&2
+      echo "turn. To exercise the gate directly: \`candor scan . --policy .candor/arch.policy\`." >&2
+      exit 0
+    fi
     hd="$(hook_dir)"
     [ -n "$hd" ] || { echo "candor hook-run: the hook scripts aren't installed (looked beside the dispatcher and in share/candor/hooks). Reinstall candor, or set CANDOR_HOOK_DIR." >&2; exit 2; }
     case "${CANDOR_LANG:-}" in

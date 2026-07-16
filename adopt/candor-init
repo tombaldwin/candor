@@ -164,6 +164,8 @@ def main(argv=None):
     ap.add_argument("--callgraph", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--min-fns", type=int, default=1)
+    ap.add_argument("--no-header", action="store_true",
+                    help="emit only the rules (no comment header) — for appending a 2nd+ engine's rules to one policy")
     args = ap.parse_args(argv)
 
     report = load(args.report)
@@ -185,7 +187,9 @@ def main(argv=None):
     if n == 0:
         header.append("# (No clear layering under a common package prefix — candor found no sub-layers to")
         header.append("#  propose rules for. Add packages/modules, or write rules by hand from `candor map`.)")
-    out = "\n".join(header + body).rstrip() + "\n"
+    # --no-header: a polyglot repo runs candor-init PER engine report and concatenates into ONE arch.policy;
+    # only the FIRST should carry the header, else the file opens with the boilerplate duplicated (re-audit).
+    out = "\n".join((body if args.no_header else header + body)).rstrip() + "\n"
 
     if args.out:
         open(args.out, "w", encoding="utf-8").write(out)

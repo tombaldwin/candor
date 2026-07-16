@@ -15,7 +15,7 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-UMBRELLA_VERSION="0.15.0"                    # the umbrella's own version; tracks the family release line
+UMBRELLA_VERSION="0.16.0"                    # the umbrella's own version; tracks the family release line
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 
 die()  { echo "candor: $*" >&2; exit 2; }

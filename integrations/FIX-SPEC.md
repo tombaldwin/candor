@@ -121,6 +121,14 @@ Given a violation `(F, E, layer D)` where `D` denies `E` and `F ∈ D` performs 
   and its `deny E Unknown <scope>` upgrade — so an author learns their `pure` layer isn't *provably* pure without
   knowing to run the subcommand. Note only: the verdict, exit code, and `--gate-json` are untouched. Pinned
   four-way by conformance PART 12d (the gate note discloses the same holes as `unverified` in every engine).
+- **`fix-gate` and `gains` share the `unverified` `--strict` contract** ⟨spec 0.18⟩. Both are ADVISORY: `fix-gate`
+  prints the remedy for every outstanding boundary crossing and `gains` prints the effects a dependency newly
+  reaches, each exiting **0** so the agent edit-loop reads the finding and acts (a green run is not a claim of "no
+  work"). `--strict` turns each into a CI gate — `fix-gate --strict` → exit 1 while any crossing remains,
+  `gains --strict` → exit 1 on ANY gained effect. `gains` has no `--policy` of its own (the effect-specific
+  supply-chain gate is a `deny <E> gained` scan policy, `AS-EFF-005`); a `--policy` passed to it is a loud exit-2
+  error naming that gate, never a silently-dropped flag. Pinned four-way by conformance PART 5b (gains) and
+  PART 12b (fix-gate) exit-code blocks.
 
 ## Phasing
 

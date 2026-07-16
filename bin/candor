@@ -380,7 +380,7 @@ verb_help() {
     callers)  echo "candor callers <fn> — who calls <fn>, directly and transitively.";;
     tour)     echo "candor tour [N] — the N most surprising transitive reaches (default 10).";;
     blindspots) echo "candor blindspots — the Unknown sources worth resolving, ranked by reach.";;
-    gains)    echo "candor gains <current> <base> — what a newer report newly reaches vs a baseline (the supply-chain diff).";;
+    gains)    echo "candor gains <current> <base> — what a newer report newly reaches vs a baseline (the supply-chain diff)."; echo "  Advisory (exit 0). --strict → exit 1 on ANY gained effect (a supply-chain CI gate).";;
     show)     echo "candor show <fn> — the full effect record for one function.";;
     map)      echo "candor map — the module/layer effect map.";;
     containment) echo "candor containment — effects grouped by the layer that contains them.";;
@@ -390,7 +390,7 @@ verb_help() {
     rewire)   echo "candor rewire — suggested edges to cut a boundary crossing.";;
     agents)   echo "candor agents — the declared-vs-observed effect drift (agent-fleet report).";;
     fix)      echo "candor fix <fn> <Effect> — the boundary hoist that would clear a violation."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
-    fix-gate) echo "candor fix-gate — every policy crossing in the report and its remedy."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
+    fix-gate) echo "candor fix-gate — every policy crossing in the report and its remedy."; echo "  Reads the wired policy (.candor/config) or --policy <file>. Advisory (exit 0); --strict → exit 1 while a crossing remains.";;
     whatif)   echo "candor whatif <fn> <Effect> — the blast radius (and policy verdict) IF <fn> gained <Effect>, before you edit."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
     unverified) echo "candor unverified — the layers a policy gates that still contain Unknown holes (coverage proof).";;
     parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <Effect> <layer>\`.";;

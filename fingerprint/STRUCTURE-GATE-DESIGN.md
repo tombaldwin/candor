@@ -149,4 +149,13 @@ Never a silent pass on a can't-compute: a degenerate or too-small input says so 
   floor useful? A floor edges toward an absolute grade — lean *no*, keep it pure-delta.
 - **tangleExcess pointers** — "largest fan-in/out increase" is a proxy, not a true source; useful enough, or
   omit tangle pointers and report only the number?
-- **Config** — when `.candor/config` lands, the gate's thresholds belong there (travels with the repo).
+- **Config** — `.candor/config` has SHIPPED (SPEC §3.4, all engines); the gate's thresholds belong there
+  (travels with the repo). A `structure-threshold` / `structure-min-fns` key pair, inert-if-unimplemented
+  per the §3.4 vocabulary rules. (This open question is now resolved to "yes, use config" — 2026-07-16.)
+
+_Audit note (2026-07-16): grounded-and-accurate. The metric formula + weights in §21 match
+`candor-fingerprint.mjs:308-309` VERBATIM (`tangleExcess = max(0, tangle−0.4)/0.6`; `structureRaw =
+1 − (0.3·smear + 0.26·unkShare + 0.24·tangleExcess + 0.2·min(1, 3·cycleRatio))`), and `--baseline` (the
+PR-over-PR delta the gate consumes) already exists and works. So the gate is a THIN layer over real, tested
+machinery — not blocked on feasibility or grounding, only on (1) a decide-or-shelve call and (2) the
+threshold/noise-floor calibration, which is a short empirical pass on real repos, not a design problem._

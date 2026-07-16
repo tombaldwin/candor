@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-15 (the vocabulary + coverage arc: floors 0.12→0.15 in three days). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-16 (floors 0.16→0.18: the callgraph-aware baseline guard, query target validation, and the trust-trio; + the disclosure-refinement track opened from the academic referee pass). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -13,16 +13,21 @@ deployability gate is shipped end-to-end (AS-EFF-005 ratchet, 006/008/009 policy
 conformance-pinned). The spec advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md
 §"Versioning policy"): the reference engine may lead a minor/additive rung, the floor stays
 conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder has run
-eight full cycles: **0.8** (the `--gate-json` gate verdict), **0.9** (the remedial tool loop), **0.10**
+eleven full cycles: **0.8** (the `--gate-json` gate verdict), **0.9** (the remedial tool loop), **0.10**
 (the canonical query grammar), **0.11** (the surprising-reach surface + corrupt-report loudness),
 **0.12** (the gains `origin` field), **0.13** (the `Llm` effect + the `extensions` field / the
 candor-swift `privacy/1` sensor extension + `privacy-manifest` verb), **0.14** (the top-level/initializer
-unit — a cardinal-sin closure), and **0.15** (the coverage envelope — the κ ledger travels with the
+unit — a cardinal-sin closure), **0.15** (the coverage envelope — the κ ledger travels with the
 report, verdict-preserving verb conditionality — plus host-resolution recall and four corpus-found
-soundness fixes). The **floor is now 0.15** (all engines at 0.15.0, conformance-pinned through PART 4s,
-**published + release-verified live** 2026-07-15: crates.io, npm — candor-ts now publishes via the
-tag-triggered OIDC action with SLSA provenance — gh releases; IDE bundles rebundled same-day; the site's
-effect vocabulary + gains/privacy/coverage content refreshed).
+soundness fixes), **0.16** (the callgraph-aware baseline guard — a formerly-pure fn turning effectful is a
+gain, AS-EFF-005; Unknown-only gains stay advisory), **0.17** (query target validation — `where`/`callers`
+fail loud (exit 2) on a typo'd effect or nonexistent fn, never a false empty at exit 0), and **0.18** (the
+trust-trio — the `--strict` advisory-verb CI gate on `fix-gate`/`gains`/`unverified` + the surface/`tour`
+mostly-Unknown disclosure, both four-way; hardened by a Fable-model code review that caught two latent
+cardinal-sin edges: swift's un-gated scan opener, java's single-dash flag swallow). The **floor is now
+0.18** (all engines at 0.18.0, conformance-pinned through PARTs 4l/5b/12b/12c, **published + release-verified
+live** 2026-07-16: crates.io, npm via the tag-triggered OIDC action with SLSA provenance, gh releases, java
+native binaries, the Homebrew tap; `candor outdated` resolves 0.18 on every channel).
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -214,6 +219,76 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   build P2) or npm-only (wedge only → stop)? **P2** (only past Gate 1) the live runner + continuous-
   monitoring service on the already-accruing corpus → GATE 2 (the commercial decision, priced to pull).
 
+### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
+
+The 2026-07-16 three-angle referee pass on the "disclosure-oriented effect analysis" write-up (PL-theory,
+empirical-SE, industry-practitioner — reports local at `~/candor-paper/REFEREE-REPORTS.md`) surfaced a
+cluster of REAL tool improvements, not just paper edits. The unifying thread: candor **already reason-tags
+every `Unknown`** (`unknownWhy`: `dispatch:` / `reflect:eval` / `reflect:vm` / `reflect:require` /
+`reflect-metadata` / `native:` / `callback:` / `closure` / `unresolved` / `missing-config`) but **nothing
+quantifies over the reasons yet**. Make the reason first-class — in the policy language and in the UX — and
+several of the reviews' dealbreakers dissolve at once. This is the tool-side of the paper's own §3 fix
+(a signature is a `(determined-effects, reasons)` pair): reasons first-class in the model AND the product.
+
+- **[P1] Reason-scoped `Unknown` policies** — DESIGN DONE + **JAVA REFERENCE BUILT (2026-07-16, phase 1)**.
+  `candor-java`: `model.ReasonClass` (the normative `unknownWhy→class` map, from the structured
+  `UnknownReason.Kind` + a string path, kept consistent), `PolicyRule.Deny.unknownClasses`, the
+  `deny E Unknown[class…]` parser (+ the `dynamic` alias = all genuine classes, the `*`/bare = all, and the
+  A2 under-gating lint for a scope omitting `unresolved`), and the reason-scoped gate eval (fires the Unknown
+  part only on a matching reason-class; an unrecorded reason → `unresolved` conservatively). 4 new tests +
+  full java suite green. REMAINING (the rung, gated on a cut): port to rust/ts/swift, the verdict
+  `reasonClass` field (a §3.3 wire-shape change), SPEC §6.2 grammar, a conformance PART, and the config
+  `unknown-alias` key. Design doc + this line are the reference-of-record.
+  _(orig:)_ `candor-spec/REASON-SCOPED-UNKNOWN-DESIGN.md`.
+  `deny Net Unknown[reflect,native,dispatch] domain` fires on the dangerous DYNAMIC reason classes but
+  tolerates `Unknown[setup]`/benign `indirect`. The data is already emitted (`unknownWhy`, four-way); the
+  design adds a fixed cross-engine **reason-class vocabulary** (`reflect`/`dispatch`/`indirect`/`native`/
+  `unresolved`/`setup`) projecting the raw `unknownWhy`, plus the policy grammar filter — bare `deny E
+  Unknown` stays `Unknown[*]` (back-compat, soundness-by-default). **Dissolves the industry referee's #1
+  dealbreaker**: bare `deny E Unknown` is deny-all-able on DI/reflection-heavy code, so teams disable it;
+  reason-scoping makes it shippable. Conformance PART pins reason-scoped verdicts four-way. **Highest
+  leverage in this track**: smallest build (reuses existing data), biggest adoption unlock. Tier-2 rung,
+  java-leadable. (The SETUP-vs-GENUINE split — routing `missing-config`/`no-tsconfig` to a loud scan-time
+  setup diagnostic, never a silent gate input — is §3 of the same doc: it's the same reason-class mechanism,
+  so it ships together.)
+- **[P1] Completeness manifest — close the `absent ⇒ pure` hole** — DESIGN DONE + REALITY-AUDITED
+  (`candor-spec/COMPLETENESS-MANIFEST-DESIGN.md`). The PL referee's finding: a SILENTLY-DROPPED effectful fn
+  is indistinguishable from a provably-pure one (both absent from the report). **The 2026-07-16 four-engine
+  audit shrank this**: the analyzed universe ALREADY exists — SPEC §2.2's callgraph sidecar records every
+  analyzed fn incl. pure leaves (normative, four-way, load-bearing for AS-EFF-005). So the real work is three
+  narrower gaps, not a new manifest: **(G1)** surface an `analyzed:{count,digest}` SUMMARY in the report
+  envelope so a bare-report/`--gate-json` consumer answers analyzed-pure-vs-never-seen without loading the
+  sidecar; **(G2, the sharp one)** a machine-legible `unanalyzed` field in the envelope AND gate verdict —
+  parse-failures are disclosed on STDERR + fail the exit code today but are INVISIBLE to a JSON consumer, so
+  an agent gets `ok:true` over unanalyzed source (a live machine-consumer cardinal-sin channel worth fixing
+  regardless); **(G3)** verify/pin four-way that a truly-isolated pure fn is a callgraph node (ts derives
+  nodes from edges → an isolated leaf may be missing — the residual §2.2 hole). Tier-1 additive + a §2.2
+  conformance fix; pairs with `candor verify`.
+- **[P2] `Net` destination-class refinement — answer the coarse-effects dealbreaker.** `Net` can't tell
+  telemetry from exfiltration — the industry referee's hard blocker for anything security-framed. Generalize
+  the existing `MODEL_HOSTS` machinery (already classifies `Net`→`Llm` by host): carry a destination CLASS
+  on `Net` (`known-telemetry` / `known-partner` / `unknown-host`) from the host literals candor already
+  extracts (const-anchored + literal-head resolution, spec 0.14). Unlocks the security use case the tool
+  can't currently cash; a natural extension of shipped work. Bigger effort; a real vocabulary rung. Stay
+  SOUND — an unresolved host stays bare `Net` (+ `unknown-host` class), never fabricated.
+- **[P2] Standing dynamic honesty oracle (`candor verify`).** Productionize the oracle prototype (built
+  local, `~/candor-paper/harness/`): run a candor report against a runtime syscall/interposition trace and
+  confirm `observed ⊆ inferred ∪ {Unknown}` per executed fn. The empirical referee's RQ3 finding — that
+  cross-engine conformance is the WEAKEST check, because shared blind spots hide from agreement (the
+  Knight–Leveson result our own soundness log confirmed: write-fmt silent in all four engines) — is an
+  argument to lean on the mechanism-INDEPENDENT oracle as a standing CI/soundness gate, not just
+  conformance. The differentiator no competitor has: an analysis that checks itself against reality.
+  Site-anchored attribution (wrap candor's own claimed direct-effect sites) sidesteps general stack
+  unwinding.
+- **[P2] `Unknown`-rate / disclosure metric as first-class output.** `candor blindspots --stats`: the
+  reason-distribution (how much `Unknown`, by reason class) as a self-diagnostic, so a team can SIZE the
+  blind-spot cost before turning on `deny E Unknown`. Cheap; answers the "is disclosure actionable or
+  pervasive" question in production; feeds the setup-vs-genuine split.
+- **[P3] Blame-tracked `Unknown`.** Join `unknownWhy` + the oracle: when a runtime effect escapes,
+  attribute it to THE specific unresolved edge that should have disclosed it ("this `Net` came through the
+  `reflect:vm` site at `foo.ts:42`"). Turns the oracle from yes/no into a debugger; the gradual-effects
+  BLAME literature (Wadler–Findler lineage) is the formal home. Builds on `candor verify`.
+
 ## fingerprint
 
 - _Done (2026-06-21):_ **`--baseline <report>` diff** — reports the *change* in the structure descriptor
@@ -234,9 +309,14 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
     `--baseline` already reports the drift toward chaos; the gate makes it *fail a PR* when `structure`
     regresses past a tolerance, with the drop **attributed** to its component and — v2 — to the functions
     that crossed each line. Same posture as the AS-EFF-005 ratchet: a PR-over-PR **delta**, never an
-    absolute grade; opt-in; **no AS-EFF code / not in conformance**. Open before build: threshold/min-fns
-    calibration (noise floor unknown). NB this thread has now been designed twice without a commit —
-    either decide or shelve it with a revisit date.
+    absolute grade; opt-in; **no AS-EFF code / not in conformance**. **AUDITED 2026-07-16 (grounded-and-
+    accurate):** the metric §21 matches `candor-fingerprint.mjs:308-309` VERBATIM and `--baseline` (the delta
+    the gate consumes) already works — the gate is a THIN layer over real, tested machinery, NOT blocked on
+    feasibility or grounding. The `.candor/config`-for-thresholds open question is resolved (config shipped,
+    §3.4). So the only real blockers are (1) a decide-or-shelve call and (2) threshold/noise-floor
+    calibration — a short EMPIRICAL pass on real repos (run the gate over N recent PR pairs, see what
+    `structure` deltas real regressions vs churn produce), not a design problem. Recommendation: it's cheaper
+    to build than the "designed twice, never committed" framing implies — decide.
   - **[adoption] embeddable fingerprint badge.** The mark already renders with transparent corners as an
     embeddable badge; surface a "your project's candor fingerprint" artifact (a README badge / a page on
     candor.poly.io) as a low-cost distribution/marketing surface. Ties to the adoption thread above.

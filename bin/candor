@@ -345,7 +345,19 @@ PY
         -newer "$repfile" -print -quit 2>/dev/null)
       [ -n "$newer" ] && echo "  ⚠ stale  source changed since the scan (${newer#"$croot"/}) — re-run \`candor scan .\`"
       echo ""
-      echo "  candor tour · candor where <Effect> · candor scan . · candor --help"
+      # Context-aware next step: candor's value is the GATE. If none is set up yet (no policy key AND no
+      # baseline), lead the user there; once gated, point at the query + CI commands.
+      cfg="$croot/.candor/config"
+      has_gate=no
+      { grep -qs "^policy" "$cfg" || grep -qs "^baseline" "$cfg" || ls "$croot"/.candor/baseline*.json >/dev/null 2>&1; } && has_gate=yes
+      if [ "$has_gate" = no ]; then
+        echo "  Next → turn this map into a gate:  candor init"
+        echo "         (proposes an architecture policy from what your code already does + a regression ratchet)"
+        echo "  Explore → candor tour · candor where <Effect> · candor path <fn> <Effect>"
+      else
+        echo "  candor tour · candor where <Effect> · candor path <fn> <Effect>"
+        echo "  gate it in CI → candor scan . --gate-json verdict.json  (exit 1 on a violation)"
+      fi
       exit 0
     fi
     exec "$0" --help;;

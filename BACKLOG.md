@@ -241,15 +241,14 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   representation-agnostic `reasonClass` structural invariant. Per-engine regression tests + four-way
   conformance green. Sibling: the **disclosure-completeness gate** (candor-java `DisclosureCompletenessTest`
   + `DISCLOSURE-COMPLETENESS-DESIGN.md`) shipped alongside. See [[candor-reason-scoped-unknown]].
-  **REMAINING (deferred — the low-value tail):** the config **`unknown-alias`** key (a user-defined named
-  alias `.candor/config` `unknown-alias foo = reflect,native` referenced as `Unknown[foo]`). Design-doc §4
-  frames it explicitly as *"a spelling convenience, not a hidden default"*; the built-in `dynamic` already
-  provides the primary narrowing-legibility need. It requires a config-subsystem change (the loader returns
-  ONE value per key; multiple aliases need multi-value handling) **and** a parser-signature change to thread
-  the alias map, four-way + conformance — disproportionate to its value, so parked as its own small rung
-  (the SPEC §6.2 legibility rule for it is already written: a config alias MUST NOT change bare `deny E
-  Unknown`, which is always `Unknown[*]`). The `setup`-vs-genuine split (loud scan-time setup diagnostic;
-  §3 of the design) is the other still-open piece of this item.
+  The config **`unknown-alias`** key ALSO shipped four-way (2026-07-17): a user-defined
+  `.candor/config` `unknown-alias foo = reflect,native` referenced explicitly as `Unknown[foo]`,
+  multi-value, discovered by walking up from the policy/scan target, honored by the gate AND the
+  config-aware `parsepolicy` (pinned in PART 4 via a checked-in `.candor/config`). A config alias may not
+  shadow a built-in and never changes what bare `deny E Unknown` means. **ONLY REMAINING piece of this
+  item:** the `setup`-vs-genuine split (a loud scan-time setup diagnostic routing `missing-config`/
+  `no-tsconfig` holes to "wire up your config", never a silent gate input; §3 of the design) — a small
+  follow-on, not yet built.
   _(orig:)_ `candor-spec/REASON-SCOPED-UNKNOWN-DESIGN.md`.
   `deny Net Unknown[reflect,native,dispatch] domain` fires on the dangerous DYNAMIC reason classes but
   tolerates `Unknown[setup]`/benign `indirect`. The data is already emitted (`unknownWhy`, four-way); the

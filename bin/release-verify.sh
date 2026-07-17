@@ -20,7 +20,7 @@ v=$(npm view candor-ts version 2>/dev/null)
 [ "$v" = "$VER" ] && ok "candor-ts $v" || bad "candor-ts: npm version '${v:-?}' != $VER"
 
 echo "[gh releases] spec v$SPEC · engines v$VER"
-for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-swift:v$VER" "candor-agents:v$VER"; do
+for r in "candor-spec:v$VER" "candor-rust:v$VER" "candor-java:v$VER" "candor-swift:v$VER" "candor-agents:v$VER"; do
   repo="${r%%:*}"; tag="${r##*:}"
   got=$(gh release view "$tag" -R "tombaldwin/$repo" --json tagName -q .tagName 2>/dev/null)
   [ "$got" = "$tag" ] && ok "$repo $got" || bad "$repo: release '${got:-missing}' != $tag"

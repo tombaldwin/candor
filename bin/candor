@@ -410,6 +410,16 @@ case "$QUERY_VERBS" in
     route_query "$@"; exit $?;;
 esac
 case "$verb" in
+  verify)
+    # `candor verify [<dir>] --run "<cmd>" [--scope] [--json]` — the DYNAMIC HONESTY ORACLE: run a program
+    # under a runtime capture and check candor's static claim against reality (observed ⊆ inferred ∪ Unknown
+    # per executed fn). A cardinal-sin escape exits 1. Node-hosted (the capture wraps the Node effect
+    # boundary), so it routes to the ts engine regardless of the project's language.
+    shift
+    if have candor-ts-verify; then run candor-ts-verify "$@"
+    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-verify "$@"
+    else die "candor verify needs Node (the honesty oracle wraps the Node runtime; the ts engine runs via npx) — install Node."; fi
+    ;;
   effects|glossary)
     # The core noun, explained. The persona audit found nothing a user naturally runs ever says what an
     # "effect" IS or lists the names — novices finished a session fuzzy on the headline concept.

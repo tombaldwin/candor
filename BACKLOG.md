@@ -281,7 +281,7 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   regardless); **(G3)** verify/pin four-way that a truly-isolated pure fn is a callgraph node (ts derives
   nodes from edges → an isolated leaf may be missing — the residual §2.2 hole). Tier-1 additive + a §2.2
   conformance fix; pairs with `candor verify`.
-- **[P2] `Net` destination-class refinement — answer the coarse-effects dealbreaker.** `Net` can't tell
+- **[P2] `Net` destination-class refinement — DESIGN DONE (`candor-spec/NET-DESTINATION-CLASS-DESIGN.md`, 2026-07-17); answer the coarse-effects dealbreaker.** `Net` can't tell
   telemetry from exfiltration — the industry referee's hard blocker for anything security-framed. Generalize
   the existing `MODEL_HOSTS` machinery (already classifies `Net`→`Llm` by host): carry a destination CLASS
   on `Net` (`known-telemetry` / `known-partner` / `unknown-host`) from the host literals candor already

@@ -245,10 +245,14 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   `.candor/config` `unknown-alias foo = reflect,native` referenced explicitly as `Unknown[foo]`,
   multi-value, discovered by walking up from the policy/scan target, honored by the gate AND the
   config-aware `parsepolicy` (pinned in PART 4 via a checked-in `.candor/config`). A config alias may not
-  shadow a built-in and never changes what bare `deny E Unknown` means. **ONLY REMAINING piece of this
-  item:** the `setup`-vs-genuine split (a loud scan-time setup diagnostic routing `missing-config`/
-  `no-tsconfig` holes to "wire up your config", never a silent gate input; §3 of the design) — a small
-  follow-on, not yet built.
+  shadow a built-in and never changes what bare `deny E Unknown` means. The **`setup`-vs-genuine
+  diagnostic** (§3) ALSO shipped for **candor-ts** (2026-07-17, the canonical case): a call into a
+  declared-but-uninstalled dep is tagged `no-node_modules:<pkg>` (class `setup`), and a loud scan-time SETUP
+  line counts them + names `npm install`; `Unknown[dynamic]` tolerates them (excludes `setup`) so a strict
+  gate bites genuine dynamism while the fixable holes shrink to zero once installed. **ONLY REMAINING:** the
+  `setup` EMISSION in java (classpath) + swift (SDK/modules) — a per-engine follow-on (`setup` classification
+  + gate tolerance are already four-way; rust largely gets it free via the κ coverage ledger). This
+  completes the reason-scoped track bar that emission tail.
   _(orig:)_ `candor-spec/REASON-SCOPED-UNKNOWN-DESIGN.md`.
   `deny Net Unknown[reflect,native,dispatch] domain` fires on the dangerous DYNAMIC reason classes but
   tolerates `Unknown[setup]`/benign `indirect`. The data is already emitted (`unknownWhy`, four-way); the

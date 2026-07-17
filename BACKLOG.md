@@ -297,7 +297,7 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   conformance. The differentiator no competitor has: an analysis that checks itself against reality.
   Site-anchored attribution (wrap candor's own claimed direct-effect sites) sidesteps general stack
   unwinding.
-- **[P2] `Unknown`-rate / disclosure metric as first-class output.** `candor blindspots --stats`: the
+- **[P2] `Unknown`-rate / disclosure metric — SHIPPED (2026-07-17, targets 0.20, unreleased on main).** `candor blindspots --stats`: the
   reason-distribution (how much `Unknown`, by reason class) as a self-diagnostic, so a team can SIZE the
   blind-spot cost before turning on `deny E Unknown`. Cheap; answers the "is disclosure actionable or
   pervasive" question in production; feeds the setup-vs-genuine split.

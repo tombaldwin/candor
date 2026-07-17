@@ -413,11 +413,39 @@ case "$verb" in
   verify)
     # `candor verify [<dir>] --run "<cmd>" [--scope] [--json]` — the DYNAMIC HONESTY ORACLE: run a program
     # under a runtime capture and check candor's static claim against reality (observed ⊆ inferred ∪ Unknown
-    # per executed fn). A cardinal-sin escape exits 1. Node-hosted (the capture wraps the Node effect
-    # boundary), so it routes to the ts engine regardless of the project's language.
+    # per executed fn). A cardinal-sin escape exits 1. The capture is runtime-specific: the Node arm wraps
+    # the Node effect boundary (ts engine), the JVM arm instruments bytecode via a -javaagent (java engine).
+    # We route by the target's language so `candor verify` matches whatever you scanned; `--engine node|java`
+    # forces it (for a mixed repo, or to check a jar the language sniff can't classify).
     shift
-    if have candor-ts-verify; then run candor-ts-verify "$@"
-    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-verify "$@"
+    # Pass 1: read --engine (explicit override) + the first positional (the target dir), skipping the values
+    # of value-taking flags. Rebuild the arg list WITHOUT --engine (neither engine's verify knows that flag).
+    veng=""; vdir="."; vskip=0; vnext=0; vargs=()
+    for a2 in "$@"; do
+      if [ "$vskip" = 1 ]; then vskip=0; vargs+=("$a2"); continue; fi
+      if [ "$vnext" = 1 ]; then vnext=0; veng="$a2"; continue; fi   # value of --engine, dropped
+      case "$a2" in
+        --engine) vnext=1;;
+        --run|--report|--scope|--syscall-trace|--trace-format) vskip=1; vargs+=("$a2");;
+        -*) vargs+=("$a2");;
+        *) [ "$vdir" = "." ] && vdir="$a2"; vargs+=("$a2");;
+      esac
+    done
+    if [ "$veng" != "node" ] && [ "$veng" != "java" ]; then
+      # auto-detect the arm from the target, using only UNAMBIGUOUS signals: a *.jar target, or a JVM source
+      # project (build.gradle/pom.xml/*.java) the manifest sniff classifies as java. Everything else — a ts
+      # project, a mixed repo, a bare classdir, an unknown dir — takes the Node arm. (A stray *.class deep in
+      # a repo is NOT a signal: it misroutes ts projects that vendor bytecode.) For a bare classdir the sniff
+      # can't see, pass `--engine java` explicitly — that's the escape hatch.
+      veng="node"
+      if [ -d "$vdir" ]; then vd="$vdir"; else vd="$(dirname "$vdir")"; fi
+      case "$vdir" in *.jar) veng="java";; esac
+      if [ "$veng" = "node" ] && [ "$(detect_langs "$vd" 2>/dev/null)" = "java" ]; then veng="java"; fi
+    fi
+    if [ "$veng" = "java" ]; then
+      run_java verify "${vargs[@]}"
+    elif have candor-ts-verify; then run candor-ts-verify "${vargs[@]}"
+    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-verify "${vargs[@]}"
     else die "candor verify needs Node (the honesty oracle wraps the Node runtime; the ts engine runs via npx) — install Node."; fi
     ;;
   effects|glossary)

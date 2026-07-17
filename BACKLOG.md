@@ -245,14 +245,17 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   `.candor/config` `unknown-alias foo = reflect,native` referenced explicitly as `Unknown[foo]`,
   multi-value, discovered by walking up from the policy/scan target, honored by the gate AND the
   config-aware `parsepolicy` (pinned in PART 4 via a checked-in `.candor/config`). A config alias may not
-  shadow a built-in and never changes what bare `deny E Unknown` means. The **`setup`-vs-genuine
-  diagnostic** (§3) ALSO shipped for **candor-ts** (2026-07-17, the canonical case): a call into a
-  declared-but-uninstalled dep is tagged `no-node_modules:<pkg>` (class `setup`), and a loud scan-time SETUP
-  line counts them + names `npm install`; `Unknown[dynamic]` tolerates them (excludes `setup`) so a strict
-  gate bites genuine dynamism while the fixable holes shrink to zero once installed. **ONLY REMAINING:** the
-  `setup` EMISSION in java (classpath) + swift (SDK/modules) — a per-engine follow-on (`setup` classification
-  + gate tolerance are already four-way; rust largely gets it free via the κ coverage ledger). This
-  completes the reason-scoped track bar that emission tail.
+  shadow a built-in and never changes what bare `deny E Unknown` means. The **`setup`-vs-genuine split**
+  (§3) is **COMPLETE four-way** (2026-07-17) — by two mechanisms: **candor-ts** emits a per-fn `setup` tag
+  (`no-node_modules:<pkg>` on a call into a declared-but-uninstalled dep — precise because it *resolves*
+  types and npm import specifier == package) + a loud SETUP remediation; **candor-java / -rust / -swift**
+  route the mis-config / uncovered-dep case to the κ **coverage ledger** (`invisible` + note), never a
+  genuine `Unknown` (java `Candor.java:1364`), so the separation already holds — and a per-fn `setup` tag
+  there would be UNSAFE (no clean import→package/module mapping ⇒ mis-tag ⇒ under-gate via `Unknown[dynamic]`
+  excluding `setup`), so deliberately not emitted; **candor-swift** adds a SAFE scan-level SETUP *warning*
+  (a `Package.swift` declaring deps with no fetched `.build/checkouts` → "run `swift build`"). **The whole
+  reason-scoped track is now done** — the only genuine follow-on would be if a future java/swift build-file
+  reader made a precise setup tag safe there (not currently worth the under-gating risk).
   _(orig:)_ `candor-spec/REASON-SCOPED-UNKNOWN-DESIGN.md`.
   `deny Net Unknown[reflect,native,dispatch] domain` fires on the dangerous DYNAMIC reason classes but
   tolerates `Unknown[setup]`/benign `indirect`. The data is already emitted (`unknownWhy`, four-way); the

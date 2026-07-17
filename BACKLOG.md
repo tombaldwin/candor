@@ -230,15 +230,26 @@ quantifies over the reasons yet**. Make the reason first-class — in the policy
 several of the reviews' dealbreakers dissolve at once. This is the tool-side of the paper's own §3 fix
 (a signature is a `(determined-effects, reasons)` pair): reasons first-class in the model AND the product.
 
-- **[P1] Reason-scoped `Unknown` policies** — DESIGN DONE + **JAVA REFERENCE BUILT (2026-07-16, phase 1)**.
-  `candor-java`: `model.ReasonClass` (the normative `unknownWhy→class` map, from the structured
-  `UnknownReason.Kind` + a string path, kept consistent), `PolicyRule.Deny.unknownClasses`, the
-  `deny E Unknown[class…]` parser (+ the `dynamic` alias = all genuine classes, the `*`/bare = all, and the
-  A2 under-gating lint for a scope omitting `unresolved`), and the reason-scoped gate eval (fires the Unknown
-  part only on a matching reason-class; an unrecorded reason → `unresolved` conservatively). 4 new tests +
-  full java suite green. REMAINING (the rung, gated on a cut): port to rust/ts/swift, the verdict
-  `reasonClass` field (a §3.3 wire-shape change), SPEC §6.2 grammar, a conformance PART, and the config
-  `unknown-alias` key. Design doc + this line are the reference-of-record.
+- **[P1] Reason-scoped `Unknown` policies** — **SHIPPED FOUR-WAY (2026-07-17), unreleased on main (targets spec 0.19)**.
+  All four engines: `ReasonClass` projection {reflect,dispatch,indirect,native,unresolved,setup}, the
+  `deny E Unknown[class…]` parser (`dynamic` alias, `*`/bare = all, A2 under-gating lint), the reason-scoped
+  gate eval (fires only on a matching class; unrecorded → `unresolved` conservatively), **the reason CLASS
+  propagated TRANSITIVELY at gate-eval time** (a caller inheriting a reflect-caused Unknown fires
+  `Unknown[reflect]` — a transitive under-gating gap found+fixed during the port), and the **`reasonClass`
+  verdict field** (§3.3; all classes on the fn, on an AS-EFF-006 Unknown denial). **SPEC §6.2 grammar
+  written** (⟨0.19⟩). **Conformance**: PART 4 pins the parse (`unknownClasses`) four-way; PART 12 pins a
+  representation-agnostic `reasonClass` structural invariant. Per-engine regression tests + four-way
+  conformance green. Sibling: the **disclosure-completeness gate** (candor-java `DisclosureCompletenessTest`
+  + `DISCLOSURE-COMPLETENESS-DESIGN.md`) shipped alongside. See [[candor-reason-scoped-unknown]].
+  **REMAINING (deferred — the low-value tail):** the config **`unknown-alias`** key (a user-defined named
+  alias `.candor/config` `unknown-alias foo = reflect,native` referenced as `Unknown[foo]`). Design-doc §4
+  frames it explicitly as *"a spelling convenience, not a hidden default"*; the built-in `dynamic` already
+  provides the primary narrowing-legibility need. It requires a config-subsystem change (the loader returns
+  ONE value per key; multiple aliases need multi-value handling) **and** a parser-signature change to thread
+  the alias map, four-way + conformance — disproportionate to its value, so parked as its own small rung
+  (the SPEC §6.2 legibility rule for it is already written: a config alias MUST NOT change bare `deny E
+  Unknown`, which is always `Unknown[*]`). The `setup`-vs-genuine split (loud scan-time setup diagnostic;
+  §3 of the design) is the other still-open piece of this item.
   _(orig:)_ `candor-spec/REASON-SCOPED-UNKNOWN-DESIGN.md`.
   `deny Net Unknown[reflect,native,dispatch] domain` fires on the dangerous DYNAMIC reason classes but
   tolerates `Unknown[setup]`/benign `indirect`. The data is already emitted (`unknownWhy`, four-way); the
@@ -316,7 +327,9 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
     §3.4). So the only real blockers are (1) a decide-or-shelve call and (2) threshold/noise-floor
     calibration — a short EMPIRICAL pass on real repos (run the gate over N recent PR pairs, see what
     `structure` deltas real regressions vs churn produce), not a design problem. Recommendation: it's cheaper
-    to build than the "designed twice, never committed" framing implies — decide.
+    to build than the "designed twice, never committed" framing implies. **DEFERRED (Tom 2026-07-17): important,
+    but parked to focus on the paper + related findings; revisit after that push.** Design is grounded and
+    ready — pick it up cold when the slot opens, no re-audit needed.
   - **[adoption] embeddable fingerprint badge.** The mark already renders with transparent corners as an
     embeddable badge; surface a "your project's candor fingerprint" artifact (a README badge / a page on
     candor.poly.io) as a low-cost distribution/marketing surface. Ties to the adoption thread above.

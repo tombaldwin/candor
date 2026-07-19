@@ -332,6 +332,15 @@ engine_scan() {
     rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
     ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
+      # --workspace/--deps is N/A for the bytecode engine — it is given the whole classpath, so cross-module
+      # interface dispatch resolves natively (no per-package chaining). The JVM CLI errors on the unknown flag,
+      # so strip it here with a note (the source engines rust/ts/swift forward it unchanged via "$@").
+      case " $* " in
+        *" --workspace "*|*" --deps "*)
+          echo "candor: --workspace is N/A for the JVM engine — whole-classpath bytecode resolves cross-module dispatch natively; ignoring it." >&2
+          local ja=() a3; for a3 in "$@"; do case "$a3" in --workspace|--deps) ;; *) ja+=("$a3");; esac; done
+          set -- "${ja[@]}";;
+      esac
       # the JVM engine's bare run prints the table but persists nothing (its --json writes the report).
       # Every other engine persists by default, and the whole query flow (tour/where/path) reads the
       # persisted report — so when no output flag is given, write the report where discovery looks.

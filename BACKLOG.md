@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-16 (floors 0.16→0.18: the callgraph-aware baseline guard, query target validation, and the trust-trio; + the disclosure-refinement track opened from the academic referee pass). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-destination-class, completeness-manifest and cross-package-interface-dispatch rungs all shipped; + a 0.23.1 engine-**performance** + classifier-soundness patch — the disclosure-refinement track is now mostly landed, with the `candor verify` dynamic oracle the standout open item). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -13,7 +13,7 @@ deployability gate is shipped end-to-end (AS-EFF-005 ratchet, 006/008/009 policy
 conformance-pinned). The spec advances on a **version LADDER, not lockstep** (Tom, 2026-07-01 — SPEC.md
 §"Versioning policy"): the reference engine may lead a minor/additive rung, the floor stays
 conformance-pinned over the four code engines, breaking bumps stay lockstep. The ladder has run
-eleven full cycles: **0.8** (the `--gate-json` gate verdict), **0.9** (the remedial tool loop), **0.10**
+fifteen full cycles: **0.8** (the `--gate-json` gate verdict), **0.9** (the remedial tool loop), **0.10**
 (the canonical query grammar), **0.11** (the surprising-reach surface + corrupt-report loudness),
 **0.12** (the gains `origin` field), **0.13** (the `Llm` effect + the `extensions` field / the
 candor-swift `privacy/1` sensor extension + `privacy-manifest` verb), **0.14** (the top-level/initializer
@@ -21,13 +21,23 @@ unit — a cardinal-sin closure), **0.15** (the coverage envelope — the κ led
 report, verdict-preserving verb conditionality — plus host-resolution recall and four corpus-found
 soundness fixes), **0.16** (the callgraph-aware baseline guard — a formerly-pure fn turning effectful is a
 gain, AS-EFF-005; Unknown-only gains stay advisory), **0.17** (query target validation — `where`/`callers`
-fail loud (exit 2) on a typo'd effect or nonexistent fn, never a false empty at exit 0), and **0.18** (the
-trust-trio — the `--strict` advisory-verb CI gate on `fix-gate`/`gains`/`unverified` + the surface/`tour`
-mostly-Unknown disclosure, both four-way; hardened by a Fable-model code review that caught two latent
-cardinal-sin edges: swift's un-gated scan opener, java's single-dash flag swallow). The **floor is now
-0.18** (all engines at 0.18.0, conformance-pinned through PARTs 4l/5b/12b/12c, **published + release-verified
-live** 2026-07-16: crates.io, npm via the tag-triggered OIDC action with SLSA provenance, gh releases, java
-native binaries, the Homebrew tap; `candor outdated` resolves 0.18 on every channel).
+fail loud (exit 2) on a typo'd effect or nonexistent fn, never a false empty at exit 0), **0.18** (the
+trust-trio — the `--strict` advisory-verb CI gate + the surface/`tour` mostly-Unknown disclosure, hardened
+by a Fable-model review that caught two latent cardinal-sin edges), **0.19** (reason-scoped `Unknown`
+policies — `deny E Unknown[reflect,dispatch,…]` + the transitive reason-class + the `reasonClass` verdict
+field; dissolves the DI/reflection deny-all-able dealbreaker), **0.20** (the `Net` destination-class —
+`netClass` known-telemetry/known-partner/unknown-host + `deny Net[unknown-host]` + the `blindspots --stats`
+reason-distribution), **0.21** (the completeness manifest — report/verdict `analyzed`+`unanalyzed`, a
+fail-closed exit-2 incomplete verdict closing a machine-consumer cardinal-sin channel), and **0.23** (the
+cross-package interface-dispatch rung — an additive `interfaceUnion` entry gated behind
+`CANDOR_WORKSPACE_CHAIN`). The **floor is now 0.23** (all code engines at 0.23.x, **published + release-
+verified live**: crates.io, npm via the OIDC/SLSA action, gh releases, java native binaries, the Homebrew
+tap). **0.23.1 (2026-07-20, a WITHIN-SPEC patch — spec stays 0.23) is the newest:** an engine-**performance**
+sweep (two super-linear cliffs killed family-wide — chaTargets memoize + Surface presort + worklist
+fixpoints, all byte-identical-verified; see the versioning-ladder history) plus the `Llm` model-SDK
+fabrication fix AND its review-caught silent-under-report correction (a denylist over the sound blanket,
+never an allowlist — the denylist-over-allowlist rule); umbrella patched to 0.23.2 to fix a stale
+`ENGINE_PIN` that had `candor update` fetching 0.18 engines under a 0.23 umbrella.
 
 **Priority (Tom, 2026-07-01): the agent loop stays the north-star, with the JVM arch gate co-important —
 fund both, demote neither.** The **agent edit-time feedback loop** is the cutting-edge, differentiating
@@ -36,8 +46,14 @@ gate** is the solid-engineering wedge (proven, deterministic, sellable). This su
 the 2026-06-18 repositioning as *demoting* the agent angle — that made the gate the lead **sales** wedge,
 not a reason to stop investing in the agent loop, which stays P0 below.
 
-Value runs in **two parallel tracks**; within each, new work is **surface, not depth** — capability is
-mined-out; the spec advances only on the ladder (now at 0.15). **Both tracks' build-outs are complete**:
+Value runs in **two parallel tracks**; within each, new *disclosure* capability is largely mined-out and the
+spec advances only on the ladder (now at 0.23). Two caveats to "mined-out", learned since: (a) **engine
+PERFORMANCE was net-new depth** — the 0.23.1 sweep found and killed two genuine super-linear cliffs (CHA
+recomputation, O(V²) fixpoints) the earlier corpus rounds never surfaced, so "capability is mined-out"
+never implied "the engines are as good as they get"; and (b) a code review before the 0.23.1 publish caught
+a **cardinal sin a fix had just introduced** (an Llm-narrowing allowlist that silently under-reported Spring
+AI streaming/embedding) — a reminder that new soundness holes can still be *created*, so the review-before-
+ship discipline stays load-bearing. **Both tracks' build-outs are complete**:
 the arch-gate funnel end-to-end (items 1–3 below), and the agent-loop polish closed 2026-07-14 (the
 `candor_activity` MCP + LSP push — no polish items remain). The 2026-07-15 autonomous corpus+audit run
 confirmed the engines sound across ~20 real repos (4 real finds, all fixed and shipped in 0.15). What
@@ -230,7 +246,16 @@ quantifies over the reasons yet**. Make the reason first-class — in the policy
 several of the reviews' dealbreakers dissolve at once. This is the tool-side of the paper's own §3 fix
 (a signature is a `(determined-effects, reasons)` pair): reasons first-class in the model AND the product.
 
-- **[P1] Reason-scoped `Unknown` policies** — **SHIPPED FOUR-WAY (2026-07-17), unreleased on main (targets spec 0.19)**.
+**STATUS (2026-07-20): this track is mostly LANDED + PUBLISHED.** Reason-scoped `Unknown` shipped as floor
+**0.19**; the `Net` destination-class + `blindspots --stats` as **0.20**; the completeness manifest as
+**0.21**. What remains open, and the recommended next pick: **the `candor verify` dynamic honesty oracle**
+(below, elevated to [P1 — NEXT]) — the empirical referee's RQ3 point is that cross-engine conformance is
+the WEAKEST check (shared blind spots hide from agreement), so a mechanism-INDEPENDENT oracle that checks
+the report against a real syscall trace is the highest-leverage remaining soundness work AND the paper's
+load-bearing evidence. Blame-tracked `Unknown` [P3] builds on it. The per-item detail below is kept for
+provenance; the SHIPPED items are marked in place.
+
+- **[P1] Reason-scoped `Unknown` policies** — **SHIPPED + PUBLISHED as floor 0.19** (was staged on main 2026-07-17).
   All four engines: `ReasonClass` projection {reflect,dispatch,indirect,native,unresolved,setup}, the
   `deny E Unknown[class…]` parser (`dynamic` alias, `*`/bare = all, A2 under-gating lint), the reason-scoped
   gate eval (fires only on a matching class; unrecorded → `unresolved` conservatively), **the reason CLASS
@@ -240,7 +265,7 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   written** (⟨0.19⟩). **Conformance**: PART 4 pins the parse (`unknownClasses`) four-way; PART 12 pins a
   representation-agnostic `reasonClass` structural invariant. Per-engine regression tests + four-way
   conformance green. Sibling: the **disclosure-completeness gate** (candor-java `DisclosureCompletenessTest`
-  + `DISCLOSURE-COMPLETENESS-DESIGN.md`) shipped alongside. See [[candor-reason-scoped-unknown]].
+  + `DISCLOSURE-COMPLETENESS-DESIGN.md`) shipped alongside. See the reason-scoped-Unknown / Net-class work.
   The config **`unknown-alias`** key ALSO shipped four-way (2026-07-17): a user-defined
   `.candor/config` `unknown-alias foo = reflect,native` referenced explicitly as `Unknown[foo]`,
   multi-value, discovered by walking up from the policy/scan target, honored by the gate AND the
@@ -268,7 +293,10 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   java-leadable. (The SETUP-vs-GENUINE split — routing `missing-config`/`no-tsconfig` to a loud scan-time
   setup diagnostic, never a silent gate input — is §3 of the same doc: it's the same reason-class mechanism,
   so it ships together.)
-- **[P1] Completeness manifest — close the `absent ⇒ pure` hole** — DESIGN DONE + REALITY-AUDITED
+- **[P1] Completeness manifest — close the `absent ⇒ pure` hole** — **SHIPPED + PUBLISHED as floor 0.21**
+  (report/verdict `analyzed`+`unanalyzed`; the fail-closed exit-2 incomplete verdict closed a live
+  machine-consumer cardinal-sin channel in java/ts/swift — see the completeness-manifest rung). Original
+  framing kept for provenance — DESIGN DONE + REALITY-AUDITED
   (`candor-spec/COMPLETENESS-MANIFEST-DESIGN.md`). The PL referee's finding: a SILENTLY-DROPPED effectful fn
   is indistinguishable from a provably-pure one (both absent from the report). **The 2026-07-16 four-engine
   audit shrank this**: the analyzed universe ALREADY exists — SPEC §2.2's callgraph sidecar records every
@@ -281,23 +309,29 @@ several of the reviews' dealbreakers dissolve at once. This is the tool-side of 
   regardless); **(G3)** verify/pin four-way that a truly-isolated pure fn is a callgraph node (ts derives
   nodes from edges → an isolated leaf may be missing — the residual §2.2 hole). Tier-1 additive + a §2.2
   conformance fix; pairs with `candor verify`.
-- **[P2] `Net` destination-class refinement — DESIGN DONE (`candor-spec/NET-DESTINATION-CLASS-DESIGN.md`, 2026-07-17); answer the coarse-effects dealbreaker.** `Net` can't tell
+- **[P2] `Net` destination-class refinement — SHIPPED + PUBLISHED as floor 0.20** (`netClass`
+  known-telemetry/known-partner/unknown-host + `deny Net[unknown-host]`, fail-closed on a masked/runtime
+  host — see the reason-scoped-Unknown / Net-class work). Original framing kept for provenance — DESIGN DONE
+  (`candor-spec/NET-DESTINATION-CLASS-DESIGN.md`, 2026-07-17); answer the coarse-effects dealbreaker. `Net` can't tell
   telemetry from exfiltration — the industry referee's hard blocker for anything security-framed. Generalize
   the existing `MODEL_HOSTS` machinery (already classifies `Net`→`Llm` by host): carry a destination CLASS
   on `Net` (`known-telemetry` / `known-partner` / `unknown-host`) from the host literals candor already
   extracts (const-anchored + literal-head resolution, spec 0.14). Unlocks the security use case the tool
   can't currently cash; a natural extension of shipped work. Bigger effort; a real vocabulary rung. Stay
   SOUND — an unresolved host stays bare `Net` (+ `unknown-host` class), never fabricated.
-- **[P2] Standing dynamic honesty oracle (`candor verify`).** Productionize the oracle prototype (built
-  local, `~/candor-paper/harness/`): run a candor report against a runtime syscall/interposition trace and
-  confirm `observed ⊆ inferred ∪ {Unknown}` per executed fn. The empirical referee's RQ3 finding — that
+- **[P1 — NEXT (Tom, 2026-07-20: "backlog refresh, then verify oracle")] Standing dynamic honesty oracle
+  (`candor verify`).** Productionize the oracle prototype (built local, `~/candor-paper/harness/`; also runs
+  on this Mac via a Docker `rust:latest` + `--cap-add=SYS_PTRACE` strace container — runs via a Docker `--cap-add=SYS_PTRACE` strace container on this Mac;
+  candor-java ships the production `io.poly.candor.verify` `-javaagent` (Trace.emit, ~1.0–1.3×) distinct from
+  the soundness-corpus harness agent — candor-java ships the production verify `-javaagent`): run a candor report against a runtime
+  syscall/interposition trace and confirm `observed ⊆ inferred ∪ {Unknown}` per executed fn. The empirical referee's RQ3 finding — that
   cross-engine conformance is the WEAKEST check, because shared blind spots hide from agreement (the
   Knight–Leveson result our own soundness log confirmed: write-fmt silent in all four engines) — is an
   argument to lean on the mechanism-INDEPENDENT oracle as a standing CI/soundness gate, not just
   conformance. The differentiator no competitor has: an analysis that checks itself against reality.
   Site-anchored attribution (wrap candor's own claimed direct-effect sites) sidesteps general stack
   unwinding.
-- **[P2] `Unknown`-rate / disclosure metric — SHIPPED (2026-07-17, targets 0.20, unreleased on main).** `candor blindspots --stats` (reason-class distribution, sizing) + `--class <c,…>` (drill-down filter), three-way (rust/java/ts), conformance PART 5c. The blindspots half of the design's reason-class integration; `unverified --class` is the small remaining companion. `candor blindspots --stats`: the
+- **[P2] `Unknown`-rate / disclosure metric — SHIPPED + PUBLISHED as floor 0.20.** `candor blindspots --stats` (reason-class distribution, sizing) + `--class <c,…>` (drill-down filter), three-way (rust/java/ts), conformance PART 5c. The blindspots half of the design's reason-class integration; `unverified --class` is the small remaining companion. `candor blindspots --stats`: the
   reason-distribution (how much `Unknown`, by reason class) as a self-diagnostic, so a team can SIZE the
   blind-spot cost before turning on `deny E Unknown`. Cheap; answers the "is disclosure actionable or
   pervasive" question in production; feeds the setup-vs-genuine split.
@@ -409,6 +443,24 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   (clippy `-D warnings` / eslint / Error-Prone + `-Xlint`) plus a warnings-as-errors equivalent.
 
 ## Recently shipped (context; older entries pruned from the per-engine files)
+
+- **Floors 0.19 → 0.23 + the 0.23.1 perf/soundness patch (2026-07-17 → 07-20).** Four ladder cycles plus a
+  within-spec patch. **0.19** reason-scoped `Unknown` (the DI/reflection deny-all-able dealbreaker — the
+  academic referee's #1); **0.20** the `Net` destination-class + `blindspots --stats`; **0.21** the
+  completeness manifest (fail-closed exit-2 incomplete verdict — a machine-consumer cardinal-sin closure);
+  **0.23** the cross-package interface-dispatch rung (`interfaceUnion`, `CANDOR_WORKSPACE_CHAIN`-gated so a
+  default report stays byte-identical). Then **0.23.1 (2026-07-20)** — a WITHIN-SPEC engine patch: an engine-
+  **performance** sweep that killed two super-linear cliffs family-wide (java `chaTargets` memoize +
+  `Surface.nearestSource` presort → 3.79× at 4585 classes; worklist `computeFixpoint`/`propagate` in
+  java/rust/ts → O(V²)→linear on deep call graphs; swift O(N²) loop-invariant hoist → 8.4× — all
+  byte-identical-verified, with one honest revert where the data didn't support it, swift's fixpoint) + the
+  `Llm` model-SDK builder/ctor fabrication fix AND its **review-caught silent-under-report correction**
+  (a workflow-backed high-effort review before publish caught that the first cut's dispatch *allowlist*
+  silently under-reported Spring AI streaming/embedding — re-done as a denylist over the sound blanket;
+  the denylist-over-allowlist rule). Umbrella patched to **0.23.2** to fix a stale `ENGINE_PIN` (it had
+  lagged at 0.18.0 since the 0.18 ship, so `candor update` fetched 0.18 engines under a 0.23 umbrella;
+  `release-preflight` now gates the pin — the umbrella-distribution notes). Published across every channel;
+  release-verified live. Full ladder detail in the versioning-ladder history.
 
 - **Spec 0.9 — the remedial-loop rung (2026-07-11).** The ladder's second full cycle. 0.9 is a **tier-2
   (pinned-tool-surface) rung** (SPEC.md §"Conformance tiers", new): no report-schema or verdict change — a

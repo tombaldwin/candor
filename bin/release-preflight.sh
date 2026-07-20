@@ -101,6 +101,10 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
 checkpin "adopt java  " "candor/adopt/candor.yml"        'CANDOR_JAVA_VERSION:[[:space:]]*[0-9]'
 checkpin "adopt agents" "candor/adopt/candor-digest.yml" 'candor-agents@'
 checkpin "jbang       " "candor-java/jbang-catalog.json" 'releases/download'
+# The umbrella's ENGINE_PIN is what `candor update` fetches — a SEPARATE constant from UMBRELLA_VERSION.
+# It lagged at 0.18.0 through the 0.23.1 ship (brew updated the umbrella, engines stayed 0.18) → gate it:
+# on an engine release it MUST equal the release version. (Umbrella-only CLI patches don't run this arg.)
+checkpin "engine pin  " "candor/bin/candor"              'ENGINE_PIN='
 
 # --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
 # The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant

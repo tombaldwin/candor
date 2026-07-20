@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install candor-agents
-        run: pipx install "git+https://github.com/tombaldwin/candor-agents@v0.23.0"
+        run: pipx install "git+https://github.com/tombaldwin/candor-agents@v0.23.1"
 
       - name: Render the protection report
         run: |

@@ -94,7 +94,18 @@ run_java() {
   local jar="${CANDOR_JAVA_JAR:-}"
   [ -n "$jar" ] || jar="$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)"
   [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java engine — run \`candor update\` to fetch it (or set CANDOR_JAVA_JAR)."
-  run java -jar "$jar" "$@"
+  # Short interactive scans waste wall time on C2 JIT that never pays off; C1-only is ~20% faster there,
+  # while large batch scans need C2 (the hot analysis loop). FAIL-SAFE: prefer C1 only for a provably small
+  # target directory. Override via CANDOR_JAVA_OPTS. (Mirrors the standalone bin/candor-java launcher.)
+  local jopts="${CANDOR_JAVA_OPTS-}"
+  if [ -z "${CANDOR_JAVA_OPTS+set}" ]; then
+    local jt=""; local a
+    for a in "$@"; do case "$a" in -*) ;; *) jt="$a"; break;; esac; done
+    if [ -n "$jt" ] && [ -d "$jt" ] && [ "$(find "$jt" -name '*.class' 2>/dev/null | head -512 | wc -l | tr -d ' ')" -lt 500 ]; then
+      jopts="-XX:TieredStopAtLevel=1"
+    fi
+  fi
+  run java $jopts -jar "$jar" "$@"
 }
 
 # ---- update notifications (OPT-IN, off by default; privacy: the network CHECK rides only the admin

@@ -15,7 +15,7 @@
 # Set CANDOR_DISPATCH_DRYRUN=1 to print the resolved command instead of running it (used by the tests).
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
-UMBRELLA_VERSION="0.23.0"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
+UMBRELLA_VERSION="0.23.1"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
 ENGINE_PIN="0.18.0"                          # the engine release line `candor update` fetches (spec floor); moves only with an engine release
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)

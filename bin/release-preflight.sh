@@ -122,10 +122,20 @@ grabver "agents pyproj " "candor-agents/pyproject.toml"                   'versi
 grabver "swift engine  " "candor-swift/Sources/candor-swift/main.swift"   'engineVersion *= *"candor-swift-[0-9.]+'
 grabver "ts package    " "candor-ts/package.json"                         '"version": *"[0-9.]+'
 grabver "rust crate    " "candor-rust/crates/candor-query/Cargo.toml"     'version = "[0-9.]+'
+# NOT mutual equality. A build id is PER-ENGINE by design (candor-spec §2.1 + the three-axis note): every
+# engine's staleness gate compares an engine-PREFIXED string (`scan-x.y.z`, `candor-ts-x.y.z`, …), so a
+# report from another engine is stale whatever the numbers say — which §2.1 intends, since you must not
+# trust another engine's classifier. The only comparison a build id gates is SAME-engine, so nothing
+# requires the four to match. Demanding equality also DESTROYS the information the build id exists to
+# carry: if every engine moves whenever one engine changes a wire key, the version no longer tells you
+# which engine changed. (Live case: candor-ts went to 0.23.2 alone because its module-unit wire key moved
+# and §2.1 could not otherwise arm.) What this check is really for — a constant somebody forgot to bump —
+# is caught by the WANT_VER arm below, which is exact. Without a requested version, disagreement is just
+# reported.
 if [ "${#builds[@]}" -gt 0 ]; then
   u="$(printf '%s\n' "${builds[@]}" | sort -u)"
   if [ "$(printf '%s\n' "$u" | grep -c .)" -eq 1 ]; then ok "all self-declared build versions agree ($u)"
-  else bad "build versions DISAGREE (a hand-maintained constant lagged the release): $(echo $u)"; fi
+  else note "build versions differ: $(echo $u) — legitimate when one engine bumped alone (a wire-key change arms §2.1); pass a version to assert the release set"; fi
 fi
 [ -n "$WANT_VER" ] && { printf '%s\n' "${builds[@]}" | grep -qxv "$WANT_VER" && bad "a build version != requested $WANT_VER" || ok "build versions == requested $WANT_VER"; }
 

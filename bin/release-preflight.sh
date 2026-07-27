@@ -45,6 +45,7 @@ grab "spec " "candor-spec/SPEC.md"                          'Version [0-9]+\.[0-
 # EXACTLY when a bump was half-finished, which is the only time it matters. Found during the 0.23→0.24
 # bump: [2] printed "(no prior floor to check)" while NINE leftover strings sat in test pins, smoke
 # assertions and shipped docs across four repos — every one found afterwards by a failing test instead.
+EXTRA_FLOORS=""   # set only when the engines disagree; see the fallback below
 SPEC_FLOOR="$(grep -oE '^\*\*Version [0-9]+\.[0-9]+' "$ROOT/candor-spec/SPEC.md" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)"
 FLOOR=""
 if [ "${#specs[@]}" -gt 0 ]; then
@@ -54,7 +55,18 @@ if [ "${#specs[@]}" -gt 0 ]; then
 fi
 # Fall back to the declared floor so [2] still runs. A disagreement is a finding in ITS OWN right; it must
 # not also suppress a different check.
-[ -z "$FLOOR" ] && [ -n "$SPEC_FLOOR" ] && { FLOOR="$SPEC_FLOOR"; note "using SPEC.md's declared floor $SPEC_FLOOR for the checks below (engines disagree, which is reported above and does not disable them)"; }
+#
+# BUT THE FALLBACK CAN BE WRONG, AND A WRONG GREEN TICK IS WORSE THAN THE INERT CHECK IT REPLACED. If the
+# disagreement is SPEC.md ITSELF lagging (engines bumped first — the ordinary mid-bump state), SPEC_FLOOR is
+# the STALE value, PRIOR computes one rung too low, and [2] reports "no leftover 'spec 0.22' strings" while
+# every 0.23 stray is invisible. So when the engines disagree we scan the predecessor of EVERY distinct
+# declared value, not just SPEC.md's — the union can only over-report, and over-reporting here is noise
+# while under-reporting is a false all-clear.
+if [ -z "$FLOOR" ] && [ -n "$SPEC_FLOOR" ]; then
+  FLOOR="$SPEC_FLOOR"
+  note "engines disagree; scanning the predecessor of EVERY declared value, not just SPEC.md's $SPEC_FLOOR"
+  EXTRA_FLOORS="$(printf '%s\n' "${specs[@]}" | sort -u | tr '\n' ' ')"
+fi
 [ -n "$WANT_SPEC" ] && { [ "$FLOOR" = "$WANT_SPEC" ] && ok "floor == requested $WANT_SPEC" || bad "floor '$FLOOR' != requested '$WANT_SPEC'"; }
 
 # --- 2. no LEFTOVER PRIOR-FLOOR spec string in shipped code / tests / CI scripts -------------------------
@@ -63,13 +75,23 @@ fi
 # (0.10 → 0.9) — distinct from intentionally-OLDER fixtures (a SARIF converter tested against a spec-0.7
 # envelope) and CHANGELOG/design history, which are NOT flagged. Excludes vendor/build dirs, CHANGELOG,
 # narrative docs, ⟨X⟩ era markers.
-PRIOR=""
-if [ -n "$FLOOR" ]; then
-  maj="${FLOOR%%.*}"; min="${FLOOR#*.}"
-  [ "$min" -gt 0 ] 2>/dev/null && PRIOR="$maj.$((min-1))"
-fi
-echo "[2] no leftover prior-floor (${PRIOR:-?}) spec strings — the bump-miss signature"
-if [ -n "$PRIOR" ]; then
+prior_of() { # $1 = X.Y  ->  X.(Y-1), or empty at a major boundary
+  local mj="${1%%.*}" mn="${1#*.}"
+  [ "$mn" -gt 0 ] 2>/dev/null && printf '%s.%s' "$mj" "$((mn-1))"
+}
+PRIOR="$(prior_of "$FLOOR")"
+# When the engines disagreed we do NOT trust one value's predecessor: scan the predecessor of EVERY
+# distinct declared value. The union can only OVER-report, and over-reporting here is noise while
+# under-reporting is a false all-clear about the wrong version entirely.
+PRIORS="$PRIOR"
+for v in $EXTRA_FLOORS; do
+  pv="$(prior_of "$v")"
+  case " $PRIORS " in *" $pv "*) ;; *) [ -n "$pv" ] && PRIORS="$PRIORS $pv";; esac
+done
+PRIORS="$(printf '%s' "$PRIORS" | tr -s ' ')"
+
+echo "[2] no leftover prior-floor (${PRIORS:-?}) spec strings — the bump-miss signature"
+for PRIOR in $PRIORS; do
   strays="$(cd "$ROOT" && grep -rInE "spec[ :\"]+${PRIOR//./\\.}([^0-9]|$)" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
@@ -87,14 +109,15 @@ if [ -n "$PRIOR" ]; then
   # `spec` and the bare quoted prior-floor `"0.X"`. A legit older fixture (spec "0.7") won't match the floor.
   litstrays="$(cd "$ROOT" && grep -rIn "\"${PRIOR//./\\.}\"" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
-      --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs \
+      --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude=release-preflight.sh \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
     | grep -iw spec | grep -vE '⟨(spec )?[0-9]' )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
   else bad "bare-literal spec assertion at the prior floor (a bump missed these; only \`*test\` catches them):"; echo "$litstrays" | sed 's/^/      /'; fi
-else note "(no prior floor to check)"; fi
+done
+[ -z "$PRIORS" ] && note "(no prior floor to check)"
 
 # --- 3. cross-repo RELEASE PINS point at the current release --------------------------------------------
 # adopt/ drops a pinned engine into a user's repo; jbang points at a release jar. A bump must move these

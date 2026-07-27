@@ -122,6 +122,12 @@ grabver "agents pyproj " "candor-agents/pyproject.toml"                   'versi
 grabver "swift engine  " "candor-swift/Sources/candor-swift/main.swift"   'engineVersion *= *"candor-swift-[0-9.]+'
 grabver "ts package    " "candor-ts/package.json"                         '"version": *"[0-9.]+'
 grabver "rust crate    " "candor-rust/crates/candor-query/Cargo.toml"     'version = "[0-9.]+'
+# candor-java is DELIBERATELY absent, and saying so is the point: its build id is GENERATED at build time
+# into `candor/build-info.properties` (build.gradle.kts) from the git hash, so it is not a hand-maintained
+# constant and cannot LAG the way this check exists to catch. What it also means is that this check — and
+# the `WANT_VER` assertion below — cover FOUR of the five components, and a check that silently covers a
+# subset reads exactly like one that covers everything. State the coverage rather than implying it.
+note "java engine   : generated at build time (git hash) — not a hand-maintained constant, not checked here"
 # NOT mutual equality. A build id is PER-ENGINE by design (candor-spec §2.1 + the three-axis note): every
 # engine's staleness gate compares an engine-PREFIXED string (`scan-x.y.z`, `candor-ts-x.y.z`, …), so a
 # report from another engine is stale whatever the numbers say — which §2.1 intends, since you must not

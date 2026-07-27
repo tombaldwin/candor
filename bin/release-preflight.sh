@@ -39,12 +39,22 @@ grab "java " "candor-java/src/main/java/io/poly/candor/Candor.java" 'SPEC_VERSIO
 grab "swift" "candor-swift/Sources/candor-swift/main.swift" 'specVersion *= *"[0-9]+\.[0-9]+'
 grab "agent" "candor-agents/candor_agents/scan.py"          'SPEC *= *"[0-9]+\.[0-9]+'
 grab "spec " "candor-spec/SPEC.md"                          'Version [0-9]+\.[0-9]+'
+# THE AUTHORITATIVE FLOOR IS SPEC.md's OWN DECLARATION, not engine agreement.
+# It used to be derived from agreement, and a disagreement set FLOOR="" — which silently DISABLED check
+# [2], the bump-miss detector. So the one check that exists to catch a half-finished bump was inert
+# EXACTLY when a bump was half-finished, which is the only time it matters. Found during the 0.23→0.24
+# bump: [2] printed "(no prior floor to check)" while NINE leftover strings sat in test pins, smoke
+# assertions and shipped docs across four repos — every one found afterwards by a failing test instead.
+SPEC_FLOOR="$(grep -oE '^\*\*Version [0-9]+\.[0-9]+' "$ROOT/candor-spec/SPEC.md" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)"
 FLOOR=""
 if [ "${#specs[@]}" -gt 0 ]; then
-  FLOOR="$(printf '%s\n' "${specs[@]}" | sort -u)"
-  if [ "$(printf '%s\n' "$FLOOR" | grep -c .)" -eq 1 ]; then ok "all declare spec $FLOOR"
-  else bad "engines DISAGREE on the declared spec: $(echo $FLOOR)"; FLOOR=""; fi
+  UNIQ="$(printf '%s\n' "${specs[@]}" | sort -u)"
+  if [ "$(printf '%s\n' "$UNIQ" | grep -c .)" -eq 1 ]; then ok "all declare spec $UNIQ"; FLOOR="$UNIQ"
+  else bad "engines DISAGREE on the declared spec: $(echo $UNIQ)"; fi
 fi
+# Fall back to the declared floor so [2] still runs. A disagreement is a finding in ITS OWN right; it must
+# not also suppress a different check.
+[ -z "$FLOOR" ] && [ -n "$SPEC_FLOOR" ] && { FLOOR="$SPEC_FLOOR"; note "using SPEC.md's declared floor $SPEC_FLOOR for the checks below (engines disagree, which is reported above and does not disable them)"; }
 [ -n "$WANT_SPEC" ] && { [ "$FLOOR" = "$WANT_SPEC" ] && ok "floor == requested $WANT_SPEC" || bad "floor '$FLOOR' != requested '$WANT_SPEC'"; }
 
 # --- 2. no LEFTOVER PRIOR-FLOOR spec string in shipped code / tests / CI scripts -------------------------
@@ -62,7 +72,7 @@ echo "[2] no leftover prior-floor (${PRIOR:-?}) spec strings — the bump-miss s
 if [ -n "$PRIOR" ]; then
   strays="$(cd "$ROOT" && grep -rInE "spec[ :\"]+${PRIOR//./\\.}([^0-9]|$)" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
-      --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs \
+      --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude=release-preflight.sh \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \

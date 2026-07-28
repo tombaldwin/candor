@@ -16,7 +16,11 @@ WANT_SPEC="${1:-}"     # optional: assert the floor is exactly this (e.g. 0.10)
 WANT_VER="${2:-}"      # optional: assert the release version is this (e.g. 0.10.0) for the cross-repo pins
 fail=0
 note() { echo "  $*"; }
-bad()  { echo "  ✘ $*"; fail=1; }
+# ⟨0.24⟩ INCREMENT, do not assign. This was `fail=1`, so the summary below reported "1 check(s) FAILED"
+# no matter how many fired — a preflight that under-counts its own findings is the same shape as an
+# engine that under-reports, and it is worse here because the number is what tells you whether the last
+# fix helped.
+bad()  { echo "  ✘ $*"; fail=$((fail + 1)); }
 ok()   { echo "  ✔ $*"; }
 
 # --- 1. every engine DECLARES the same spec (the contract floor) ----------------------------------------
@@ -246,5 +250,12 @@ fi
 [ -n "$WANT_VER" ] && { printf '%s\n' "${builds[@]}" | grep -qxv "$WANT_VER" && bad "a build version != requested $WANT_VER" || ok "build versions == requested $WANT_VER"; }
 
 echo
-if [ "$fail" = 0 ]; then echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"; else echo "release-preflight: $fail check(s) FAILED — resolve before publishing"; fi
-exit "$fail"
+if [ "$fail" = 0 ]; then
+  echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"
+else
+  echo "release-preflight: $fail check(s) FAILED — resolve before publishing"
+fi
+# NOT `exit "$fail"`. Now that it counts, exiting the count would make 256 failures exit 0 — a wrap to
+# green, on the one script whose entire job is to stand between a defect and a publish.
+[ "$fail" = 0 ] || exit 1
+exit 0

@@ -90,6 +90,42 @@ for v in $EXTRA_FLOORS; do
 done
 PRIORS="$(printf '%s' "$PRIORS" | tr -s ' ')"
 
+# WHICH LEFTOVERS ARE LOUD. Defined HERE, not inside [2]'s else-branch: it used to be, and when [2] found
+# nothing while [2b] found something the variable was unset, `set -u` aborted the command substitutions
+# (`|| true` cannot rescue an expansion error), `litloud` came back empty and the script took the SUCCESS
+# branch — a GREEN TICK OVER A STALE ASSERTION IT HAD ACTUALLY FOUND, in exactly the common case of a bump
+# that missed only a bare-literal assertion.
+#
+# And the classification is now by CONTENT, not by PATH. The path form was an ALLOWLIST of places assumed
+# safe ("under tests/ ⇒ a deliberate input fixture"), and it had the premise backwards: an assertion pinning
+# the engine's EMITTED spec lives under tests/ BY CONSTRUCTION. Measured over the family — 14 output
+# assertions at the current floor, of which the path form would have called **12 advisory**. So an
+# ASSERTION is loud wherever it lives; only a line that CONSTRUCTS a document is advisory. That is a
+# denylist over the advisory bucket, which is the direction this family's own rule requires.
+ASSERTION_RE='(want|assert|assert_eq|expect|check|XCTAssert|toBe|toEqual|deepEqual|should)'
+FIXTURE_PATH_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?[.]|test[-_.][a-z]*[.](mjs|py|sh|rs|js)|src/tests[.]rs|[.]test[.]'
+# Two content rules that override the assertion verb, because the verb list is made of ENGLISH WORDS and
+# fires on prose. Both were found by running this against a clean tree and reading the 15 false positives:
+#   COMMENT_RE  — `check`/`expect`/`should` in a doc comment EXPLAINING the defect. Scoped to fixture paths
+#                 so a comment in SHIPPED source (an agent-facing doc claim) stays loud.
+#   CONSTRUCT_RE — a line that BUILDS a report document rather than asserting on one. A shipped constant
+#                 or a doc line can never appear inside `r#"{"candor"` / `{"candor":{`.
+COMMENT_RE='^[^:]*:[0-9]+:[ \t]*(//|#|/[*]|[*]|--)'
+CONSTRUCT_RE='r#"[{] *"candor"|[{]"candor" *:|JSON[.]stringify[(][{]'
+# ADVISORY := (fixture-path AND not-an-assertion) OR (fixture-path AND a comment) OR document-construction.
+# One pass, one predicate. The previous form piped stdin into TWO greps inside a brace group — the first
+# consumed the whole stream and the second saw nothing, so the comment and construction rules never fired.
+#   ADVISORY := (fixture-path OR constructs-a-document)
+#               AND NOT (asserts AND is-not-a-comment AND is-not-a-construction)
+advisory_filter() {
+  awk -v fx="$FIXTURE_PATH_RE" -v as="$ASSERTION_RE" -v cm="$COMMENT_RE" -v ct="$CONSTRUCT_RE" '
+    { l = tolower($0)
+      isfx = (l ~ tolower(fx)); isct = ($0 ~ ct); isas = (l ~ tolower(as)); iscm = ($0 ~ cm)
+      if ((isfx || isct) && !(isas && !iscm && !isct)) print }'
+}
+# NOTE both filters are applied to the whole `path:lineno:content` line, so a doc that merely MENTIONS a
+# test path is masked. Accepted knowingly: the alternative is splitting on the second colon, which breaks
+# on Windows-style paths. The assertion rule above is what carries the weight.
 echo "[2] no leftover prior-floor (${PRIORS:-?}) spec strings — the bump-miss signature"
 for PRIOR in $PRIORS; do
   strays="$(cd "$ROOT" && grep -rInE "spec[ :\"]+${PRIOR//./\\.}([^0-9]|$)" \
@@ -97,7 +133,7 @@ for PRIOR in $PRIORS; do
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude='*WORK-QUEUE.md' \
-      --exclude=release-preflight.sh \
+      --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
     | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
@@ -106,9 +142,10 @@ for PRIOR in $PRIORS; do
     # backward-compat coverage); a leftover in a doc, a packaging file or shipped source is a defect.
     # Both are shown — only the second fails the run, because 220 advisory lines burying 15 real ones is
     # how the 0.23→0.24 bump shipped with its leftovers in the first place.
-    FIXTURE_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?\.|test[-_.][a-z]*\.(mjs|py|sh|rs|js)|src/tests\.rs|\.test\.|r#"\{"candor"|r#"\{ *"candor"'
-    loud="$(printf '%s\n' "$strays"    | grep -vEi "$FIXTURE_RE" || true)"
-    quiet_n="$(printf '%s\n' "$strays" | grep -cEi "$FIXTURE_RE" || true)"
+    loud="$(printf '%s\n' "$strays"    | grep -vEi "$FIXTURE_PATH_RE" || printf '%s\n' "$strays" | grep -Ei "$ASSERTION_RE" || true)"
+    _adv="$(printf '%s\n' "$strays" | { advisory_filter || true; })"
+    loud="$(printf '%s\n' "$strays" | grep -v '^$' | sort -u | comm -23 - <(printf '%s\n' "$_adv" | grep -v '^$' | sort -u) || true)"
+    quiet_n="$(printf '%s\n' "$_adv" | grep -c . || true)"
     if [ -n "$loud" ]; then
       bad "leftover 'spec $PRIOR' in shipped source/docs/packaging (a bump missed these):"; printf '%s\n' "$loud" | sed 's/^/      /'
     else
@@ -128,15 +165,16 @@ for PRIOR in $PRIORS; do
       --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude='*WORK-QUEUE.md' \
-      --exclude=release-preflight.sh \
+      --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
     | grep -iw spec | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
   else
     # Same loud/advisory split as [2] — [2b] was the half that still dumped every fixture, which is the
     # asymmetry the review caught: the exclusion went into [2] and not here, so the noise survived.
-    litloud="$(printf '%s\n' "$litstrays"    | grep -vEi "$FIXTURE_RE" || true)"
-    litquiet="$(printf '%s\n' "$litstrays"   | grep -cEi "$FIXTURE_RE" || true)"
+    _adv="$(printf '%s\n' "$litstrays" | { advisory_filter || true; })"
+    litloud="$(printf '%s\n' "$litstrays" | grep -v '^$' | sort -u | comm -23 - <(printf '%s\n' "$_adv" | grep -v '^$' | sort -u) || true)"
+    litquiet="$(printf '%s\n' "$_adv" | grep -c . || true)"
     if [ -n "$litloud" ]; then
       bad "bare-literal spec assertion at the prior floor in shipped source/docs (only \`*test\` catches these):"; printf '%s\n' "$litloud" | sed 's/^/      /'
     else

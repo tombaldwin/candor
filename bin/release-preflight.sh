@@ -96,11 +96,27 @@ for PRIOR in $PRIORS; do
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude='*WORK-QUEUE.md' \
       --exclude=release-preflight.sh \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -vE '⟨(spec )?[0-9]' )"
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
-  else bad "leftover 'spec $PRIOR' (a bump missed these — they only fail in CI):"; echo "$strays" | sed 's/^/      /'; fi
+  else
+    # A leftover in a FIXTURE is usually deliberate (a 0.24 engine reading a 0.23 report is real
+    # backward-compat coverage); a leftover in a doc, a packaging file or shipped source is a defect.
+    # Both are shown — only the second fails the run, because 220 advisory lines burying 15 real ones is
+    # how the 0.23→0.24 bump shipped with its leftovers in the first place.
+    FIXTURE_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?\.|test[-_.][a-z]*\.(mjs|py|sh|rs|js)|src/tests\.rs|\.test\.|r#"\{"candor"|r#"\{ *"candor"'
+    loud="$(printf '%s\n' "$strays"    | grep -vEi "$FIXTURE_RE" || true)"
+    quiet_n="$(printf '%s\n' "$strays" | grep -cEi "$FIXTURE_RE" || true)"
+    if [ -n "$loud" ]; then
+      bad "leftover 'spec $PRIOR' in shipped source/docs/packaging (a bump missed these):"; printf '%s\n' "$loud" | sed 's/^/      /'
+    else
+      ok "no leftover 'spec $PRIOR' outside tests/fixtures"
+    fi
+    [ "$quiet_n" -gt 0 ] && note "($quiet_n more in tests/fixtures/conformance — usually DELIBERATE backward-compat inputs; run with SHOW_FIXTURES=1 to list)"
+    [ "${SHOW_FIXTURES:-}" = "1" ] && printf '%s\n' "$strays" | grep -Ei "$FIXTURE_RE" | sed 's/^/      /'
+  fi
 
   # [2b] BARE-LITERAL spec assertions the [2] grep misses: a `]`/`,`/`==`/`as? String` between "spec" and the
   # quoted prior-floor breaks the `spec[ :"]+0.X` pattern — e.g. rust `assert_eq!(v["spec"], "0.16")`, swift
@@ -111,11 +127,24 @@ for PRIOR in $PRIORS; do
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude='*WORK-QUEUE.md' \
       --exclude=release-preflight.sh \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -iw spec | grep -vE '⟨(spec )?[0-9]' )"
+    | grep -iw spec | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
-  else bad "bare-literal spec assertion at the prior floor (a bump missed these; only \`*test\` catches them):"; echo "$litstrays" | sed 's/^/      /'; fi
+  else
+    # Same loud/advisory split as [2] — [2b] was the half that still dumped every fixture, which is the
+    # asymmetry the review caught: the exclusion went into [2] and not here, so the noise survived.
+    litloud="$(printf '%s\n' "$litstrays"    | grep -vEi "$FIXTURE_RE" || true)"
+    litquiet="$(printf '%s\n' "$litstrays"   | grep -cEi "$FIXTURE_RE" || true)"
+    if [ -n "$litloud" ]; then
+      bad "bare-literal spec assertion at the prior floor in shipped source/docs (only \`*test\` catches these):"; printf '%s\n' "$litloud" | sed 's/^/      /'
+    else
+      ok "no bare-literal 'spec' == \"$PRIOR\" assertions outside tests/fixtures"
+    fi
+    [ "$litquiet" -gt 0 ] && note "($litquiet more in tests/fixtures/conformance — usually deliberate inputs; SHOW_FIXTURES=1 to list)"
+    [ "${SHOW_FIXTURES:-}" = "1" ] && printf '%s\n' "$litstrays" | grep -Ei "$FIXTURE_RE" | sed 's/^/      /'
+  fi
 done
 [ -z "$PRIORS" ] && note "(no prior floor to check)"
 

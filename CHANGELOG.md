@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-01 — spec 0.24: contributes, ambiguity, and a gate that can now go red (engine pin 0.24.0)
+
+The family floor moves to **spec 0.24** — all engines at **0.24.0**, `ENGINE_PIN` bumped, so `candor update`
+fetches the 0.24 engine line. This changelog had lagged at 0.18 while the pin moved several times beneath
+it; the intervening rungs are recorded in
+[candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md), which is the
+authoritative contract history.
+
+**CONTRIBUTES**, **`ambiguous:` as a fifth reason kind**, the frontier's **unanswerable-condition rule**,
+**`gate --report`**, **locale-independent ordering**, and **`--class` semantics**, pinned four-way by
+conformance PARTs 24–27.
+
+**If you run candor in CI, read this one.** This is the first rung that can turn a **green gate red**: a
+`--strict` step on `unverified` or `fix-gate` that read green over a report `gate --report` refuses now exits
+2. That green was the defect — the advisory verb was reporting a cleaner answer than the gate would have
+given over the same evidence, and §3.2 now states the law as a containment: an advisory verb may be **less**
+certain than the gate, never **more**. Measured at 0 flips against trusted dependency reports and 36%
+against stale ones, so a newly-red step is telling you the reports it read were stale.
+
+**Fixed here, and it affected adopters directly:** `adopt/candor-digest.yml` pinned `candor-agents@v0.23.0`
+after a repair of mine that was itself the regression — the pin it "fixed" was correct, and the change
+quietly moved every new adopter one release back. It now tracks the release line at `v0.24.0`.
+
 ## 2026-07-16 — spec 0.18: the trust-trio (engine pin 0.18.0, umbrella 0.18.0)
 
 The family floor moves to **spec 0.18** — all engines at **0.18.0**, `ENGINE_PIN`/`UMBRELLA_VERSION` bumped.

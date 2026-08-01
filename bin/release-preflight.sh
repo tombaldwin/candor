@@ -249,6 +249,24 @@ if [ "${#builds[@]}" -gt 0 ]; then
 fi
 [ -n "$WANT_VER" ] && { printf '%s\n' "${builds[@]}" | grep -qxv "$WANT_VER" && bad "a build version != requested $WANT_VER" || ok "build versions == requested $WANT_VER"; }
 
+# --- 5. every CHANGELOG mentions the floor being cut -----------------------------------------------------
+# Checks 2 and 3 EXCLUDE CHANGELOG from the stale-string sweep, and rightly so: a changelog is a history, so
+# old rung text in it is correct rather than stale. But excluding it from the negative check left no positive
+# one — and on 2026-08-01 the umbrella's CHANGELOG was found sitting at spec 0.18, three rungs behind the
+# release it was shipping, while ENGINE_PIN had moved beneath it several times. Nothing had ever asked the
+# one question that matters: does the file describing this release mention this release?
+echo "[5] every CHANGELOG mentions the floor being cut"
+if [ -n "$FLOOR" ]; then
+  for r in candor-spec candor-rust candor-java candor-ts candor-swift candor candor-agents; do
+    f="$ROOT/$r/CHANGELOG.md"
+    [ -f "$f" ] || { note "$r: no CHANGELOG.md — skipped"; continue; }
+    if grep -qE "(^|[^0-9.])${FLOOR//./\\.}([^0-9]|$)" "$f"; then ok "$r mentions $FLOOR"
+    else bad "$r CHANGELOG.md has no $FLOOR entry — the release notes do not describe the release"; fi
+  done
+else
+  note "no floor derived — skipped"
+fi
+
 echo
 if [ "$fail" = 0 ]; then
   echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"

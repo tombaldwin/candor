@@ -852,6 +852,32 @@ PY
     elif [ "$u" -eq 1 ]; then
       echo "  ✔ all installed engines agree on spec $(printf "%s\n" $specs | sort -u)"
     fi
+    # ⟨0.24⟩ AGREEMENT IS NOT CURRENCY. The check above proves the installed engines agree with EACH OTHER
+    # — and TWO STALE ENGINES AGREE WITH EACH OTHER PERFECTLY. On 2026-08-01 the installed candor-query was
+    # twelve days behind its repo while doctor reported a clean bill, and an agent sent to read "the
+    # reference implementation's output" through it would have confirmed the OLD wire shape as normative.
+    # So on a machine that HAS the sources, compare each install against its own repo and say so. This is
+    # deliberately dev-only and advisory: a user without the repos sees nothing new, and `candor outdated`
+    # remains the registry-facing check.
+    drift=0
+    for pair in "candor-rust:candor-scan" "candor-rust:candor-query" "candor-swift:candor-swift" "candor-ts:candor-ts"; do
+      repo="${pair%%:*}"; eng="${pair##*:}"; src="$HOME/git/$repo"
+      [ -d "$src/.git" ] || continue
+      inst="$(command -v "$eng" 2>/dev/null)" || continue
+      [ -n "$inst" ] || continue
+      # newest tracked source file in the repo vs the installed binary's mtime
+      newest=$(find "$src" -name '*.rs' -o -name '*.swift' -o -name '*.mjs' 2>/dev/null \
+               | grep -v -e '/\.build/' -e '/target/' -e '/node_modules/' \
+               | xargs stat -f '%m' 2>/dev/null | sort -rn | head -1)
+      ibin=$(stat -f '%m' "$inst" 2>/dev/null)
+      if [ -n "$newest" ] && [ -n "$ibin" ] && [ "$newest" -gt "$ibin" ]; then
+        [ "$drift" -eq 0 ] && echo ""
+        printf "  ⚠ %-14s installed build is OLDER than %s's sources (%s vs %s)\n" \
+          "$eng" "$repo" "$(date -r "$ibin" +%Y-%m-%d)" "$(date -r "$newest" +%Y-%m-%d)"
+        drift=1
+      fi
+    done
+    [ "$drift" -eq 1 ] && echo "    → the engines above agree with each other but not with your checkout; rebuild + reinstall before trusting a measurement against them"
     exit $rc;;
   init)
     # candor init — stand up the effect gate in one command (engine picked by manifest):

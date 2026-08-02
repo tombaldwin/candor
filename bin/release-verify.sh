@@ -26,7 +26,12 @@ v=$(npm view candor-ts version 2>/dev/null)
 echo "[gh releases] spec v$SPEC · engines v$VER"
 # candor-ts and the umbrella were MISSING from this list until 2026-08-01 — so a release could be declared
 # live with neither cut, and on 0.24 candor-spec itself was found untagged only because it WAS listed here.
-for r in "candor-spec:v$VER" "candor-rust:v$VER" "candor-java:v$VER" "candor-swift:v$VER" \
+# candor-spec is tagged at the SPEC version (`v0.25`), not the engine build (`v0.25.0`) — the spec has no
+# patch component, and `release.sh` cuts it as `rel candor-spec "v$SPEC"`. This line said `v$VER` for both,
+# so the VERIFIER and the PUBLISHER disagreed on the tag name. It never surfaced at 0.24 only because the
+# 0.24 cleanup hand-created a `v0.24.0` spec tag — the very thing the verifier was looking for — which
+# masked the mismatch and left two tag schemes in the history (v0.25, v0.24.0, v0.23, v0.21.0 …).
+for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-swift:v$VER" \
          "candor-agents:v$VER" "candor-ts:v$VER" "candor:v$VER"; do
   repo="${r%%:*}"; tag="${r##*:}"
   got=$(gh release view "$tag" -R "tombaldwin/$repo" --json tagName -q .tagName 2>/dev/null)

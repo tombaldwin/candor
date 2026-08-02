@@ -267,6 +267,54 @@ else
   note "no floor derived — skipped"
 fi
 
+# ── [6] INTER-CRATE DEPENDENCY VERSIONS ────────────────────────────────────────────────────────────
+# A rust crate that depends on a SIBLING at the prior floor does not just fail a test — `cargo publish`
+# resolves that requirement from crates.io, so the sequence dies PART-WAY with the earlier crates already
+# uploaded and unyankable. On the 0.25 bump the workspace ROOT still required `^0.24.0` from two of its own
+# crates; `cargo test` caught it locally, but only because a human ran the tests before the publish. This
+# makes it a preflight failure, where the cost is a message instead of a half-published floor.
+echo "[6] no crate requires a sibling at a prior version"
+if [ -n "$WANT_VER" ]; then
+  bad_dep=0
+  while IFS= read -r f; do
+    while IFS= read -r line; do
+      dv="$(printf '%s' "$line" | grep -oE 'version = "\^?[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+      [ -n "$dv" ] || continue
+      [ "$dv" = "$WANT_VER" ] && continue
+      bad "$(basename "$(dirname "$f")")/$(basename "$f"): requires a candor sibling at $dv, not $WANT_VER — cargo publish resolves this from crates.io and dies MID-SEQUENCE"
+      bad_dep=$((bad_dep + 1))
+    done < <(grep -E '^candor-(report|classify|scan|query) *=.*version' "$f" 2>/dev/null)
+  done < <(find "$ROOT/candor-rust" -name Cargo.toml -not -path '*/target/*' 2>/dev/null)
+  [ "$bad_dep" = 0 ] && ok "every candor→candor dependency requires $WANT_VER"
+fi
+
+# ── [7] JAVA'S GRADLE VERSION ──────────────────────────────────────────────────────────────────────
+# This used to be skipped with the note "java engine: generated at build time (git hash) — not a
+# hand-maintained constant". The `--version` STRING is generated; `build.gradle.kts`'s `version` is NOT,
+# and it names the jar. `release.sh` does `ls candor-java-$WANT_VER-all.jar || die`, so a missed bump here stops
+# the release at step 3 — after crates.io and the npm tag have already gone out irreversibly. A documented
+# blind spot is still a blind spot.
+echo "[7] candor-java's gradle version names the jar the release will look for"
+JGRADLE="$(grep -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor-java/build.gradle.kts" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "$JGRADLE" ]; then bad "candor-java/build.gradle.kts: no top-level version found"
+elif [ -n "$WANT_VER" ] && [ "$JGRADLE" != "$WANT_VER" ]; then
+  bad "candor-java gradle version is $JGRADLE, not $WANT_VER — release.sh needs candor-java-$WANT_VER-all.jar and dies without it"
+else ok "gradle version $JGRADLE"; fi
+
+# ── [8] THE PUBLISHER AND THE VERIFIER MUST AGREE ON WHAT A RELEASE IS ─────────────────────────────
+# `release.sh` cut FOUR GitHub releases while `release-verify.sh` checked SEVEN, so three repos were
+# tagged and never released and the verifier failed on repos the publisher was never asked to cut. Neither
+# script is wrong on its own terms — only the PAIR is, which is why no test inside either could see it.
+# Comparing them is the whole check.
+echo "[8] release.sh and release-verify.sh name the same repos"
+PUB="$(grep -oE '^rel candor[a-z-]*' "$ROOT/candor/bin/release.sh" 2>/dev/null | awk '{print $2}' | sort -u)"
+VFY="$(grep -oE '"candor[a-z-]*:v\$(VER|SPEC)"' "$ROOT/candor/bin/release-verify.sh" 2>/dev/null | sed 's/"//g; s/:v\$.*//' | sort -u)"
+if [ -z "$PUB" ] || [ -z "$VFY" ]; then bad "could not read a repo list from one of the scripts — this check would pass over nothing"
+elif [ "$PUB" = "$VFY" ]; then ok "both name $(printf '%s' "$PUB" | grep -c .) repos"
+else
+  bad "publisher and verifier disagree — cut only: $(comm -23 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')| checked only: $(comm -13 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')"
+fi
+
 echo
 if [ "$fail" = 0 ]; then
   echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"

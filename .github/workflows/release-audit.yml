@@ -1,0 +1,64 @@
+name: release-audit
+
+# IS THE CURRENTLY-PINNED RELEASE STILL ACTUALLY THERE?
+#
+# `bin/release-verify.sh` already answers this, and until now it ran only when somebody remembered to run
+# it — at the one moment when everything is most likely to be fine, immediately after publishing. That is
+# the wrong time to ask, twice over:
+#
+#   * On 0.24 the answer was NO at publish time and nobody knew for hours. Five of six tags had no GitHub
+#     Release, so `releases/download/v0.24.0/candor-java-0.24.0-all.jar` 404'd for every `candor update`
+#     and every jbang user — while `release-preflight [3]` was GREEN throughout, because it checks that
+#     the pin SAYS the right version, which is a different question from whether the thing it names
+#     exists. It surfaced because the verifier was run by hand, once.
+#   * Artifacts also rot AFTER a release passes: a Release deleted or converted to draft, a crates.io
+#     version yanked, an npm unpublish, an asset removed from a Release that still exists. Nothing in the
+#     family notices any of those today, and every one of them breaks `candor update` silently.
+#
+# So this asks the question on a schedule instead. It is a MONITOR, not a gate: it does not run on push
+# and cannot block anything — a red run here means the published world changed under a release that was
+# green when it shipped, which is information no push-triggered job can produce.
+#
+# THE VERSION IS DERIVED, NEVER TYPED. `ENGINE_PIN` in `bin/candor` is the engine line `candor update`
+# fetches, so it is the version whose artifacts must resolve; the spec floor is its major.minor. A hardcoded
+# version here would be one more record to go stale, which is the class of defect this file exists to catch.
+on:
+  schedule:
+    - cron: '17 7 * * 1'      # Mondays 07:17 UTC — weekly is enough for artifacts that change per release
+  workflow_dispatch:           # …and on demand, which is how you check a suspicion without waiting a week
+
+permissions:
+  contents: read               # `gh release view` over PUBLIC sibling repos needs nothing more
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      # The layout matters: release-verify.sh derives ROOT_C as <script>/../.., the directory holding the
+      # candor-* siblings, and reads candor-java's jbang-catalog.json from there to discover the pinned
+      # download URLs rather than hardcoding them.
+      - uses: actions/checkout@v4
+        with:
+          path: candor
+      - uses: actions/checkout@v4
+        with:
+          repository: tombaldwin/candor-java
+          path: candor-java
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'   # the live smoke runs `npx candor-ts@<ver> --version`
+
+      - name: derive the pinned version
+        id: pin
+        run: |
+          VER=$(grep -m1 '^ENGINE_PIN=' candor/bin/candor | sed 's/.*"\(.*\)".*/\1/')
+          [ -n "$VER" ] || { echo "::error::could not read ENGINE_PIN from bin/candor"; exit 1; }
+          echo "ver=$VER"          >> "$GITHUB_OUTPUT"
+          echo "spec=${VER%.*}"    >> "$GITHUB_OUTPUT"
+          echo "auditing spec ${VER%.*} / v$VER (derived from ENGINE_PIN)"
+
+      - name: release-verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash candor/bin/release-verify.sh "${{ steps.pin.outputs.spec }}" "${{ steps.pin.outputs.ver }}"

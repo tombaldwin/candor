@@ -51,11 +51,25 @@ JAR="$(ls "$ROOT"/candor-java/build/libs/candor-java-"$VER"-all.jar 2>/dev/null 
 rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
   local repo="$1" tag="$2" title="$3"; shift 3
   if gh release view "$tag" -R "tombaldwin/$repo" >/dev/null 2>&1; then skip "$repo $tag already released"
-  else gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "$ROOT/$repo/CHANGELOG.md" && ok "$repo $tag"; fi
+  else
+    # THE BODY IS THE NEWEST ENTRY, NOT THE WHOLE CHANGELOG. GitHub caps a release body at 125000
+    # characters and candor-swift's CHANGELOG is 154KB, so `-F CHANGELOG.md` 422'd mid-release on 0.25
+    # ("body is too long") and left that repo TAGGED WITH NO RELEASE — the state that broke `candor
+    # update` at 0.24. Every other changelog is growing the same way, so this was a deadline, not a one-off.
+    awk '/^## /{n++} n==1{print} n==2{exit}' "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+    gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag"
+  fi
 }
+# ALL SEVEN, not four. This cut java/swift/agents/spec only, while `release-verify.sh` checks all seven —
+# so candor-rust, candor-ts and the umbrella were TAGGED (ts by the npm step, the umbrella by step 4) and
+# never released, and the verifier failed on repos the publisher was never asked to cut.
 rel candor-java   "v$VER" "candor-java v$VER" "$JAR"
 rel candor-swift  "v$VER" "candor-swift v$VER"
 rel candor-agents "v$VER" "candor-agents v$VER"
+rel candor-rust   "v$VER" "candor-rust v$VER"
+rel candor-ts     "v$VER" "candor-ts v$VER"
+rel candor        "v$VER" "candor v$VER"
+# the SPEC is tagged at its OWN version — no patch component; release-verify.sh checks `v$SPEC` to match.
 rel candor-spec   "v$SPEC" "candor-spec $SPEC"
 
 # --- 4. umbrella + Homebrew front door ------------------------------------------------------------------

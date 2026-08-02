@@ -4,6 +4,15 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 ## Direction — next strategic bets (family-level)
 
+- **[P2 — release process, found 2026-08-02] `bin/release.sh` should RENAME `## Unreleased`, not insert a
+  heading above it.** Cutting 0.25 left a stale `## Unreleased` heading sitting BELOW the shipped
+  `## [0.25.0]` in four engine CHANGELOGs — the `v0.25.0` tag contains the commits that wrote that
+  content, so it had shipped while still labelled unreleased. Anyone reading those files after the release
+  would have taken shipped work for pending work. Fixed by hand in the 0.26 floor bump; the script still
+  has the behaviour. The fix is one step in `release.sh`: rewrite the existing `## [Unreleased]` /
+  `## Unreleased` heading to the version being cut, then start a fresh empty one.
+
+
 Correctness and disclosure are well-shored and **cross-engine-verified**: the inherited-into-project silent-pure
 vein class was found and closed across all major JVM persistence (candor-java κ batches 24–27) and
 confirmed not a shared blind spot; the **real-world corpus campaign (2026-06-22)** fixed the last live

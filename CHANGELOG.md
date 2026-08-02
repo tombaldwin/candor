@@ -8,6 +8,25 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-02 — spec 0.26: a sidecar's KEY SET is its manifest (unreleased)
+
+⟨spec 0.26⟩ **§2.2 — an absent type in the hierarchy sidecar is UNANSWERABLE, never "has no supertypes".**
+A producer emits a key for every type it indexed (`[]` included); a consumer treats a type absent from a
+present sidecar as unanswerable and DISCLOSES rather than dropping. Adds the optional `@unanalyzed`
+diagnostic key.
+
+The measurement that made it a format change rather than a consumer patch: with only the sidecar doctored
+on a real scan, removing ONE entry dropped a reacher from `callers --include-unknown`, while removing the
+sidecar ENTIRELY left the answer correct. **A partial sidecar was worse than an absent one** — and no
+consumer can patch around that alone, because without a manifest it cannot tell a producer's silence from
+its answer. java and ts behaved identically, which is evidence about the FORMAT rather than either engine.
+
+Engine work in all four: java `78aad6d`, ts `caeda66`, swift `ea3de21`, rust `4cae735`. Pinned by
+conformance **PART 30 (P6)** — the property the self-differential family was missing, since P2 and P3
+degrade the chained dep REPORT and nothing degraded a SIDECAR.
+
+Engine pin unchanged at 0.25.0: the rung is built and conformance-pinned but not yet published.
+
 ## 2026-08-02 — spec 0.25: an ambiguous join key is UNIONED, not dropped (engine pin 0.25.0)
 
 ⟨0.25⟩ SPEC §2 chaining rule 1 REVERSED: through 0.24 it prescribed dropping an ambiguous key, which took

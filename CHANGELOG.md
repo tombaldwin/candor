@@ -8,6 +8,14 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-02 — spec 0.25: an ambiguous join key is UNIONED, not dropped (engine pin 0.25.0)
+
+⟨0.25⟩ SPEC §2 chaining rule 1 REVERSED: through 0.24 it prescribed dropping an ambiguous key, which took
+the calling function out of `functions` — a ⟨0.21⟩ purity claim over a call the engine had just declared
+itself unable to name. All four engines already UNION, and conformance pins it, so an engine conforming to
+the 0.24 text would have failed the suite. **No engine work: this is the contract catching up.**
+`ENGINE_PIN` moves to 0.25.0 with the floor.
+
 ## 2026-08-01 — spec 0.24: contributes, ambiguity, and a gate that can now go red (engine pin 0.24.0)
 
 The family floor moves to **spec 0.24** — all engines at **0.24.0**, `ENGINE_PIN` bumped, so `candor update`

@@ -30,10 +30,17 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 - **[P1 — umbrella/spec convention, 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
   IMPLEMENTS, and engine-specific verbs are unreachable through it.**
 
-  **MEASURED.** `bin/candor`'s `QUERY_VERBS` is a flat, engine-agnostic list of 18; candor-swift's CLI
-  accepts 9, of which only 6 overlap; and candor-swift additionally has two verbs the umbrella does not
-  route at all (`privacy-manifest`, `gate`). `engine_present` answers *"is it installed?"*, never *"does
-  it support this?"*. Both directions fail, and neither fails HONESTLY:
+  **MEASURED (counted programmatically — my first hand-count of this got two of three numbers wrong).**
+  `bin/candor`'s `QUERY_VERBS` is a flat, engine-agnostic list of **19**; candor-swift's CLI accepts
+  **9**; the overlap is **7** (`parsepolicy fix fix-gate unverified tour path gains`). So:
+
+      12 verbs the umbrella ROUTES that candor-swift does not implement
+         (show where callers map containment diff reachable impact blindspots whatif rewire agents)
+       2 verbs candor-swift HAS that the umbrella cannot route
+         (privacy-manifest, gate)
+
+  `engine_present` answers *"is it installed?"*, never *"does it support this?"*. Both directions fail,
+  and neither fails HONESTLY:
 
       candor privacy-manifest      → "unknown action 'privacy-manifest'"   (umbrella doesn't know swift has it)
       candor show <fn>  on Swift   → "candor-swift: no such path: <fn>"    (engine got a verb it lacks and

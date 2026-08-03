@@ -461,6 +461,29 @@ case "$verb" in
       if [ -d "$vdir" ]; then vd="$vdir"; else vd="$(dirname "$vdir")"; fi
       case "$vdir" in *.jar) veng="java";; esac
       if [ "$veng" = "node" ] && [ "$(detect_langs "$vd" 2>/dev/null)" = "java" ]; then veng="java"; fi
+      # A RUST- or SWIFT-ONLY TARGET HAS NO ORACLE ARM, AND MUST SAY SO RATHER THAN TAKE THE NODE ONE.
+      # `verify` ships two arms (node, java). The fallthrough above sent everything else to node, so a
+      # Swift package was verified by the TypeScript oracle — which then advised "scan the project first
+      # (candor-ts <dir>)", i.e. a remedy naming the wrong engine for the user's language. A wrong remedy
+      # is worse than no remedy: it costs the user a run to find out. (Both languages DO have dynamic
+      # oracles — candor-rust's strace `realworld-oracle` CI lane and candor-swift's recall/strace lanes —
+      # they are harnesses in those repos, not a user-facing verb, which is the real gap this names.)
+      # Only when the target is UNAMBIGUOUSLY one of them: a mixed repo that also has package.json or a
+      # JVM manifest keeps the old behaviour, because there the node/java arm may genuinely be the point.
+      if [ "$veng" = "node" ]; then
+        vlangs="$(detect_langs "$vd" 2>/dev/null)"
+        case "$vlangs" in
+          rust|swift|"rust swift")
+            echo "candor verify: no oracle arm for ${vlangs} yet — \`verify\` ships the node and java arms." >&2
+            echo "  This target looks like ${vlangs}, and running the node arm over it would check a claim" >&2
+            echo "  candor-ts never made. What you can do instead:" >&2
+            echo "    · the static gate:      candor scan $vdir --policy <file>" >&2
+            echo "    · force an arm anyway:  candor verify $vdir --engine node|java   (if this is a mixed repo)" >&2
+            echo "  The dynamic oracle DOES cover ${vlangs} as a CI lane in that engine's own repo" >&2
+            echo "  (candor-rust realworld-oracle / candor-swift recall+strace); it is not yet a verb here." >&2
+            exit 2;;
+        esac
+      fi
     fi
     if [ "$veng" = "java" ]; then
       run_java verify "${vargs[@]}"

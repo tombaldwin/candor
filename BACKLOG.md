@@ -328,8 +328,30 @@ provenance; the SHIPPED items are marked in place.
   extracts (const-anchored + literal-head resolution, spec 0.14). Unlocks the security use case the tool
   can't currently cash; a natural extension of shipped work. Bigger effort; a real vocabulary rung. Stay
   SOUND — an unresolved host stays bare `Net` (+ `unknown-host` class), never fabricated.
-- **[P1 — NEXT (Tom, 2026-07-20: "backlog refresh, then verify oracle")] Standing dynamic honesty oracle
-  (`candor verify`).** Productionize the oracle prototype (built local, `~/candor-paper/harness/`; also runs
+- **[LARGELY DONE — re-surveyed 2026-08-03; the "productionize" ask has been met in all four arms]
+  Standing dynamic honesty oracle (`candor verify`).** The entry below was written 2026-07-20 and asks for
+  work that has since shipped. Measured state, per repo, from the workflow files:
+
+      candor-rust   `realworld-oracle.yml` — strace, CONTINUOUS (every push + PR), exits non-zero on a
+                    NEW silent under-report. Plus realworld-oracle-deep + disclosure-recall.
+      candor-java   ci.yml's dynamic-oracle step — JFR + a leaf-instrumenting `-javaagent`; the file
+                    itself says "this makes the runtime oracle a STANDING gate (was manual)".
+      candor-ts     ci.yml — transitive-recall battery + the 20-case effect-set oracle; ships a
+                    user-facing `candor-ts-verify` CLI.
+      candor-swift  ci.yml — recall oracle (non-syscall, macOS) + strace lane (Linux);
+                    `confirmatory-corpus.yml` is weekly and REPORTED-not-gated **by design** (a held-out
+                    frozen corpus is evidence, not a ratchet — see FROZEN.md).
+
+  **WHAT IS ACTUALLY LEFT is narrower and worth stating precisely: `candor verify` is a user-facing verb
+  for the NODE and JAVA arms only.** rust and swift have real dynamic oracles, but as harnesses inside
+  their own repos' CI — not as something a user can run on their own project. Until that changes the verb
+  should refuse those targets rather than guess, which it now does (`bin/candor`, 2026-08-03): a
+  Swift package used to fall through to the NODE arm and be told to "scan the project first (candor-ts
+  <dir>)" — a remedy naming the wrong engine for the user's language, which costs a run to discover.
+  Promoting either harness to a verb is the remaining work, and it is a new feature rather than
+  productionization.
+
+  ~~ORIGINAL ENTRY:~~ Productionize the oracle prototype (built local, `~/candor-paper/harness/`; also runs
   on this Mac via a Docker `rust:latest` + `--cap-add=SYS_PTRACE` strace container — runs via a Docker `--cap-add=SYS_PTRACE` strace container on this Mac;
   candor-java ships the production `io.poly.candor.verify` `-javaagent` (Trace.emit, ~1.0–1.3×) distinct from
   the soundness-corpus harness agent — candor-java ships the production verify `-javaagent`): run a candor report against a runtime

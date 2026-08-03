@@ -27,7 +27,37 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P2 — privacy/1 vocabulary, 2026-08-03] Health and Motion are not in the six-effect cluster, and a
+  real health app shows the gap.** privacy/1 covers Location / Camera / Mic / Contacts / Photos / Notify.
+  It does NOT model `HKHealthStore` or `CMMotionManager`, so `NSHealthShareUsageDescription`,
+  `NSHealthUpdateUsageDescription` and `NSMotionUsageDescription` are invisible to `privacy-manifest`.
+
+  MEASURED on pollen (read-only; scanned a COPY in scratch, the repo was byte-identical afterwards):
+  it uses `HKHealthStore` (1 file) and `CMMotionManager` (1 file) and declares keys for both — so **four
+  of the nine usage keys across its two Info.plists are outside candor's vocabulary**. A `verify` that
+  passes on such an app is silent about them, and an iOS reader would spot that immediately.
+
+  Health/fitness is a whole app category, and the sensors are the ones users care most about. The work is
+  the same shape as the original six (candor-swift `SPEC-EXTENSION-privacy.md`: classifier entries + the
+  effect → key mapping + fixtures), so this is an extension rather than a design problem. It is also the
+  honest prerequisite for the article below if that article uses a health app.
+
 - **[P2 + CONTENT — 2026-08-03] Route `privacy-manifest` through the umbrella, and write it up.**
+  **DEMO MATERIAL — pollen, measured 2026-08-03.** Scanned a copy of `Sources/ + Apps/ + Resources/` and
+  verified against both Info.plists. Two REAL under-declarations, each in a different plist:
+
+      Resources/Info.plist          exit 1  ✗ reaches Mic (iOSBlowMonitor.actuallyStart, …) — no
+                                                NSMicrophoneUsageDescription
+      Apps/PolleniOS/Info.plist     exit 1  ✗ reaches Contacts (ContactsService.resolve, SettingsView.body,
+                                                …) — no NSContactsUsageDescription
+
+  Both plists also carry the tool's own hedge: *"verdict is conditional on 22 uncovered modules"*. That
+  line belongs IN the article — a tool that discloses its own blind spots while making a finding is the
+  whole pitch, and it pre-empts the obvious "how do I know it saw everything?".
+  **CAVEAT the write-up must not skip:** this scan treated the whole codebase as ONE unit, so "reaches" is
+  across all targets. A per-TARGET verify (scan only that target's sources) is the correct way to run it
+  and may clear one or both. The findings above are CANDIDATE under-declarations until run per target —
+  and demonstrating the per-target run is probably the better article anyway.
   candor-swift's `privacy-manifest` verb is BUILT and working — verified end to end on a fresh fixture:
 
       GENERATE  Location → NSLocationWhenInUseUsageDescription (reached by: track)

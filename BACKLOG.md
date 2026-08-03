@@ -230,7 +230,21 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
   per-target scoping (whole-tree scan caveat); a public marketing writeup.
 - **[P2] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
-  rust — mark ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
+  **BATCH 1 DONE 2026-08-03 (candor-rust `c9b6941`): crossterm + ratatui, both `Ipc`.** And the filing was
+  WRONG about ratatui: it said "mark reviewed-pure", but ratatui-0.29.0's `Terminal::draw`/`flush`/`clear`
+  end in a backend flush and `backend/` writes to the terminal — marking the crate pure would have claimed
+  purity over the one API that writes. Verified against the crate source in the local cargo registry, not
+  argued. The render surface (widgets/layout/buffer/style — where the bulk of the 3,345 calls live) IS pure
+  and is now covered rather than disclosed. `Ipc` because the tty is a user dialogue channel, the ruling
+  dialoguer/console already carry.
+  **THE DURABLE LESSON FOR THE REST OF THIS BATCH: calibrating a crate INVERTS the default.** An unmatched
+  path stops being a disclosed blind spot and becomes a PURITY CLAIM — so "reviewed-pure" must mean
+  *someone read the source*, and every remaining candidate below needs the same treatment ratatui just got.
+  Remaining rust: serde_json / serde_yml / toml / regex / sha2 / color_eyre (each still to be VERIFIED
+  pure, not assumed — note `serde_json::from_reader` performs I/O *through* a handle the caller already
+  had to obtain, which is why it is defensible but must be reasoned about) + tracing_subscriber (Log/Fs).
+  Original filing, kept because the correction is the point: mark
+  ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
   3,345 disclosed calls across three real repos — the single loudest noise source) and CLASSIFY
   crossterm (terminal I/O) + tracing_subscriber (Log/Fs); jvm — classify the AWS SDK surfaces
   (S3 → Net/Fs, SES → Net; uflexi's top uncovered) + commons-io → Fs; swift — the uncovered list is

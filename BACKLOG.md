@@ -4,6 +4,29 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 ## Direction — next strategic bets (family-level)
 
+> **AUDITED 2026-08-03.** Every entry was checked against the repos, not against its own prose. **8 of 13
+> top-level entries were headed `[P0]`/`[P1]`/`[P2]` while their bodies — and the code — said SHIPPED.**
+> They are re-headed below. This matters because the P-level is how the next task gets picked: scanning by
+> it was wrong 8 times out of 11, and it misdirected a session earlier the same day (the "standing verify
+> oracle" was already standing in all four arms).
+>
+> **METHOD, because the first two passes at it were themselves wrong.** A regex for "body says SHIPPED"
+> matched done-claims belonging to LATER entries' sub-bullets and overstated the count as 9. And a
+> recommendation made from an entry's own text ("digest phase 3 is the one confirmed-open item") was
+> refuted by the spec it points at — all three phases are built, including the Slack push. **Read the
+> artifact the entry cites, then the code; an entry describing its own state is a claim, not evidence.**
+>
+> **GENUINELY OPEN after the audit** — five items, and only two are code:
+>   · `[P2]` `bin/release.sh` should RENAME `## Unreleased` (filed today; verified — no such handling exists)
+>   · `[P2]` ledger-mined classifier breadth (per-engine κ classification work, batched by call-count)
+>   · `[P3]` blame-tracked `Unknown` (needs `candor verify` as a foundation)
+>   · `[gate]` structure-delta regression gate — DESIGNED, awaiting a go/no-go
+>   · `[adoption]` embeddable fingerprint badge
+> Plus, from the verify entry: promoting candor-rust's or candor-swift's dynamic oracle from a CI harness
+> to a user-facing verb — a new feature, not productionization.
+
+
+
 - **[P2 — release process, found 2026-08-02] `bin/release.sh` should RENAME `## Unreleased`, not insert a
   heading above it.** Cutting 0.25 left a stale `## Unreleased` heading sitting BELOW the shipped
   `## [0.25.0]` in four engine CHANGELOGs — the `v0.25.0` tag contains the commits that wrote that
@@ -75,7 +98,7 @@ Marketplace publisher (needs Tom's Azure DevOps PAT); **Tom's commercial call** 
 
 ### Agent-loop track — the north-star
 
-- **[P0] Agent edit-time blast-radius feedback — ships.** [`integrations/claude-code/`](integrations/claude-code/):
+- **[SHIPPED — verified 2026-08-03] Agent edit-time blast-radius feedback.** [`integrations/claude-code/`](integrations/claude-code/):
   a Stop hook that scans the agent's turn, diffs effects vs a baseline, and blocks-once with the gained
   effects + blast radius + any policy violation so the agent self-corrects. Both delivery paths ship
   (`candor-review.sh` JVM/bytecode; `candor-review-source.sh` for ts/swift/scan — no build step), sharing
@@ -127,7 +150,7 @@ Marketplace publisher (needs Tom's Azure DevOps PAT); **Tom's commercial call** 
   (GitHub) — all spec-0.8; plugin 0.8.2 zip staged for Marketplace. Family test standards now
   codified in TESTING.md (coverage measured + every zero-coverage gate surface closed).
 
-- **[P1 — NEW, 2026-07-10] The candor digest — make the silent gate VISIBLE.** Adoption/retention
+- **[SHIPPED — ALL THREE PHASES, verified 2026-08-03 against integrations/DIGEST-SPEC.md] The candor digest — make the silent gate VISIBLE.** Adoption/retention
   problem Tom named: the tool is silent by design (good — never muted), but the OWNER who renews never
   sees it work → "why are we running this?" is easy to ask. Fix is NOT more dev-channel noise — it's a
   separate periodic OWNER-facing digest over the activity log candor already keeps
@@ -180,11 +203,11 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Vocabulary + breadth track (opened 2026-07-14 — Tom: "yes, and privacy")
 
-- **[P1] The `Llm` effect** — design done (candor-spec/LLM-EFFECT-DESIGN.md): a standalone boundary
+- **[SHIPPED + PUBLISHED as floor 0.13 — verified 2026-08-03] The `Llm` effect** — design done (candor-spec/LLM-EFFECT-DESIGN.md): a standalone boundary
   effect (the Db precedent) from SDK surfaces + the host literals we already extract; java-led minor
   rung; the sharpest gains/origin alarm ("your dep bump added an LLM call"). DECIDED (Tom 2026-07-14, all
   recommendations accepted). Next: the java reference implementation.
-- **[P1] The privacy-sensor cluster** (Location/Camera/Mic/Contacts/Photos/Notify) — design done
+- **[SHIPPED 2026-07-14 — verified 2026-08-03] The privacy-sensor cluster** (Location/Camera/Mic/Contacts/Photos/Notify) — design done
   (candor-spec/PRIVACY-EFFECTS-DESIGN.md): swift-led; the product shape is privacy-manifest
   generate/VERIFY from code-level truth. SHIPPED (2026-07-14, code green): the
   privacy/1 SPEC EXTENSION (candor-swift/SPEC-EXTENSION-privacy.md + impl, 183 tests, envelope
@@ -264,7 +287,7 @@ the report against a real syscall trace is the highest-leverage remaining soundn
 load-bearing evidence. Blame-tracked `Unknown` [P3] builds on it. The per-item detail below is kept for
 provenance; the SHIPPED items are marked in place.
 
-- **[P1] Reason-scoped `Unknown` policies** — **SHIPPED + PUBLISHED as floor 0.19** (was staged on main 2026-07-17).
+- **[SHIPPED + PUBLISHED, floor 0.19] Reason-scoped `Unknown` policies** — **SHIPPED + PUBLISHED as floor 0.19** (was staged on main 2026-07-17).
   All four engines: `ReasonClass` projection {reflect,dispatch,indirect,native,unresolved,setup}, the
   `deny E Unknown[class…]` parser (`dynamic` alias, `*`/bare = all, A2 under-gating lint), the reason-scoped
   gate eval (fires only on a matching class; unrecorded → `unresolved` conservatively), **the reason CLASS
@@ -302,7 +325,7 @@ provenance; the SHIPPED items are marked in place.
   java-leadable. (The SETUP-vs-GENUINE split — routing `missing-config`/`no-tsconfig` to a loud scan-time
   setup diagnostic, never a silent gate input — is §3 of the same doc: it's the same reason-class mechanism,
   so it ships together.)
-- **[P1] Completeness manifest — close the `absent ⇒ pure` hole** — **SHIPPED + PUBLISHED as floor 0.21**
+- **[SHIPPED + PUBLISHED, floor 0.21] Completeness manifest — close the `absent ⇒ pure` hole** — **SHIPPED + PUBLISHED as floor 0.21**
   (report/verdict `analyzed`+`unanalyzed`; the fail-closed exit-2 incomplete verdict closed a live
   machine-consumer cardinal-sin channel in java/ts/swift — see the completeness-manifest rung). Original
   framing kept for provenance — DESIGN DONE + REALITY-AUDITED
@@ -318,7 +341,7 @@ provenance; the SHIPPED items are marked in place.
   regardless); **(G3)** verify/pin four-way that a truly-isolated pure fn is a callgraph node (ts derives
   nodes from edges → an isolated leaf may be missing — the residual §2.2 hole). Tier-1 additive + a §2.2
   conformance fix; pairs with `candor verify`.
-- **[P2] `Net` destination-class refinement — SHIPPED + PUBLISHED as floor 0.20** (`netClass`
+- **[SHIPPED + PUBLISHED, floor 0.20] `Net` destination-class refinement — SHIPPED + PUBLISHED as floor 0.20** (`netClass`
   known-telemetry/known-partner/unknown-host + `deny Net[unknown-host]`, fail-closed on a masked/runtime
   host — see the reason-scoped-Unknown / Net-class work). Original framing kept for provenance — DESIGN DONE
   (`candor-spec/NET-DESTINATION-CLASS-DESIGN.md`, 2026-07-17); answer the coarse-effects dealbreaker. `Net` can't tell
@@ -362,7 +385,7 @@ provenance; the SHIPPED items are marked in place.
   conformance. The differentiator no competitor has: an analysis that checks itself against reality.
   Site-anchored attribution (wrap candor's own claimed direct-effect sites) sidesteps general stack
   unwinding.
-- **[P2] `Unknown`-rate / disclosure metric — SHIPPED + PUBLISHED as floor 0.20.** `candor blindspots --stats` (reason-class distribution, sizing) + `--class <c,…>` (drill-down filter), three-way (rust/java/ts), conformance PART 5c. The blindspots half of the design's reason-class integration; `unverified --class` is the small remaining companion. `candor blindspots --stats`: the
+- **[SHIPPED + PUBLISHED, floor 0.20] `Unknown`-rate / disclosure metric — SHIPPED + PUBLISHED as floor 0.20.** `candor blindspots --stats` (reason-class distribution, sizing) + `--class <c,…>` (drill-down filter), three-way (rust/java/ts), conformance PART 5c. The blindspots half of the design's reason-class integration; `unverified --class` is the small remaining companion. `candor blindspots --stats`: the
   reason-distribution (how much `Unknown`, by reason class) as a self-diagnostic, so a team can SIZE the
   blind-spot cost before turning on `deny E Unknown`. Cheap; answers the "is disclosure actionable or
   pervasive" question in production; feeds the setup-vs-genuine split.

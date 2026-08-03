@@ -156,9 +156,12 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
                 corrupt plist exit 2  (fail-loud, never a silent empty answer)
 
   **The gap:** it is reachable only as `candor-swift privacy-manifest`. The umbrella does not route it, so
-  `candor privacy-manifest` does not work — the same shape as the `candor verify` routing gap fixed in
-  `bin/candor` on 2026-08-03. Small: a dispatcher case, swift-only, with the same "no arm for this
-  language" refusal the verify routing now uses for rust/swift.
+  `candor privacy-manifest` does not work.
+  **⚠ THIS ROUTING HALF IS A SUBSET OF the "umbrella has no notion of which verbs an engine implements"
+  item above** — `privacy-manifest` is one of the two engine-only verbs that item counts, and building the
+  per-verb table there routes it for free. Do NOT do them separately. What is unique to THIS entry is the
+  CONTENT half below; the routing is listed here only so the article is not written about a command that
+  still fails through the umbrella.
 
   **WHY IT IS ALSO THE BEST ARTICLE CANDIDATE WE HAVE** (Tom, 2026-08-03 — LinkedIn post or a
   candor.poly.io piece). It is the one feature with a consequence a reader already fears: an App Store
@@ -435,7 +438,7 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   generate/verify verb (candor-swift b9a68a6, 196 tests) — the real-app exhibit is LIVE (pollen's iOS
   Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
   per-target scoping (whole-tree scan caveat); a public marketing writeup.
-- **[P2] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
+- **[CLOSED 2026-08-03 — all four batches; see the body for what the source refuted] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
   **BATCH 1 DONE 2026-08-03 (candor-rust `c9b6941`): crossterm + ratatui, both `Ipc`.** And the filing was
   WRONG about ratatui: it said "mark reviewed-pure", but ratatui-0.29.0's `Terminal::draw`/`flush`/`clear`
   end in a backend flush and `backend/` writes to the terminal — marking the crate pure would have claimed

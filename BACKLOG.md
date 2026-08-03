@@ -240,9 +240,20 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   **THE DURABLE LESSON FOR THE REST OF THIS BATCH: calibrating a crate INVERTS the default.** An unmatched
   path stops being a disclosed blind spot and becomes a PURITY CLAIM — so "reviewed-pure" must mean
   *someone read the source*, and every remaining candidate below needs the same treatment ratatui just got.
-  Remaining rust: serde_json / serde_yml / toml / regex / sha2 / color_eyre (each still to be VERIFIED
-  pure, not assumed — note `serde_json::from_reader` performs I/O *through* a handle the caller already
-  had to obtain, which is why it is defensible but must be reasoned about) + tracing_subscriber (Log/Fs).
+  **BATCHES 2–4 DONE 2026-08-03 — the item is CLOSED except for one crate.** rust: `REVIEWED_PURE_CRATES`
+  (a NEW mechanism — `CALIBRATED_CRATES` requires a live rule, so a pure crate cannot go there) covering
+  serde_json / serde_yml / toml / regex / sha2, each checked against its registry source where every
+  apparent I/O hit was a doc comment (`32cfb8c`); `tracing_subscriber` → Log + Env (`6916a24`). jvm: S3
+  transfers naming a local File → Fs co-emitted beside Net (`9122c64`); commons-io needed NOTHING, it
+  already carries the source/sink descriptor stance.
+  **THREE OF THE FILING'S CLAIMS DID NOT SURVIVE READING THE SOURCE:** ratatui is not pure,
+  tracing_subscriber has no Fs, and commons-io was already done. **`color_eyre` is still open and is the
+  only remainder** — it is absent from this machine's cargo registry, so it could not be verified, and an
+  unverifiable entry is what `REVIEWED_PURE_CRATES`' own doc comment forbids.
+  **THE DURABLE DISTINCTION, needed three times in one batch:** a library moving bytes through a handle
+  the CALLER opened is not charged (the caller's `open` carries it) — but `new java.io.File(path)` opens
+  nothing, so an SDK that writes it IS the only place the Fs lives. Same-looking shape, opposite ruling,
+  decided by what the caller actually does.
   Original filing, kept because the correction is the point: mark
   ratatui/serde_json/serde_yml/toml/regex/sha2/color_eyre reviewed-pure (ratatui alone is
   3,345 disclosed calls across three real repos — the single loudest noise source) and CLASSIFY

@@ -315,6 +315,47 @@ else
   bad "publisher and verifier disagree — cut only: $(comm -23 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')| checked only: $(comm -13 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')"
 fi
 
+# ── [9] NOTHING MAY STILL BE SITTING UNDER `## Unreleased` WHEN A VERSION IS CUT ───────────────────
+# Cutting 0.25 left FOUR engine CHANGELOGs with a non-empty `## Unreleased` section — and the v0.25.0 tag
+# contains the commits that wrote it, so that work SHIPPED while still labelled unreleased. Anyone reading
+# those files afterwards would take shipped work for pending work.
+#
+# The check is deliberately here and not in `release.sh`: that script's contract is that the version is
+# ALREADY bumped, committed and pushed (it refuses to run on a dirty tree), so having it rewrite and
+# re-commit a CHANGELOG mid-publish would contradict its own gate. Preflight is where "is this staged
+# correctly" lives, and a gate that names the fix beats a script that silently performs it.
+#
+# Only a BARE `## Unreleased` / `## [Unreleased]` counts — optionally carrying a version tag, which is the
+# shape the family actually writes (`## Unreleased — ⟨spec 0.26⟩`). A QUALIFIED one is a deliberately
+# separate section and must not be flagged: candor-rust keeps `## [Unreleased] (nightly lint)` for a
+# component with its own cadence. EMPTY is fine too — an empty placeholder at the top is the convention,
+# and only CONTENT would ship unlabelled.
+# ONLY WHEN A VERSION IS BEING ASSERTED. Preflight is also run as a plain health check
+# (`release-preflight.sh 0.26`, no version), and in THAT mode content under `## Unreleased` is the normal
+# staging state — the whole point of the section. Flagging it there would turn everyday use red and teach
+# the reader to ignore the tool, which is how a gate stops being one.
+echo "[9] no non-empty \`## Unreleased\` section left when cutting${WANT_VER:+ $WANT_VER}"
+if [ -z "$WANT_VER" ]; then
+  note "— skipped: no version argument. Content under \`## Unreleased\` is the normal staged state; pass a version to check it"
+fi
+u_any=0
+for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+  [ -n "$WANT_VER" ] || continue
+  f="$ROOT/$r/CHANGELOG.md"
+  [ -f "$f" ] || continue
+  # the line number of a BARE Unreleased heading, and of the next `## ` heading after it
+  ln="$(grep -nE '^## \[?Unreleased\]?[[:space:]]*(—.*)?$' "$f" | head -1 | cut -d: -f1)"
+  [ -n "$ln" ] || continue
+  nxt="$(awk -v s="$ln" 'NR>s && /^## /{print NR; exit}' "$f")"
+  [ -n "$nxt" ] || nxt="$(wc -l < "$f")"
+  body="$(awk -v a="$ln" -v b="$nxt" 'NR>a && NR<b' "$f" | grep -cE '[^[:space:]]')"
+  if [ "${body:-0}" -gt 0 ]; then
+    u_any=1
+    bad "$r: \`## Unreleased\` (line $ln) has $body non-blank line(s) — rename it to the version being cut (e.g. \`## [$WANT_VER] — $(date +%F)\`) and open a fresh empty one, or its contents ship unlabelled"
+  fi
+done
+[ "$u_any" = 0 ] && [ -n "$WANT_VER" ] && ok "no CHANGELOG has content stranded under \`## Unreleased\`"
+
 echo
 if [ "$fail" = 0 ]; then
   echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"

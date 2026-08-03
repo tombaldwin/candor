@@ -361,6 +361,64 @@ for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agent
 done
 [ "$u_any" = 0 ] && [ -n "$WANT_VER" ] && ok "no CHANGELOG has content stranded under \`## Unreleased\`"
 
+# ── [10] EVERY REPO'S CI MUST BE GREEN ON THE COMMIT BEING RELEASED ────────────────────────────────
+# Nothing in the release path looked at CI. You could publish a commit whose own build was red — and that
+# is not hypothetical: on 2026-08-03 candor-rust and candor-swift both went red on pushed HEADs, and the
+# rust failure had SILENTLY DISABLED a liveness test (a stranded `#[test]`), so the tarball would have
+# shipped a suite that passed by not running. Local `cargo test` cannot see that; CI did.
+#
+# Release mode only (a version argument), and SKIPPED — never failed — when `gh` is unavailable or
+# unauthenticated, because preflight must stay usable offline. A skip says so loudly rather than passing
+# quietly, since "could not check" and "checked and fine" are the two things this file exists to separate.
+echo "[10] CI is green on each repo's HEAD${WANT_VER:+ (releasing $WANT_VER)}"
+if [ -z "$WANT_VER" ]; then
+  note "— skipped: no version argument; CI state matters at RELEASE time"
+elif ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
+  note "— SKIPPED: no authenticated \`gh\`. This check did NOT run; verify CI by hand before publishing."
+else
+  ci_bad=0
+  for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+    [ -d "$ROOT/$r/.git" ] || continue
+    head_sha="$(git -C "$ROOT/$r" rev-parse HEAD 2>/dev/null)"
+    verdicts="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status,workflowName 2>/dev/null \
+      | python3 -c "
+import json,sys
+h='$head_sha'
+try: runs=json.load(sys.stdin)
+except Exception: print('ERR'); raise SystemExit
+mine=[x for x in runs if x['headSha']==h]
+if not mine: print('NONE'); raise SystemExit
+bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skipped')]
+print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
+" 2>/dev/null)"
+    case "$verdicts" in
+      OK)   ;;
+      NONE) ci_bad=1; bad "$r: no CI run for HEAD ($head_sha) — pushed? still queued? do not publish blind";;
+      ERR|"") ci_bad=1; bad "$r: could not read CI status — treat as NOT verified";;
+      BAD*) ci_bad=1; bad "$r: ${verdicts#BAD }";;
+    esac
+  done
+  [ "$ci_bad" = 0 ] && ok "all 7 repos green on HEAD"
+fi
+
+# ── [11] THE FOUR-WAY CONFORMANCE SUITE MUST PASS ──────────────────────────────────────────────────
+# The floor is CONFORMANCE-PINNED (SPEC §2 versioning policy), so publishing a floor whose suite has not
+# been run publishes an unbacked claim. The standing checklist said "run it"; nothing enforced it, and a
+# checklist step that is not a gate is a step that gets skipped on a busy day. Release mode only — the
+# suite takes minutes, which is right for a publish and wrong for an everyday health check.
+echo "[11] four-way conformance suite${WANT_VER:+ (releasing $WANT_VER)}"
+if [ -z "$WANT_VER" ]; then
+  note "— skipped: no version argument; run it explicitly with conformance/run.sh"
+elif [ ! -x "$ROOT/candor-spec/conformance/run.sh" ]; then
+  bad "candor-spec/conformance/run.sh is missing or not executable — the floor claim cannot be backed"
+else
+  if ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >/tmp/rel-conformance.txt 2>&1; then
+    ok "conformance OK ($(grep -c MATCH /tmp/rel-conformance.txt) MATCH) — see /tmp/rel-conformance.txt"
+  else
+    bad "conformance FAILED — see /tmp/rel-conformance.txt. The floor is conformance-pinned; do not publish"
+  fi
+fi
+
 echo
 if [ "$fail" = 0 ]; then
   echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"

@@ -27,6 +27,28 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P2 — onboarding, 2026-08-03] No engine's AGENTS.md leads to the umbrella `candor` command.** Each
+  engine doc teaches a DIFFERENT command and none mentions the one thing the umbrella README calls *"the
+  one thing you install"*:
+
+      candor-rust    `cargo install candor-scan`  → `candor-scan`; Path B adds `cargo candor` + `candor-query`
+      candor-ts      `npm i -g candor-ts@latest`  → `candor-ts`, `candor-ts-query`, `candor-ts-mcp`
+      candor-java    `jbang candor@tombaldwin/candor-java`
+      candor-swift   `swift build -c release` from a clone — no install step at all
+      candor-agents  `pipx install git+…`         → `candor-agents`
+
+  So an agent that lands in candor-rust and follows its contract gets a working `candor-scan` and never
+  learns the umbrella exists. The near-miss is candor-rust's `cargo candor update` — a CARGO SUBCOMMAND
+  that reads almost identically to the umbrella verb and is not it.
+  This costs the things the umbrella is FOR: `candor doctor`, `candor verify`'s language routing, and one
+  pin for the whole family. Five entry points teaching five command names is also the likeliest source of
+  "which one do I actually run?".
+  **UNBLOCKED — verified 2026-08-03**: `Formula/candor.rb` is on the tap's `origin/main` (at 0.25.0), so
+  `brew install tombaldwin/tap/candor` works for a stranger today. (An older note in my own memory said the
+  tap was "built and held unpushed"; that is stale, and I checked before filing rather than repeating it.)
+  So this is a docs change only — add a "you probably want the umbrella" pointer near the top of each
+  engine's AGENTS.md, keeping the per-engine path for people who genuinely want one engine.
+
 - **[P2 — self-application, 2026-08-03] candor-ts does not gate itself.** Three of the four engines run a
   self-gate in CI — candor-rust (`Self-gate (candor on candor)`), candor-java (`Self-gate (candor-java on
   candor-java)`, which proves TWO halves separately because a prefix scope cannot exclude one sub-package

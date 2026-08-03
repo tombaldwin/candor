@@ -247,9 +247,12 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   transfers naming a local File → Fs co-emitted beside Net (`9122c64`); commons-io needed NOTHING, it
   already carries the source/sink descriptor stance.
   **THREE OF THE FILING'S CLAIMS DID NOT SURVIVE READING THE SOURCE:** ratatui is not pure,
-  tracing_subscriber has no Fs, and commons-io was already done. **`color_eyre` is still open and is the
-  only remainder** — it is absent from this machine's cargo registry, so it could not be verified, and an
-  unverifiable entry is what `REVIEWED_PURE_CRATES`' own doc comment forbids.
+  tracing_subscriber has no Fs, and commons-io was already done. **`color_eyre` CLOSED 2026-08-03 by fetching and checking it: it is NOT pure** — reads
+  RUST_BACKTRACE/RUST_SPANTRACE/COLORBT_SHOW_HIDDEN (Env) and `File::open`s SOURCE FILES to render code
+  snippets (Fs, `config.rs:248`). **Four of the filing's claims did not survive the source.** It is also
+  deliberately NOT calibrated: the file read sits in `impl fmt::Display for SourceSection`, reached when a
+  report is rendered rather than via any named verb, so no rule can match it — and calibrating would turn
+  that render path into a purity claim. Its calls stay disclosed. **THE ITEM IS NOW FULLY CLOSED.**
   **THE DURABLE DISTINCTION, needed three times in one batch:** a library moving bytes through a handle
   the CALLER opened is not charged (the caller's `open` carries it) — but `new java.io.File(path)` opens
   nothing, so an SDK that writes it IS the only place the Fs lives. Same-looking shape, opposite ruling,

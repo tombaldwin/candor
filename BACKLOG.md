@@ -27,6 +27,32 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P2 + CONTENT — 2026-08-03] Route `privacy-manifest` through the umbrella, and write it up.**
+  candor-swift's `privacy-manifest` verb is BUILT and working — verified end to end on a fresh fixture:
+
+      GENERATE  Location → NSLocationWhenInUseUsageDescription (reached by: track)
+      VERIFY    key missing   exit 1  ✗ code reaches Location (via track) but Info.plist declares none
+                key present   exit 0  ✓ every accessed capability is declared
+                corrupt plist exit 2  (fail-loud, never a silent empty answer)
+
+  **The gap:** it is reachable only as `candor-swift privacy-manifest`. The umbrella does not route it, so
+  `candor privacy-manifest` does not work — the same shape as the `candor verify` routing gap fixed in
+  `bin/candor` on 2026-08-03. Small: a dispatcher case, swift-only, with the same "no arm for this
+  language" refusal the verify routing now uses for rust/swift.
+
+  **WHY IT IS ALSO THE BEST ARTICLE CANDIDATE WE HAVE** (Tom, 2026-08-03 — LinkedIn post or a
+  candor.poly.io piece). It is the one feature with a consequence a reader already fears: an App Store
+  rejection. The story writes itself and every beat is demonstrable in a terminal:
+  · the reach is TRANSITIVE — a `Location` three calls deep through a helper still requires the key, which
+    is exactly what grepping your source for `CLLocationManager` will not tell you;
+  · the asymmetry is the interesting half — an UNDER-declaration is a rejection (exit 1), an
+    OVER-declaration is an unused permission users can see (a warning, exit 0). Most tools do neither;
+  · `Notify` maps to NO key, because notifications gate at runtime — a detail that shows the mapping was
+    derived from how Apple actually works rather than pattern-matched;
+  · it is generate AND verify, so it fits a CI story as well as a one-off audit.
+  Needs a real demo app rather than the toy fixture above, and it should say plainly that it is swift-only
+  today. Ties to the adoption thread and to `candor.poly.io/case-studies/`.
+
 - **[P2 — onboarding, 2026-08-03] No engine's AGENTS.md leads to the umbrella `candor` command.** Each
   engine doc teaches a DIFFERENT command and none mentions the one thing the umbrella README calls *"the
   one thing you install"*:

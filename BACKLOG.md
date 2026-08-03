@@ -27,6 +27,44 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P2 — self-application, 2026-08-03] candor-ts does not gate itself.** Three of the four engines run a
+  self-gate in CI — candor-rust (`Self-gate (candor on candor)`), candor-java (`Self-gate (candor-java on
+  candor-java)`, which proves TWO halves separately because a prefix scope cannot exclude one sub-package
+  from a `deny`), and candor-swift (`§7.12 — the engine holds its own boundary`). **candor-ts does not, and
+  has no `.candor/policy` at all** where rust and java both do. It is the one repo with a shipping engine
+  that could analyse itself and doesn't.
+  It also covers the surfaces most likely to acquire an effect by accident — the LSP, the MCP server, the
+  `verify` CLI. Same shape as the three that exist: a policy file plus a CI step. candor-java's comment is
+  the argument: *"An effect-gate vendor whose own gate is red has no business gating anyone else."*
+  NB a self-gate proves "our own code performs no forbidden effect" — it does NOT test the analysis. That
+  is the oracle's job, and only candor-rust runs `realworld-oracle` continuously.
+
+- **[P2 — release process, 2026-08-03] The release scripts have no tests.** `release-stage.sh` now performs
+  ~18 edits across six repos and `release-preflight.sh` carries eleven checks, and NOTHING gates either.
+  Building the stage script surfaced two real bugs purely by running it: a heredoc nested inside `$(...)`
+  is a shell parse hazard, and `\1` immediately followed by `0.26.0` parses as group TEN (`\g<1>` is the
+  only safe form). Both were caught by execution, neither by reading.
+  A fixture repo tree (six stub repos with the version sites and a CHANGELOG each) plus assertions on the
+  staged result would catch that class. The argument for doing it: these scripts now stand between a defect
+  and a publish, which is exactly where an untested script is worst.
+
+- **[P3 — DX, 2026-08-03] Local clippy is weaker than CI's, so "clippy clean" locally is not evidence.**
+  `clippy 0.1.98` on this machine exits 0 on two adjacent `#[test]`; CI's stable toolchain errors
+  (`duplicate-macro-attributes`). That cost a CI round-trip on 2026-08-03 — and the same commit had a
+  stranded `#[test]` that SILENTLY DISABLED a liveness test, which local `cargo test` also could not see
+  (the total stayed flat because a duplicated attribute registers the test twice).
+  Fix is a pinned toolchain for local dev, or a line in AGENTS.md saying local clippy is ADVISORY and CI is
+  the authority. Tiny, and it removes a false signal — which is worth more here than its size suggests.
+
+- **NOT backlogged, recorded so they are not re-proposed** (checked 2026-08-03):
+  · **candor-agents / candor-spec / the umbrella not self-gating** — no engine analyses Python, Markdown or
+    shell. An honest absence, not a gap; filing it would create a permanently-open item. The umbrella's
+    `bin/` is the one place in the family that genuinely reaches the network and spawns processes
+    (`release.sh`), and nothing could gate it today without a shell engine — worth KNOWING, nothing to do.
+  · **A family-wide sweep for version-coupled test assertions** — proposed after fixing one in candor-agents
+    (`startswith("<!-- candor-agents 0.25")`), then MEASURED across all five suites: the only other hits are
+    usage strings. It was a one-off, not a class, so the sweep is not worth an entry.
+
 - **[CLOSED 2026-08-03 — as `release-preflight.sh` check [9], and my filing had the MECHANISM wrong]**
   **Work stranded under `## Unreleased` at release time.**
   I filed this as "`release.sh` inserts a heading above `Unreleased` instead of renaming it". It does

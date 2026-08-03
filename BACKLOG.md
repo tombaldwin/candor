@@ -27,8 +27,21 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
-- **[P2 — release process, found 2026-08-02] `bin/release.sh` should RENAME `## Unreleased`, not insert a
-  heading above it.** Cutting 0.25 left a stale `## Unreleased` heading sitting BELOW the shipped
+- **[CLOSED 2026-08-03 — as `release-preflight.sh` check [9], and my filing had the MECHANISM wrong]**
+  **Work stranded under `## Unreleased` at release time.**
+  I filed this as "`release.sh` inserts a heading above `Unreleased` instead of renaming it". It does
+  neither: `release.sh` only READS a CHANGELOG, for the GitHub release body. Nothing in the pipeline
+  renames the section at all — so it falls to a human, and at 0.25 nobody did, leaving four engine
+  CHANGELOGs with shipped work under `## Unreleased` (the v0.25.0 tag contains the commits that wrote
+  it). Fixed as a GATE rather than an edit: `release.sh`'s contract is that everything is already
+  bumped, committed and pushed — it refuses to run on a dirty tree — so having it rewrite and
+  re-commit a changelog mid-publish would contradict its own gate. Preflight is where "is this staged
+  correctly" lives, and a gate that NAMES the fix beats a script that silently performs it.
+  Fires only when a VERSION is being asserted (content under `## Unreleased` is the normal state
+  during development, and failing everyday health checks is how a gate stops being read), ignores a
+  QUALIFIED section (candor-rust's `## [Unreleased] (nightly lint)` has its own cadence), and ignores
+  an EMPTY one. Verified both ways: 5 repos flagged when cutting 0.26.0, 0 when the section is empty.
+  ~~ORIGINAL:~~ Cutting 0.25 left a stale `## Unreleased` heading sitting BELOW the shipped
   `## [0.25.0]` in four engine CHANGELOGs — the `v0.25.0` tag contains the commits that wrote that
   content, so it had shipped while still labelled unreleased. Anyone reading those files after the release
   would have taken shipped work for pending work. Fixed by hand in the 0.26 floor bump; the script still

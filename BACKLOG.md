@@ -30,6 +30,28 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 - **[P3 — research, 2026-08-03] Mechanise the formal model in Lean — the MODEL, explicitly not the code.**
   Raised by Tom. The honest scope is narrow and the narrowness is the point.
 
+  **REVISED UPWARD 2026-08-03 after asking "how do we prove the SPEC implements the PAPER?" — the answer
+  is that we largely do not, and this is the missing link rather than a luxury.** What exists is
+  `reference/policy_model.py`: a HAND TRANSCRIPTION of PAPER3 Definitions 1–7, 30–32, 35, 36 and Lemma 2
+  into executable Python, which conformance PART 23 runs the engines against. That is real and it earned
+  its place (it exists because a shipped engine took `deny Unknown[unresolved]` from REJECT to PASS when a
+  call was ADDED — a counterexample to Lemma 2's corollary that no engine-vs-engine differential could
+  catch). But note what it is and is not:
+    · it checks ENGINES against a TRANSCRIPTION, never the spec text against the paper text;
+    · coverage is the POLICY LAYER ONLY — §2's transitive rule, §3's honesty invariant, §4's Theorem 1
+      and its A0–A3 antecedents, §5 blame, §7 monotone denial and §8 escapes are untranscribed and
+      unchecked;
+    · **the transcription is itself an unverified, trusted artifact** — and it is known to have needed
+      correcting (Definitions 33/34 deliberately dropped because they "describe verbs the deployment does
+      not have", Proposition 5 rescoped as a result).
+  So the theory↔spec link is maintained entirely by humans reading two prose documents side by side.
+  `clause_check.py` proves a property cites a real SPEC clause; nothing relates the spec to the PAPER.
+  Mechanising therefore does two things I undersold: it REPLACES the hand transcription with a checked
+  artifact, and it EXTENDS coverage from the policy layer to the model's core. That reframes the work from
+  "proving the part that has never been wrong" to "closing the one link in the theory↔spec↔code chain with
+  no machinery at all". Tom's framing (2026-08-03): *these will help tease out any issues with the paper*
+  — and the precedent supports it, since the first theory↔spec differential found the THEORY wrong twice.
+
   **WHAT IT WOULD BUY: the removal of human proof error.** The formal reference (PAPER3, local-only)
   survived four adversarial passes — *two of which existed only because my own repairs were wrong* — and
   the 2026-07-27 theory↔spec differential found the THEORY wrong twice (`pure` 15/256 → 0; `deny Net` on

@@ -27,6 +27,45 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P3 — research, 2026-08-03] Mechanise the formal model in Lean — the MODEL, explicitly not the code.**
+  Raised by Tom. The honest scope is narrow and the narrowness is the point.
+
+  **WHAT IT WOULD BUY: the removal of human proof error.** The formal reference (PAPER3, local-only)
+  survived four adversarial passes — *two of which existed only because my own repairs were wrong* — and
+  the 2026-07-27 theory↔spec differential found the THEORY wrong twice (`pure` 15/256 → 0; `deny Net` on
+  `{Db}` 100 rows → 0, both traceable to one sentence in §1 that had propagated into a definition). Those
+  are exactly the failures a proof assistant makes impossible. Mechanising §1–§3 and Theorem 1 (the
+  disclosure lattice, signatures + the transitive rule, the honesty invariant, monotone denial, policy
+  semantics, blame localisation) would retire that class permanently.
+
+  **WHAT IT CANNOT BUY, and this is the reason it is P3 and not P1.** Theorem 1 is CONDITIONAL on four
+  antecedents — (A0) enumeration completeness, (A1) disclosure of every unresolved site, (A2) direct
+  soundness with a transitively-closed library model, (A3) call-graph soundness modulo disclosure. Those
+  are not theorems; they are empirical claims about what a third-party library does and about whether a
+  front-end's view of a call matches the runtime's. **Every cardinal sin this project has ever fixed is an
+  A0–A3 violation; none has been an error in the algebra.** From 2026-08-03 alone: `super.m()` into a
+  chained dep (A3, missing edge), the static read forcing an unseen `<clinit>` (A1/A3), implicit
+  stringification of an unscanned type (A1/A3), and the ratatui / tracing_subscriber classifier
+  corrections (A2). A full mechanisation would prove, with total rigour, the part that has never been
+  wrong. Discharging A0–A3 is the syscall oracle's job and the conformance suite's, which is the right
+  division of labour and should stay that way.
+
+  **NO ENGINE REWRITE.** Lean extracts to C; the engines are Rust/Java/TS/Swift, three of them bound to
+  ecosystem front-ends (ASM, SwiftSyntax, the TS compiler API) that are the actual source of defects.
+  Proving the shipped code would mean rewriting it and would STILL leave an unproven refinement gap
+  exactly where the bugs live. Model-only, engines untouched, used as an oracle — which is what the
+  self-differential properties already do informally. Natural first targets because they are literally
+  theorem-shaped: **P1 split-invariance** and **P4 signature monotonicity**.
+
+  **A LEAN ENGINE: NO — and the reason is worth keeping.** Lean already does candor's job: effects live in
+  the type system, `IO` is in the signature. candor's entire value is finding effects a signature does NOT
+  declare, so in Lean or Haskell the compiler has already answered the question. The languages where
+  candor is valuable are precisely those where ambient authority is invisible. If anything an
+  effect-typed language is a REFERENCE ORACLE for testing candor, not a target for it.
+
+  Fits alongside the OOPSLA paper as a side artifact; costs no engine work; do not start it while
+  anything on the A0–A3 side is open.
+
 - **[P1 — umbrella/spec convention, 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
   IMPLEMENTS, and engine-specific verbs are unreachable through it.**
 

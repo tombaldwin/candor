@@ -27,6 +27,50 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
+- **[P1 — umbrella/spec convention, 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
+  IMPLEMENTS, and engine-specific verbs are unreachable through it.**
+
+  **MEASURED.** `bin/candor`'s `QUERY_VERBS` is a flat, engine-agnostic list of 18; candor-swift's CLI
+  accepts 9, of which only 6 overlap; and candor-swift additionally has two verbs the umbrella does not
+  route at all (`privacy-manifest`, `gate`). `engine_present` answers *"is it installed?"*, never *"does
+  it support this?"*. Both directions fail, and neither fails HONESTLY:
+
+      candor privacy-manifest      → "unknown action 'privacy-manifest'"   (umbrella doesn't know swift has it)
+      candor show <fn>  on Swift   → "candor-swift: no such path: <fn>"    (engine got a verb it lacks and
+                                                                            read the FN NAME as a path)
+
+  The second is the worse one: it blames the user's argument for a capability gap, which is the opposite
+  of the "failures carry remedies, nothing dead-ends" rule the rest of the CLI follows.
+
+  **WHAT ALREADY EXISTS, so this is narrower than it looks.** SPEC ⟨0.13⟩ has a developed extension
+  mechanism for the DATA plane: an ecosystem-specific surface may be led by the motivated engine as a
+  `SPEC-EXTENSION-<name>.md` in its own repo; the envelope discloses `"extensions": ["privacy/1"]` *"so a
+  consumer can tell an extension effect from a typo"*; there is a promotion path (into the spec when a
+  second engine implements it, or direct adoption, whose text becomes the differential's oracle); and the
+  governing line is *"An extension never holds the shared floor back and a floor claim never speaks for
+  it."* **None of that says anything about VERBS.** The extension mechanism describes the data an engine
+  may ADD and is silent on the commands it may add.
+
+  **THE CHEAP FIX (do this first).** A per-verb engine table in `bin/candor` — which verbs each arm
+  supports, plus the engine-only ones — so `candor privacy-manifest` routes to swift and `candor show` on
+  a Swift project says *"candor-swift does not implement `show`; the engines that do are …"* instead of
+  blaming the argument. No wire change, no spec change. This is the same shape as the `candor verify`
+  language-arm refusal added 2026-08-03.
+
+  **THE DESIGN QUESTION (do NOT build until it has a customer).** Tom's wider point: should the spec
+  define vocabulary/features that are OPTIONAL for engines? **The hazard is exact and it is the one this
+  project spent 2026-08-03 removing twice: absence is a claim.** If the spec defines `Health` as optional
+  and an engine does not implement it, that engine's silence is ambiguous between *"no health access in
+  this code"* and *"I do not look for health"* — precisely the ambiguity ⟨0.26⟩ closed for sidecar keys
+  and for the §5 reconciliation trio. So optional-in-spec vocabulary is safe ONLY alongside a positive
+  capability declaration; without one it reintroduces the defect at the vocabulary level.
+  The encouraging half: `extensions: [...]` is ALREADY that shape — a positive declaration of what is
+  active — so the manifest would be a generalisation rather than a new concept.
+  Counterweights, stated so the decision is made with them in view: it is more machinery on the wire; and
+  the spec currently draws a hard line that the FLOOR is what every engine meets, which optional-in-spec
+  vocabulary blurs. (Extensions already blur it — but in the engine's own repo, where a consumer is less
+  likely to look, which is an argument on both sides.)
+
 - **[P2 — privacy/1 vocabulary, 2026-08-03] Health and Motion are not in the six-effect cluster, and a
   real health app shows the gap.** privacy/1 covers Location / Camera / Mic / Contacts / Photos / Notify.
   It does NOT model `HKHealthStore` or `CMMotionManager`, so `NSHealthShareUsageDescription`,

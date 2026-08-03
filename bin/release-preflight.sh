@@ -132,7 +132,12 @@ advisory_filter() {
 # on Windows-style paths. The assertion rule above is what carries the weight.
 echo "[2] no leftover prior-floor (${PRIORS:-?}) spec strings — the bump-miss signature"
 for PRIOR in $PRIORS; do
-  strays="$(cd "$ROOT" && grep -rInE "spec[ :\"]+${PRIOR//./\\.}([^0-9]|$)" \
+  # The separator class was `[ :"]+`, which misses the LINKED form a README naturally writes:
+  # `[candor-spec](https://…/candor-spec) 0.25` puts a `)` between the word and the version. That is
+  # exactly how a stale string survived the 0.26 bump on candor-swift's README and reached CI, where its
+  # own drift gate caught what this check had passed. `[^0-9]{0,4}` covers `spec 0.25`, `spec: "0.25`,
+  # `spec) 0.25` and `spec — 0.25` without reaching across a sentence.
+  strays="$(cd "$ROOT" && grep -rInE "spec[^0-9]{0,4}${PRIOR//./\\.}([^0-9]|$)" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \

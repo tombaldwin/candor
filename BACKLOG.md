@@ -27,8 +27,25 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
 
 
-- **[P3 — research, 2026-08-03] Mechanise the formal model in Lean — the MODEL, explicitly not the code.**
-  Raised by Tom. The honest scope is narrow and the narrowness is the point.
+- **[SHIPPED 2026-08-04 — research] Mechanise the formal model in Lean — the MODEL, explicitly not the
+  code.** Raised by Tom. `candor-spec/lean/`: **75 tier-A theorems with no axiom dependencies**, 7 bridge
+  lemmas, a 147 400-row differential against `reference/policy_model.py`, and CI. Transcribed: §1's lattice
+  and policy verbs, §2's transitive rule as a least fixpoint, §3's honesty invariant H, §4's Theorem 1 from
+  (A0)–(A3), §5 blame, §8's four escapes, Prop 4 and Prop 6. `check.sh` asserts no `sorry`, two axiom tiers,
+  a COMPLETE theorem registry, and the differential — each probed with a planted fault.
+
+  **What it actually bought, against the prediction below that it would "prove the part that has never been
+  wrong":** six defects, none of them in the algebra. In the model's own instruments: the Effect vocabulary
+  was 7 where the engines are judged in 11; the differential quantified over 22 000 signatures no engine can
+  emit; Theorem 1 was stated with plain containment where Definition 3 reads it modulo `⊑ₑ`. In PAPER3:
+  Proposition 6's proof and Escape 2 both instantiate on `Db ⊑ₑ Net`, retracted by the Definition 2
+  amendment and never propagated — and PAPER1 still carried the un-amended preorder outright, plus an
+  evidence claim (the 5432 datapoint) whose verdict flips. All corrected. **The prediction was wrong in a
+  specific way worth keeping: the algebra was indeed never wrong, but transcribing it is what made the
+  STATEMENTS AROUND it checkable, and that is where everything was.**
+
+  The residual is one item, tracked separately below (Definition 19's per-thread extent). The original
+  framing is kept below because its reasoning about scope still governs.
 
   **REVISED UPWARD 2026-08-03 after asking "how do we prove the SPEC implements the PAPER?" — the answer
   is that we largely do not, and this is the missing link rather than a luxury.** What exists is
@@ -40,7 +57,7 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
     · it checks ENGINES against a TRANSCRIPTION, never the spec text against the paper text;
     · coverage is the POLICY LAYER ONLY — §2's transitive rule, §3's honesty invariant, §4's Theorem 1
       and its A0–A3 antecedents, §5 blame, §7 monotone denial and §8 escapes are untranscribed and
-      unchecked;
+      unchecked; *(all of these are now transcribed — see the SHIPPED note above)*;
     · **the transcription is itself an unverified, trusted artifact** — and it is known to have needed
       correcting (Definitions 33/34 deliberately dropped because they "describe verbs the deployment does
       not have", Proposition 5 rescoped as a result).
@@ -87,6 +104,49 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 
   Fits alongside the OOPSLA paper as a side artifact; costs no engine work; do not start it while
   anything on the A0–A3 side is open.
+
+- **[P3 — research, 2026-08-04] The Lean model does not carry Definition 19's PER-THREAD dynamic extent,
+  and right now that is a code comment rather than a tracked gap.**
+
+  `Honesty.charged` collects `obs` along `ExecReaches` with no notion of threads. PAPER3 Definition 20
+  additionally requires the reached frame to have executed *within `f`'s per-thread dynamic extent*, and
+  Definition 19 is explicit that an effect issued on a **different** thread `f` spawned or handed a task to
+  is **outside** it. So a `Run` whose `execCall` crossed a thread boundary would be one the paper does not
+  sanction, and **nothing in the development would object** — `charged` would silently be too big and H⁺
+  correspondingly too strong.
+
+  It is not currently a false theorem: the model has no `spawn`, so there is no cross-thread edge to wrongly
+  include. It is an unstated assumption, and it is written where unstated assumptions go to be forgotten —
+  in a docstring. **Standing lesson this repeats exactly: a limitation written as a comment reads as
+  CONSIDERED, which is what stops it being measured** (candor-swift's parse-error cardinal sin sat behind an
+  accurate comment for months).
+
+  **Closing it means modelling Definition 16b's labelled transition system** — `call`/`ret`/`spawn`/`issue`/
+  `exit` steps over a per-thread state map `σ : T ⇀ Frame*` — which is the one part of §3 `Frames.lean`
+  deliberately did not build. `Frames.lean` models the enclosing CHAIN (the structure Definitions 18–20 and
+  Proposition 4 consume) but not the step relation that produces it.
+
+  **Why it is worth more than tidiness, and also why it is P3.** This gap sits on the exact boundary the
+  paper itself records as OPEN — Remark 6 and Table 1 row 2, the **thread-pool handoff**: a submitting frame
+  performs an ordinary `call` into library code, and the task body later runs on a worker whose stack never
+  contained the submitter. PAPER3 says that is "not an omission to be repaired by adding a label; it is the
+  *reason* the cross-thread boundary of Definition 19 exists", and that any extension making the handoff an
+  edge "would also have to say what `charged` means across it, which is precisely the open design question".
+  So mechanising the transition system would not settle the research question — but it would make the
+  boundary a hypothesis the theorems carry rather than a sentence in a comment, and it is the natural place
+  to state whatever answer that question eventually gets.
+
+  **AND THE ENGINE-SIDE HALF OF THIS BOUNDARY IS TRACKED NOWHERE.** I first wrote this item pointing at "the
+  disclosure-refinement track's open row" for cross-thread/task-submission; grepping for it found nothing —
+  the only `thread` hits in that track are `thread` meaning workstream. So the cross-thread handoff is a
+  named open question in PAPER3 (Remark 6, Table 1 row 2) with **no backlog item on the tool side at all**.
+  That is the gap to file next, and it is the larger of the two: what should an engine emit at a
+  task-submission site whose body runs on a worker — a disclosure with which reason class, or nothing? The
+  Lean gap above is that question seen from the model end; neither should be picked up without the other.
+
+  (Filing that engine-side item is deliberately left as a decision rather than done here: it needs a ruling
+  on whether task submission gets its own reason class or rides an existing one, which is Tom's call and
+  changes what four engines emit.)
 
 - **[P1 — umbrella/spec convention, 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
   IMPLEMENTS, and engine-specific verbs are unreachable through it.**

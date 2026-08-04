@@ -191,30 +191,64 @@ grep -q 'already exists — reusing it' "$UMBRELLA/scripts/update-candor.sh" \
 say "5. spec-bump.sh — the floor-bump rehearsal"
 # The ⟨0.27⟩ bump was done by hand and turned SIX repos red on version-coupled assertions, every one
 # findable locally. `spec-bump.sh` exists so a contract bump is rehearsed rather than discovered in CI.
-SB="$(mktemp -d)"
+SB=""
 mkb() { mkdir -p "$(dirname "$SB/$1")"; printf '%s\n' "$2" > "$SB/$1"; }
-mkb candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.27";'
-mkb candor-java/src/main/java/io/poly/candor/Candor.java '    static final String SPEC_VERSION = "0.27";'
-mkb candor-ts/scan.mjs 'const SPEC_VERSION = "0.27";'
-mkb candor-ts/query.mjs 'const SPEC_VERSION = "0.27";'
-mkb candor-swift/Sources/candor-swift/main.swift 'let specVersion = "0.27"'
-mkb candor-agents/candor_agents/scan.py 'SPEC = "0.27"'
-mkb candor-spec/SPEC.md '**Version 0.27** — all code engines declare `0.27`; the floor is conformance-pinned.'
-for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
-  ( cd "$SB/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm i )
-done
+# EVERY ROW BUILDS ITS OWN. $1 is the swift declaration line (so a row can move the site), $2 the SPEC.md
+# headline (so a row can make it unreadable). Chaining these rows off one fixture meant the final control
+# failed for a REAL reason — an earlier row had deliberately left swift unbumped, so the family it was
+# asked to call consistent genuinely was not.
+sbfix() {
+  [ -n "$SB" ] && rm -rf "$SB"
+  SB="$(mktemp -d)"
+  mkb candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.27";'
+  mkb candor-java/src/main/java/io/poly/candor/Candor.java '    static final String SPEC_VERSION = "0.27";'
+  mkb candor-ts/scan.mjs 'const SPEC_VERSION = "0.27";'
+  mkb candor-ts/query.mjs 'const SPEC_VERSION = "0.27";'
+  mkb candor-swift/Sources/candor-swift/main.swift "${1:-let specVersion = \"0.27\"}"
+  mkb candor-agents/candor_agents/scan.py 'SPEC = "0.27"'
+  mkb candor-spec/SPEC.md "${2:-**Version 0.27** — all code engines declare \`0.27\`; the floor is conformance-pinned.}"
+  for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
+    ( cd "$SB/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm i )
+  done
+}
+sbfix
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1   && ok "--check passes when the seven declarations agree" || bad "--check failed on a consistent tree"
 # a SPLIT is the thing --check exists to catch: one engine emitting a contract the others do not
-printf 'let specVersion = "0.26"\n' > "$SB/candor-swift/Sources/candor-swift/main.swift"
+sbfix 'let specVersion = "0.26"'
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1   && bad "--check PASSED a four-way contract split" || ok "--check catches a declaration split"
-printf 'let specVersion = "0.27"\n' > "$SB/candor-swift/Sources/candor-swift/main.swift"
-( cd "$SB/candor-swift" && git add -A && git -c user.email=t@e -c user.name=t commit -qm r >/dev/null 2>&1 || true )
+sbfix
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.28 --decls-only >/dev/null 2>&1
 n=$(grep -rl '"0\.28"\|Version 0\.28' "$SB" 2>/dev/null | wc -l | tr -d ' ')
 is "bump moves all seven declarations" '7' "$n"
-# a dirty tree must be refused: the script rewrites seven files across seven repos
-printf 'dirt\n' >> "$SB/candor-ts/scan.mjs"
-CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.29 --decls-only >/dev/null 2>&1   && bad "bumped over a dirty tree" || ok "refuses a dirty tree"
+# a dirty tree must be refused: the script rewrites seven files across seven repos.
+# COMMIT THE BUMP FIRST. The 0.28 run above left every repo dirty, so the added dirt was doing nothing and
+# this row would have passed with the `printf` deleted — it asserted the refusal, but not the refusal it
+# names, and a row that cannot tell those apart stops discriminating the moment the setup changes.
+sbfix
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.29 --decls-only >/dev/null 2>&1   && ok "a CLEAN tree is accepted (the control this row needs)" || bad "refused a clean tree"
+sbfix; printf 'dirt\n' >> "$SB/candor-ts/scan.mjs"
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.29 --decls-only >/dev/null 2>&1   && bad "staged over a dirty tree" || ok "refuses a dirty tree"
+
+# A PRINTED ✘ THAT DOES NOT REACH THE EXIT CODE. Both of this script's false greens came from one line:
+# its `bad()` printed and counted nothing, where release-preflight.sh's and release-verify.sh's both
+# increment. A rehearsal that reports GREEN over a split family is worse than no rehearsal.
+sbfix 'let specVersion: String = "0.27"'    # the declaration site MOVED — an ordinary refactor between rungs
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.28 --decls-only >/dev/null 2>&1 \
+  && bad "a MOVED declaration site was skipped and the run still exited 0 — one engine left on the old contract" \
+  || ok "a skipped declaration site fails the run"
+is "the skipped site was NOT bumped (so the run really was split)" '0.27' \
+   "$(grep -oE '[0-9]+\.[0-9]+' "$SB/candor-swift/Sources/candor-swift/main.swift" | head -1)"
+is "and the others DID move (so the split is real, not a no-op run)" '0.28' \
+   "$(grep -oE '[0-9]+\.[0-9]+' "$SB/candor-ts/scan.mjs" | head -1)"
+
+# THE CONTRACT DOCUMENT AND ITS OWN VERSION. --check printed `SPEC.md   ?` on the line directly above
+# "every declaration agrees" and exited 0 — folding an unreadable answer into the agreement set.
+sbfix '' 'Version zero point twenty-seven'
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1 \
+  && bad "--check called an UNREADABLE SPEC.md agreement" || ok "--check fails when the SPEC.md version itself is unreadable"
+sbfix
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1 \
+  && ok "--check still passes a consistent family (the control)" || bad "--check failed a consistent family"
 rm -rf "$SB"
 
 say "6. release.sh gates on preflight in PINS_ADVISORY mode"

@@ -97,7 +97,11 @@ rel candor-spec   "v$SPEC" "candor-spec $SPEC"
 say "4. umbrella tag + Homebrew tap"
 cd "$ROOT/candor"
 git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
-if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "$VER" && ok "brew tap → $VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
+# PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line
+# asks for `v0.16.0`; this passed `$VER`, so every release grew a SECOND umbrella tag and a second GitHub
+# release beside `v$VER` — 0.25 and 0.26 both carry the pair. Harmless (both resolve) and untidy, and the
+# tap formula ended up pointing at the odd one out.
+if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "v$VER" && ok "brew tap → v$VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
 
 # --- 5. release-verify ----------------------------------------------------------------------------------
 say "5. release-verify (allow a minute for npm/crates/gh to propagate)"

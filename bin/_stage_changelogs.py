@@ -34,3 +34,17 @@ for repo in ("candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-
     s = s[:m.start()] + "## Unreleased\n\n## [%s] — %s%s" % (VER, DATE, marker) + s[m.end():]
     open(f, "w").write(s)
     print("OK %s: `## Unreleased` → `## [%s] — %s` (+ fresh empty Unreleased)" % (repo, VER, DATE))
+
+# THE UMBRELLA'S CHANGELOG IS DATED, NOT VERSIONED — its own header says it is "not a versioned release
+# artifact". So the `## Unreleased` rename above never applies to it, and its entry sat marked
+# "(unreleased)" through the whole 0.26 run until a human noticed. Different shape, same obligation.
+u = os.path.join(ROOT, "candor", "CHANGELOG.md")
+if os.path.exists(u):
+    t = open(u).read()
+    m2 = re.search(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)\s*$", t, re.M)
+    if not m2:
+        print("SAME candor: no dated heading marked `(unreleased)`")
+    else:
+        t = t[:m2.start()] + "%s (released %s as %s)" % (m2.group(1), DATE, VER) + t[m2.end():]
+        open(u, "w").write(t)
+        print("OK candor: dated heading marked released (%s as %s)" % (DATE, VER))

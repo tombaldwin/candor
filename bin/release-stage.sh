@@ -74,6 +74,16 @@ bump "agents pyproject" "candor-agents/pyproject.toml"               '(?m)^versi
 bump "swift engine" "candor-swift/Sources/candor-swift/main.swift"   'engineVersion = "candor-swift-[0-9]+\.[0-9]+\.[0-9]+"' "engineVersion = \"candor-swift-$VER\""
 bump "ts package.json" "candor-ts/package.json"                      '"version": "[0-9]+\.[0-9]+\.[0-9]+"'        "\"version\": \"$VER\""
 bump "java gradle" "candor-java/build.gradle.kts"                        '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'    "version = \"$VER\""
+# THE UMBRELLA IS THE SEVENTH REPO AND THIS SCRIPT KEPT FORGETTING IT. `UMBRELLA_VERSION` was staged by
+# nothing and checked by preflight [4] not at all, so on 0.26 the umbrella declared 0.25.0 while everything
+# around it moved — caught only by `update-candor.sh` refusing the Homebrew step. Not cosmetic: the tap
+# formula's sha256 is computed over the TAG's tarball, so a tag whose bin/candor still says the old version
+# ships a brew umbrella that ALSO sets the old ENGINE_PIN — i.e. fetches last release's engines. That is
+# verbatim the 0.18-engines-under-a-0.23-umbrella failure ENGINE_PIN's own comment records.
+#
+# ENGINE_PIN is deliberately NOT bumped here: it names a PUBLISHED release, so it moves after one exists
+# (release.sh step 6). UMBRELLA_VERSION names THIS commit, so it moves with the bump.
+bump "umbrella version" "candor/bin/candor"                             '(?m)^UMBRELLA_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' "UMBRELLA_VERSION=\"$VER\""
 
 say "2. rust crate versions"
 for c in candor-report candor-classify candor-scan candor-query; do

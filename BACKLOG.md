@@ -25,10 +25,12 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 > Plus, from the verify entry: promoting candor-rust's or candor-swift's dynamic oracle from a CI harness
 > to a user-facing verb — a new feature, not productionization.
 >
-> **Filed 2026-08-04, unscoped on purpose:** an Android/JVM analogue of the privacy manifest
-> (`permissions/1`). It carries NO P-level yet because one hour of measurement decides whether it is
-> plumbing or another curated table, and assigning a priority before that would be the exact thing this
-> audit found wrong 8 times out of 11 — a heading asserting a state nobody checked.
+> **Filed 2026-08-04, MEASURED 2026-08-05, now `[P3]`:** an Android/JVM analogue of the privacy manifest
+> (`permissions/1`). The measurement moved it rather than sizing it — the vendor mapping is real and
+> maintained but covers the SYSTEM surface (bluetooth/telephony/wifi/location), and has ZERO annotations on
+> the ContentResolver surface where contacts/calendar/call-log/media/storage live. Those are guarded by the
+> content URI ARGUMENT, so the blocker is value provenance, not a table. Sequence it after
+> `VALUE-PROVENANCE-DESIGN.md`.
 
 
 
@@ -572,7 +574,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   generate/verify verb (candor-swift b9a68a6, 196 tests) — the real-app exhibit is LIVE (pollen's iOS
   Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
   per-target scoping (whole-tree scan caveat); a public marketing writeup.
-- **[OPEN — P?, unscoped until one measurement lands] An Android/JVM analogue of the privacy manifest.**
+- **[OPEN — P3, and the measurement REFRAMED it: blocked on value provenance, not on a table] An
+  Android/JVM analogue of the privacy manifest.**
   Raised by Tom 2026-08-04, off the back of `privacy/2`. The shape transfers exactly: code reaches a
   permission-guarded API → `AndroidManifest.xml` must declare `<uses-permission>` → verify, three outcomes
   (under-declared exit 1 · over-declared ⚠ · unreadable exit 2). It would be a **candor-java extension**
@@ -587,6 +590,58 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   state which framework methods carry no annotation — instead of a curated table where whatever you forgot
   is silent. That is the difference between a disclosed blind spot and the cardinal sin, and it is the
   weakest part of `privacy/2` (`PRIVACY_SDK_TYPES`, 50 hand-written entries, verified by nothing).
+
+  **MEASURED 2026-08-05** (Tom: "install an android sdk and do the measurement"). SDK installed via
+  `brew install --cask android-commandlinetools`, platforms 30 and 36; script kept at
+  `scripts/android-permission-coverage.py` because the answer MOVES with API level. The three questions,
+  answered:
+
+    1. **`platforms/android-NN/data/annotations.zip` — an XML sidecar, NOT the bytecode.**
+       `@RequiresPermission` appears ZERO times in `android.jar` while Nullable/NonNull/Deprecated survive
+       on the same classes (LocationManager retains 37 annotation attributes and has no constant-pool entry
+       containing "permission"). candor-java is a bytecode engine, so consuming this is a STRING JOIN
+       between an ASM method ref and a key like `"android.location.LocationManager android.location.Location
+       getLastKnownLocation(java.lang.String)"` — whose generic forms (`java.util.List<…>`) do not appear in
+       erased descriptors at all. That join is precisely the key-collision fabrication class this project
+       has been bitten by four times. It is doable; it is not free, and it is not the clean read I assumed.
+    2. **46% at API 36 (19/41 dangerous), 17% at API 30 — and ~37% once artifacts are removed.** Four of
+       the 19 are not real coverage: READ_CONTACTS and WRITE_CONTACTS are annotated ONLY on
+       `E2eeContactKeysManager` (an encrypted-contact-keys corner, not how any app reads contacts), and
+       ACTIVITY_RECOGNITION and UWB_RANGING only on a `ServiceInfo.FOREGROUND_SERVICE_TYPE_*` CONSTANT,
+       which is not a callable API. **The headline number flattered itself and inspecting the sites is what
+       showed it.**
+    3. **20.1% `conditional=true`, 23.0% anyOf/allOf, 60.6% single-permission and unconditional.** One in
+       five carries an explicitly unanswerable condition (up from 6.2% at API 30) — spec 0.24 §3.1 says
+       disclose those, never score them, so a fifth of the mapping produces a disclosure and not a verdict.
+
+  **THE FINDING THAT CHANGES THE SHAPE OF THE WORK: there are ZERO `@RequiresPermission` annotations on the
+  entire ContentResolver/ContentProvider surface.** Contacts, calendar, call log, SMS content, media and
+  storage are not guarded by a distinctly-named method — they are guarded by the CONTENT URI passed as an
+  argument. `ContentResolver.query(CalendarContract.Events.CONTENT_URI, …)` needs READ_CALENDAR; the SAME
+  method with a different URI needs READ_CONTACTS. No method annotation can express that, which is exactly
+  why every one of those permissions is missing from the mapping. Where the annotations DO cluster is the
+  system/connectivity surface: bluetooth 144, telephony 125, device-admin 96, wifi 37, location 34.
+
+  **So this is not "another curated table" — it is a VALUE-PROVENANCE problem, and candor already has that
+  feature designed and unbuilt** (`candor-spec/VALUE-PROVENANCE-DESIGN.md`, the interprocedural
+  value-origin recovery Tom called the "absolute best product" call on 2026-07-19). The Android permission
+  gate is a second, independently-motivated application of it: recover which URI constant reaches
+  `query()`, and the consumer-privacy half of the mapping falls out. **Sequence it AFTER value provenance,
+  not before** — built first, it would cover bluetooth and telephony well and be silent on contacts and
+  calendar, which is the wrong half for a privacy story.
+
+  Two further constraints the measurement produced, neither of which I would have guessed:
+    · **The mapping is a moving target.** API 30 → 36 went 130 → 922 annotated members, 44 → 187
+      permissions, and DROPPED three (BLUETOOTH, BLUETOOTH_ADMIN, READ_EXTERNAL_STORAGE). An
+      implementation must read the annotations for the project's OWN compileSdk, never bundle a snapshot.
+    · **Lint as an oracle is unconfirmed.** I could not find a URI→permission table in the shipped
+      cmdline-tools jars, but those are thin classpath manifests, so that check is INCONCLUSIVE — not
+      evidence that Lint lacks one. If Lint does handle content URIs, its mechanism is worth reading before
+      building anything.
+
+  **Original filing kept below, because two of its assumptions did not survive** — I expected the
+  annotations to be readable from bytecode (they are not) and treated high coverage as the likely case (it
+  is 37% and skewed away from the privacy surface).
 
   **So measure BEFORE designing, and be aware nothing below is measured yet** — there is no Android SDK on
   this machine and no Android corpus (uflexi is a Tomcat webapp; `local.properties` is a plain Gradle

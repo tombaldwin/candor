@@ -90,6 +90,29 @@ to make every contract's regression un-shippable — not to maximize a coverage 
   as "covered" — the worst state.
 - Every suite prints a final pass/fail count; CI gates on exit codes, not output scraping.
 
+## 5b. Working discipline — three rules, each written after breaking it
+
+These are process, not tooling, and they are here because each one cost real time on 2026-08-04.
+
+- **Never combine a test run and a push in one command.** `swift test … && git push` reports
+  "1 failure" and pushes anyway if you read the count instead of the exit code; a doc edit made after
+  the last local run reaches CI unverified. Both happened, an hour apart. Run the suite, READ it, then
+  push as a separate act. (The same defect in miniature: `$?` after a pipe is the LAST command's status,
+  so `cmd | head; echo $?` reports `head`. That one cost three false readings in one session.)
+
+- **For a shared or spec'd field, write the conformance row BEFORE the implementation.** The row forces
+  you to state the property, and stating it forces reading the reference engine's *code path* rather than
+  its comment. `fs` was implemented direct-only in three engines from a misread of candor-java's
+  `fsDirect` comment — `fsDirect` is the INPUT to a fixpoint, not its output — and the misreading reached
+  three engines and three CHANGELOGs before PART 31 caught it on its first run. Writing the row first
+  would have caught it before the first engine.
+
+- **Port a guard when you find one engine has it and another does not.** Each engine has good guards the
+  others lack, and the gap is invisible until the day it matters: candor-swift's `NameKeyedStateTests`
+  caught two collector-state additions in one session while candor-ts had no equivalent and took the same
+  mistake as a *crash*; three engines refused a new envelope key while candor-swift had no pin at all.
+  Both gaps are now closed, and the general rule is cheaper than rediscovering why each time.
+
 ## 6. Coverage policy
 
 - **No blanket percentage gate, and 100% is explicitly not the goal.** The last ~10 points are

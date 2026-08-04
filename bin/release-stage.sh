@@ -28,7 +28,10 @@ case "$VER" in
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) echo "release-stage: '$VER' is not an X.Y.Z version" >&2; exit 2;;
 esac
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# CANDOR_ROOT lets the test harness point these at a FIXTURE tree instead of the real siblings.
+# Without it neither script can be exercised without editing six live repos, which is why nine
+# defects across 0.25 and 0.26 were found by publishing rather than by testing.
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 DATE="$(date +%F)"
 changed=0; skipped=0
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
@@ -53,9 +56,14 @@ f, pat, rep = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(f).read()
 new, n = re.subn(pat, rep, s, count=0)
 if n == 0:
-    # already at the target?  the caller's pattern is version-specific, so no match means either
-    # already-staged or a moved goalpost; distinguish those for the human rather than guessing.
+    # the pattern found nothing at all — either the site moved or the file is not what we think.
     print("NOMATCH"); raise SystemExit(0)
+if new == s:
+    # MATCHED BUT UNCHANGED. The callers' patterns match ANY version, not the old one, so a re-run
+    # rewrites every site with identical bytes and used to report them as edits — this script's own
+    # header claims "re-running is a no-op that reports already at", and it was not true. A run that
+    # reports 18 edits when nothing moved hides the one release where something did.
+    print("SAME"); raise SystemExit(0)
 open(f, "w").write(new); print("OK %d" % n)
 PY
 }
@@ -63,7 +71,8 @@ bump() { # $1 label ; $2 file ; $3 regex with (?P<v>) ; $4 replacement template
   local out; out="$(sub "$2" "$3" "$4")"
   case "$out" in
     OK*)      ok "$1 → $VER   ($2)";;
-    NOMATCH)  same "$1 already at $VER (or its pattern moved) — $2";;
+    SAME)     same "$1 already at $VER   ($2)";;
+    NOMATCH)  same "$1: pattern found no match — did the site move?   ($2)";;
     *)        die "$1: unexpected result '$out'";;
   esac
 }

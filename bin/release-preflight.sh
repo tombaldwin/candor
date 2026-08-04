@@ -11,7 +11,10 @@
 #   bash bin/release-preflight.sh            # derive the floor from the engines, check consistency
 #   bash bin/release-preflight.sh 0.10 0.10.0  # also assert the floor spec / release version explicitly
 set -u
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the dir holding candor-* siblings
+# CANDOR_ROOT lets the test harness point these at a FIXTURE tree instead of the real siblings.
+# Without it neither script can be exercised without editing six live repos, which is why nine
+# defects across 0.25 and 0.26 were found by publishing rather than by testing.
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # the dir holding candor-* siblings
 WANT_SPEC="${1:-}"     # optional: assert the floor is exactly this (e.g. 0.10)
 WANT_VER="${2:-}"      # optional: assert the release version is this (e.g. 0.10.0) for the cross-repo pins
 fail=0

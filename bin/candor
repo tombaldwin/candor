@@ -444,6 +444,42 @@ route_scan() {
 
 # Per-action usage (F9: `candor <verb> --help` used to reach the engine, which read --help as an effect/fn
 # name). One line per query verb; policy-consuming verbs also name the deny/pure/allow/forbid grammar.
+# THE ARM THIS DIRECTORY'S PROJECT WOULD USE, or empty when it cannot be told without guessing.
+#
+# Prefers a report that actually exists (the same backend token `route_query` dispatches on), and falls
+# back to the project MANIFEST when there is no report yet — a `--help` before the first scan is the most
+# likely moment to ask. Returns EMPTY on a mixed or unrecognised tree rather than picking one: a capability
+# note attached to the wrong arm would be worse than no note, and this whole feature exists because a
+# WRONG-LOOKING answer is worse than a missing one.
+context_arm() {
+  local d="$PWD" base=""
+  while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+  if [ -n "$base" ]; then
+    local f b uniq="" n=0
+    for f in "$base".*.json "$base.json"; do
+      [ -e "$f" ] || continue
+      case "$f" in *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;; esac
+      b="${f%.json}"
+      case "$(basename "$b")" in *.*) b="${b##*.}";; *) b="$(sniff_backend "$f")";; esac
+      case " $uniq " in *" $(backend_arm "$b") "*) ;; *) uniq="$uniq $(backend_arm "$b")"; n=$((n+1));; esac
+    done
+    [ "$n" = 1 ] && { echo "${uniq# }"; return; }
+    [ "$n" -gt 1 ] && return          # several engines here — do not pick one
+  fi
+  # no report: fall back to the manifest, but only when it names exactly ONE language.
+  local langs; langs="$(detect_langs "$PWD")"
+  case "$langs" in
+    rust)  echo "rust";;  ts) echo "JS";;  java) echo "jvm";;  swift) echo "Swift";;
+    *) ;;                                # none, or a mixed tree
+  esac
+}
+
+# Self-test hook (bin/candor.test.sh): print the resolved arm and exit. The capability note is only as good
+# as context_arm, and asserting on the note alone cannot tell "correctly silent" from "silent for an
+# unrelated reason" — the /tmp assertion passed that way until it was probed.
+[ "${CANDOR_SELFTEST:-}" = "arm" ] && { context_arm; exit 0; }
+
+
 verb_help() {
   case "$1" in
     where)    echo "candor where <Effect> — the functions that perform an effect, directly or transitively.";;
@@ -464,6 +500,12 @@ verb_help() {
     fix-gate) echo "candor fix-gate — every policy crossing in the report and its remedy."; echo "  Reads the wired policy (.candor/config) or --policy <file>. Advisory (exit 0); --strict → exit 1 while a crossing remains.";;
     whatif)   echo "candor whatif <fn> <Effect> — the blast radius (and policy verdict) IF <fn> gained <Effect>, before you edit."; echo "  Reads the wired policy (.candor/config) or --policy <file>.";;
     unverified) echo "candor unverified — the layers a policy gates that still contain Unknown holes (coverage proof).";;
+    gate)     echo "candor gate --report <locator> --policy <file> — apply a policy to an EXISTING report, no scan."
+              echo "  the supply-chain gate: exit 0 clean · 1 violation · 2 unevaluable (never a silent pass).";;
+    privacy-manifest)
+              echo "candor privacy-manifest [--verify <Info.plist>] — the Apple usage-description keys the code's"
+              echo "  sensor reach requires. Bare: GENERATE them. --verify: check a plist, exit 1 on an"
+              echo "  under-declaration, 2 on an unreadable manifest. candor-swift only (the privacy/2 extension).";;
     parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <Effect> <layer>\`.";;
     *)        echo "candor $1 — see \`candor --help\`.";;
   esac
@@ -477,7 +519,23 @@ verb="${1:-}"
 show_update_notice
 case "$QUERY_VERBS" in
   *" $verb "*)
-    case " $* " in *" --help "*|*" -h "*) verb_help "$verb"; exit 0;; esac
+    case " $* " in *" --help "*|*" -h "*)
+      verb_help "$verb"
+      # ⟨capability⟩ Help that describes a verb this project's engine does NOT implement is a dead end
+      # dressed as documentation: the reader follows it and gets a refusal. Say so here, and name the
+      # engines that do. Silent when the arm cannot be told without guessing — a note on the wrong arm
+      # would be worse than none.
+      _arm="$(context_arm)"; _sup="$(verb_engines "$verb")"
+      if [ -n "$_arm" ] && [ -n "$_sup" ]; then
+        case " $_sup " in
+          *" $_arm "*) ;;
+          *) _names=""; for _t in $_sup; do _names="$_names, $(engine_name "$_t")"; done
+             echo
+             echo "NOT AVAILABLE HERE: $(engine_name "$_arm") does not implement \`$verb\`."
+             echo "  the engine(s) that do: ${_names#, }";;
+        esac
+      fi
+      exit 0;; esac
     route_query "$@"; exit $?;;
 esac
 case "$verb" in

@@ -24,6 +24,28 @@ qdir qr scan;  ok "rust report → candor-query"       "WOULD-RUN: candor-query 
 qdir qt JS;    ok "ts report → candor-ts-query"       "WOULD-RUN: candor-ts-query where Net" bash -c "cd '$T/qt'  && '$D' where Net"
 qdir qj jvm;   ok "java report → candor-java"         "WOULD-RUN: candor-java path f Net"    bash -c "cd '$T/qj'  && '$D' path f Net"
 qdir qs Swift; ok "swift report → candor-swift"       "WOULD-RUN: candor-swift fix-gate"     bash -c "cd '$T/qs'  && '$D' fix-gate --policy p"
+
+echo
+echo "verb CAPABILITY (which engine implements what — not just which is installed):"
+# THE TWO ENGINE-ONLY VERBS ARE NOW REACHABLE. Before this, `candor privacy-manifest` said "unknown action"
+# because the umbrella did not know candor-swift has it, and `candor gate` was routed by nothing at all.
+ok "privacy-manifest → candor-swift"  "WOULD-RUN: candor-swift privacy-manifest" bash -c "cd '$T/qs' && '$D' privacy-manifest"
+ok "gate is routed at all"            "WOULD-RUN: candor-query gate"             bash -c "cd '$T/qr' && '$D' gate --policy p"
+# THE WORSE DIRECTION: an engine handed a verb it lacks used to read the FUNCTION NAME AS A PATH and answer
+# "no such path: foo" — blaming the user's argument for a capability gap.
+ok "swift + show → names the engines that do" "does not implement \`show\`"     bash -c "cd '$T/qs' && '$D' show foo"
+ok "swift + show → suggests candor-ts"        "candor-ts"                        bash -c "cd '$T/qs' && '$D' show foo"
+ok "rust + privacy-manifest → refused"        "does not implement \`privacy-manifest\`" bash -c "cd '$T/qr' && '$D' privacy-manifest"
+# THE ASYMMETRIES ARE REAL AND EACH WOULD MISROUTE WITHOUT ITS OWN ROW: java has no parsepolicy, ts has no
+# rewire, only rust has agents.
+ok "java + parsepolicy → refused"             "does not implement \`parsepolicy\`" bash -c "cd '$T/qj' && '$D' parsepolicy p"
+ok "ts + rewire → refused"                    "does not implement \`rewire\`"      bash -c "cd '$T/qt' && '$D' rewire a b"
+ok "java + agents → refused, names rust"      "candor-rust"                        bash -c "cd '$T/qj' && '$D' agents"
+# THE REGRESSION GUARD. Rust owns the OPEN REMAINDER of backend tokens (`scan`, `lib`, `Executable`, …), so
+# comparing the raw token refuses every supported verb on a Rust report. The first version of the capability
+# check did exactly that — a routing fix that became a routing regression.
+ok "rust + show still routes (open remainder)" "WOULD-RUN: candor-query show foo"  bash -c "cd '$T/qr' && '$D' show foo"
+qdir qr2 lib; ok "rust nightly-lint token routes too" "WOULD-RUN: candor-query where Net" bash -c "cd '$T/qr2' && '$D' where Net"
 qdir ql lib;   ok "rust lint report → candor-query"   "WOULD-RUN: candor-query where Net"    bash -c "cd '$T/ql'  && '$D' where Net"
 qdir qx Executable; ok "rust Executable → candor-query" "WOULD-RUN: candor-query show f"    bash -c "cd '$T/qx'  && '$D' show f"
 
@@ -80,8 +102,11 @@ printf '{"candor":{"version":"abc1234","toolchain":"jdk-21","spec": "0.23"},"fun
 ok "token-less java baseline.json -> candor-java (envelope sniff)" "WOULD-RUN: candor-java where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/baseline.json'"
 printf '{"candor":{"version":"candor-swift-0.15.0","toolchain":"swiftsyntax","spec": "0.23"},"functions":[]}' > "$T/swbase.json"
-ok "token-less swift baseline -> candor-swift (envelope sniff)" "WOULD-RUN: candor-swift where Net" \
-   bash -c "cd /tmp && '$D' where Net --report '$T/swbase.json'"
+# `tour`, not `where`: this asserts the ENVELOPE SNIFF picks the swift arm, and the verb is incidental to
+# that — but candor-swift does not implement `where`, so the original form asserted a route to a command
+# that could never have run. The capability check surfaced it by refusing, which is the check working.
+ok "token-less swift baseline -> candor-swift (envelope sniff)" "WOULD-RUN: candor-swift tour" \
+   bash -c "cd /tmp && '$D' tour --report '$T/swbase.json'"
 printf '{"meta":{"version":"scan-0.15.0","toolchain":"stable","spec": "0.23"},"functions":[]}' > "$T/rbase.json"
 ok "token-less rust baseline -> candor-query (envelope sniff)" "WOULD-RUN: candor-query where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/rbase.json'"

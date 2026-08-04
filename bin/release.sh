@@ -67,7 +67,17 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
     # on `## [$VER]` cannot drift that way, and an empty result is now fatal rather than silent.
     awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' \
         "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
-    [ -s "/tmp/rel-body-$repo.md" ] || die "$repo: CHANGELOG has no '## [$VER]' section — refusing to publish a release with empty notes"
+    # THE UMBRELLA'S CHANGELOG IS DATED, NOT VERSIONED, AND SAYS SO IN ITS OWN HEADER: "not a versioned
+    # release artifact — it pins the engine versions it targets, so this changelog is DATED". So it has no
+    # `## [X.Y.Z]` heading and never should. Fall back to the newest section for that shape — but only as a
+    # FALLBACK, so the five engines still get the version-anchored selection that stops the empty-notes bug,
+    # and an empty result stays fatal either way.
+    if [ ! -s "/tmp/rel-body-$repo.md" ]; then
+      awk '/^## /{n++} n==1{print} n==2{exit}' "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+      skip "$repo: no '## [$VER]' heading (dated changelog) — using the newest section"
+    fi
+    [ -s "/tmp/rel-body-$repo.md" ] || die "$repo: CHANGELOG yields no release notes — refusing to publish an empty release"
+    grep -q '[^[:space:]]' "/tmp/rel-body-$repo.md" || die "$repo: release notes are whitespace only — refusing"
     gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag"
   fi
 }

@@ -9,6 +9,7 @@ in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main
 keeps its own.
 
 ## 2026-08-02 — spec 0.26: a sidecar's KEY SET is its manifest (released 2026-08-04 as 0.26.0)
+
 ⟨spec 0.26⟩ **§2.2 — an absent type in the hierarchy sidecar is UNANSWERABLE, never "has no supertypes".**
 A producer emits a key for every type it indexed (`[]` included); a consumer treats a type absent from a
 present sidecar as unanswerable and DISCLOSES rather than dropping. Adds the optional `@unanalyzed`

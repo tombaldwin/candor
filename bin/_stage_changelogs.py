@@ -41,7 +41,10 @@ for repo in ("candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-
 u = os.path.join(ROOT, "candor", "CHANGELOG.md")
 if os.path.exists(u):
     t = open(u).read()
-    m2 = re.search(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)\s*$", t, re.M)
+    # `[ \t]*`, NOT `\s*`: `\s` matches newlines, so with re.M the trailing-whitespace class swallowed the
+    # BLANK LINE after the heading and silently reflowed the file. Caught by a one-line diff in the commit
+    # that added this — a staging script that quietly reformats what it touches is one nobody will trust.
+    m2 = re.search(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)[ \t]*$", t, re.M)
     if not m2:
         print("SAME candor: no dated heading marked `(unreleased)`")
     else:

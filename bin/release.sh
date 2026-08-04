@@ -19,8 +19,12 @@ die() { printf '  \033[31m✘ %s\033[0m\n' "$*"; exit 1; }
 
 # --- 0. gate: preflight must be green + every main pushed ------------------------------------------------
 say "0. preflight ($SPEC / $VER)"
-bash "$ROOT/candor/bin/release-preflight.sh" "$SPEC" "$VER" >/tmp/rel-preflight.txt 2>&1 \
-  && ok "release-preflight OK" || die "release-preflight FAILED — see /tmp/rel-preflight.txt"
+# PINS_ADVISORY: check [3] asserts the cross-repo pins name $VER, and they cannot until this script has
+# published $VER. Strict here is a deadlock, not a safeguard — see the note in release-preflight.sh. The
+# pins are updated in step 6 below and then RESOLVED by release-verify.sh, which is the check that matters.
+PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh" "$SPEC" "$VER" >/tmp/rel-preflight.txt 2>&1 \
+  && ok "release-preflight OK (cross-repo pins advisory — they move in step 6)" \
+  || die "release-preflight FAILED — see /tmp/rel-preflight.txt"
 for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit + push first"
   [ "$(git -C "$ROOT/$r" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" = "0" ] || die "$r has unpushed commits — push main first"
@@ -90,4 +94,14 @@ say "5. release-verify (allow a minute for npm/crates/gh to propagate)"
 printf '  npx candor-ts@%s : ' "$VER"; npx -y "candor-ts@$VER" --version 2>/dev/null | grep -o "spec $SPEC" || echo "(not yet on npm — OIDC action still running)"
 printf '  cargo query %s   : ' "$VER"; (cargo search candor-query 2>/dev/null | grep -o "$VER") || echo "(propagating)"
 echo "  jbang / brew: run \`jbang candor@tombaldwin/candor-java --version\` and \`brew upgrade candor && candor doctor\` once the java release build finishes."
-say "DONE — $SPEC / $VER published. Verify each channel reports spec $SPEC."
+# --- 6. cross-repo pins, now that the releases they name EXIST ------------------------------------------
+say "6. cross-repo pins → $VER"
+echo "  The pins are deliberately NOT moved automatically: each names a published artifact, and 0.24 shipped"
+echo "  a jbang pin to a release that did not exist. Update these, commit, push, then run release-verify.sh"
+echo "  — which RESOLVES each pinned URL rather than matching the string:"
+grep -rn "0\.[0-9]*\.[0-9]*" "$ROOT/candor/bin/candor" 2>/dev/null | grep ENGINE_PIN | head -1
+echo "    · candor/bin/candor           ENGINE_PIN"
+echo "    · candor/adopt/               java + agents pins"
+echo "    · candor-java/jbang-catalog.json"
+
+say "DONE — $SPEC / $VER published. Verify each channel reports spec $SPEC, then run release-verify.sh."

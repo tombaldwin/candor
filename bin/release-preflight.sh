@@ -22,6 +22,7 @@ note() { echo "  $*"; }
 # fix helped.
 bad()  { echo "  ✘ $*"; fail=$((fail + 1)); }
 ok()   { echo "  ✔ $*"; }
+info() { echo "  • $*"; }   # a pass that is worth explaining rather than just ticking
 
 # --- 1. every engine DECLARES the same spec (the contract floor) ----------------------------------------
 echo "[1] declared spec is uniform across engines"
@@ -393,7 +394,32 @@ print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status
 " 2>/dev/null)"
     case "$verdicts" in
       OK)   ;;
-      NONE) ci_bad=1; bad "$r: no CI run for HEAD ($head_sha) — pushed? still queued? do not publish blind";;
+      NONE)
+        # NO RUN IS NOT THE SAME AS NO EVIDENCE. Every umbrella workflow is path-filtered, so a commit
+        # touching only BACKLOG.md or a doc legitimately triggers nothing — and this check failed the
+        # 0.26 release for exactly that, on a backlog edit. A gate that fails routinely on a benign
+        # shape is a gate that gets waved through, which is worse than not having it.
+        #
+        # So: distinguish. If HEAD is not pushed, that is still fatal. If it is pushed and simply
+        # matched no path filter, report it and pass — the last commit that DID run CI is the one the
+        # release actually depends on, and it is checked below.
+        if ! git -C "$ROOT/$r" merge-base --is-ancestor HEAD "@{u}" 2>/dev/null; then
+          ci_bad=1; bad "$r: HEAD ($head_sha) is NOT PUSHED — nothing could have run"
+        else
+          last="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status \
+            | python3 -c "
+import json,sys
+runs=json.load(sys.stdin)
+done=[x for x in runs if x['conclusion']]
+print('%s %s' % (done[0]['headSha'][:7], done[0]['conclusion']) if done else 'none none')" 2>/dev/null)"
+          set -- $last
+          if [ "${2:-none}" = "success" ]; then
+            info "$r: HEAD matched no workflow path filter (pushed, docs-only); last CI run $1 green"
+          else
+            ci_bad=1; bad "$r: HEAD triggered no workflow AND the last completed run ($1) was ${2:-unknown}"
+          fi
+        fi
+        ;;
       ERR|"") ci_bad=1; bad "$r: could not read CI status — treat as NOT verified";;
       BAD*) ci_bad=1; bad "$r: ${verdicts#BAD }";;
     esac

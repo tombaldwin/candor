@@ -17,7 +17,7 @@
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
 UMBRELLA_VERSION="0.26.0"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
 ENGINE_PIN="0.26.0"                          # the engine release line `candor update` fetches — MUST move with every engine release (release-preflight [3] gates it; it lagged at 0.18.0 through 0.23.1 and shipped 0.18 engines under a 0.23 umbrella)
-QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents "
+QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents gate privacy-manifest "
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
 
 die()  { echo "candor: $*" >&2; exit 2; }
@@ -295,6 +295,18 @@ route_query() {
   # the nightly-lint crate-types (`lib`, `Executable`, `Rlib`, `Dylib`, `bin`, …). So match the three fixed
   # tokens explicitly and route everything else to candor-query, exactly as the Rust engine's own
   # report-backend detection does (any non-JS/jvm/Swift, non-sidecar report is a Rust report).
+  # CAPABILITY, not just presence. Refuse HERE — with the engines that do implement the verb — rather than
+  # handing an engine a verb it lacks and letting it misread the argument.
+  local supported arm; supported="$(verb_engines "$verb")"; arm="$(backend_arm "${uniq# }")"
+  if [ -n "$supported" ]; then
+    case " $supported " in
+      *" $arm "*) ;;
+      *) local names="" t
+         for t in $supported; do names="$names, $(engine_name "$t")"; done
+         die "$(engine_name "${uniq# }") does not implement \`$verb\` — the engine(s) that do: ${names#, }. (\`candor --help\` lists what this project's engine supports.)";;
+    esac
+  fi
+
   case "${uniq# }" in
     JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
            elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-query "$verb" "$@"
@@ -318,6 +330,45 @@ detect_langs() {
   [ -f "$dir/Package.swift" ] && langs="$langs swift"
   echo "${langs# }"
 }
+# WHICH ENGINES IMPLEMENT A VERB — the question `engine_present` cannot answer.
+#
+# `engine_present` answers "is it installed?", never "does it support this?", and both directions failed
+# without this table. `candor privacy-manifest` said "unknown action" because the umbrella did not know
+# candor-swift has it; worse, `candor show <fn>` on a Swift project reached the engine, which lacks `show`,
+# and reported "no such path: <fn>" — BLAMING THE USER'S ARGUMENT for a capability gap. That is the exact
+# inverse of the "failures carry remedies, nothing dead-ends" rule the rest of this CLI follows.
+#
+# MEASURED from each engine's own CLI, not assumed — `candor-ts-query` with no args, candor-java's
+# `Query.java`, candor-query's dispatch, candor-swift's `main.swift`. The asymmetries are real and each one
+# would misroute without a row here: java has no `parsepolicy`, ts has no `rewire`, only rust has `agents`,
+# and candor-swift implements 9 of the 21.
+#
+# The tokens are the report BACKEND tokens `route_query` already resolves (JS · jvm · rust · Swift), so the
+# table is keyed on the same thing the dispatch is.
+verb_engines() {
+  case "$1" in
+    gains|path|tour|fix|fix-gate|unverified|gate)  echo "JS jvm rust Swift";;
+    show|where|callers|map|containment|diff|reachable|impact|blindspots|whatif) echo "JS jvm rust";;
+    parsepolicy)       echo "JS rust Swift";;
+    rewire)            echo "jvm rust";;
+    agents)            echo "rust";;
+    privacy-manifest)  echo "Swift";;
+    *)                 echo "";;
+  esac
+}
+# backend token → the CANONICAL ARM. Rust owns the OPEN REMAINDER of backend tokens — `scan`, plus the
+# nightly-lint crate types (`lib`, `Executable`, `Rlib`, `Dylib`, `bin`, …) — so a raw token comparison
+# refuses `candor show` on a Rust report whose token is `scan`. That is exactly what the first version of
+# the capability check did, and it turned a routing fix into a routing regression. The dispatch below
+# already encodes this rule (three fixed tokens, everything else rust); this names it so both agree.
+backend_arm() {
+  case "$1" in JS) echo "JS";; jvm) echo "jvm";; Swift) echo "Swift";; *) echo "rust";; esac
+}
+# canonical arm → the engine a human installs, for an error message that names a remedy.
+engine_name() {
+  case "$(backend_arm "$1")" in JS) echo "candor-ts";; jvm) echo "candor-java";; Swift) echo "candor-swift";; *) echo "candor-rust";; esac
+}
+
 # is the engine for <lang> resolvable right now? (mirrors engine_scan's resolution)
 engine_present() {
   case "$1" in

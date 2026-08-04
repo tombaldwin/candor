@@ -340,9 +340,30 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
     shell. An honest absence, not a gap; filing it would create a permanently-open item. The umbrella's
     `bin/` is the one place in the family that genuinely reaches the network and spawns processes
     (`release.sh`), and nothing could gate it today without a shell engine — worth KNOWING, nothing to do.
-  · **A family-wide sweep for version-coupled test assertions** — proposed after fixing one in candor-agents
-    (`startswith("<!-- candor-agents 0.25")`), then MEASURED across all five suites: the only other hits are
-    usage strings. It was a one-off, not a class, so the sweep is not worth an entry.
+  · ~~**A family-wide sweep for version-coupled test assertions**~~ — **REOPENED AND FIXED 2026-08-04.
+    The measurement was wrong.** This entry recorded that a sweep found "the only other hits are usage
+    strings", so the class was closed as a one-off. The ⟨0.27⟩ floor bump then turned **every repo red**:
+    four assertions in candor-agents' own `test.py`, three in candor-java's `smoke.sh`, several in
+    candor-rust's cli tests plus its integration script and its doc-drift gate, and README / AGENTS /
+    package.json in candor-ts.
+
+    The sharpest instance: candor-agents' `test.py` carries a comment explaining that a version-coupled
+    assertion "is the same hand-edit class that cost the 0.25 release" and derives ONE constant — while
+    four assertions in the same file hardcoded `"0.26"`. The lesson was written down and not generalised.
+
+    **Fixed by DERIVING, not by re-editing literals**: `_SPEC` from `candor_agents.scan.SPEC`,
+    `SPEC_DECLARED` grepped out of `Candor.java` and `candor-report/src/lib.rs`. candor-swift needed no
+    change — its `smoke.sh` already derived `$BSPEC` from the binary, which is why it caught its own stale
+    README rather than passing. That is the shape the rest now match.
+
+    **What a find-and-replace sweep would have broken**, and why this was fixed by reading each site:
+    candor-rust's `tests.rs` builds fixture reports declaring `"spec": "0.26"` — those are INPUTS proving
+    an older report still loads, so pinning them to the previous floor is their purpose. A blanket bump
+    would have silently deleted a backward-compatibility test.
+
+    **Standing lesson: "I measured it and it was a one-off" is a claim with a shelf life.** The measurement
+    was true when taken and false one rung later, because every new assertion is written by someone who has
+    not read this entry.
 
 - **[CLOSED 2026-08-03 — as `release-preflight.sh` check [9], and my filing had the MECHANISM wrong]**
   **Work stranded under `## Unreleased` at release time.**

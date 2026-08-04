@@ -215,21 +215,35 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
   honest prerequisite for the article below if that article uses a health app.
 
 - **[P2 + CONTENT — 2026-08-03] Route `privacy-manifest` through the umbrella, and write it up.**
-  **DEMO MATERIAL — pollen, measured 2026-08-03.** Scanned a copy of `Sources/ + Apps/ + Resources/` and
-  verified against both Info.plists. Two REAL under-declarations, each in a different plist:
+  **DEMO MATERIAL — pollen, RE-MEASURED PER TARGET 2026-08-04 (candor-swift 0.26.0 built + installed).**
+  The 2026-08-03 numbers were from a single whole-codebase scan, which the entry itself flagged as
+  candidate-only. Run per target, ONE OF THE TWO DISSOLVES AND THE OTHER GETS MORE INTERESTING:
 
-      Resources/Info.plist          exit 1  ✗ reaches Mic (iOSBlowMonitor.actuallyStart, …) — no
-                                                NSMicrophoneUsageDescription
-      Apps/PolleniOS/Info.plist     exit 1  ✗ reaches Contacts (ContactsService.resolve, SettingsView.body,
-                                                …) — no NSContactsUsageDescription
+      whole-codebase → Resources/Info.plist   exit 1  ✗ Mic          ARTIFACT — see below
+      macOS target   → Resources/Info.plist   exit 0  ✓ clean (3 effects)
+      iOS target     → Apps/PolleniOS/Info.plist exit 1 ✗ Contacts   REAL
+
+  · **The Mic finding was a methodology artifact.** `iOSBlowMonitor` lives only in `Sources/PolleniOS`,
+    which the macOS app does not compile. Scanning all targets as one unit charged an iOS-only sensor to
+    the macOS plist. Per target the macOS app is clean, and the iOS plist *does* declare Microphone.
+  · **The Contacts finding survives, and is the better story.** `ContactsService` is in `Sources/PollenCore`,
+    which `PolleniOS` depends on, so the Contacts API is compiled into the iOS binary — while
+    `Apps/PolleniOS/Info.plist` declares no `NSContactsUsageDescription`. **Grepping `Sources/PolleniOS`
+    for Contacts returns nothing**: the only callers are in `Sources/PollenApp/Views.swift`, the macOS app.
+  · **candor's own output distinguishes linked-from-called, if you read it.** The iOS run's reached-by list
+    is exactly `ContactsService.isAuthorized, ContactsService.resolve` — the API's own wrappers and no
+    callers. The macOS run's is `…, SettingsView.body, …` — a real call site. So the iOS exposure is
+    binary-level (the API is linked; Apple scans binaries) rather than a runtime crash path, and the fix is
+    either declaring the key or keeping `Contacts.swift` out of the iOS target's module.
+
+  Both runs carry the tool's own hedge: *"verdict is conditional on 15 uncovered modules"*.
 
   Both plists also carry the tool's own hedge: *"verdict is conditional on 22 uncovered modules"*. That
   line belongs IN the article — a tool that discloses its own blind spots while making a finding is the
   whole pitch, and it pre-empts the obvious "how do I know it saw everything?".
-  **CAVEAT the write-up must not skip:** this scan treated the whole codebase as ONE unit, so "reaches" is
-  across all targets. A per-TARGET verify (scan only that target's sources) is the correct way to run it
-  and may clear one or both. The findings above are CANDIDATE under-declarations until run per target —
-  and demonstrating the per-target run is probably the better article anyway.
+  **The caveat was right and is now discharged** — the per-target run cleared one finding and kept one, so
+  the article's spine is *the methodology*, not the count: run it per shipped binary, because scanning a
+  monorepo as one unit charges every target with every other target's sensors.
   candor-swift's `privacy-manifest` verb is BUILT and working — verified end to end on a fresh fixture:
 
       GENERATE  Location → NSLocationWhenInUseUsageDescription (reached by: track)
@@ -237,8 +251,8 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
                 key present   exit 0  ✓ every accessed capability is declared
                 corrupt plist exit 2  (fail-loud, never a silent empty answer)
 
-  **The gap:** it is reachable only as `candor-swift privacy-manifest`. The umbrella does not route it, so
-  `candor privacy-manifest` does not work.
+  **The routing gap is CLOSED (2026-08-04):** `candor privacy-manifest` now routes to candor-swift via the
+  umbrella's per-verb capability table, and `candor gate` with it. See the capability item above.
   **⚠ THIS ROUTING HALF IS A SUBSET OF the "umbrella has no notion of which verbs an engine implements"
   item above** — `privacy-manifest` is one of the two engine-only verbs that item counts, and building the
   per-verb table there routes it for free. Do NOT do them separately. What is unique to THIS entry is the

@@ -205,7 +205,19 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
   local line; line="$(grep -nE "$3" "$f" | head -1)"
   [ -n "$line" ] && note "$1: $line" || note "$1: (pin not found)"
   if [ -n "$WANT_VER" ] && [ -n "$line" ] && ! echo "$line" | grep -qF "$WANT_VER"; then
-    bad "$1: pin does not reference $WANT_VER (update AFTER the release is published)"
+    # PRE-PUBLISH THIS IS EXPECTED, AND UNTIL NOW IT DEADLOCKED THE RELEASE. [3]'s own message says the
+    # pins move AFTER the release exists — while `release.sh` step 0 refuses to publish unless preflight
+    # is fully green. So the strict form could never be satisfied at the moment release.sh runs, and every
+    # release had to bypass the script that exists because bypassing it lost three steps on 0.24.
+    #
+    # The other design — moving pins WITH the engines — was tried on 0.24 and shipped `jbang-catalog.json`
+    # pinned at a release that did not exist, which is why `release-verify.sh` now RESOLVES the artifact
+    # instead of matching the string. So pins-after is the right order; this just stops it deadlocking.
+    if [ -n "${PINS_ADVISORY:-}" ]; then
+      info "$1: pin still at the previous version — expected pre-publish, must be updated after"
+    else
+      bad "$1: pin does not reference $WANT_VER (update AFTER the release is published)"
+    fi
   fi
 }
 checkpin "adopt java  " "candor/adopt/candor.yml"        'CANDOR_JAVA_VERSION:[[:space:]]*[0-9]'

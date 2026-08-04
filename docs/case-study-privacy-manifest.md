@@ -2,7 +2,7 @@
 
 **App:** Pollen — a real, shipping Swift app with a macOS build and an iOS build sharing a core module.
 **Tool:** `candor privacy-manifest`, run over the source. No configuration, no annotations, no source
-changes. **Swift only today** — this is a candor-swift extension (`privacy/1`), not a floor feature.
+changes. **Swift only today** — this is a candor-swift extension (`privacy/2`), not a floor feature.
 
 An iOS app that touches a sensor without the matching `Info.plist` usage-description key doesn't warn you.
 It gets rejected, or it crashes on the device of whoever hits that code path first. The key must be there
@@ -36,7 +36,7 @@ each plist with every *other* target's sensors. Run it the correct way, once per
 | scan scope | verified against | result |
 |---|---|---|
 | whole repo | `Resources/Info.plist` (macOS) | **exit 1** — ✗ Mic · *artifact* |
-| macOS target only (`Pollen` ← `PollenApp` ← `PollenCore`) | `Resources/Info.plist` | **exit 0** — ✓ clean, 3 effects |
+| macOS target only (`Pollen` ← `PollenApp` ← `PollenCore`) | `Resources/Info.plist` | **exit 0** — ✓ clean, 4 effects |
 | iOS target only (`PolleniOS` ← `PollenCore`) | `Apps/PolleniOS/Info.plist` | **exit 1** — ✗ Contacts |
 
 The macOS app is clean. The iOS app is not — and *that* finding survives the correct methodology:
@@ -115,12 +115,27 @@ Every verify above ended with candor's own hedge:
 That line is the point of the tool, not a disclaimer on it. A clean verify that stayed silent about the
 15 modules it could not see would be a *worse* answer than a noisy one.
 
-Two further limits, stated plainly because a green exit code should not be read as more than it is:
+The rest, stated plainly because a green exit code should not be read as more than it is:
 
-- **The cluster is six sensors** — `Location`, `Camera`, `Mic`, `Contacts`, `Photos`, `Notify`. Pollen's
-  plists also declare `NSMotionUsageDescription` and the two HealthKit keys, and candor says **nothing**
-  about those in either direction: it neither requires them nor flags them as unused, because it does not
-  model those sensors. `exit 0` means *"the six I model are declared"*, never *"your plist is right"*.
+- **The cluster is eighteen sensors, and that number is the point of the caveat rather than a boast.**
+  Writing this page is what surfaced the gap: the first version of the vocabulary covered six, and pollen's
+  plists declare Motion and two HealthKit keys that candor said **nothing** about in either direction —
+  neither required nor flagged as unused. `exit 0` meant *"the six I model are declared"* while reading as
+  *"your plist is right"*. The second wave (`privacy/2`) added Health, Motion, Calendar, Reminders,
+  Bluetooth, Speech, Biometrics, MediaLibrary, HomeKit, Tracking, NearbyInteraction and Siri, which is why
+  the macOS run above reports **4 effects** where it reported 3.
+- **`LocalNetwork` is still absent, deliberately.** `NSLocalNetworkUsageDescription` is real, but the reach
+  is not separable from ordinary `Net` by type — `NWBrowser`/`NWConnection` serve both — and the key
+  travels with an entitlement this engine does not read. Guessing would fabricate on every networking app,
+  so it stays uncovered and disclosed.
+- **The verify is sound on presence and silent on direction.** HealthKit's two keys are not alternatives in
+  Apple's model — Share gates reading, Update gates writing — and this engine does not tell read from write
+  at the call site. An app that declares only Share and also writes samples passes here and is rejected by
+  Apple. Same for the EventKit pairs.
+- **A modelled type is not a covered module.** Every verify above still lists HealthKit among the modules
+  the classifier does not cover, *while* charging `Health` — and both are true. This models a curated
+  handful of a framework's types; marking the whole module covered would turn a disclosed blind spot into
+  a silent purity claim over every other type in it.
 - **This is Swift-only.** The privacy manifest is a candor-swift extension. The four-engine floor says
   nothing about it, and no other engine implements it.
 

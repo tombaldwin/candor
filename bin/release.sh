@@ -56,7 +56,14 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
     # characters and candor-swift's CHANGELOG is 154KB, so `-F CHANGELOG.md` 422'd mid-release on 0.25
     # ("body is too long") and left that repo TAGGED WITH NO RELEASE — the state that broke `candor
     # update` at 0.24. Every other changelog is growing the same way, so this was a deadline, not a one-off.
-    awk '/^## /{n++} n==1{print} n==2{exit}' "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+    # SELECT BY VERSION, NOT BY POSITION. This read "the first `## ` section", which was correct only
+    # while the newest entry happened to be first. `release-stage.sh` opens a FRESH EMPTY `## Unreleased`
+    # above the entry it just cut, so on 0.26 — the first release where the two scripts ran together —
+    # this extracted two blank lines and would have published EMPTY notes for all five engines. Anchoring
+    # on `## [$VER]` cannot drift that way, and an empty result is now fatal rather than silent.
+    awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' \
+        "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+    [ -s "/tmp/rel-body-$repo.md" ] || die "$repo: CHANGELOG has no '## [$VER]' section — refusing to publish a release with empty notes"
     gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag"
   fi
 }

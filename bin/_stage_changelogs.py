@@ -24,6 +24,13 @@ for repo in ("candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-
         print("SAME %s: `## Unreleased` is empty — nothing would ship unlabelled" % repo); continue
     if re.search(r"^## \[%s\]" % re.escape(VER), s, re.M):
         print("SAME %s: already has a `## [%s]` heading" % (repo, VER)); continue
-    s = s[:m.start()] + "## Unreleased\n\n## [%s] — %s" % (VER, DATE) + s[m.end():]
+    # PRESERVE THE RUNG MARKER. The bare heading is often `## Unreleased — ⟨spec 0.26⟩`, and dropping that
+    # suffix strips the released entry of the one thing that records WHICH CONTRACT it carries — which
+    # every prior release entry has. Measured on 0.26: all five engines lost it before this line existed.
+    suffix = (m.group(1) or "").strip()
+    marker = ""
+    if suffix:
+        marker = " " + suffix.lstrip("—").strip()
+    s = s[:m.start()] + "## Unreleased\n\n## [%s] — %s%s" % (VER, DATE, marker) + s[m.end():]
     open(f, "w").write(s)
     print("OK %s: `## Unreleased` → `## [%s] — %s` (+ fresh empty Unreleased)" % (repo, VER, DATE))

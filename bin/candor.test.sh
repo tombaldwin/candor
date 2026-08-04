@@ -16,6 +16,16 @@ ok() { # $1 label ; $2 expected-substring ; $3… command
   local got; got="$("$@" 2>&1)"
   if [[ "$got" == *"$want"* ]]; then echo "  ok   $label"; else echo "  FAIL $label"; echo "       want: *$want*"; echo "       got:  $got"; fails=$((fails+1)); fi
 }
+emptyarm() { # $1 label ; $2 dir — context_arm must return NOTHING there
+  local label="$1" dir="$2" got
+  got="$(cd "$dir" && CANDOR_SELFTEST=arm bash "$D" 2>&1)"
+  if [[ -z "$got" ]]; then echo "  ok   $label"; else echo "  FAIL $label"; echo "       context_arm answered: '$got'"; fails=$((fails+1)); fi
+}
+no() { # $1 label ; $2 substring that must be ABSENT ; $3… command
+  local label="$1" nope="$2"; shift 2
+  local got; got="$("$@" 2>&1)"
+  if [[ "$got" != *"$nope"* ]]; then echo "  ok   $label"; else echo "  FAIL $label"; echo "       must NOT contain: *$nope*"; echo "       got:  $got"; fails=$((fails+1)); fi
+}
 qdir() { mkdir -p "$T/$1/.candor"; : > "$T/$1/.candor/report.pkg.$2.json"; }
 sdir() { mkdir -p "$T/$1"; : > "$T/$1/$2"; }
 
@@ -46,6 +56,30 @@ ok "java + agents → refused, names rust"      "candor-rust"                   
 # check did exactly that — a routing fix that became a routing regression.
 ok "rust + show still routes (open remainder)" "WOULD-RUN: candor-query show foo"  bash -c "cd '$T/qr' && '$D' show foo"
 qdir qr2 lib; ok "rust nightly-lint token routes too" "WOULD-RUN: candor-query where Net" bash -c "cd '$T/qr2' && '$D' where Net"
+
+echo
+echo "verb help is CAPABILITY-AWARE (help for a verb this engine lacks is a dead end in documentation's clothes):"
+ok "swift + show --help names the engines that do" "does not implement \`show\`" bash -c "cd '$T/qs' && '$D' show --help"
+ok "swift + show --help suggests candor-ts"        "candor-ts"                    bash -c "cd '$T/qs' && '$D' show --help"
+no "swift + path --help stays silent (swift HAS it)" "NOT AVAILABLE"              bash -c "cd '$T/qs' && '$D' path --help"
+no "rust + show --help stays silent (rust HAS it)"   "NOT AVAILABLE"              bash -c "cd '$T/qr' && '$D' show --help"
+ok "rust + privacy-manifest --help warns"          "does not implement \`privacy-manifest\`" bash -c "cd '$T/qr' && '$D' privacy-manifest --help"
+# NEVER GUESS: when the arm is unknowable a note on the WRONG arm is worse than none. Two ways it is
+# unknowable, and BOTH must stay silent. Not /tmp: on this machine `detect_langs /tmp` answers `java` from
+# whatever else is lying there, so that dir passes this assertion without ever reaching the unknown path.
+mkdir -p "$T/qempty"
+emptyarm "empty tree → arm is EMPTY, not a guess" "$T/qempty"
+no "empty tree → no capability note at all"        "NOT AVAILABLE"                bash -c "cd '$T/qempty' && '$D' show --help"
+mkdir -p "$T/qmixed"; : > "$T/qmixed/Cargo.toml"; echo '{}' > "$T/qmixed/package.json"
+no "mixed tree → no capability note either"        "NOT AVAILABLE"                bash -c "cd '$T/qmixed' && '$D' privacy-manifest --help"
+# and the likelier mixed case, since chained dep reports arrive one per engine: a .candor holding TWO
+# engines' reports. Found by mutation — making context_arm take the first of several broke no assertion.
+mkdir -p "$T/qmixrep/.candor"; : > "$T/qmixrep/.candor/report.a.scan.json"; : > "$T/qmixrep/.candor/report.b.JS.json"
+emptyarm "two engines' reports → arm is EMPTY, not the first" "$T/qmixrep"
+no "two engines' reports → no capability note"     "NOT AVAILABLE"                bash -c "cd '$T/qmixrep' && '$D' privacy-manifest --help"
+# the two newly-routed verbs need their own help, or routing them just moved the dead end
+ok "gate --help has its own text"                  "apply a policy to an EXISTING report" bash -c "cd '$T/qr' && '$D' gate --help"
+ok "privacy-manifest --help has its own text"      "usage-description keys"        bash -c "cd '$T/qs' && '$D' privacy-manifest --help"
 qdir ql lib;   ok "rust lint report → candor-query"   "WOULD-RUN: candor-query where Net"    bash -c "cd '$T/ql'  && '$D' where Net"
 qdir qx Executable; ok "rust Executable → candor-query" "WOULD-RUN: candor-query show f"    bash -c "cd '$T/qx'  && '$D' show f"
 

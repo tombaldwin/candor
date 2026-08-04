@@ -30,7 +30,12 @@ set -uo pipefail
 ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 say()  { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✔\033[0m %s\n' "$*"; }
-bad()  { printf '  \033[31m✘\033[0m %s\n' "$*"; }
+# COUNTS, like release-preflight.sh's and release-verify.sh's do. This script's did not, and BOTH of its
+# false greens followed from that one line: a moved declaration site printed ✘ and the run still exited 0
+# saying "the family is GREEN", with one engine still emitting the OLD contract — the four-way split this
+# script exists to prevent, reported as its absence.
+fails=0
+bad()  { printf '  \033[31m✘\033[0m %s\n' "$*"; fails=$((fails+1)); }
 note() { printf '  \033[33m•\033[0m %s\n' "$*"; }
 
 # label | repo-relative file | sed pattern capturing the version
@@ -60,12 +65,20 @@ if [ "${1:-}" = "--check" ]; then
     case " $seen " in *" $v "*) ;; *) seen="$seen $v";; esac
   done
   sv="$(grep -oE '^\*\*Version [0-9]+\.[0-9]+' "$ROOT/candor-spec/SPEC.md" | grep -oE '[0-9]+\.[0-9]+')"
-  note "$(printf '%-9s %s' "SPEC.md" "${sv:-?}")"
-  case " $seen " in *" $sv "*) ;; *) seen="$seen $sv";; esac
+  if [ -z "$sv" ]; then
+    # NOT foldable into the agreement set. SPEC.md is the contract the other six declare conformance TO,
+    # and an unreadable version there is the least safe thing to call agreement — it printed `?` on the
+    # line directly above the verdict, and the verdict said "every declaration agrees" anyway.
+    bad "SPEC.md: no '**Version X.Y**' headline — the contract document's own version is unreadable"
+  else
+    note "$(printf '%-9s %s' "SPEC.md" "$sv")"
+    case " $seen " in *" $sv "*) ;; *) seen="$seen $sv";; esac
+  fi
   n=$(echo $seen | wc -w | tr -d ' ')
-  if [ "$n" = 1 ]; then ok "every declaration agrees on ${seen# }"; else
+  if [ "$n" = 1 ] && [ "$fails" = 0 ]; then ok "every declaration agrees on ${seen# }"; elif [ "$n" != 1 ]; then
     bad "declarations DISAGREE (${seen# }) — an engine emitting a spec version the others do not is a
-       four-way contract split, not a version-number detail"; rc=1; fi
+       four-way contract split, not a version-number detail"; fi
+  [ "$fails" = 0 ] || rc=1
   exit $rc
 fi
 
@@ -115,13 +128,20 @@ if a in s:
     open(p, "w").write(s.replace(a, b, 1)); print("  \033[32m✔\033[0m SPEC.md   → " + new)
 else:
     print("  \033[31m✘\033[0m SPEC.md headline version not found in the expected form")
+    sys.exit(3)
 PY
+
+[ "${PIPESTATUS[0]:-0}" = 3 ] && fails=$((fails+1))   # the SPEC.md bump above failed; count it
 
 # `--decls-only` exists so the harness can exercise the bump MECHANICS against a fixture tree without
 # running seven real suites. It is not a shortcut for a real bump: skipping step 2 is skipping the entire
 # reason this script exists.
 if [ "${2:-}" = "--decls-only" ]; then
-  echo; ok "declarations bumped (--decls-only: suites and triage SKIPPED — not a rehearsal)"
+  echo
+  # It exits EARLY, so it must do the step-1 accounting itself — otherwise the shortcut is the one path
+  # where a skipped declaration site still reports success.
+  [ "$fails" = 0 ] || { bad "$fails declaration site(s) NOT bumped — the family is SPLIT"; exit 1; }
+  ok "declarations bumped (--decls-only: suites and triage SKIPPED — not a rehearsal)"
   exit 0
 fi
 
@@ -165,6 +185,9 @@ done
 [ "$found" = 0 ] && ok "no remaining mentions"
 
 echo
+# A skipped DECLARATION is not a suite failure, so it would not otherwise reach this line — which is
+# exactly how "GREEN at 0.28" got printed over an engine still emitting 0.27.
+[ "$fails" = 0 ] || { rc=1; bad "$fails declaration site(s) NOT bumped — the family is SPLIT, whatever the suites say"; echo; }
 if [ "$rc" = 0 ]; then
   printf '\033[32mspec-bump: the family is GREEN at %s.\033[0m Review the diff, triage any list above, then commit.\n' "$NEW"
 else

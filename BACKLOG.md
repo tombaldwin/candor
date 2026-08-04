@@ -777,8 +777,10 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
-- **[P2 — release tooling, 2026-08-04] `release-stage.sh` stages five engines and leaves two umbrella sites
-  to be found by a downstream refusal.** The 0.26 release surfaced both:
+- **[FIXED 2026-08-04] `release-stage.sh` stages five engines and left two umbrella sites to be found by a
+  downstream refusal.** `release-stage.sh` now bumps UMBRELLA_VERSION and preflight [4] reads it (replayed
+  the failure to confirm [4] catches a stale constant); `_stage_changelogs.py` now handles the dated
+  heading, idempotently and without reflowing the file. The 0.26 release surfaced both:
 
   · **`bin/candor`'s `UMBRELLA_VERSION`** is not staged and preflight [4] does not check it, so the umbrella
     declared 0.25.0 while everything around it moved. Only `update-candor.sh` refused ("UMBRELLA_VERSION=
@@ -790,17 +792,27 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
     does not apply and its "(unreleased)" marker was left by hand. `release.sh`'s notes extractor now falls
     back for that shape, but nothing STAGES it.
 
-  Both are the same shape: the stager knows about engines and the umbrella is the seventh repo it forgets.
-  Add `UMBRELLA_VERSION` to stage + preflight [4], and teach the stager the dated-changelog form.
+  Both were the same shape: the stager knew about engines and forgot the umbrella is the seventh repo.
 
-- **[P3 — release tooling, 2026-08-04] The umbrella carries TWO tags per release, `v0.26.0` and `0.26.0`.**
+- **[FIXED FORWARD 2026-08-04 — one decision left for Tom] The umbrella carried TWO tags per release,
+  `v0.26.0` and `0.26.0`.**
   `release.sh` tags `v$VER` like every other repo; it then calls `scripts/update-candor.sh "$VER"`, which
   tags whatever string it is given — and its own usage line says `v0.16.0`. So the bare form is created too,
   with a second GitHub release beside the first. **Pre-existing, not new: 0.25 has the identical pair**, and
   both resolve, so nothing is broken — the tap formula points at the bare tarball and `release-verify`
   checks the `v` one. Not fixed during the 0.26 run because the remedy is deleting published refs, which is
-  not a thing to do mid-release. Decide the convention (almost certainly `v`-prefixed, matching the family)
-  and make `release.sh` pass it.
+  not a thing to do mid-release.
+
+  **Fixed forward:** `release.sh` now passes `v$VER`, and `update-candor.sh` reuses an existing tag/release
+  rather than creating one — so it works both inside release.sh and standalone. The 0.26 tap formula was
+  re-pointed at the `v0.26.0` tarball (sha verified against the URL, and the tarball confirmed to carry
+  UMBRELLA_VERSION/ENGINE_PIN 0.26.0), and `v0.26.0` is now marked Latest so the releases page shows the
+  canonical one. From 0.27 there will be a single tag.
+
+  **LEFT FOR TOM, deliberately:** the orphaned `0.26.0` and `0.25.0` bare tags and their releases still
+  exist. Nothing references them now, but deleting a published tag and release is irreversible and the
+  remedy above did not require it. Delete them for tidiness, or leave them as history — a decision, not a
+  defect.
 
 - **candor-ts κ-batch: common CLI-tool packages — ✅ DONE (candor-ts 0.9.2, 2026-07-12).** `which`→Fs,
   `@webpod/ps`→Exec, `envapi`→Fs (member-precise: parse stays pure); zx `useBash`/`usePwsh` now Fs, κ ledger

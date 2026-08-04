@@ -26,6 +26,8 @@ The first run scanned the whole repo as one unit and verified against the macOS 
 ```
 ✗ code reaches Mic (via iOSBlowMonitor.actuallyStart, iOSBlowMonitor.init()#17,
   iOSBlowMonitor.observeAppLifecycle) but Info.plist declares no NSMicrophoneUsageDescription
+✗ code reaches Motion (via PolleniOSApp.init()#2, iOSMotionMonitor.init()#1,
+  iOSMotionMonitor.init()#8) but Info.plist declares no NSMotionUsageDescription
                                                                                        exit 1
 ```
 
@@ -33,11 +35,22 @@ That finding is **wrong**, and it's wrong in a way worth showing. `iOSBlowMonito
 `Sources/PolleniOS` — a target the macOS app does not compile. Scanning every target as one unit charges
 each plist with every *other* target's sensors. Run it the correct way, once per shipped binary:
 
+```
+candor scan . --target Pollen        # the macOS executable and its closure
+candor scan . --target PolleniOS     # the iOS library and its closure
+```
+
 | scan scope | verified against | result |
 |---|---|---|
-| whole repo | `Resources/Info.plist` (macOS) | **exit 1** — ✗ Mic · *artifact* |
-| macOS target only (`Pollen` ← `PollenApp` ← `PollenCore`) | `Resources/Info.plist` | **exit 0** — ✓ clean, 4 effects |
-| iOS target only (`PolleniOS` ← `PollenCore`) | `Apps/PolleniOS/Info.plist` | **exit 1** — ✗ Contacts |
+| whole repo | `Resources/Info.plist` (macOS) | **exit 1** — ✗ Mic, ✗ Motion · *artifact* |
+| `--target Pollen` (← `PollenApp` ← `PollenCore`) | `Resources/Info.plist` | **exit 0** — ✓ clean, 4 effects |
+| `--target PolleniOS` (← `PollenCore`) | `Apps/PolleniOS/Info.plist` | **exit 1** — ✗ Contacts |
+
+`--target` resolves that target's in-package dependency closure from `Package.swift` and scans exactly
+those sources — 100 of the repo's 127 files for `Pollen`, 79 for `PolleniOS`. It refuses rather than
+scanning less: an unknown target exits 2 and names the ones that exist, and so does a closure member
+whose sources it cannot find. A scoped scan says so on stderr, because a clean verdict over one target
+otherwise reads exactly like a clean verdict over the whole package.
 
 The macOS app is clean. The iOS app is not — and *that* finding survives the correct methodology:
 
@@ -128,10 +141,12 @@ The rest, stated plainly because a green exit code should not be read as more th
   is not separable from ordinary `Net` by type — `NWBrowser`/`NWConnection` serve both — and the key
   travels with an entitlement this engine does not read. Guessing would fabricate on every networking app,
   so it stays uncovered and disclosed.
-- **The verify is sound on presence and silent on direction.** HealthKit's two keys are not alternatives in
-  Apple's model — Share gates reading, Update gates writing — and this engine does not tell read from write
-  at the call site. An app that declares only Share and also writes samples passes here and is rejected by
-  Apple. Same for the EventKit pairs.
+- **Direction is modelled for the three key families that split it, and only those.** HealthKit's two keys
+  are not alternatives in Apple's model — Share gates reading, Update gates writing — and the same holds
+  for Photos (full vs Add) and Calendars (full vs write-only). `privacy/2` reads the call site's direction
+  for those three, so an app that declares only Share and also writes samples is now caught rather than
+  passed. Everything outside those three families is a presence check: the key is required or it is not,
+  and no direction is claimed either way.
 - **A modelled type is not a covered module.** Every verify above still lists HealthKit among the modules
   the classifier does not cover, *while* charging `Health` — and both are true. This models a curated
   handful of a framework's types; marking the whole module covered would turn a disclosed blind spot into
@@ -144,12 +159,11 @@ The rest, stated plainly because a green exit code should not be read as more th
 ## Reproduce
 
 ```
-# one tree per shipped binary — a Package.swift naming just that target's dependency chain
-candor scan .
+candor scan . --target Pollen                          # one scan per SHIPPED BINARY
 candor privacy-manifest                                # what the code requires
-candor privacy-manifest --verify ../Resources/Info.plist   # what the app declares
+candor privacy-manifest --verify Resources/Info.plist  # what the app declares
 echo $?                                                # 0 clean · 1 under-declared · 2 unreadable
 ```
 
-Wire the last two lines into CI per target and an under-declaration fails the build before the submission
-does — which is the same command, run earlier.
+Wire the last two lines into CI once per target and an under-declaration fails the build before the
+submission does — which is the same command, run earlier.

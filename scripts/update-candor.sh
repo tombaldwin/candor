@@ -29,15 +29,25 @@ UV="$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' bin/candor)"
 [ -z "$(git status --porcelain)" ] || { echo "refusing: working tree is dirty — commit first."; exit 1; }
 [ -f "$FORMULA" ] || { echo "no formula at $FORMULA (set CANDOR_TAP)."; exit 1; }
 
-# 2. tag + push
-git tag -a "$TAG" -m "candor umbrella $VER — the one-command front door; manages the engines"
-git push origin "$TAG"
+# 2. tag + push — IDEMPOTENT, because release.sh now cuts `v$VER` itself before calling this. Creating it
+# unconditionally is what produced two tags per release; skipping is what lets this be called either as
+# part of release.sh or standalone for a CLI-only umbrella bump.
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+  echo "tag $TAG already exists — reusing it"
+else
+  git tag -a "$TAG" -m "candor umbrella $VER — the one-command front door; manages the engines"
+  git push origin "$TAG"
+fi
 
-# 3. gh release
+# 3. gh release — same reason
+if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+  echo "release $TAG already exists — reusing it"
+else
 gh release create "$TAG" -R "$REPO" --title "candor $VER (umbrella)" --notes \
 "The umbrella dispatcher — one \`candor\` command across every language. Install it and run \`candor update\` to fetch the engines (the flagship JVM engine as a native binary, no JVM needed).
 
 Install: \`brew install tombaldwin/tap/candor\`"
+fi
 
 # 4. SHA-256 of GitHub's generated source tarball
 URL="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"

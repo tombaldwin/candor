@@ -809,10 +809,14 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   UMBRELLA_VERSION/ENGINE_PIN 0.26.0), and `v0.26.0` is now marked Latest so the releases page shows the
   canonical one. From 0.27 there will be a single tag.
 
-  **LEFT FOR TOM, deliberately:** the orphaned `0.26.0` and `0.25.0` bare tags and their releases still
-  exist. Nothing references them now, but deleting a published tag and release is irreversible and the
-  remedy above did not require it. Delete them for tidiness, or leave them as history — a decision, not a
-  defect.
+  **DELETED 2026-08-04** (Tom's call): the orphaned `0.26.0` and `0.25.0` bare tags and their GitHub
+  releases are gone. Checked first that nothing referenced them, that neither held any asset, and that each
+  had a `v`-prefixed counterpart. `0.23.1`/`0.23.2` were deliberately kept — they predate the convention and
+  are the SOLE releases for their versions, so they are history rather than duplicates. `release-verify`
+  green afterwards and the tap URL still resolves 200.
+
+  Residual, and it is the only one: the tap's git HISTORY contains commits whose formula pointed at the
+  deleted tarballs, so `brew install` from a pinned old tap commit would now 404. Accepted.
 
 - **candor-ts κ-batch: common CLI-tool packages — ✅ DONE (candor-ts 0.9.2, 2026-07-12).** `which`→Fs,
   `@webpod/ps`→Exec, `envapi`→Fs (member-precise: parse stays pure); zx `useBash`/`usePwsh` now Fs, κ ledger

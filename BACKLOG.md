@@ -627,6 +627,70 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P3 — spec rung, 2026-08-04] `execute` as a per-effect KIND: reading a file as CODE rather than data.**
+
+  **Context: the kind mechanism is now proven four-way.** SPEC §2's `fs: read|write` was spec'd long ago
+  and implemented in rust + java only; candor-swift and candor-ts gained it 2026-08-04, and `privacy/2`
+  applied the identical contract to a second effect family the same day. So "a per-effect kind, omitted
+  rather than guessed" is no longer a proposal — it is a shipped pattern with two instances.
+
+  **The proposal is NOT a universal read/write/execute triad, and the distinction is the whole item.**
+  `execute` is meaningful for two effects and meaningless for the rest. Forcing a triad would make an
+  engine answer a question that does not apply — and under absence-is-a-claim, an omitted field that
+  *cannot* apply is noise rather than information, which is the opposite of what a disclosure format is
+  for. The spec already scopes kinds per effect ("applies only when `inferred` contains `Fs`"), so this is
+  a per-effect vocabulary decision and should stay one.
+
+  · **`Fs[execute]` — and the interesting reading is NOT the POSIX exec bit** (that is a write). It is
+    **code loading**: `dlopen`, a dynamic `require`, a reflective class-load — reading a file as *code*
+    rather than as data. Genuinely different risk, and invisible today *as an effect*.
+  · **`Db[execute]`** — arbitrary statement execution vs a query. Real, and the shape a "the read model may
+    not write" gate wants.
+  · **Not** `Clipboard`, `Env`, `Net`, or any privacy sensor. There is no execute there.
+
+  **WHAT MAKES THIS AN UPGRADE RATHER THAN A NEW CLAIM, and it is the strongest argument for it.** Code
+  loading is already handled honestly: `dlopen` and friends land as a DISCLOSURE REASON (`native:dlopen`),
+  i.e. the engine says "I cannot see past this" and the function carries `Unknown`. So today's answer is
+  *undetermined*, not *wrong*. An `execute` kind would move it from "I can't see this" to "this loads
+  code" — strictly more information, and the transition is from a disclosed blind spot to a determined
+  fact, which is the direction this project is always trying to travel.
+
+  **THE HAZARD, named because it is inherited rather than new.** This is Escape 2's axis (PAPER3 §8): a
+  kind or class coarsening is invisible to `H` *and* to `⊑`, so an engine that stops emitting a kind, or
+  coarsens one, produces a red→green flip with no back-pressure in any channel. `netClass` already carries
+  exactly this cost. The closure is a classification ratchet against baseline, and any kind rung should
+  ship with one rather than after it.
+
+- **[P3 — spec rung, 2026-08-04] Direction (`read`/`write`) for the effects beyond `Fs` where it pays.**
+  The general half of the same question. `fs` proves the mechanism and `privacy/2` proves it generalises;
+  these are the remaining places the distinction is worth the wire:
+
+  · **`Clipboard` — and this is the best candidate, because the sensitive direction is the one nobody
+    expects.** READING the clipboard is what iOS shows a paste banner for; writing to it is benign. One
+    effect covers both today, so `deny Clipboard` cannot express "may write, may not read".
+  · **`Db`** — the classic architecture gate: the read model may not write.
+  · **`Env`** — reading is ubiquitous, writing is rare and surprising, and the two are worth telling apart
+    in a report a human skims.
+  · **NOT `Net`** — request/response is bidirectional by nature. The useful refinement there is the
+    destination class, which already exists.
+
+  Same discipline in every case: omitted rather than guessed, direct-only (a caller reaching one writer and
+  one undetermined-kind callee must not inherit `["write"]` and thereby claim "writes but never reads"),
+  and the same Escape 2 ratchet obligation as above.
+
+- **[P3 — engine infra, 2026-08-04] candor-ts has no equivalent of candor-swift's collector-state guard.**
+  candor-swift's `NameKeyedStateTests` requires EVERY stored property of `CallCollector` to be classified
+  in a `disposition` map — because whether a shadow scope saves, clears or ignores a piece of state is a
+  decision, and its docstring records that **seven defects came from that decision being skipped**. It
+  caught two additions in one session (`fsKinds`, then `privacyKinds`).
+
+  candor-ts has nothing equivalent, and the same class of mistake there surfaced as a CRASH: a fn record is
+  built in four places, an accumulator was added to two, and `rec.fsKinds` was undefined on the other two —
+  the scan aborted and the integration suite died on a null report. Loud, and therefore cheap, but loud by
+  luck rather than by design. A test asserting every fn-record construction site produces the same key set
+  would make it a named assertion instead.
+
+
 The 2026-07-16 three-angle referee pass on the "disclosure-oriented effect analysis" write-up (PL-theory,
 empirical-SE, industry-practitioner — reports local at `~/candor-paper/REFEREE-REPORTS.md`) surfaced a
 cluster of REAL tool improvements, not just paper edits. The unifying thread: candor **already reason-tags

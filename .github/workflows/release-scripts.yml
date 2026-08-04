@@ -1,0 +1,53 @@
+name: release-scripts
+
+# THE RELEASE SCRIPTS ARE THE ONLY THING IN THE FAMILY THAT WAS TESTED BY PUBLISHING.
+#
+# `release-stage.sh` performs ~19 edits across six repos, `release-preflight.sh` carries eleven checks, and
+# `release.sh` stands between all of that and crates.io, npm and seven GitHub releases. Nothing gated any of
+# them — and NINE defects across the 0.25 and 0.26 cuts were found by RUNNING them, not one by reading. Two
+# of the nine would have shipped a bad release: empty GitHub release notes for all five engines, and a brew
+# umbrella pinned to the previous engine line.
+#
+# `bin/release-test.sh` runs the stager against a throwaway fixture tree of six stub repos and asserts on
+# the result, so that class is caught here instead of at publish time.
+#
+# WHAT THIS CANNOT COVER, stated so a green tick is not read as more than it is: the publish calls
+# themselves — `cargo publish`, the npm OIDC tag, `gh release create`, the Homebrew tap. They touch the
+# network and there is no dry-run mode yet. Eight of the nine defects are on this side of that line, and
+# the remaining exposure is the publish sequence, which is still only exercised by a real release.
+#
+# A MONITOR VS A GATE: `release-audit.yml` asks on a schedule whether the PUBLISHED world still matches the
+# pins. This asks on push whether the scripts still behave. Different questions, deliberately separate jobs.
+
+on:
+  push:
+    branches: [main]
+    paths: ['bin/**', 'scripts/**', '.github/workflows/release-scripts.yml']
+  pull_request:
+    paths: ['bin/**', 'scripts/**', '.github/workflows/release-scripts.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: release-scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The fixture is built in a mktemp dir and torn down on exit; nothing outside it is touched, and no
+      # network call is made. That is what makes this runnable on every push rather than once per release.
+      - name: release-test (fixture tree)
+        run: bash bin/release-test.sh
+
+      # Cheap, and it has already paid: a heredoc nested inside `$(...)` was one of the 0.25 defects, and
+      # `bash -n` catches exactly that shape before anyone runs the script for real.
+      - name: parse every release script
+        run: |
+          for f in bin/release*.sh scripts/update-candor.sh bin/candor; do
+            [ -f "$f" ] || continue
+            bash -n "$f" && echo "  ok  $f"
+          done
+          python3 -c "import ast,sys; ast.parse(open('bin/_stage_changelogs.py').read())" && echo "  ok  bin/_stage_changelogs.py"

@@ -292,7 +292,19 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
   NB a self-gate proves "our own code performs no forbidden effect" — it does NOT test the analysis. That
   is the oracle's job, and only candor-rust runs `realworld-oracle` continuously.
 
-- **[P2 — release process, 2026-08-03] The release scripts have no tests.** `release-stage.sh` now performs
+- **[FIXED 2026-08-04] The release scripts have no tests.** `bin/release-test.sh` — 29 assertions against a
+  throwaway fixture tree of six stub repos, gated in CI by `release-scripts.yml` on any change to `bin/` or
+  `scripts/`. Every assertion was probed by re-introducing the defect it exists for and watching exactly one
+  fail. It found a TENTH defect while being written: `release-stage.sh`'s header claimed "re-running is a
+  no-op that reports already at", and it was false — the callers' patterns match ANY version, so a re-run
+  rewrote every site with identical bytes and reported ~14 edits. A run that reports edits when nothing moved
+  hides the one release where something did; `sub` now distinguishes matched-but-unchanged from no-match.
+
+  **The residual, stated rather than implied:** the publish calls — `cargo publish`, the npm OIDC tag,
+  `gh release create`, the tap — are still exercised only by a real release. They need a dry-run mode or
+  stubs, and neither exists. Eight of the nine original defects were on the tested side of that line.
+
+  *(original entry)* **The release scripts have no tests.** `release-stage.sh` now performs
   ~18 edits across six repos and `release-preflight.sh` carries eleven checks, and NOTHING gates either.
   Building the stage script surfaced two real bugs purely by running it: a heredoc nested inside `$(...)`
   is a shell parse hazard, and `\1` immediately followed by `0.26.0` parses as group TEN (`\g<1>` is the

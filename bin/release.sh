@@ -11,7 +11,10 @@
 set -uo pipefail
 SPEC="${1:?usage: release.sh <spec e.g. 0.22> <version e.g. 0.22.0>}"
 VER="${2:?usage: release.sh <spec> <version>}"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # dir holding candor-* siblings
+# CANDOR_ROOT lets the test harness point these at a FIXTURE tree instead of the real siblings.
+# Without it neither script can be exercised without editing six live repos, which is why nine
+# defects across 0.25 and 0.26 were found by publishing rather than by testing.
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # dir holding candor-* siblings
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ok()  { printf '  \033[32m✔\033[0m %s\n' "$*"; }
 skip(){ printf '  \033[33m•\033[0m %s\n' "$*"; }

@@ -777,6 +777,31 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2 — release tooling, 2026-08-04] `release-stage.sh` stages five engines and leaves two umbrella sites
+  to be found by a downstream refusal.** The 0.26 release surfaced both:
+
+  · **`bin/candor`'s `UMBRELLA_VERSION`** is not staged and preflight [4] does not check it, so the umbrella
+    declared 0.25.0 while everything around it moved. Only `update-candor.sh` refused ("UMBRELLA_VERSION=
+    0.25.0 but tag is 0.26.0") — and the consequence is not cosmetic: the tap formula's sha256 is computed
+    over the TAG's tarball, so a tag whose `bin/candor` says 0.25.0 ships a brew umbrella that reports 0.25
+    and sets `ENGINE_PIN=0.25.0`, i.e. fetches 0.25 engines under a 0.26 umbrella — verbatim the failure the
+    ENGINE_PIN comment records from 0.18-through-0.23. Fixing it required force-moving a published tag.
+  · **The umbrella CHANGELOG is DATED, not versioned**, so `_stage_changelogs.py`'s `## Unreleased` rename
+    does not apply and its "(unreleased)" marker was left by hand. `release.sh`'s notes extractor now falls
+    back for that shape, but nothing STAGES it.
+
+  Both are the same shape: the stager knows about engines and the umbrella is the seventh repo it forgets.
+  Add `UMBRELLA_VERSION` to stage + preflight [4], and teach the stager the dated-changelog form.
+
+- **[P3 — release tooling, 2026-08-04] The umbrella carries TWO tags per release, `v0.26.0` and `0.26.0`.**
+  `release.sh` tags `v$VER` like every other repo; it then calls `scripts/update-candor.sh "$VER"`, which
+  tags whatever string it is given — and its own usage line says `v0.16.0`. So the bare form is created too,
+  with a second GitHub release beside the first. **Pre-existing, not new: 0.25 has the identical pair**, and
+  both resolve, so nothing is broken — the tap formula points at the bare tarball and `release-verify`
+  checks the `v` one. Not fixed during the 0.26 run because the remedy is deleting published refs, which is
+  not a thing to do mid-release. Decide the convention (almost certainly `v`-prefixed, matching the family)
+  and make `release.sh` pass it.
+
 - **candor-ts κ-batch: common CLI-tool packages — ✅ DONE (candor-ts 0.9.2, 2026-07-12).** `which`→Fs,
   `@webpod/ps`→Exec, `envapi`→Fs (member-precise: parse stays pure); zx `useBash`/`usePwsh` now Fs, κ ledger
   7→4. Pure libs (chalk/minimist/depseek) left as honest `invisible` (not curated to a pure claim). 6

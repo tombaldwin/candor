@@ -188,7 +188,36 @@ grep -q 'update-candor.sh" "v\$VER"' "$UMBRELLA/bin/release.sh" \
 grep -q 'already exists — reusing it' "$UMBRELLA/scripts/update-candor.sh" \
   && ok "update-candor.sh reuses an existing tag/release" || bad "update-candor.sh would recreate the tag"
 
-say "5. release.sh gates on preflight in PINS_ADVISORY mode"
+say "5. spec-bump.sh — the floor-bump rehearsal"
+# The ⟨0.27⟩ bump was done by hand and turned SIX repos red on version-coupled assertions, every one
+# findable locally. `spec-bump.sh` exists so a contract bump is rehearsed rather than discovered in CI.
+SB="$(mktemp -d)"
+mkb() { mkdir -p "$(dirname "$SB/$1")"; printf '%s\n' "$2" > "$SB/$1"; }
+mkb candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.27";'
+mkb candor-java/src/main/java/io/poly/candor/Candor.java '    static final String SPEC_VERSION = "0.27";'
+mkb candor-ts/scan.mjs 'const SPEC_VERSION = "0.27";'
+mkb candor-ts/query.mjs 'const SPEC_VERSION = "0.27";'
+mkb candor-swift/Sources/candor-swift/main.swift 'let specVersion = "0.27"'
+mkb candor-agents/candor_agents/scan.py 'SPEC = "0.27"'
+mkb candor-spec/SPEC.md '**Version 0.27** — all code engines declare `0.27`; the floor is conformance-pinned.'
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
+  ( cd "$SB/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm i )
+done
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1   && ok "--check passes when the seven declarations agree" || bad "--check failed on a consistent tree"
+# a SPLIT is the thing --check exists to catch: one engine emitting a contract the others do not
+printf 'let specVersion = "0.26"\n' > "$SB/candor-swift/Sources/candor-swift/main.swift"
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1   && bad "--check PASSED a four-way contract split" || ok "--check catches a declaration split"
+printf 'let specVersion = "0.27"\n' > "$SB/candor-swift/Sources/candor-swift/main.swift"
+( cd "$SB/candor-swift" && git add -A && git -c user.email=t@e -c user.name=t commit -qm r >/dev/null 2>&1 || true )
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.28 --decls-only >/dev/null 2>&1
+n=$(grep -rl '"0\.28"\|Version 0\.28' "$SB" 2>/dev/null | wc -l | tr -d ' ')
+is "bump moves all seven declarations" '7' "$n"
+# a dirty tree must be refused: the script rewrites seven files across seven repos
+printf 'dirt\n' >> "$SB/candor-ts/scan.mjs"
+CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.29 --decls-only >/dev/null 2>&1   && bad "bumped over a dirty tree" || ok "refuses a dirty tree"
+rm -rf "$SB"
+
+say "6. release.sh gates on preflight in PINS_ADVISORY mode"
 # DEFECT 3 (0.26): [3] demands pins that only exist after publishing, while step 0 demands a green
 # preflight — unsatisfiable, so every release bypassed the script written to stop bypasses.
 grep -q 'PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh"' "$UMBRELLA/bin/release.sh" \

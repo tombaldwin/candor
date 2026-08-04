@@ -16,7 +16,7 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 > refuted by the spec it points at — all three phases are built, including the Slack push. **Read the
 > artifact the entry cites, then the code; an entry describing its own state is a claim, not evidence.**
 >
-> **GENUINELY OPEN after the audit** — five items, and only two are code:
+> **GENUINELY OPEN after the audit** — five items, and only two are code (plus one filed later, below):
 >   · `[P2]` `bin/release.sh` should RENAME `## Unreleased` (filed today; verified — no such handling exists)
 >   · `[P2]` ledger-mined classifier breadth (per-engine κ classification work, batched by call-count)
 >   · `[P3]` blame-tracked `Unknown` (needs `candor verify` as a foundation)
@@ -24,6 +24,11 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 >   · `[adoption]` embeddable fingerprint badge
 > Plus, from the verify entry: promoting candor-rust's or candor-swift's dynamic oracle from a CI harness
 > to a user-facing verb — a new feature, not productionization.
+>
+> **Filed 2026-08-04, unscoped on purpose:** an Android/JVM analogue of the privacy manifest
+> (`permissions/1`). It carries NO P-level yet because one hour of measurement decides whether it is
+> plumbing or another curated table, and assigning a priority before that would be the exact thing this
+> audit found wrong 8 times out of 11 — a heading asserting a state nobody checked.
 
 
 
@@ -567,6 +572,57 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   generate/verify verb (candor-swift b9a68a6, 196 tests) — the real-app exhibit is LIVE (pollen's iOS
   Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
   per-target scoping (whole-tree scan caveat); a public marketing writeup.
+- **[OPEN — P?, unscoped until one measurement lands] An Android/JVM analogue of the privacy manifest.**
+  Raised by Tom 2026-08-04, off the back of `privacy/2`. The shape transfers exactly: code reaches a
+  permission-guarded API → `AndroidManifest.xml` must declare `<uses-permission>` → verify, three outcomes
+  (under-declared exit 1 · over-declared ⚠ · unreadable exit 2). It would be a **candor-java extension**
+  (`permissions/1`), NOT an extension of `privacy/2` — `NSCameraUsageDescription` and
+  `android.permission.CAMERA` are different objects and unifying the vocabularies would fabricate. What is
+  shared is the shape, not the terms.
+
+  **THE ONE MEASUREMENT THAT DECIDES WHETHER THIS IS WORTH DOING, and it is an hour's work.** The whole
+  case rests on Android publishing the API→permission mapping that Apple does not: the framework annotates
+  guarded APIs with `@RequiresPermission("android.permission.CAMERA")`, which is what Android Lint's
+  `MissingPermission` consumes. If candor-java reads those, the uncovered set becomes ENUMERABLE — you can
+  state which framework methods carry no annotation — instead of a curated table where whatever you forgot
+  is silent. That is the difference between a disclosed blind spot and the cardinal sin, and it is the
+  weakest part of `privacy/2` (`PRIVACY_SDK_TYPES`, 50 hand-written entries, verified by nothing).
+
+  **So measure BEFORE designing, and be aware nothing below is measured yet** — there is no Android SDK on
+  this machine and no Android corpus (uflexi is a Tomcat webapp; `local.properties` is a plain Gradle
+  convention and misled me into thinking otherwise). The questions, in order:
+    1. Where do the permission annotations actually live in a CURRENT SDK — `platforms/android-NN/data/
+       annotations.zip`, `@RequiresPermission` retained in `android.jar` bytecode, both, neither? I do not
+       know, and the packaging has changed over the years. **Do not design around an assumed answer.**
+    2. Of the ~30 dangerous permissions, how many are reachable from an ANNOTATED API? High coverage ⇒ this
+       is mostly plumbing onto machinery that already exists. Low ⇒ it degenerates into another curated
+       table and is far less attractive than it looks.
+    3. What fraction of annotations are `anyOf` / `allOf` / `conditional=true`? A `conditional=true` is
+       literally spec 0.24 §3.1's unanswerable condition — **disclose it, never score it as a failed one.**
+
+  **Where Android is HARDER than iOS, and where the product probably is.** The effective manifest is MERGED
+  from the app plus every AAR dependency, so a library can add a permission you never wrote. Verify against
+  the source manifest and both directions break. Verify against the merged one and you get the pass/fail —
+  but the answer worth selling is **which permissions came from a dependency, and what code justifies
+  them**. That is the declaration-side mirror of the pollen finding (Contacts reaching the iOS binary
+  through a shared module), and it is where Lint is weakest: strong intra-module, weak across dependency
+  boundaries — exactly where chained dep reports work. Second hazard: `maxSdkVersion` / API-level
+  conditionality (`WRITE_EXTERNAL_STORAGE` capped at 28, permissions that changed meaning across levels). A
+  verdict that ignores API level is wrong; the same disclose-don't-score rule applies.
+
+  **Where it is EASIER.** Bytecode beats source parsing for reach, so candor-java starts ahead of
+  candor-swift. And unlike iOS there is an EXISTING ORACLE — Lint's `MissingPermission` — so this is
+  measurable the way the rest of the project is: differential against Lint, expecting agreement
+  intra-module and candor finding what Lint cannot across module boundaries. A measured claim, not a
+  marketing one.
+
+  **One naming decision this forces, worth taking before a second instance hardcodes it.** "Reach → required
+  declaration → verify against a manifest" now has three plausible instances: Info.plist (SHIPPED as
+  `candor privacy-manifest`), AndroidManifest.xml, and browser-extension `manifest.json` permissions on
+  candor-ts. If the general verb is `candor manifest --verify <file>` with a per-platform vocabulary, then
+  `privacy-manifest` wants to become an alias — cheap now, and cheapest of all BEFORE the privacy case study
+  is published naming the current verb. See `candor/docs/case-study-privacy-manifest.md` (draft, unpublished).
+
 - **[CLOSED 2026-08-03 — all four batches; see the body for what the source refuted] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
   **BATCH 1 DONE 2026-08-03 (candor-rust `c9b6941`): crossterm + ratatui, both `Ipc`.** And the filing was
   WRONG about ratatui: it said "mark reviewed-pure", but ratatui-0.29.0's `Terminal::draw`/`flush`/`clear`

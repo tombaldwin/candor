@@ -8,8 +8,30 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-05 — the umbrella becomes usable from nothing (unreleased)
 
-
+- **`gate`, `gains` and `diff` are EXCLUDED from the auto-scan below**, and the exclusion is the point
+  rather than an exception to it. `gate --help` says it applies a policy to an *existing* report, and its
+  exit 2 means unevaluable — so auto-scanning turned a CI job whose scan step was deleted or misordered
+  from a loud exit 2 into a green exit 0. That inverts the fail-closed guarantee the gate exists for, and
+  it composes with the zero-match silent green recorded in candor-spec's ⟨0.28 PROPOSED⟩ rule.
+- **A capability refusal now precedes any write.** `candor privacy-manifest` in a Rust project refused —
+  after auto-scanning and writing `.candor/`. A usage error must not mutate the working tree.
+- **The auto-scan triggers on "no REPORT", not "no `.candor/`".** `candor init` commits `.candor/` and
+  gitignores the report, so the one repo shape `init` produces was the shape that got the old lecture
+  instead of the scan.
+- **`adopt/candor-init` is found in the brew layout too.** It was resolved only as `$tooldir/adopt/…`,
+  which exists in a git checkout and not in a brew install, so a brew user got a baseline-only `init` and
+  a "policy proposal skipped" line while the formula's caveats promised the full gate. It degraded rather
+  than failing, which is why it went unnoticed; `adopt_tool` now runs the same two-layout search the hook
+  scripts have always used. Verified in both a real checkout and a simulated brew prefix.
+- **Two more copies of the sidecar rule** — the python and grep forms in the status dashboard — learned
+  `.locs.`, which makes six and seven copies of a rule the centralising commit claimed to have reduced
+  to one.
+- **`--target` added to both value-flag skip lists**, so `candor scan --target X .` finds its positional;
+  `init` now checks the pinned Swift release actually carries a binary before calling the generated
+  workflow ready (it would have 404'd on first run); and `CANDOR_NO_AUTOSCAN`/`CANDOR_NO_AUTOFETCH` are
+  documented in `--help` rather than only in source comments.
 - **Two commands from nothing: `brew install candor` → an answer.** A verb that needs a report and finds
   none now SCANS first (saying so, and saying it wrote `.candor/`) instead of printing the one command
   the user could have run; an engine that is not installed is fetched at the pinned version from the same
@@ -23,6 +45,7 @@ keeps its own.
 - **Swift engine resolution** now checks `~/.candor/bin` as well as PATH, across all six lookup sites
   (scan, query, the availability probe, and three status surfaces) — otherwise a binary `candor update`
   fetched would be invisible to the tool that fetched it.
+
 ## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (released 2026-08-05 as 0.27.0)
 
 ⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces

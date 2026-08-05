@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# changelog-lag.sh — HAS THE CHANGELOG KEPT UP WITH THE SOURCE SINCE THE LAST RELEASE?
+#
+#   bash bin/changelog-lag.sh            # every repo
+#   bash bin/changelog-lag.sh candor-ts  # one repo
+#
+# WHY, stated as it happened. `release-stage.sh` renames `## Unreleased` to `## [X.Y.Z] — <date>` at
+# STAGING time. Work then continues and lands inside that section, which is right — but the section's
+# NARRATIVE was written for the tree as it stood when it was cut. The 0.27 sections described "resolves
+# + fs kinds" while the release had grown thirty more privacy keys, `--target`, `--xml`, a new §2 field
+# and three rounds of review fixes. Nothing failed. The file describing the release simply stopped
+# keeping up, and no gate had an opinion about it.
+#
+# Preflight [5] already asks "does the file describing this release MENTION this release?" — a necessary
+# condition a stale section passes trivially. This asks the one that was missing: did the description
+# stop moving while the thing it describes kept going?
+#
+# ── TWO DESIGN MISTAKES, BOTH MADE HERE, BOTH KEPT ────────────────────────────────────────────────────
+#
+# 1. THE INVARIANT IS RECENCY, NOT PER-COMMIT AUTHORSHIP. Requiring every source commit to touch
+#    CHANGELOG.md reported 33 "misses" across seven repos, of which most were false: the entry HAD been
+#    written, one commit later. A rule that flags work already documented is a rule nobody reads. So the
+#    question is whether the newest SOURCE commit is newer than the newest CHANGELOG commit, and the
+#    commits in between are named so triage is a read rather than an investigation.
+#
+# 2. THE SOURCE SET MUST BE A DENYLIST. The second version listed the directories that hold source —
+#    Sources, src, crates, lib, bin, … — and went green on seven repos while SILENTLY SKIPPING TWO of
+#    them: candor-ts ships `scan.mjs`, `policy.mjs`, `lsp.mjs` at the repository ROOT, and candor-agents
+#    ships a `candor_agents/` python package. Neither name was on the list, so neither repo had any
+#    source at all as far as the check could see, and both printed nothing rather than a pass or a fail.
+#    That is this project's own cardinal sin wearing a shell script: absence read as a clean bill.
+#    An allowlist's omissions are silent; a denylist's are loud, so the list below names what does NOT
+#    ship and everything else counts. An over-inclusion costs one `touch` of the changelog. A missed
+#    repo costs a release that says less than it does.
+set -uo pipefail
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+REPOS="${1:-candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor}"
+
+# What does NOT ship, as git exclude-pathspecs. Tests, fixtures, evidence, CI, build output, vendored
+# trees, and prose. Prose is here because a README edit is not a behaviour change; the ONE prose file
+# that is a product — candor-spec's SPEC.md — is added back per-repo below, since git pathspecs cannot
+# re-include after an exclude.
+NOSHIP=(':(exclude)*.md' ':(exclude)LICENSE*' ':(exclude).github' ':(exclude).gitignore'
+        ':(exclude)tests' ':(exclude)Tests' ':(exclude)test' ':(exclude)*_test.*' ':(exclude)test_*'
+        ':(exclude)fixture*' ':(exclude)Fixtures' ':(exclude)eval' ':(exclude)soundness'
+        ':(exclude)docs' ':(exclude)node_modules' ':(exclude)build' ':(exclude)target'
+        ':(exclude).build' ':(exclude)*.egg-info' ':(exclude)*.lock' ':(exclude)*lock.json'
+        ':(exclude)out.*' ':(exclude)conformance')
+# Paths that ship DESPITE matching an exclude above. candor-spec's product is a document, and the
+# conformance suite is the executable half of the same contract — a new PART is a shipped change there
+# in the way a new unit test is not in an engine.
+EXTRA_candor_spec=(SPEC.md conformance)
+
+newest() { # repo-dir, since-rev, pathspec… -> committer timestamp of the newest matching commit, or ""
+  local d="$1" rev="$2"; shift 2
+  git -C "$d" log -1 --format=%ct "$rev..HEAD" -- "$@" 2>/dev/null
+}
+
+lag=0
+for r in $REPOS; do
+  d="$ROOT/$r"
+  [ -d "$d/.git" ] || { printf '  \033[31m✘\033[0m %-14s not a git checkout at %s — NOT CHECKED\n' "$r" "$d"
+                        lag=$((lag+1)); continue; }
+  tag="$(git -C "$d" tag --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]' | head -1)"
+  [ -n "$tag" ] || { printf '  \033[33m·\033[0m %-14s no release tag — nothing to measure since\n' "$r"; continue; }
+
+  # TWO QUERIES, NEVER ONE. A git pathspec cannot re-include after an exclude, so `SPEC.md` beside
+  # `:(exclude)*.md` is excluded — the EXTRA set has to be asked for separately and merged. The
+  # timestamp comparison below always did this; the commit LIST did not, and the two bugs that produced
+  # were both invisible on a green tree and both found by the negative control:
+  #   · it appended `"${extra[@]:-}"`, which for a repo with NO extra expands to one EMPTY STRING —
+  #     a pathspec matching nothing, so a failing repo printed its ✘ and then no commits at all;
+  #   · and for candor-spec, whose extra IS the point, the combined spec silently dropped SPEC.md.
+  # Either way the promise that triage is a read rather than an investigation broke on exactly the path
+  # that needs it.
+  ev="EXTRA_${r//-/_}[@]"; extra=("${!ev:-}")
+  csrc="$(newest "$d" "$tag" "${NOSHIP[@]}")"
+  if [ -n "${extra[0]:-}" ]; then
+    e="$(newest "$d" "$tag" "${extra[@]}")"
+    [ -n "$e" ] && { [ -z "$csrc" ] || [ "$e" -gt "$csrc" ]; } && csrc="$e"
+  fi
+  [ -n "$csrc" ] || { printf '  \033[32m✔\033[0m %-14s no shipped change since %s\n' "$r" "$tag"; continue; }
+
+  ccl="$(newest "$d" "$tag" CHANGELOG.md)"
+  if [ -n "$ccl" ] && [ "$csrc" -le "$ccl" ]; then
+    printf '  \033[32m✔\033[0m %-14s CHANGELOG.md is at least as new as the source\n' "$r"
+    continue
+  fi
+
+  # BOTH failing branches name the commits. The "never touched" one did not, and the fixture in
+  # release-test.sh §7 landed on exactly that branch — a repo whose only changelog commit is the tagged
+  # one is the ORDINARY shape right after a release, not an edge case. The reader's need is identical
+  # either way: which commits am I writing about?
+  if [ -z "$ccl" ]; then
+    printf '  \033[31m✘\033[0m %-14s source changed since %s and CHANGELOG.md never did:\n' "$r" "$tag"
+    since=("$tag..HEAD")
+  else
+    printf '  \033[31m✘\033[0m %-14s CHANGELOG.md is OLDER than the newest shipped change:\n' "$r"
+    since=(--since="@$ccl" "$tag..HEAD")
+  fi
+  list="$( { git -C "$d" log --format='%ct %h %s' "${since[@]}" -- "${NOSHIP[@]}" 2>/dev/null
+             [ -n "${extra[0]:-}" ] && git -C "$d" log --format='%ct %h %s' "${since[@]}" \
+               -- "${extra[@]}" 2>/dev/null; } \
+           | sort -rn -k1,1 | awk '!seen[$2]++' | cut -d" " -f2- | head -8 | cut -c1-106 | sed 's/^/      /')"
+  # An empty list under a ✘ means the PATHSPEC is wrong, not that there is nothing to fix. Say which,
+  # rather than leaving a reader to conclude the check is broken and stop reading it.
+  if [ -n "$list" ]; then printf '%s\n' "$list"
+  else echo "      (no commits matched the source pathspec — the CHECK is wrong here, not the tree)"; fi
+  lag=$((lag+1))
+done
+
+echo
+if [ "$lag" -gt 0 ]; then
+  printf '\033[31mchangelog-lag: %d repo(s) describe less than they ship.\033[0m\n' "$lag"
+  echo "A pure refactor legitimately needs no entry — touch the file, or write the line."
+  exit 1
+fi
+printf '\033[32mchangelog-lag: OK — every changelog is at least as new as its source\033[0m\n'

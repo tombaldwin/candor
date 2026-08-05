@@ -10,6 +10,33 @@ keeps its own.
 
 ## 2026-08-05 — the umbrella becomes usable from nothing (unreleased)
 
+- **`candor init` now emits the consumer glue, not just the policy** — the three things every adopter
+  was hand-rolling per repo. Driven by a real adoption (uflexi), whose hand-written versions of all
+  three are what these were written against.
+  - **`.candor/run` — the gate as one command, committed with the code**, and the generated CI step
+    now CALLS it instead of restating the gate. CI ran one command and a developer ran another, so
+    "it passes locally" and "it passes in CI" were two different claims. It also means the engine
+    version appears in exactly one place: `.candor/config`'s new `engine` pin (spec §3.4), which the
+    runner reads to decide what to fetch. It used to be restated in CI YAML, decoupled from the
+    baseline it is married to, with nothing making the two move together.
+  - **`.candor/bitbucket-step.yml`** — a paste-ready Pipelines step, deliberately NOT wired in.
+    `bitbucket-pipelines.yml` holds every pipeline a repo has, and generating over it would destroy the
+    build; the repo that already has one is exactly the repo that cannot afford that. (GitHub Actions
+    gets a whole file because its workflows are one-per-file.)
+  - **`.candor/README.md`** — what is committed and why, plus an *"use it to investigate, not just to
+    gate"* section: `show`/`where`/`callers`/`blast`/`diff` with the moments to reach for them (before
+    editing a function, after a refactor, when auditing an effect). It LINKS the concepts rather than
+    restating them — a copy in every consumer repo is a copy that goes stale silently. Written to
+    `.candor/`, never over the repo's own AGENTS.md or README.md: those belong to the consumer.
+- **`candor init` writes the `engine` pin** into `.candor/config`, so the engine and the committed
+  baseline can no longer drift. candor-java refuses a mismatched pin (exit 2) rather than comparing a
+  report against a baseline it cannot match.
+- **Fixed: `init` misread a standalone repo as a monorepo subdirectory under any symlinked path.**
+  `git rev-parse --show-toplevel` always answers with the PHYSICAL path while a bare `pwd` answers with
+  the logical one, so on macOS (`/tmp` → `/private/tmp`) they never matched. The prefix strip then failed
+  too, producing a workflow named `candor--tmp-initdemo.yml` carrying `working-directory: /tmp/initdemo`
+  — an absolute path that cannot resolve on a CI runner. Found by running `candor init` in `/tmp`.
+
 - **`bin/changelog-lag.sh`, wired into preflight as check [5b]: no CHANGELOG may lag its own source.**
   [5] asks whether the file describing this release *mentions* this release — a necessary condition that
   a section cut at staging time passes forever after. `release-stage.sh` renames `## Unreleased` to

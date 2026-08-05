@@ -162,12 +162,14 @@ The rest, stated plainly because a green exit code should not be read as more th
   a silent purity claim over every other type in it.
 - **This is Swift-only.** The privacy manifest is a candor-swift extension. The four-engine floor says
   nothing about it, and no other engine implements it.
-- **It checks 26 usage-description keys, and names the 14 it does not.** Every verify prints its own
+- **It checks 35 usage-description keys, and names the 22 it does not.** Every verify prints its own
   vocabulary bound — `NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus,
   GameKit friends, VideoSubscriberAccount, clinical health records and the rest — with the reason each
-  is absent. That list is not a guess: it comes from a recall battery (`tools/privacy-recall.py`) that
-  exercises one canonical API per key family and is run as a gate, so a family the vocabulary *claims*
-  cannot silently stop working. **A clean verify here is not a clean App Store review**, and the tool
+  is absent. Neither number is a guess: Apple's protected-resources list was **fetched from
+  developer.apple.com**, the unmodelled set is *derived* from it minus what candor models, and a recall
+  battery (`tools/privacy-recall.py`) exercises one canonical API per family as a gate — so a family the
+  vocabulary *claims* cannot silently stop working. The hand-written version of this disclosure named 14
+  keys when the true number was 30; a warning about a gap that under-reported the gap. **A clean verify here is not a clean App Store review**, and the tool
   says so on every run rather than leaving you to infer it.
 - **The battery found a real one.** `AVAudioSession.setCategory(.record)` — how most recording apps
   reach the microphone — emitted nothing until 0.27, on a sensor the vocabulary claimed. That is the

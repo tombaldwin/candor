@@ -259,6 +259,57 @@ grep -q 'PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh"' "$UMBRELL
 grep -q 'PINS_ADVISORY' "$UMBRELLA/bin/release-preflight.sh" \
   && ok "preflight honours PINS_ADVISORY" || bad "preflight has no advisory mode"
 
+say "7. changelog-lag.sh — preflight [5b]"
+# [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.
+# This asks whether the description stopped moving while the thing it describes kept going. Two shapes
+# below are the ones an earlier ALLOWLIST of source directories skipped in SILENCE, going green on a repo
+# it could not see any source in at all: candor-ts ships `.mjs` at the repository ROOT, and candor-spec's
+# product is `SPEC.md`, a file the prose exclusion removes unless it is asked for separately.
+CL="$(mktemp -d)"
+mkrepo() { # $1 repo name ; $2 path of the "source" file it ships
+  local p="$CL/$1"; mkdir -p "$p/$(dirname "$2")"
+  git -C "$p" init -q 2>/dev/null || { mkdir -p "$p"; git -C "$p" init -q; }
+  printf 'v1\n' > "$p/$2"; printf '# Changelog\n\n## [0.1.0]\n' > "$p/CHANGELOG.md"
+  git -C "$p" add -A && git -C "$p" -c user.email=t@t -c user.name=t commit -qm init
+  git -C "$p" tag v0.1.0
+}
+clrun() { CANDOR_ROOT="$CL" bash "$UMBRELLA/bin/changelog-lag.sh" "$*" 2>&1; }
+clcommit() { git -C "$CL/$1" add -A && git -C "$CL/$1" -c user.email=t@t -c user.name=t commit -qm "$2"; }
+
+mkrepo candor-ts scan.mjs                # root-level source, no src/ dir
+mkrepo candor-spec SPEC.md               # the product IS the prose file
+clrun candor-ts candor-spec >/dev/null 2>&1 && ok "a tree at its tag passes (the control)" \
+  || bad "changelog-lag failed a tree with no post-tag commits"
+
+printf 'v2\n' > "$CL/candor-ts/scan.mjs";  clcommit candor-ts   "root .mjs changed"
+printf 'v2\n' >> "$CL/candor-spec/SPEC.md"; clcommit candor-spec "the contract changed"
+out="$(clrun candor-ts candor-spec)"; rc=$?
+[ "$rc" = 1 ] && ok "a shipped change with no changelog line FAILS" || bad "a lagging changelog exited $rc, not 1"
+printf '%s' "$out" | grep -q 'root .mjs changed' \
+  && ok "root-level source is SEEN (the shape an allowlist skipped silently)" \
+  || bad "a repo whose source is at the root was not measured"
+printf '%s' "$out" | grep -q 'the contract changed' \
+  && ok "SPEC.md is SEEN despite the prose exclusion" \
+  || bad "candor-spec's own product was excluded as prose"
+# An empty commit list under a ✘ means the PATHSPEC is wrong, not that the tree is fine — and both
+# earlier versions of the list printed exactly that, invisibly, because the tree was green.
+printf '%s' "$out" | grep -q 'the CHECK is wrong here' \
+  && bad "a ✘ named no commits — triage is an investigation again" || ok "every ✘ names its commits"
+
+printf '\n## [0.1.1]\n- it changed\n' >> "$CL/candor-ts/CHANGELOG.md";  clcommit candor-ts   "note it"
+printf '\n## [0.1.1]\n- it changed\n' >> "$CL/candor-spec/CHANGELOG.md"; clcommit candor-spec "note it"
+clrun candor-ts candor-spec >/dev/null 2>&1 && ok "writing the line clears it" || bad "a documented change still failed"
+
+printf 'hello\n' > "$CL/candor-ts/README.md"; clcommit candor-ts "prose only"
+clrun candor-ts >/dev/null 2>&1 && ok "a README-only commit does not demand an entry" \
+  || bad "prose was treated as a shipped change"
+
+rm -rf "$CL/candor-spec"
+clrun candor-ts candor-spec >/dev/null 2>&1 \
+  && bad "a MISSING repo passed — an unmeasured repo must never read as a clean bill" \
+  || ok "a repo that cannot be checked FAILS rather than vanishing"
+rm -rf "$CL"
+
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi
 printf '\033[32mrelease-test: OK — %d assertions\033[0m\n' "$pass"

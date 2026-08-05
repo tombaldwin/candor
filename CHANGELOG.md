@@ -10,6 +10,22 @@ keeps its own.
 
 ## 2026-08-05 — the umbrella becomes usable from nothing (unreleased)
 
+- **`bin/changelog-lag.sh`, wired into preflight as check [5b]: no CHANGELOG may lag its own source.**
+  [5] asks whether the file describing this release *mentions* this release — a necessary condition that
+  a section cut at staging time passes forever after. `release-stage.sh` renames `## Unreleased` to
+  `## [X.Y.Z] — <date>` when the release is cut, work then continues and lands inside it, and the
+  narrative stays describing the tree as it stood that morning. The 0.27 sections said "resolves + fs
+  kinds" while the release had grown thirty privacy keys, `--target`, `--xml`, a new §2 field and three
+  rounds of review fixes; [5] was green throughout. [5b] asks the missing question — did the description
+  stop moving while the thing it describes kept going? — and names the commits, so triage is a read.
+  It found 33 undocumented commits across seven repos on its first run, which are now written up.
+  **Two of its own designs were wrong and both are recorded in the script.** Requiring every source
+  commit to touch CHANGELOG.md flagged work that *had* been documented one commit later, and a rule that
+  cries wolf is a rule nobody reads. Then listing the directories that hold source went green on seven
+  repos while silently skipping two of them — candor-ts ships `.mjs` at the repository root, candor-agents
+  ships a python package, and neither name was on the list, so both printed nothing rather than a pass or
+  a fail. That is this project's own cardinal sin wearing a shell script, so the set is now a denylist:
+  it names what does not ship, and a repo that cannot be measured FAILS rather than vanishing.
 - **`gate`, `gains` and `diff` are EXCLUDED from the auto-scan below**, and the exclusion is the point
   rather than an exception to it. `gate --help` says it applies a policy to an *existing* report, and its
   exit 2 means unevaluable — so auto-scanning turned a CI job whose scan step was deleted or misordered

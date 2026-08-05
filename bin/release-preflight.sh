@@ -15,6 +15,7 @@ set -u
 # Without it neither script can be exercised without editing six live repos, which is why nine
 # defects across 0.25 and 0.26 were found by publishing rather than by testing.
 ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # the dir holding candor-* siblings
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"                        # this script's own bin/
 WANT_SPEC="${1:-}"     # optional: assert the floor is exactly this (e.g. 0.10)
 WANT_VER="${2:-}"      # optional: assert the release version is this (e.g. 0.10.0) for the cross-repo pins
 fail=0
@@ -291,6 +292,29 @@ if [ -n "$FLOOR" ]; then
   done
 else
   note "no floor derived — skipped"
+fi
+
+# --- 5b. and does it describe the WHOLE release, or only the part that was done when it was cut? ---------
+# Check [5] is a NECESSARY condition that a stale section passes trivially. `release-stage.sh` renames
+# `## Unreleased` to `## [X.Y.Z] — <date>` at STAGING time, so the section carries the floor string from the
+# moment it is cut. Work then continues and lands inside it, which is right — but the NARRATIVE was written
+# for the tree as it stood that morning. Measured 2026-08-05: the 0.27 sections described "resolves + fs
+# kinds" while the release had since grown thirty privacy keys, `--target`, `--xml`, a new §2 field and three
+# rounds of review fixes. [5] was green throughout. The invariant [5] cannot see is RECENCY — did the
+# description stop moving while the thing it describes kept going?
+#
+# This runs in EVERY mode, not release-only. A changelog that has fallen behind is a fact about the tree
+# today, and the release is exactly when it is most expensive to discover.
+echo "[5b] no CHANGELOG lags its own source"
+if [ -x "$HERE/changelog-lag.sh" ]; then
+  if out="$(CANDOR_ROOT="$ROOT" "$HERE/changelog-lag.sh" 2>&1)"; then
+    ok "every changelog is at least as new as its source"
+  else
+    printf '%s\n' "$out" | sed 's/^/  /'
+    bad "a changelog describes less than its repo ships — see the commits above"
+  fi
+else
+  bad "bin/changelog-lag.sh is missing or not executable — [5] alone cannot see a STALE section"
 fi
 
 # ── [6] INTER-CRATE DEPENDENCY VERSIONS ────────────────────────────────────────────────────────────

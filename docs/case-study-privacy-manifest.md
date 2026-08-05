@@ -161,11 +161,31 @@ The rest, stated plainly because a green exit code should not be read as more th
 ## Reproduce
 
 ```
-candor scan . --target Pollen                          # one scan per SHIPPED BINARY
-candor privacy-manifest                                # what the code requires
-candor privacy-manifest --verify Resources/Info.plist  # what the app declares
-echo $?                                                # 0 clean · 1 under-declared · 2 unreadable
+brew install candor
+candor privacy-manifest --verify Resources/Info.plist   # scans first if there is no report yet
+echo $?                                                 # 0 clean · 1 under-declared · 2 unreadable
 ```
+
+Two commands from nothing. A verb that needs a report and finds none will scan first (saying so, and
+saying it wrote `.candor/`), and an engine that is not installed is fetched at the pinned version from
+the same registries `candor update` uses. On a multi-target package add `--target <name>` — one scan per
+shipped binary, per §1.
+
+`--xml` turns either mode into a paste-ready `Info.plist` fragment rather than a reading exercise:
+
+```
+$ candor privacy-manifest --verify Apps/PolleniOS/Info.plist --xml
+<!-- candor privacy-manifest — paste into your Info.plist <dict>.
+     REPLACE each placeholder string: Apple reviews these, and this text is not a
+     description of what your app does with the data. -->
+<key>NSContactsUsageDescription</key>
+<string>TODO: why this app needs Contacts access</string>
+```
+
+On a verify it prints **only what is missing**, so it pipes; the exit code is the verdict and does not
+move with the output format. The description strings are deliberately placeholders that announce
+themselves — Apple reviews that text, and a plausible generated sentence would be both wrong and likely
+to ship.
 
 Wire the last two lines into CI once per target and an under-declaration fails the build before the
 submission does — which is the same command, run earlier.

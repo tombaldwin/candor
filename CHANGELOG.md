@@ -9,6 +9,20 @@ in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main
 keeps its own.
 
 
+
+- **Two commands from nothing: `brew install candor` → an answer.** A verb that needs a report and finds
+  none now SCANS first (saying so, and saying it wrote `.candor/`) instead of printing the one command
+  the user could have run; an engine that is not installed is fetched at the pinned version from the same
+  registries `candor update` uses, announced before the network is touched. `CANDOR_NO_AUTOSCAN=1` and
+  `CANDOR_NO_AUTOFETCH=1` restore the refusals for CI that should fail rather than act. Telling someone
+  to go and run the only possible next command is a dead end with extra steps.
+- **`candor init` generates a Swift CI workflow.** It used to print "the Swift engine needs macOS + a
+  source build … so no drop-in workflow is generated" — a dead end inside a generator whose entire job
+  is producing a workflow that runs. Now emits a `macos-14` job that curls the released binary, with
+  commented lines for `--target` and a per-plist `privacy-manifest --verify`.
+- **Swift engine resolution** now checks `~/.candor/bin` as well as PATH, across all six lookup sites
+  (scan, query, the availability probe, and three status surfaces) — otherwise a binary `candor update`
+  fetched would be invisible to the tool that fetched it.
 ## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (released 2026-08-05 as 0.27.0)
 
 ⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces

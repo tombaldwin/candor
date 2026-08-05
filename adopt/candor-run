@@ -25,22 +25,52 @@ BUILD="@BUILD@"               # the compile step, or empty for the engines that 
 TARGET="@TARGET@"             # what the engine is pointed at
 CFG=".candor/config"
 
-# `engine v0.27.0` and `engine java v0.27.0` are both valid (§3.4: the qualified form exists because
-# the family versions as a ladder). The last field is the version in either spelling.
-PIN="$(sed -n 's/^[[:space:]]*engine[[:space:]]\{1,\}//p' "$CFG" 2>/dev/null | awk 'NF{print $NF}' | head -1)"
+# READING THE CONFIG MUST AGREE WITH THE ENGINE THAT READS THE SAME FILE. The first version of this
+# was `sed | awk '{print $NF}' | head -1` — take the last field of the first `engine` line — and an
+# adversarial review broke it three ways, each of which SILENTLY RUNS THE WRONG ENGINE:
+#
+#   engine v0.26.0 # was v0.25.0     $NF is the comment's last token -> fetched 0.25.0. The engines
+#                                    strip `#` comments (§6.2 lexical), so this line is VALID.
+#   engine java v0.27.0              on a KIND=ts runner, `head -1` took another impl's pin.
+#   engine 0.26.0 / engine 0.27.0    the runner took the FIRST, candor-java takes the LAST (Map.put).
+#                                    One config, two components, two different pins.
+#
+# So: strip comments first, resolve the qualified form against THIS engine, prefer a qualified pin over
+# an unqualified one, take the LAST occurrence (candor-java's rule), and refuse a line this grammar
+# cannot read rather than guessing at it.
+read_pin() {
+  awk -v impl="$KIND" '
+    { sub(/#.*/, "") }                                   # §6.2: inline comments, exactly as the engines do
+    { gsub(/\r/, "") }                                   # a CRLF config must not put \r inside the version
+    tolower($1) != "engine" { next }
+    NF == 1 { bad = 1; next }                            # a bare `engine` line
+    NF == 2 { wild = $2; next }                          # engine <version>
+    NF == 3 && tolower($2) ~ /^(java|rust|ts|swift|agents)$/ { if (tolower($2) == impl) qual = $3; next }
+    { bad = 1 }                                          # trailing junk, or an unknown qualifier
+    END { if (bad) print "!"; else print (qual != "" ? qual : wild) }
+  ' "$CFG" 2>/dev/null
+}
+PIN="$(read_pin)"
+if [ "${PIN:-}" = "!" ]; then
+  echo "candor: $CFG has an \`engine\` line this grammar cannot read. Want \`engine <version>\` or" >&2
+  echo "        \`engine <impl> <version>\` (impl: java|rust|ts|swift|agents). Refusing rather than" >&2
+  echo "        guessing — a misread pin runs the WRONG engine and says nothing." >&2
+  exit 2
+fi
 if [ -z "${PIN:-}" ]; then
   echo "candor: no \`engine\` pin in $CFG — add one so the engine and the committed baseline move" >&2
   echo "        together, e.g.:  engine v0.27.0" >&2
   exit 2
 fi
-VER="${PIN#v}"
+VER="${PIN#v}"; VER="${VER#V}"
 
 # The baseline path comes from the config too, and for a sharper reason than tidiness. This script
 # first hardcoded `--regen` to write `.candor/baseline.json` while `candor init` had wired
 # `baseline .candor/baseline.<pkg>.<engine>.json` — so regen wrote a file nothing read, the gate went
 # on comparing against the stale one, and it all EXITED 0. Caught by making a function gain an effect
-# and watching the gate say "no function gained an effect".
-BASELINE="$(sed -n 's/^[[:space:]]*baseline[[:space:]]\{1,\}//p' "$CFG" 2>/dev/null | head -1)"
+# and watching the gate say "no function gained an effect". Comment-stripped for the same reason as
+# the pin: `baseline x.json # note` must not resolve to a file literally named `x.json # note`.
+BASELINE="$(awk '{ sub(/#.*/, ""); gsub(/\r/, "") } tolower($1)=="baseline" && NF>=2 { v=$2 } END { print v }' "$CFG" 2>/dev/null)"
 BASELINE="${BASELINE:-.candor/baseline.json}"
 
 CACHE="${CANDOR_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/candor}"
@@ -73,35 +103,59 @@ resolve_engine() {
         chmod +x "$bin.part"; mv "$bin.part" "$bin"; }
       ENGINE=("$bin") ;;
     rust)
-      command -v candor-scan >/dev/null 2>&1 \
-        || cargo install candor-scan --version "=$VER" --locked >&2
-      ENGINE=(candor-scan) ;;
+      # THE PIN WAS NOT ENFORCED HERE AT ALL. `command -v candor-scan || cargo install --version =$VER`
+      # short-circuits on ANY candor-scan already on PATH, so `$VER` was never consulted and whatever
+      # version the machine happened to have is what ran. candor-scan also treats `engine` as inert, so
+      # for a Rust repo the pin was enforced nowhere and drifted silently forever. java and swift key
+      # their cache file on $VER and ts pins `candor-ts@$VER`; only this arm had the hole.
+      # Installed into a VERSIONED root rather than over the user's global binary — a project's pin has
+      # no business replacing a tool the developer installed for themselves.
+      ENGINE=(candor-scan)
+      if ! [ "$(candor-scan --version 2>/dev/null | awk '{print $2}')" = "$VER" ]; then
+        local root="$CACHE/rust-$VER"
+        [ -x "$root/bin/candor-scan" ] || { echo "candor: installing candor-scan $VER …" >&2
+          cargo install candor-scan --version "=$VER" --locked --root "$root" >&2 \
+            || { echo "candor: could not install candor-scan $VER — exit 2 (unevaluable)" >&2; exit 2; }; }
+        ENGINE=("$root/bin/candor-scan")
+      fi ;;
     ts)
       ENGINE=(npx -y "candor-ts@$VER") ;;
     *)
       echo "candor: this runner was generated for an unknown engine kind '$KIND'" >&2; exit 2 ;;
   esac
 }
-resolve_engine
+# RESOLVED LAZILY, at the point the engine is actually needed. It used to run here, before any argument
+# was looked at, so refusing a mistyped verb first downloaded (or cargo-installed) an engine — and when
+# the pinned engine could not be obtained, the refusal never printed at all: `cargo install` failed with
+# 101 and `set -e` ended the script with a registry error instead of "that is not a candor verb".
+# Validation is free; fetching is not; do the free part first.
 
 # ── "a newer engine exists" — advisory, never fatal ──────────────────────────────────────────────
 # The ENGINE never does this: candor gates on the Net effect, so it must not perform one. This script
 # is ordinary project tooling, which may. Every failure path here is silent — an air-gapped runner, a
 # rate-limited API and a DNS timeout must all leave the gate's verdict and exit code untouched.
 # CANDOR_NO_UPDATE_CHECK=1 turns it off entirely.
+#
+# EVERY COMMAND SUBSTITUTION HERE ENDS IN `|| true`, AND THAT IS THE ENTIRE POINT OF THE FUNCTION.
+# Without it this was the worst defect in the file: `set -euo pipefail` plus `latest=$(curl … | sed …)`
+# means a FAILING curl — offline (exit 6), DNS timeout, a rate-limited GitHub returning 403 through
+# `-f` (exit 22) — fails the assignment, and `set -e` killed the script BEFORE the build or the engine
+# ran. Measured with a stub curl exiting 6: the whole runner exited **6**, printed nothing, and never
+# gated. So an air-gapped CI runner got silence and an exit code outside the 0/1/2 contract, from the
+# one function whose comment promised it could not affect the verdict. Found by adversarial review.
 update_check() {
   [ -z "${CANDOR_NO_UPDATE_CHECK:-}" ] || return 0
   command -v curl >/dev/null 2>&1 || return 0
   local latest=""
   case "$KIND" in
     java)  latest=$(curl -fsS --max-time 4 "https://api.github.com/repos/tombaldwin/candor-java/releases/latest" 2>/dev/null \
-                    | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1) ;;
+                    | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1 || true) ;;
     swift) latest=$(curl -fsS --max-time 4 "https://api.github.com/repos/tombaldwin/candor-swift/releases/latest" 2>/dev/null \
-                    | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1) ;;
+                    | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1 || true) ;;
     rust)  latest=$(curl -fsS --max-time 4 -H "User-Agent: candor-run" "https://crates.io/api/v1/crates/candor-scan" 2>/dev/null \
-                    | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1) ;;
+                    | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1 || true) ;;
     ts)    latest=$(curl -fsS --max-time 4 "https://registry.npmjs.org/candor-ts/latest" 2>/dev/null \
-                    | sed -n 's/.*"version":"\([0-9][0-9.]*\)".*/\1/p' | head -1) ;;
+                    | sed -n 's/.*"version":"\([0-9][0-9.]*\)".*/\1/p' | head -1 || true) ;;
   esac
   [ -n "$latest" ] && [ "$latest" != "$VER" ] || return 0
   # Only ever say "newer", never "older": a pin AHEAD of the published latest is a pre-release the
@@ -112,10 +166,23 @@ update_check() {
   echo "        SAME change — the engine and the baseline are only comparable together." >&2
 }
 
-build() { [ -z "$BUILD" ] || { echo "candor: $BUILD" >&2; eval "$BUILD" >&2; }; }
+# A BUILD FAILURE IS EXIT 2, NOT 1. Under `set -e` a failing `mvn compile` (which exits 1, the normal
+# compile-failure code) terminated this script with 1 — the POLICY VIOLATION code — while the gate had
+# never run at all. A CI wrapper that distinguishes 1 from 2 then reads a compile error as "your code
+# broke an architecture rule". The run is UNEVALUABLE, which is what 2 means.
+build() {
+  [ -n "$BUILD" ] || return 0
+  echo "candor: $BUILD" >&2
+  if ! eval "$BUILD" >&2; then
+    echo "candor: the build failed, so there is nothing to analyse — exit 2 (unevaluable)." >&2
+    echo "        This is NOT a gate verdict: the gate did not run." >&2
+    exit 2
+  fi
+}
 
 case "${1:-}" in
   --regen)
+    resolve_engine
     # A DELIBERATE act, and the message says why: regenerating re-blesses every effect the code has
     # right now, including any that arrived with the change you are about to commit.
     build
@@ -126,11 +193,34 @@ case "${1:-}" in
     # printed the report to the terminal, treated the path as a second target, and wrote nothing.
     # The prefix form is what produces the decorated name `candor init` wired into the config, and it
     # writes the callgraph sidecar the ⟨0.16⟩ guard needs — which the exact-path form does not.
+    #
+    # THE PREFIX IS NOT GUESSED FROM THE BASELINE'S NAME. It was: `$(dirname "$BASELINE")/baseline`,
+    # which silently assumes the basename starts with `baseline`. Rename the file in the config —
+    # `baseline .candor/base.mypkg.scan.json` — and regen wrote `.candor/baseline.mypkg.scan.json`,
+    # which nothing reads, left the real baseline stale, and EXITED 0. That is the very bug this
+    # block's header says was fixed, resurrected for any name the derivation cannot reproduce.
+    # So: scan into a TEMPORARY prefix, then put the produced report exactly where the config says.
+    # This works for ANY baseline name, and it is what `candor init` itself does (copy report →
+    # baseline) rather than a second, cleverer convention that has to agree with the first.
     before="$(cksum "$BASELINE" 2>/dev/null || echo none)"
     rc=0
     case "$KIND" in
       java) "${ENGINE[@]}" "$TARGET" --json "$BASELINE" || rc=$? ;;
-      *)    "${ENGINE[@]}" "$TARGET" --out "$(dirname "$BASELINE")/baseline" || rc=$? ;;
+      *)
+        tmpd="$(mktemp -d)"
+        trap 'rm -rf "$tmpd"' EXIT
+        "${ENGINE[@]}" "$TARGET" --out "$tmpd/report" || rc=$?
+        produced=""
+        for f in "$tmpd"/report*.json; do
+          case "$f" in *.callgraph.json|*.hierarchy.json|*.locs.json) continue ;; esac
+          [ -f "$f" ] && produced="$f"
+        done
+        if [ -n "$produced" ]; then
+          cp "$produced" "$BASELINE"
+          # The ⟨0.16⟩ guard reads the callgraph sidecar; carry it across under the baseline's own name.
+          [ -f "${produced%.json}.callgraph.json" ] \
+            && cp "${produced%.json}.callgraph.json" "${BASELINE%.json}.callgraph.json"
+        fi ;;
     esac
     # A regen runs the gate on the way past (the config names a baseline, so the guard fires against
     # the file being replaced). Exit 1 there is EXPECTED — it is the very regression being blessed —
@@ -144,17 +234,30 @@ case "${1:-}" in
                             echo "        than .candor/config expects. Fix the \`baseline\` key, or regenerate with" >&2
                             echo "        \`candor init\`. NOT exiting 0: a baseline nothing reads is a gate nothing runs." >&2
                             exit 2; }
-    [ "$(cksum "$BASELINE")" != "$before" ] || echo "candor: $BASELINE is unchanged (nothing to bless)" >&2
+    # AN UNCHANGED FILE IS A FAILURE, NOT A NOTE. This warned and continued, which is how the renamed-
+    # baseline case above still exited 0 while printing BOTH "is unchanged (nothing to bless)" and
+    # "baseline regenerated" — two contradictory sentences and a success code. `--regen` is only ever
+    # run because the operator wants the file to change; if it did not, the one thing they must not be
+    # told is that it worked. (A genuinely no-op regen — nothing changed since the last one — is rare
+    # and costs one `touch`; the alternative is a silent no-op, which is what this file exists to stop.)
+    if [ "$(cksum "$BASELINE")" = "$before" ]; then
+      echo "candor: $BASELINE did NOT change. Either nothing moved since the last regen, or the engine" >&2
+      echo "        wrote its report somewhere this script did not look. Exit 2 rather than reporting" >&2
+      echo "        success for a file that is byte-identical to the one you were replacing." >&2
+      exit 2
+    fi
     echo "candor: baseline regenerated → $BASELINE" >&2
     echo "        Commit it in the SAME change as the effect it blesses — a baseline committed on its" >&2
     echo "        own silently accepts whatever else moved with it." >&2
     exit 0 ;;
   "")
+    resolve_engine
     update_check
     build
     exec "${ENGINE[@]}" "$TARGET" --gate-json candor-verdict.json ;;
   -*)
     # A FLAG goes to the scanning engine as-is (`--version`, `--agents`, `--help`).
+    resolve_engine
     exec "${ENGINE[@]}" "$@" ;;
   *)
     # A VERB. Two things go wrong if this is a blind passthrough, and both did:
@@ -176,9 +279,10 @@ case "${1:-}" in
     esac
     case "$KIND" in
       rust) command -v candor-query >/dev/null 2>&1 \
-              || cargo install candor-query --version "=$VER" --locked >&2
+              || cargo install candor-query --version "=$VER" --locked >&2 \
+                   || { echo "candor: could not install candor-query $VER" >&2; exit 2; }
             exec candor-query "$@" ;;
       ts)   exec npx -y -p "candor-ts@$VER" candor-ts-query "$@" ;;
-      *)    exec "${ENGINE[@]}" "$@" ;;   # java + swift answer queries from the scanning binary
+      *)    resolve_engine; exec "${ENGINE[@]}" "$@" ;;   # java + swift answer queries from the scanning binary
     esac ;;
 esac

@@ -81,10 +81,25 @@ for r in $REPOS; do
   fi
   [ -n "$csrc" ] || { printf '  \033[32m✔\033[0m %-14s no shipped change since %s\n' "$r" "$tag"; continue; }
 
-  ccl="$(newest "$d" "$tag" CHANGELOG.md)"
-  if [ -n "$ccl" ] && [ "$csrc" -le "$ccl" ]; then
-    printf '  \033[32m✔\033[0m %-14s CHANGELOG.md is at least as new as the source\n' "$r"
-    continue
+  # TOPOLOGY, NOT TIMESTAMPS — the third design mistake in this script, and the one an adversarial
+  # review found rather than I did. Comparing committer DATES greened over an ordinary merge: cut a
+  # branch, touch the changelog on main, then merge the branch. The branch's source commits land on
+  # main AFTER the changelog moved, are described nowhere, and carry OLDER `%ct` values — so the
+  # newest source date was less than the newest changelog date and the check printed ✔. A wrong
+  # CLEAR, which is the class this script's own header calls the cardinal sin.
+  #
+  # `<changelog-commit>..HEAD` asks the question dates cannot: is there a source commit that is NOT an
+  # ancestor of the changelog's last touch? A merged side branch is exactly that, whatever its dates.
+  ccl="$(git -C "$d" log -1 --format=%H "$tag..HEAD" -- CHANGELOG.md 2>/dev/null)"
+  if [ -n "$ccl" ]; then
+    unrec="$(git -C "$d" rev-list --count "$ccl..HEAD" -- "${NOSHIP[@]}" 2>/dev/null || echo 0)"
+    if [ -n "${extra[0]:-}" ]; then
+      unrec=$((unrec + $(git -C "$d" rev-list --count "$ccl..HEAD" -- "${extra[@]}" 2>/dev/null || echo 0)))
+    fi
+    if [ "${unrec:-0}" -eq 0 ]; then
+      printf '  \033[32m✔\033[0m %-14s CHANGELOG.md covers every source commit since %s\n' "$r" "$tag"
+      continue
+    fi
   fi
 
   # BOTH failing branches name the commits. The "never touched" one did not, and the fixture in
@@ -95,8 +110,8 @@ for r in $REPOS; do
     printf '  \033[31m✘\033[0m %-14s source changed since %s and CHANGELOG.md never did:\n' "$r" "$tag"
     since=("$tag..HEAD")
   else
-    printf '  \033[31m✘\033[0m %-14s CHANGELOG.md is OLDER than the newest shipped change:\n' "$r"
-    since=(--since="@$ccl" "$tag..HEAD")
+    printf '  \033[31m✘\033[0m %-14s source commits the CHANGELOG has not caught up with:\n' "$r"
+    since=("$ccl..HEAD")
   fi
   list="$( { git -C "$d" log --format='%ct %h %s' "${since[@]}" -- "${NOSHIP[@]}" 2>/dev/null
              [ -n "${extra[0]:-}" ] && git -C "$d" log --format='%ct %h %s' "${since[@]}" \

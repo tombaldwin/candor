@@ -302,6 +302,33 @@ else
   outE="$("$T/runD/.candor/run" --version 2>&1)"; rcE=$?
   if [[ "$outE" != *"not a candor verb"* ]]; then echo "  ok   a flag is still passed through"
   else echo "  FAIL a flag was refused as a verb"; fails=$((fails+1)); fi
+  # THE UPDATE CHECK MUST NOT BE ABLE TO KILL THE GATE. `set -euo pipefail` plus `latest=$(curl … | sed …)`
+  # meant a FAILING curl — offline, DNS timeout, a rate-limited 403 through `-f` — failed the assignment
+  # and `set -e` killed the runner BEFORE the engine ran. Measured: exit 6, silence, no gate. That is an
+  # exit code outside the 0/1/2 contract from the one function documented as unable to affect the verdict.
+  mkdir -p "$T/stub"; printf '#!/bin/sh\nexit 6\n' > "$T/stub/curl"; chmod +x "$T/stub/curl"
+  render "$T/runU"; printf 'engine v9.9.9\n' > "$T/runU/.candor/config"
+  PATH="$T/stub:$PATH" "$T/runU/.candor/run" >/dev/null 2>&1; rcU=$?
+  case "$rcU" in 0|1|2) echo "  ok   a failing update check cannot take the run outside 0/1/2 (was exit 6)";;
+    *) echo "  FAIL a failing curl exited $rcU"; fails=$((fails+1));; esac
+  # A BUILD FAILURE IS UNEVALUABLE (2), NOT A POLICY VIOLATION (1). `set -e` propagated mvn's exit 1.
+  mkdir -p "$T/runB2/.candor"
+  sed -e "s|@KIND@|rust|" -e "s|@BUILD@|false|" -e "s|@TARGET@|.|" "$TPL" > "$T/runB2/.candor/run"
+  chmod +x "$T/runB2/.candor/run"; printf 'engine v9.9.9\n' > "$T/runB2/.candor/config"
+  CANDOR_NO_UPDATE_CHECK=1 "$T/runB2/.candor/run" >/dev/null 2>&1
+  [ "$?" = 2 ] && echo "  ok   a failed build is exit 2 (unevaluable), not 1 (violation)" \
+    || { echo "  FAIL a failed build did not exit 2"; fails=$((fails+1)); }
+  # AN `engine` LINE THE GRAMMAR CANNOT READ MUST REFUSE. `$NF` of the first match took the last token of
+  # an INLINE COMMENT — `engine v0.26.0 # was v0.25.0` fetched 0.25.0 — and a qualified line for another
+  # implementation hijacked the pin. Both silently run the wrong engine.
+  render "$T/runP"; printf 'engine v9.9.9 # was v0.1.0\n' > "$T/runP/.candor/config"
+  outP="$(CANDOR_NO_UPDATE_CHECK=1 "$T/runP/.candor/run" 2>&1)"
+  if [[ "$outP" != *"0.1.0"* ]]; then echo "  ok   an inline comment does not become the pin"
+  else echo "  FAIL the comment's token was taken as the pin: $outP"; fails=$((fails+1)); fi
+  render "$T/runQ"; printf 'engine v9.9.9 junk\n' > "$T/runQ/.candor/config"
+  CANDOR_NO_UPDATE_CHECK=1 "$T/runQ/.candor/run" >/dev/null 2>&1
+  [ "$?" = 2 ] && echo "  ok   an unreadable engine line refuses rather than guessing" \
+    || { echo "  FAIL trailing junk on the engine line did not refuse"; fails=$((fails+1)); }
   # The template must never hardcode a baseline filename again — that is what made regen a silent no-op.
   # CODE only, and a FIXED string: the first version of this check matched its own explanatory COMMENT,
   # because an unescaped `.` is a regex wildcard and `baseline…json` therefore matched `baseline.json`.

@@ -40,6 +40,31 @@ keeps its own.
   too, producing a workflow named `candor--tmp-initdemo.yml` carrying `working-directory: /tmp/initdemo`
   — an absolute path that cannot resolve on a CI runner. Found by running `candor init` in `/tmp`.
 
+- **Adversarial review of the above found six defects in the generated runner, four of them able to
+  change or suppress a CI verdict.** Recorded because the shapes recur:
+  - **A failing `curl` killed the gate.** `set -euo pipefail` plus `latest=$(curl … | sed …)` meant that
+    offline, a DNS timeout, or a rate-limited 403 failed the assignment and `set -e` ended the script
+    **before the engine ran** — exit **6**, silently, from the one function whose comment promised it
+    could not affect the verdict. Every substitution there now ends in `|| true`.
+  - **A failed build exited 1, the POLICY-VIOLATION code**, while the gate had never run. It is 2.
+  - **The pin reader disagreed with the engine reading the same file.** `$NF` of the first `engine` line
+    took the last token of an inline comment (`engine v0.26.0 # was v0.25.0` fetched **0.25.0**), ignored
+    the `<impl>` qualifier, and took the FIRST line where candor-java takes the last. Each silently runs
+    the wrong engine. It now strips comments, resolves the qualifier, and refuses what it cannot read.
+  - **The Rust arm never enforced the pin at all** — `command -v candor-scan` short-circuited, so any
+    version on PATH ran and `$VER` was never consulted. It now checks the version and installs the pinned
+    engine into a versioned root rather than over the developer's own binary.
+  - **`--regen` could again write a file nothing reads**: the prefix was guessed as `<dir>/baseline`,
+    so any renamed baseline got a *different* file written, left the real one stale, and exited 0 while
+    printing "unchanged" and "regenerated" together. It now scans to a temp prefix and copies to exactly
+    the path the config names, and an unchanged baseline is exit 2 rather than a note.
+  - **Engine resolution ran before argument validation**, so refusing a mistyped verb first downloaded an
+    engine — and if the pinned one could not be fetched, the refusal never printed.
+- **`changelog-lag` greened over an ordinary merge.** Recency was judged by committer DATE, and a feature
+  branch's commits land on main *after* the changelog moved while carrying *older* dates — so merged work
+  described nowhere read as covered. It now asks the question dates cannot: is there a source commit that
+  is not an ancestor of the changelog's last touch? Also: its repo list is an allowlist in a script whose
+  header argues against allowlists, so preflight [8] now fails if it drifts from the list the release cuts.
 - **`bin/changelog-lag.sh`, wired into preflight as check [5b]: no CHANGELOG may lag its own source.**
   [5] asks whether the file describing this release *mentions* this release — a necessary condition that
   a section cut at staging time passes forever after. `release-stage.sh` renames `## Unreleased` to

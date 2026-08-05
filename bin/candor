@@ -253,6 +253,25 @@ route_query() {
   else
     local d="$PWD" base=""
     while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+      # NO REPORT? SCAN, don't lecture. A scan is cheap (every engine is syntactic except the JVM one,
+      # which needs bytecode and says so), non-destructive, and is the ONLY thing the user could have done
+      # with the instruction we used to print. Making them read it, retype it and come back is a dead end
+      # with extra steps — and it is exactly what stood between `brew install candor` and an answer.
+      #
+      # LOUD, never silent: it says what it is doing and that it wrote `.candor/`, because a verb that
+      # quietly creates files in your repo is its own surprise. CANDOR_NO_AUTOSCAN=1 restores the refusal
+      # (for CI that should fail rather than scan).
+      if [ -z "$base" ] && [ -z "${CANDOR_NO_AUTOSCAN:-}" ] && [ -z "${CANDOR_DISPATCH_DRYRUN:-}" ]; then
+        _al="$(detect_langs "$PWD")"
+        case "$_al" in
+          rust|ts|java|swift)
+            if engine_present "$_al" || autofetch_engine "$_al"; then
+              echo "candor: no report here yet — scanning first (writes .candor/), then answering." >&2
+              ( CANDOR_AUTOSCAN=1 route_scan "$PWD" >&2 ) || die "the scan failed — see above; nothing to answer from."
+              d="$PWD"; while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+            fi;;
+        esac
+      fi
     [ -n "$base" ] || die "no report — run \`candor scan\` first, or pass --report <locator>. (no .candor/ from $PWD upward)"
     famprefix="$base"; files=("$base".*.json)
   fi
@@ -393,6 +412,28 @@ engine_name() {
   case "$(backend_arm "$1")" in JS) echo "candor-ts";; jvm) echo "candor-java";; Swift) echo "candor-swift";; *) echo "candor-rust";; esac
 }
 
+# FETCH AN ENGINE ON FIRST USE, so `brew install candor` is followed by a QUESTION, not by errands.
+# The umbrella's whole job is to put the right engine in front of you; telling you to go and run
+# `candor update` first is that job, described rather than done. Only ever fetches the PINNED version
+# from the same package registries `candor update` uses (github.com · crates.io · npm) — no candor
+# server, no telemetry — and says so before it does it, because a tool that reaches the network without
+# saying so has spent trust it cannot get back. CANDOR_NO_AUTOFETCH=1 turns it off.
+autofetch_engine() {
+  local lang="$1"
+  [ -z "${CANDOR_NO_AUTOFETCH:-}" ] || return 1
+  [ -z "${CANDOR_DISPATCH_DRYRUN:-}" ] || return 1
+  case "$lang" in
+    swift) [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || return 1;;
+    rust|java|ts) ;;
+    *) return 1;;
+  esac
+  echo "candor: the $lang engine isn't installed — fetching v$ENGINE_PIN from the package registry (no candor server, no telemetry)." >&2
+  # Re-invoke this same script's `update`, which is an inline case branch ending in `exit` rather than a
+  # function — a subshell is the honest way to reuse it without refactoring the release-critical path.
+  ( "$0" update "$lang" >&2 ) || true
+  engine_present "$lang"
+}
+
 # is the engine for <lang> resolvable right now? (mirrors engine_scan's resolution)
 engine_present() {
   case "$1" in
@@ -415,7 +456,7 @@ ensure_engine() {
 engine_scan() {
   local lang="$1"; shift
   case "$lang" in
-    rust)  local c; c=$(rust_bin candor-scan) || die "a Rust project, but the rust engine isn't installed — run \`candor update rust\`."; run "$c" "$@";;
+    rust) local c; c=$(rust_bin candor-scan) || { autofetch_engine rust && c=$(rust_bin candor-scan); }; [ -n "$c" ] || die "a Rust project, but the rust engine isn't installed and could not be fetched — run \`candor update rust\`."; run "$c" "$@";;
     ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
       # --workspace/--deps is N/A for the bytecode engine — it is given the whole classpath, so cross-module
@@ -440,7 +481,7 @@ engine_scan() {
           if [ -d "$jt" ] && mkdir -p "$jt/.candor" 2>/dev/null; then run_java "$@" --json "$jt/.candor/report.json"
           else run_java "$@"; fi;;
       esac;;
-    swift) local c; c=$(rust_bin candor-swift) || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS)."; run "$c" "$@";;
+    swift) local c; c=$(rust_bin candor-swift) || { autofetch_engine swift && c=$(rust_bin candor-swift); }; [ -n "$c" ] || die "a Swift project, but the swift engine isn't installed and could not be fetched — run \`candor update swift\`."; run "$c" "$@";;
     *) die "no engine for '$lang'.";;
   esac
 }
@@ -1180,10 +1221,7 @@ PY
     fi
     wf="$wfdir/$wfname"
     pin="$ENGINE_PIN"
-    if [ "$nlang" -eq 1 ] && [ "$langs" = swift ]; then
-      echo "  · CI: the Swift engine needs macOS + a source build of candor-swift, so no drop-in workflow"
-      echo "    is generated — see github.com/tombaldwin/candor-swift, then \`candor-swift . --gate-json\`."
-    elif [ "$nlang" -eq 1 ] && [ ! -f "$wf" ]; then
+    if [ "$nlang" -eq 1 ] && [ ! -f "$wf" ]; then
       mkdir -p "$wfdir"
       [ -n "$wdir" ] && echo "  · monorepo: $rel is below the repo root — GitHub reads workflows only from the root,"
       [ -n "$wdir" ] && echo "    so the gate is written to $wfloc, scoped to $rel/."
@@ -1198,7 +1236,7 @@ PY
         echo "permissions: { contents: read }"
         echo "jobs:"
         echo "  $jobname:"
-        echo "    runs-on: ubuntu-latest"
+        if [ "$langs" = swift ]; then echo "    runs-on: macos-14"; else echo "    runs-on: ubuntu-latest"; fi
         [ -n "$wdir" ] && { echo "    defaults:"; echo "      run:"; echo "        working-directory: $wdir"; }
         echo "    steps:"
         echo "      - uses: actions/checkout@v4"
@@ -1210,6 +1248,17 @@ PY
           ts)    echo "      - uses: actions/setup-node@v4"
                  echo "        with: { node-version: 20 }"
                  echo "      - run: npx -y candor-ts@$pin . --gate-json candor-verdict.json   # pin tracks .candor/baseline's engine — bump both together";;
+          swift) # macos-14 is arm64, which the released binary targets. This arm did not exist before
+                 # 0.27 because candor-swift published no binary at all — `init` printed a note telling a
+                 # Swift user to go and build one, which is a dead end in a generator whose entire job is
+                 # producing a workflow that runs.
+                 echo "      - run: |"
+                 echo "          curl -fsSL -o candor-swift https://github.com/tombaldwin/candor-swift/releases/download/v$pin/candor-swift-macos-arm64"
+                 echo "          chmod +x candor-swift"
+                 echo "      - run: ./candor-swift . --gate-json candor-verdict.json"
+                 echo "      # Per SHIPPED BINARY, not per repo: add --target <name> on a multi-target package,"
+                 echo "      # and one privacy-manifest step per Info.plist you ship."
+                 echo "      # - run: ./candor-swift privacy-manifest --verify Resources/Info.plist";;
           java)  echo "      - uses: actions/setup-java@v4"
                  echo "        with: { distribution: temurin, java-version: '21' }"
                  echo "      - run: mvn -q compile           # EDIT: your build (or ./gradlew classes)"
@@ -1220,7 +1269,7 @@ PY
         esac
       } > "$wf"
       case "$langs" in
-        rust|ts) echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)";;
+        rust|ts|swift) echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)";;
         *)       echo "  ✔ CI workflow → $wfloc (review the marked EDIT lines: your build + engine setup)";;
       esac
     elif [ -f "$wf" ]; then

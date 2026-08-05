@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-destination-class, completeness-manifest and cross-package-interface-dispatch rungs all shipped; + a 0.23.1 engine-**performance** + classifier-soundness patch — the disclosure-refinement track is now mostly landed, with the `candor verify` dynamic oracle the standout open item). Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`._
+_Last reviewed 2026-08-05 (floor 0.26 PUBLISHED; **0.27 staged across all six repos and unpublished** — `resolves` + §2 `fs` kinds travelling the call graph, conformance PART 31). Rungs 0.24 CONTRIBUTES/ambiguous, 0.25 ambiguous-join-key-UNIONED, 0.26 sidecar-key-set-is-its-manifest and 0.27 all landed since the previous review line, which still said 0.18→0.23 and was the first thing a new session read. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md` (**month-stale — see the audit note below**), and — not previously linked from here — `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`, which is where candor-ts's and candor-swift's open rows actually live._
 
 ## Direction — next strategic bets (family-level)
 
@@ -16,21 +16,32 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
 > refuted by the spec it points at — all three phases are built, including the Slack push. **Read the
 > artifact the entry cites, then the code; an entry describing its own state is a claim, not evidence.**
 >
-> **GENUINELY OPEN after the audit** — five items, and only two are code (plus one filed later, below):
->   · `[P2]` `bin/release.sh` should RENAME `## Unreleased` (filed today; verified — no such handling exists)
->   · `[P2]` ledger-mined classifier breadth (per-engine κ classification work, batched by call-count)
+> **GENUINELY OPEN — re-audited 2026-08-05, and the list had rotted again within 48 hours.** Two of the
+> five below were already closed, and two entries elsewhere in this file still carry a P-level for work
+> that shipped on 2026-08-04. That is the same failure the note above documents, recurring one day later,
+> which says the problem is the format and not the diligence: **a heading is a claim, and nothing checks
+> claims.**
+>
+>   · `[P2]` ledger-mined classifier breadth — **CLOSED 2026-08-03**, all four batches (see body below).
+>   · `[P2]` `release.sh` should RENAME `## Unreleased` — **CLOSED**; `release-preflight.sh` [9] gates it
+>     and `_stage_changelogs.py` performs the rename. The entry read "verified — no such handling exists".
+>   · `[P1]` the umbrella's per-verb capability table — **the actionable half SHIPPED 2026-08-04** (`431b82d`):
+>     the table, the refusal naming the engines that do implement a verb, and capability-aware `--help`.
+>     What is left is the optional-in-spec-vocabulary design question the entry itself gates on a customer.
+>   · `[P2]` privacy `Health`/`Motion` — **SHIPPED 2026-08-04 as `privacy/2`**, with read/write direction.
+>
+> STILL OPEN, and these were re-checked against the code:
+>   · `[P1]` **value provenance** — filed below at last; two items now wait on it (see the note there).
 >   · `[P3]` blame-tracked `Unknown` (needs `candor verify` as a foundation)
 >   · `[gate]` structure-delta regression gate — DESIGNED, awaiting a go/no-go
 >   · `[adoption]` embeddable fingerprint badge
+>   · `[P2]` candor-ts self-gate (no `.candor/policy`, no self-gate step in its CI)
+>   · `[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)
+>   · publish-side release-script coverage — real open work currently hidden under a `[FIXED]` heading
+>     below: `cargo publish`, the npm OIDC tag, `gh release create` and the Homebrew tap are exercised
+>     only by a real release, and neither a dry-run mode nor stubs exist.
 > Plus, from the verify entry: promoting candor-rust's or candor-swift's dynamic oracle from a CI harness
 > to a user-facing verb — a new feature, not productionization.
->
-> **Filed 2026-08-04, MEASURED 2026-08-05, now `[P3]`:** an Android/JVM analogue of the privacy manifest
-> (`permissions/1`). The measurement moved it rather than sizing it — the vendor mapping is real and
-> maintained but covers the SYSTEM surface (bluetooth/telephony/wifi/location), and has ZERO annotations on
-> the ContentResolver surface where contacts/calendar/call-log/media/storage live. Those are guarded by the
-> content URI ARGUMENT, so the blocker is value provenance, not a table. Sequence it after
-> `VALUE-PROVENANCE-DESIGN.md`.
 
 
 
@@ -155,7 +166,8 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
   on whether task submission gets its own reason class or rides an existing one, which is Tom's call and
   changes what four engines emit.)
 
-- **[P1 — umbrella/spec convention, 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
+- **[MOSTLY SHIPPED 2026-08-04 `431b82d`; the remainder is customer-gated design — umbrella/spec
+  convention, filed 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
   IMPLEMENTS, and engine-specific verbs are unreachable through it.**
 
   **MEASURED (counted programmatically — my first hand-count of this got two of three numbers wrong).**
@@ -206,7 +218,7 @@ _Last reviewed 2026-07-20 (floors 0.18→0.23: the reason-scoped-Unknown, Net-de
   vocabulary blurs. (Extensions already blur it — but in the engine's own repo, where a consumer is less
   likely to look, which is an argument on both sides.)
 
-- **[P2 — privacy/1 vocabulary, 2026-08-03] Health and Motion are not in the six-effect cluster, and a
+- **[SHIPPED 2026-08-04 as `privacy/2`, with read/write direction — filed 2026-08-03] Health and Motion are not in the six-effect cluster, and a
   real health app shows the gap.** privacy/1 covers Location / Camera / Mic / Contacts / Photos / Notify.
   It does NOT model `HKHealthStore` or `CMMotionManager`, so `NSHealthShareUsageDescription`,
   `NSHealthUpdateUsageDescription` and `NSMotionUsageDescription` are invisible to `privacy-manifest`.
@@ -587,6 +599,31 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   _Remaining:_ the public writeup — `candor/docs/case-study-privacy-manifest.md` is written, every
   factual claim re-measured against the current engine, and awaiting Tom's publish decision. It needs
   0.27 published first (it documents `--target` and the read/write direction).
+- **[P1 — DESIGNED AND UNBUILT; two filed items now wait on it] Interprocedural value provenance.**
+  Design: `candor-spec/VALUE-PROVENANCE-DESIGN.md`. Tom's "absolute best product" call (2026-07-19):
+  dissolve the source/sink trade-off by recovering a value's CONCRETE ORIGIN across construction and
+  fields, interprocedurally — so a report can say not just *this function writes a file* but *it writes
+  the file whose path came from here*.
+
+  **FILED 2026-08-05 BY AN AUDIT, AND THE REASON IT WAS MISSING IS THE POINT.** It had a design doc, a
+  named priority from Tom, and two items depending on it — and it appeared in no BACKLOG.md in any repo,
+  in any form, except as a *sequencing reference inside another entry*. The Android permissions item was
+  filed on 2026-08-04 saying "sequence it AFTER value provenance"; the thing it sequenced after did not
+  exist as an item. **A dependency was created without filing the dependency.** A P-level scan — which is
+  how the next task gets picked, per the audit note at the top of this file — could not see it, and the
+  two items pointing at it are both P3, so the whole cluster reads as low priority when the blocking item
+  is the high-value one.
+
+  Two independent motivations, which is the strongest signal on this board:
+    · the ORIGINAL one — sharper answers everywhere, without trading source fidelity for sink fidelity;
+    · **Android permissions** (measured 2026-08-05, see below): the consumer-privacy half of Android's
+      API→permission mapping is URI-dispatched through `ContentResolver.query(uri, …)`, so it needs the
+      concrete URI constant that reaches the call. That is exactly this feature.
+
+  Nothing here is measured yet beyond the design. First step is to re-read the design against the current
+  engines — it predates several rungs (`typeSurface`, the completeness manifest, `resolves`) that may
+  change what it needs to carry.
+
 - **[OPEN — P3, and the measurement REFRAMED it: blocked on value provenance, not on a table] An
   Android/JVM analogue of the privacy manifest.**
   Raised by Tom 2026-08-04, off the back of `privacy/2`. The shape transfers exactly: code reaches a

@@ -153,6 +153,32 @@ case "${1:-}" in
     update_check
     build
     exec "${ENGINE[@]}" "$TARGET" --gate-json candor-verdict.json ;;
+  -*)
+    # A FLAG goes to the scanning engine as-is (`--version`, `--agents`, `--help`).
+    exec "${ENGINE[@]}" "$@" ;;
   *)
-    exec "${ENGINE[@]}" "$@" ;;   # passthrough: show / where / diff / gate / privacy-manifest …
+    # A VERB. Two things go wrong if this is a blind passthrough, and both did:
+    #
+    #  1. THE QUERY VERBS ARE NOT ALWAYS IN THE SCANNING BINARY. candor-rust splits them into
+    #     `candor-query` and candor-ts into `candor-ts-query`; only candor-java and candor-swift answer
+    #     queries from the same executable that scans. `.candor/run show …` therefore reached
+    #     candor-scan, which has no `show`.
+    #  2. AND IT DID NOT FAIL. The engine took the verb as a SCAN TARGET, scanned a directory that does
+    #     not exist, wrote "0 effectful functions" and exited 0. A mistyped query answering "nothing
+    #     here" with a success code is a false all-clear wearing a CLI mistake — which is why an
+    #     unrecognised word is now refused instead of forwarded.
+    case " show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy gate privacy-manifest " in
+      *" $1 "*) ;;
+      *) echo "candor: '$1' is not a candor verb, and forwarding it would make the engine treat it as a" >&2
+         echo "        directory to scan — which exits 0 having found nothing. Verbs: show where callers" >&2
+         echo "        impact path diff gains tour whatif gate. A flag (-…) is passed through." >&2
+         exit 2 ;;
+    esac
+    case "$KIND" in
+      rust) command -v candor-query >/dev/null 2>&1 \
+              || cargo install candor-query --version "=$VER" --locked >&2
+            exec candor-query "$@" ;;
+      ts)   exec npx -y -p "candor-ts@$VER" candor-ts-query "$@" ;;
+      *)    exec "${ENGINE[@]}" "$@" ;;   # java + swift answer queries from the scanning binary
+    esac ;;
 esac

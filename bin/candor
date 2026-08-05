@@ -1499,17 +1499,21 @@ PY
         echo "\`Unknown\`, never a quiet \"nothing here\"."
         echo ""
         echo '```sh'
+        # VERB NAMES ARE COPIED FROM THE DISPATCHER'S OWN LIST, not from memory. The first draft of this
+        # stub printed `blast`, which is not a verb in any engine (the verb is `impact`), and pointed at
+        # `candor agents` for the agent contract — a real verb, but the agent-FLEET drift report, an
+        # unrelated feature. Both were caught by running what the stub tells the reader to run.
         if [ -f "$runsh" ]; then
-          echo ".candor/run show    $blname <fn>      # this function's transitive effects"
-          echo ".candor/run where   $blname Net       # every function that reaches the network"
-          echo ".candor/run callers $blname <fn>      # who calls this"
-          echo ".candor/run blast   $blname <fn>      # what breaks if this changes"
-          echo ".candor/run diff    old.json new.json          # what a change altered"
+          echo ".candor/run show    --report $blname <fn>   # this function's transitive effects"
+          echo ".candor/run where   --report $blname Net    # every function that reaches the network"
+          echo ".candor/run callers --report $blname <fn>   # who calls this"
+          echo ".candor/run impact  --report $blname <fn>   # what breaks if this changes"
+          echo ".candor/run diff    old.json new.json              # what a change altered"
         else
           echo "candor show    <fn>            # this function's transitive effects"
           echo "candor where   Net             # every function that reaches the network"
           echo "candor callers <fn>            # who calls this"
-          echo "candor blast   <fn>            # what breaks if this changes"
+          echo "candor impact  <fn>            # what breaks if this changes"
           echo "candor diff    old.json new.json"
         fi
         echo '```'
@@ -1529,7 +1533,7 @@ PY
         echo "- **What the report means, and the verdict JSON shape** — <https://candor.poly.io>"
         echo "- **Query verbs** (\`show\`, \`where\`, \`blast\`, \`whatif\`, \`path\`) — \`candor --help\`"
         echo "- **AS-EFF codes**, including AS-EFF-005 (the baseline ratchet) — <https://candor.poly.io>"
-        echo "- **The agent contract** for this exact engine build — \`candor agents\`"
+        [ -f "$runsh" ] && echo "- **The agent contract** for this exact engine build — \`.candor/run --agents\`"
         echo ""
         echo "Kept as links on purpose. A copy of these concepts in this repo is a copy that goes stale"
         echo "without anyone noticing, and a stale explanation of a gate is worse than no explanation."; } > "$stub"

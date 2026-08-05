@@ -290,6 +290,18 @@ else
   derived="$(sed -n 's|^[[:space:]]*baseline[[:space:]]\{1,\}||p' "$T/runC/.candor/config" | head -1)"
   if [ "$derived" = ".candor/baseline.pkg.scan.json" ]; then echo "  ok   baseline path is read from the config, not assumed"
   else echo "  FAIL baseline derivation: '$derived'"; fails=$((fails+1)); fi
+  # AN UNRECOGNISED VERB MUST REFUSE, NEVER FORWARD. Blind passthrough sent `.candor/run blast …` to the
+  # scanning engine, which took `blast` as a DIRECTORY TO SCAN, found nothing, and exited 0 — a false
+  # all-clear wearing a CLI typo. Found by running the commands the generated README tells a reader to
+  # run (`blast` is not a verb in any engine; the verb is `impact`).
+  render "$T/runD"; printf 'engine v9.9.9\n' > "$T/runD/.candor/config"
+  outD="$("$T/runD/.candor/run" blast x 2>&1)"; rcD=$?
+  if [ "$rcD" = 2 ] && [[ "$outD" == *"not a candor verb"* ]]; then echo "  ok   an unknown verb refuses (never a silent scan exiting 0)"
+  else echo "  FAIL unknown verb: rc=$rcD out=$outD"; fails=$((fails+1)); fi
+  # …and a FLAG still passes through to the engine rather than being refused as a verb.
+  outE="$("$T/runD/.candor/run" --version 2>&1)"; rcE=$?
+  if [[ "$outE" != *"not a candor verb"* ]]; then echo "  ok   a flag is still passed through"
+  else echo "  FAIL a flag was refused as a verb"; fails=$((fails+1)); fi
   # The template must never hardcode a baseline filename again — that is what made regen a silent no-op.
   # CODE only, and a FIXED string: the first version of this check matched its own explanatory COMMENT,
   # because an unescaped `.` is a regex wildcard and `baseline…json` therefore matched `baseline.json`.

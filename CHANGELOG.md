@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+
+## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (unreleased)
+
+⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces
+a producer actually computes — so an absent optional field means "undetermined" only when the surface is
+declared, and "not computed here" otherwise. Plus §2 `fs` kinds travelling the call graph four-way, with
+an undetermined contributor suppressing the field rather than emitting a partial one.
+
+Umbrella-side in this cut:
+
+- **`--help` for a verb the local engine lacks is no longer a dead end.** `candor show --help` in a Swift
+  project printed a full page describing a verb candor-swift does not implement. Help now carries the
+  same note the refusal does, and stays SILENT when the arm cannot be determined — an empty tree, a mixed
+  manifest, or a `.candor` holding two engines' reports, which is the ordinary shape once dep reports are
+  chained. `gate` and `privacy-manifest` gained real help text; routing them had only moved the dead end.
+- **`spec-bump.sh`** — rehearse a floor bump instead of discovering it in CI. Its `bad()` printed without
+  counting, which produced three false greens (a moved declaration site reported "the family is GREEN"
+  with one engine still on the old contract); its two siblings in `bin/` both count, and now so does it.
+- **`scripts/android-permission-coverage.py`** — measures whether an Android analogue of the privacy
+  manifest can read a vendor-published API→permission mapping. It can, for the system surface; the
+  ContentResolver surface has zero annotations, so the consumer-privacy half is a value-provenance
+  problem. See BACKLOG.md.
+
 ## 2026-08-02 — spec 0.26: a sidecar's KEY SET is its manifest (released 2026-08-04 as 0.26.0)
 
 ⟨spec 0.26⟩ **§2.2 — an absent type in the hierarchy sidecar is UNANSWERABLE, never "has no supertypes".**

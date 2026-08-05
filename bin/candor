@@ -327,7 +327,7 @@ route_query() {
            elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-query "$verb" "$@"
            else die "a TypeScript report, but neither candor-ts-query nor Node is installed — install Node (the engine then runs via npx)."; fi;;
     jvm)   run_java "$verb" "$@";;
-    Swift) have candor-swift || die "a Swift report, but candor-swift isn't installed."; run candor-swift "$verb" "$@";;
+    Swift) local c; c=$(rust_bin candor-swift) || die "a Swift report, but candor-swift isn't installed — run \`candor update swift\` (macOS)."; run "$c" "$verb" "$@";;
     *)     local c; c=$(rust_bin candor-query) || die "a Rust report, but candor-query isn't installed — install candor-rust."; run "$c" "$verb" "$@";;
   esac
 }
@@ -399,7 +399,7 @@ engine_present() {
     rust)  rust_bin candor-scan >/dev/null 2>&1;;
     ts)    have candor-ts || have node;;   # node ⇒ npx can run it
     java)  have candor-java || [ -x "$CDBIN/candor-java" ] || [ -n "${CANDOR_JAVA_JAR:-}" ] || ls "$HOME"/.candor/candor-java*-all.jar >/dev/null 2>&1;;
-    swift) have candor-swift;;
+    swift) rust_bin candor-swift >/dev/null 2>&1;;
     *) return 1;;
   esac
 }
@@ -440,7 +440,7 @@ engine_scan() {
           if [ -d "$jt" ] && mkdir -p "$jt/.candor" 2>/dev/null; then run_java "$@" --json "$jt/.candor/report.json"
           else run_java "$@"; fi;;
       esac;;
-    swift) have candor-swift || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS + a Swift toolchain)."; run candor-swift "$@";;
+    swift) local c; c=$(rust_bin candor-swift) || die "a Swift project, but the swift engine isn't installed — run \`candor update swift\` (macOS)."; run "$c" "$@";;
     *) die "no engine for '$lang'.";;
   esac
 }
@@ -818,7 +818,7 @@ H
       else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
            { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1; fi
       have candor-ts && candor-ts --version 2>/dev/null | head -1
-      have candor-swift && candor-swift --version 2>/dev/null | head -1
+      swb="$(rust_bin candor-swift 2>/dev/null)" && "$swb" --version 2>/dev/null | head -1
     } | awk '{ rest=""; for (i=3;i<=NF;i++) rest=rest (i>3?" ":"") $i; printf "%-14s %-8s %s\n", $1, $2, rest }'
     echo ""
     echo "check for a newer version:  candor outdated"
@@ -838,7 +838,7 @@ H
       elif [ -x "$CDBIN/candor-java" ]; then ivjvm=$("$CDBIN/candor-java" --version 2>/dev/null | head -1 | awk '{print $2}'); fi
     ivrust=""; rb="$(rust_bin candor-scan 2>/dev/null)" && ivrust=$("$rb" --version 2>/dev/null | head -1 | awk '{print $2}')
     ivts=""; tsnpx=""; if have candor-ts; then ivts=$(candor-ts --version 2>/dev/null | head -1 | awk '{print $2}'); elif have node; then tsnpx=1; fi
-    ivsw=""; have candor-swift && ivsw=$(candor-swift --version 2>/dev/null | head -1 | awk '{print $2}')
+    ivsw=""; swb="$(rust_bin candor-swift 2>/dev/null)" && ivsw=$("$swb" --version 2>/dev/null | head -1 | awk '{print $2}')
     # latest from each channel (best-effort; a channel we can't reach says so, never a false "up to date")
     ljvm=$(curl -fsSL "https://api.github.com/repos/tombaldwin/candor-java/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | head -1)
     lrust=$(curl -fsSL -H "User-Agent: candor-cli" "https://crates.io/api/v1/crates/candor-scan" 2>/dev/null | sed -n 's/.*"max_stable_version":"\([0-9][0-9.]*\)".*/\1/p' | head -1)
@@ -883,7 +883,7 @@ PY
     printf "  %-7s %-30s %s\n" "rust" "$rstat" "crates.io — cargo install (needs rust)"
     tstat="not installed"; if have candor-ts; then tstat="installed (global)"; elif have node; then tstat="available via npx (no install)"; else tstat="needs Node"; fi
     printf "  %-7s %-30s %s\n" "ts" "$tstat" "npm — runs via npx"
-    sstat="not installed (optional)"; have candor-swift && sstat="installed $(candor-swift --version 2>/dev/null | head -1 | awk '{print $2}')"
+    sstat="not installed (optional)"; swb="$(rust_bin candor-swift 2>/dev/null)" && sstat="installed $("$swb" --version 2>/dev/null | head -1 | awk '{print $2}')"
     printf "  %-7s %-30s %s\n" "swift" "$sstat" "source build (macOS + swift)"
     echo ""
     echo "  candor update [jvm|rust|ts|swift ...]   fetch/refresh (all if none named)"
@@ -952,12 +952,31 @@ PY
         echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
       fi
     fi
-    # --- Swift engine: macOS + toolchain, source build ---
+    # --- Swift engine: a released macOS binary from 0.27, source build below that ---
+    # Through 0.26 candor-swift shipped NO release assets — its workflow built, tested, smoked and cut a
+    # release, then attached nothing — so this could only tell a Mac user to install a Swift toolchain and
+    # build from source. That was the entire install story for `privacy-manifest`, a swift-only capability
+    # with a case study written about it: the one feature nobody could install to try.
     if want swift; then
-      if [ "$os" = Darwin ] && have swift; then
-        echo "  swift  → build from the candor-swift repo (macOS): swift build -c release"
+      if [ "$os" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+        mkdir -p "$CDBIN"
+        sw="https://github.com/tombaldwin/candor-swift/releases/download/v$ENGINE_PIN/candor-swift-macos-arm64"
+        if curl -fsSL -o "$CDBIN/candor-swift.tmp" "$sw" 2>/dev/null; then
+          chmod +x "$CDBIN/candor-swift.tmp"; mv "$CDBIN/candor-swift.tmp" "$CDBIN/candor-swift"
+          echo "  swift  → native binary (candor-swift-macos-arm64), no Swift toolchain required"
+          echo "         ✔ $("$CDBIN/candor-swift" --version 2>/dev/null | head -1)"
+        else
+          rm -f "$CDBIN/candor-swift.tmp"
+          if have swift; then
+            echo "  swift  → no published binary for v$ENGINE_PIN — build from the candor-swift repo: swift build -c release"
+          else
+            echo "  swift  → optional (no published binary for v$ENGINE_PIN; needs macOS + a Swift toolchain)"
+          fi
+        fi
+      elif [ "$os" = Darwin ]; then
+        echo "  swift  → the published binary is macos-arm64; on Intel build from the candor-swift repo"
       else
-        echo "  swift  → optional (macOS + Swift toolchain; build from the candor-swift repo)"
+        echo "  swift  → macOS only (build from source elsewhere)"
       fi
     fi
     # We're already online — refresh the version cache and report any release beyond the pin (a point
@@ -1000,7 +1019,7 @@ PY
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
     else v=$(npx -y "candor-ts@$ENGINE_PIN" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
     report "ts" "$v" "install Node — the ts engine then runs via npx, no install"
-    if have candor-swift; then report "swift" "$(candor-swift --version 2>/dev/null | head -1)" ""
+    if swb="$(rust_bin candor-swift 2>/dev/null)"; then report "swift" "$("$swb" --version 2>/dev/null | head -1)" ""
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
     u=$(printf "%s\n" $specs | sort -u | grep -c .)
     if [ "$u" -gt 1 ]; then

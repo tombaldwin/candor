@@ -11,6 +11,7 @@ fail=0; ok() { echo "  ✔ $*"; }
 # INCREMENT, do not assign — this was `fail=1`, so the summary reported one failure no matter how many
 # fired. Same defect release-preflight carried. The number is what tells you whether the last fix helped.
 bad() { echo "  ✘ $*"; fail=$((fail + 1)); }
+note() { echo "  · $*"; }
 
 echo "[crates.io] the four crates at $VER"
 for c in candor-report candor-classify candor-query candor-scan; do
@@ -53,6 +54,17 @@ jb="$ROOT_C/candor-java/jbang-catalog.json"
 for a in "candor-java-$VER-all.jar" candor-linux-x64 candor-macos-arm64; do
   urls+=("https://github.com/tombaldwin/candor-java/releases/download/v$VER/$a")
 done
+# candor-swift's binary. THE GAP THIS CLOSES: every candor-swift release through v0.26.0 had ZERO assets
+# — the workflow built, tested, smoked and cut the release, then attached nothing — and this verifier
+# passed every one of them, because the release loop above only asks whether the RELEASE EXISTS. That is
+# exactly the mistake the comment above warns about, made about a different repo: a release is not an
+# installable artifact. The visible cost was `candor update` telling a Mac user to install a Swift
+# toolchain and build from source, for the engine that owns the privacy manifest. Assets begin at 0.27;
+# below that their absence is history rather than a regression, so it is noted and not failed.
+case "$VER" in
+  0.1?.*|0.2[0-6].*) note "candor-swift: no binary asset expected before 0.27 (its workflow attached none)";;
+  *) urls+=("https://github.com/tombaldwin/candor-swift/releases/download/v$VER/candor-swift-macos-arm64");;
+esac
 if [ "${#urls[@]}" -eq 0 ]; then bad "no pinned download URLs found — the check cannot have passed"; fi
 for u in $(printf '%s\n' "${urls[@]}" | sort -u); do
   # A URL derived from a pin file must ALSO name the version under verification. Checking only that it

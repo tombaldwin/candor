@@ -360,13 +360,22 @@ detect_langs() {
 #
 # The tokens are the report BACKEND tokens `route_query` already resolves (JS · jvm · rust · Swift), so the
 # table is keyed on the same thing the dispatch is.
+# MEASURED, and two rows were measured WRONG on the first cut (2026-08-04) — a review caught them:
+#   · `parsepolicy` omitted jvm — java implements it and answers with the parsed JSON.
+#   · `agents` listed rust only — candor-ts implements it too. I had probed `scan.mjs`, which does not
+#     have it, when the verb lives in `query.mjs`.
+# Both produced FALSE REFUSALS: the dispatcher told a user their engine lacked a verb it has, which is
+# the exact bug this table exists to fix, committed by the fix. The lesson is not "measure" — I did —
+# it is that a verb must be probed on the binary the DISPATCHER would route it to, in a directory where
+# a report exists, because otherwise every verb fails identically on report discovery before the engine
+# ever dispatches it. That is how the first re-measurement reported `where` as absent from rust.
 verb_engines() {
   case "$1" in
     gains|path|tour|fix|fix-gate|unverified|gate)  echo "JS jvm rust Swift";;
     show|where|callers|map|containment|diff|reachable|impact|blindspots|whatif) echo "JS jvm rust";;
-    parsepolicy)       echo "JS rust Swift";;
+    parsepolicy)       echo "JS jvm rust Swift";;
     rewire)            echo "jvm rust";;
-    agents)            echo "rust";;
+    agents)            echo "JS rust";;
     privacy-manifest)  echo "Swift";;
     *)                 echo "";;
   esac

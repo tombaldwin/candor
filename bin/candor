@@ -63,7 +63,7 @@ nth_positional() {
   local n="$1"; shift; local skip=0 c=0 a
   for a in "$@"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    case "$a" in --report|--policy|--gate-json) skip=1;; -*) ;; *) c=$((c+1)); [ "$c" = "$n" ] && { echo "$a"; return; };; esac
+    case "$a" in --report|--policy|--gate-json|--target) skip=1;; -*) ;; *) c=$((c+1)); [ "$c" = "$n" ] && { echo "$a"; return; };; esac
   done
 }
 
@@ -252,7 +252,19 @@ route_query() {
     else famprefix="$loc"; files=("$loc".*.json); fi
   else
     local d="$PWD" base=""
-    while :; do [ -d "$d/.candor" ] && { base="$d/.candor/report"; break; }; [ "$d" = "/" ] && break; d="$(dirname "$d")"; done
+    # Trigger on "no REPORT", not "no .candor/". `candor init` COMMITS `.candor/` (config, policy,
+    # baseline) and gitignores `report*.json`, so a teammate's fresh clone — the exact repo shape init
+    # produces — has the directory and no report, and got the old lecture instead of the auto-scan.
+    while :; do
+      if [ -d "$d/.candor" ]; then
+        _hasrep=0
+        for _f in "$d"/.candor/report*.json; do
+          [ -e "$_f" ] || continue; is_sidecar "$_f" && continue; _hasrep=1; break
+        done
+        [ "$_hasrep" = 1 ] && { base="$d/.candor/report"; break; }
+      fi
+      [ "$d" = "/" ] && break; d="$(dirname "$d")"
+    done
       # NO REPORT? SCAN, don't lecture. A scan is cheap (every engine is syntactic except the JVM one,
       # which needs bytecode and says so), non-destructive, and is the ONLY thing the user could have done
       # with the instruction we used to print. Making them read it, retype it and come back is a dead end
@@ -261,8 +273,28 @@ route_query() {
       # LOUD, never silent: it says what it is doing and that it wrote `.candor/`, because a verb that
       # quietly creates files in your repo is its own surprise. CANDOR_NO_AUTOSCAN=1 restores the refusal
       # (for CI that should fail rather than scan).
+      # A verb this project's engine does not implement must be REFUSED before anything is written.
+      # `candor privacy-manifest` in a Rust project scanned, wrote `.candor/`, and only then said
+      # candor-rust does not implement it — the refusal was knowable from the manifest all along, and a
+      # usage error that mutates the working tree violates this repo's own stated principle.
+      _cap_arm="$(context_arm)"; _cap_sup="$(verb_engines "$verb")"
+      if [ -n "$_cap_arm" ] && [ -n "$_cap_sup" ]; then
+        case " $_cap_sup " in
+          *" $_cap_arm "*) ;;
+          *) _n=""; for _t in $_cap_sup; do _n="$_n, $(engine_name "$_t")"; done
+             die "$(engine_name "$_cap_arm") does not implement \`$verb\` — the engine(s) that do: ${_n#, }.";;
+        esac
+      fi
       if [ -z "$base" ] && [ -z "${CANDOR_NO_AUTOSCAN:-}" ] && [ -z "${CANDOR_DISPATCH_DRYRUN:-}" ]; then
-        _al="$(detect_langs "$PWD")"
+        # VERBS THAT MUST NOT AUTO-SCAN. `gate`'s whole contract is "apply a policy to an EXISTING
+        # report, no scan" with exit 2 = unevaluable — its own --help says so. Auto-scanning turned a CI
+        # job whose scan step was deleted or misordered from a loud exit 2 into a green exit 0, which is
+        # the fail-closed guarantee inverted. `gains`/`diff` take report locators positionally and mean
+        # nothing without them.
+        case "$verb" in
+          gate|gains|diff) _al="";;
+          *) _al="$(detect_langs "$PWD")";;
+        esac
         case "$_al" in
           rust|ts|java|swift)
             if engine_present "$_al" || autofetch_engine "$_al"; then
@@ -508,7 +540,7 @@ route_scan() {
   local a target="." skip=0
   for a in "$@"; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    case "$a" in --report|--policy|--gate-json) skip=1;; -*) ;; *) target="$a"; break;; esac
+    case "$a" in --report|--policy|--gate-json|--target) skip=1;; -*) ;; *) target="$a"; break;; esac
   done
   # A path that doesn't exist is a "no such directory" error naming the FULL path — not a truncated,
   # manifest-blaming message. Before this, `candor scan /does/not/exist` ran dirname (dropping `exist`) and
@@ -731,7 +763,10 @@ H
 import json, glob, os, sys, time
 root = sys.argv[1]; cd = os.path.join(root, ".candor")
 reps = [p for p in glob.glob(cd + "/report*.json")
-        if not any(s in p for s in (".callgraph.", ".hierarchy.", ".calibrated.", ".gate.", ".encountered-"))]
+        # the sixth and seventh copies of the sidecar rule, in a different language — `.locs.` was in
+        # neither, so the dashboard showed candor-ts's locs sidecar as a phantom "engine ?, spec ?" row.
+        if not any(s in p for s in (".callgraph.", ".hierarchy.", ".calibrated.", ".gate.", ".locs.",
+                                    ".encountered-"))]
 print(f"candor status — {os.path.basename(root)}")
 cfg = os.path.join(cd, "config")
 keys = {}
@@ -769,7 +804,7 @@ print(f"  policy   {'wired: ' + str(keys.get('policy')) if keys.get('policy') el
 print(f"  baseline {'wired: ' + str(keys.get('baseline')) if keys.get('baseline') else ('per-engine files present' if glob.glob(cd + '/baseline*.json') else 'none — the regression ratchet is off')}")
 PY
       # freshness marker (reuse the same pruned single-hit probe)
-      repfile="$(ls -t "$croot"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy|calibrated|gate|encountered' | head -1)"
+      repfile="$(ls -t "$croot"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy|calibrated|gate|locs|encountered' | head -1)"
       newer=$(find "$croot" \( -name .git -o -name .candor -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist \) -prune -o \
         -type f \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.kt' -o -name '*.scala' -o -name '*.swift' \) \
         -newer "$repfile" -print -quit 2>/dev/null)
@@ -836,6 +871,11 @@ COMMON ACTIONS  (add --help to any for its own usage)
   blindspots                the Unknown sources worth resolving, ranked by reach
   gains <current> <base>    what a new version newly reaches (the supply-chain diff)
   fix <fn> <Effect>         the boundary hoist that would clear a violation
+
+ENVIRONMENT
+  CANDOR_NO_AUTOSCAN=1   a verb that finds no report FAILS instead of scanning first — for CI that
+                         should fail rather than act on a missing scan step
+  CANDOR_NO_AUTOFETCH=1  a missing engine is NOT downloaded; the verb fails, naming the install
 
 ALL ACTIONS
   show  where  callers  map  containment  diff  reachable  impact  blindspots
@@ -1284,7 +1324,16 @@ PY
         esac
       } > "$wf"
       case "$langs" in
-        rust|ts|swift) echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)";;
+        rust|ts) echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)";;
+        swift) # HONEST ABOUT THE PIN. The generated job curls candor-swift-macos-arm64 at ENGINE_PIN, and
+               # candor-swift published NO release assets before 0.27 — so on an older pin the workflow
+               # 404s on its first run while init calls it "ready".
+               if curl -fsI --max-time 4 "https://github.com/tombaldwin/candor-swift/releases/download/v$pin/candor-swift-macos-arm64" >/dev/null 2>&1; then
+                 echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)"
+               else
+                 echo "  ✔ CI workflow → $wfloc — but candor-swift v$pin publishes no macOS binary yet, so"
+                 echo "    its download step will 404 until that release exists. Bump the pin when it does."
+               fi;;
         *)       echo "  ✔ CI workflow → $wfloc (review the marked EDIT lines: your build + engine setup)";;
       esac
     elif [ -f "$wf" ]; then

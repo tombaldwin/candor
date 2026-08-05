@@ -599,6 +599,41 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   _Remaining:_ the public writeup — `candor/docs/case-study-privacy-manifest.md` is written, every
   factual claim re-measured against the current engine, and awaiting Tom's publish decision. It needs
   0.27 published first (it documents `--target` and the read/write direction).
+- **[P1 — the `unanalyzed` manifest covers files that FAILED, not files never CONSIDERED. MEASURED in
+  three engines 2026-08-05.]** A source file inside the package that the engine's file-set rule skips is
+  absent from the report AND absent from `unanalyzed` AND absent from the coverage ledger. Under ⟨0.21⟩
+  absence from `functions` is a positive purity claim, so this is the cardinal-sin shape at FILE
+  granularity — and the ⟨0.21⟩ machinery built to catch exactly this is never fed by the file-set decision.
+
+  Reproduced, each on the tip engines:
+
+  | engine | the skipped file | result |
+  |---|---|---|
+  | candor-ts | `src/deploy.js` calling `child_process.execSync("curl … \| sh")`, beside one `.ts` file | `deny Exec` → **`policy ✓`, exit 0**; `1 files` analyzed; `unanalyzed: None`; `coverage: null` |
+  | candor-rust | `build.rs` running `Command::new("curl")` — the canonical supply-chain vector, executing at BUILD time | `functions: []`, `analyzed.count: 1`, `unanalyzed: None` |
+  | candor-swift | `Sources/App/legacy.c` calling `system("curl … \| sh")`, in the scanned target | `analyzed.count: 1`, `unanalyzed: None` |
+
+  **A REVIEW CLAIMED THIS WAS WORSE THAN IT IS, AND THE CORRECTION IS THE USEFUL PART.** A `.js`-ONLY
+  package is fail-closed: candor-ts exits **2** with "no TypeScript sources under .". The hole opens only
+  once at least one `.ts` file exists — i.e. exactly the mixed/gradual-migration repo that is the norm in
+  that ecosystem, and never in the toy case someone would use to sanity-check the tool. Do not file this
+  as "candor-ts ignores .js"; it does not, until it has a reason to look like it is working.
+
+  The line is drawn INCONSISTENTLY inside one engine, which is the tell: a `.ts` file that fails to PARSE
+  correctly exits 2 with "a gate cannot be green over unanalyzed code", while a file that was never
+  considered passes silently. Same package, same invisibility, opposite verdict.
+
+  **The fix is the one already designed:** enumerate the package's source-file universe from the manifest
+  and the filesystem (a glob, NOT the import graph — the import graph cannot see a file nothing imports,
+  and `build.rs` is reached by cargo, not by `lib.rs`), and put every in-scope file the engine did not
+  analyse into `unanalyzed`. Existing ⟨0.21⟩ machinery then makes a configured gate exit 2 with no new
+  concept. Separately decide, per engine and explicitly rather than by omission: `build.rs`, `tests/`,
+  `examples/`, `.js` under `allowJs`, and non-Swift sources in a Swift target.
+
+  Four engines plus a spec sentence, so it wants a rung and a conformance PART — filed rather than
+  patched. **This is the highest-value item on this list**: it is the one class where the product's
+  central promise ("never a silent false clean") is measurably untrue on ordinary inputs.
+
 - **[P1 — a GATE-LEVEL false all-clear, MEASURED four-way 2026-08-05] A policy rule that matches ZERO
   functions passes silently, and `unverified` then calls the layer "PROVABLY clean".**
 

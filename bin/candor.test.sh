@@ -48,9 +48,14 @@ ok "swift + show → suggests candor-ts"        "candor-ts"                     
 ok "rust + privacy-manifest → refused"        "does not implement \`privacy-manifest\`" bash -c "cd '$T/qr' && '$D' privacy-manifest"
 # THE ASYMMETRIES ARE REAL AND EACH WOULD MISROUTE WITHOUT ITS OWN ROW: java has no parsepolicy, ts has no
 # rewire, only rust has agents.
-ok "java + parsepolicy → refused"             "does not implement \`parsepolicy\`" bash -c "cd '$T/qj' && '$D' parsepolicy p"
+# CORRECTED 2026-08-05 by a review: java DOES implement parsepolicy and ts DOES implement agents, so
+# the original two rows here asserted FALSE REFUSALS — the dispatcher telling a user their engine lacks
+# a verb it has, which is the bug this table exists to fix. Both are now asserted to ROUTE.
+ok "java + parsepolicy → routes (java HAS it)" "WOULD-RUN: candor-java parsepolicy" bash -c "cd '$T/qj' && '$D' parsepolicy p"
+ok "ts + agents → routes (ts HAS it)"          "WOULD-RUN: candor-ts-query agents"  bash -c "cd '$T/qt' && '$D' agents"
+ok "swift + parsepolicy → routes"              "WOULD-RUN: candor-swift parsepolicy" bash -c "cd '$T/qs' && '$D' parsepolicy p"
 ok "ts + rewire → refused"                    "does not implement \`rewire\`"      bash -c "cd '$T/qt' && '$D' rewire a b"
-ok "java + agents → refused, names rust"      "candor-rust"                        bash -c "cd '$T/qj' && '$D' agents"
+ok "java + agents → refused, names who has it" "does not implement \`agents\`"     bash -c "cd '$T/qj' && '$D' agents"
 # THE REGRESSION GUARD. Rust owns the OPEN REMAINDER of backend tokens (`scan`, `lib`, `Executable`, …), so
 # comparing the raw token refuses every supported verb on a Rust report. The first version of the capability
 # check did exactly that — a routing fix that became a routing regression.

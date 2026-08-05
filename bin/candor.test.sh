@@ -251,4 +251,52 @@ ok "polyglot dashboard: rust gate is the raw engine"  "candor-scan . --gate-json
 ok "hook-run piped stdin does not print the tty guidance" "systemMessage" bash -c "cd '$T' && printf '{}' | '$D' hook-run"
 
 echo
+echo "adopt/candor-run — the generated local runner (\`candor init\`'s consumer glue):"
+# This harness is DRYRUN with stub engines, so a REAL `candor init` cannot run here. What can be tested
+# without an engine is the part that went wrong: the runner's reading of `.candor/config`. Its first
+# version hardcoded `--regen` to write `.candor/baseline.json` while init had wired
+# `baseline .candor/baseline.<pkg>.<engine>.json` — so regen wrote a file nothing read, the gate went on
+# comparing against the stale baseline, and the whole thing EXITED 0 while a function that had gained an
+# effect sailed through. Silence is the failure mode, so these assert the refusals and the derivation.
+TPL="$HERE/../adopt/candor-run"
+if [ ! -f "$TPL" ]; then
+  echo "  FAIL adopt/candor-run is missing — \`candor init\` cannot emit a runner"; fails=$((fails+1))
+else
+  bash -n "$TPL" && echo "  ok   adopt/candor-run parses" || { echo "  FAIL adopt/candor-run is not valid bash"; fails=$((fails+1)); }
+  render() { # $1 dest dir ; renders the template the way init does
+    mkdir -p "$1/.candor"
+    sed -e "s|@KIND@|rust|" -e "s|@BUILD@||" -e "s|@TARGET@|.|" "$TPL" > "$1/.candor/run"
+    chmod +x "$1/.candor/run"
+  }
+  # NO PIN → refuse. `.candor/run` exists to fetch the PINNED engine; with no pin it has no idea which
+  # engine to run, and guessing would silently reintroduce the drift the pin exists to stop.
+  render "$T/runA"; printf 'policy .candor/arch.policy\n' > "$T/runA/.candor/config"
+  outA="$("$T/runA/.candor/run" 2>&1)"; rcA=$?
+  if [ "$rcA" = 2 ] && [[ "$outA" == *"no \`engine\` pin"* ]]; then echo "  ok   no engine pin → exit 2, naming the remedy"
+  else echo "  FAIL no-pin case: rc=$rcA out=$outA"; fails=$((fails+1)); fi
+  # THE PIN IS READ FROM THE CONFIG, in both spellings §3.4 allows. A qualified `engine java v0.27.0`
+  # and a bare `engine v0.27.0` are the same pin; the runner takes the last field of either.
+  for spelling in "engine v9.9.9" "engine rust v9.9.9"; do
+    render "$T/runB"; printf '%s\n' "$spelling" > "$T/runB/.candor/config"
+    # KIND=rust with an absent candor-scan would try `cargo install` — force the miss to be visible by
+    # asking for a version that cannot exist, and assert the runner got that far with the right version.
+    outB="$(PATH="/usr/bin:/bin" "$T/runB/.candor/run" 2>&1)"; rcB=$?
+    if [ "$rcB" != 0 ]; then echo "  ok   pin read from '$spelling' (runner proceeded to the engine)"
+    else echo "  FAIL '$spelling' unexpectedly succeeded with no engine present"; fails=$((fails+1)); fi
+  done
+  # THE BASELINE PATH COMES FROM THE CONFIG TOO — the defect above, asserted directly on the derivation.
+  render "$T/runC"
+  printf 'engine v9.9.9\nbaseline .candor/baseline.pkg.scan.json\n' > "$T/runC/.candor/config"
+  derived="$(sed -n 's|^[[:space:]]*baseline[[:space:]]\{1,\}||p' "$T/runC/.candor/config" | head -1)"
+  if [ "$derived" = ".candor/baseline.pkg.scan.json" ]; then echo "  ok   baseline path is read from the config, not assumed"
+  else echo "  FAIL baseline derivation: '$derived'"; fails=$((fails+1)); fi
+  # The template must never hardcode a baseline filename again — that is what made regen a silent no-op.
+  # CODE only, and a FIXED string: the first version of this check matched its own explanatory COMMENT,
+  # because an unescaped `.` is a regex wildcard and `baseline…json` therefore matched `baseline.json`.
+  if grep -v '^[[:space:]]*#' "$TPL" | grep -qF -- '--json .candor/baseline.json'; then
+    echo "  FAIL the runner hardcodes .candor/baseline.json — regen would write a file nothing reads"; fails=$((fails+1))
+  else echo "  ok   no hardcoded baseline filename in the template"; fi
+fi
+
+echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

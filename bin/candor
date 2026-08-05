@@ -1224,6 +1224,15 @@ PY
     # single-language repo; a polyglot repo gates each language with its own baseline (shown below).
     cfg="$idir/.candor/config"; touch "$cfg"
     grep -q "^policy" "$cfg" 2>/dev/null || { [ -f "$idir/.candor/arch.policy" ] && printf 'policy .candor/arch.policy\n' >> "$cfg" && echo "  ✔ config: policy wired"; }
+    # ⟨0.28⟩ THE ENGINE PIN (spec §3.4) — the single source of truth for the engine version, so it and
+    # the committed baseline cannot drift. It used to live in the consumer's CI YAML, decoupled from the
+    # baseline it is married to: a newer engine resolves more dispatch, legitimately reports more
+    # effects, and the AS-EFF-005 ratchet then fires on functions nobody touched — at which point the
+    # reflex under CI pressure is to regenerate the baseline, re-blessing whatever else moved with it.
+    grep -q "^engine" "$cfg" 2>/dev/null || {
+      printf 'engine v%s\n' "$ENGINE_PIN" >> "$cfg"
+      echo "  ✔ config: engine pinned to v$ENGINE_PIN (a different build now fails rather than comparing"
+      echo "    a report against a baseline it cannot match — bump the pin and the baseline together)"; }
     if [ "$nlang" -eq 1 ]; then
       bl="$(ls "$idir"/.candor/baseline*.json 2>/dev/null | grep -vE 'callgraph|hierarchy' | head -1)"
       grep -q "^baseline" "$cfg" 2>/dev/null || { [ -n "$bl" ] && printf 'baseline %s\n' ".candor/$(basename "$bl")" >> "$cfg" && echo "  ✔ config: baseline wired (a formerly-pure fn turning effectful now fails the gate)"; }
@@ -1256,6 +1265,35 @@ PY
     elif [ ! -f "$rgi" ]; then
       printf '# candor: the CI gate verdict is ephemeral\ncandor-verdict.json\n' > "$rgi"
     fi
+    # THE LOCAL RUNNER: `.candor/run` — the gate as ONE command, committed with the code. Generated
+    # only for a single-language repo (a polyglot one needs a gate per engine, and a runner that quietly
+    # gated ONE of them would be worse than none). The generated CI step below CALLS this script rather
+    # than restating the gate, so "it passes locally" and "it passes in CI" cannot be two different
+    # claims — which is what they were when CI ran one command and a developer ran another.
+    runsh="$idir/.candor/run"
+    if [ "$nlang" -eq 1 ] && [ ! -f "$runsh" ]; then
+      if runtpl="$(adopt_tool candor-run)"; then
+        case "$langs" in
+          java)  rbuild='mvn -q compile'; rtarget='target/classes' ;;
+          rust)  rbuild=''; rtarget='.' ;;
+          ts)    rbuild=''; rtarget='.' ;;
+          swift) rbuild=''; rtarget='.' ;;
+        esac
+        # `|` as the sed delimiter: a build command contains `/` (target/classes) and would end the
+        # expression early with the usual one.
+        sed -e "s|@KIND@|$langs|" -e "s|@BUILD@|$rbuild|" -e "s|@TARGET@|$rtarget|" "$runtpl" > "$runsh"
+        chmod +x "$runsh"
+        if [ -n "$rbuild" ]; then
+          echo "  ✔ .candor/run — the gate as one command (EDIT its BUILD= line: yours may be ./gradlew classes)"
+        else
+          echo "  ✔ .candor/run — the gate as one command (\`.candor/run\`, \`--regen\`, or any engine verb)"
+        fi
+      else
+        echo "  · .candor/run skipped (adopt/candor-run not found beside the dispatcher or in share/candor/adopt)"
+      fi
+    elif [ -f "$runsh" ]; then
+      echo "  · .candor/run exists — kept"
+    fi
     # CI WORKFLOW: the durable value is the gate ENFORCED on every push. Drop a ready GitHub Actions
     # workflow (single-language; never clobber). The gate step reads policy + baseline from .candor/config,
     # so it's just "install the pinned engine + candor <scan> --gate-json". rust/ts are no-build drop-ins;
@@ -1265,8 +1303,15 @@ PY
     # workflow written under a subdir (`candor init api`) silently never runs. If init runs in a subdir of a
     # git repo, place the workflow at the repo root, name it + scope it per-subdir (a distinct file, so it
     # never collides with a sibling `candor init`), and run its steps in the subdir via working-directory.
-    abs_idir="$(cd "$idir" && pwd)"; gitroot=""
-    have git && gitroot="$(cd "$idir" && git rev-parse --show-toplevel 2>/dev/null)"
+    # `pwd -P` on BOTH sides. `git rev-parse --show-toplevel` always answers with the PHYSICAL path,
+    # while a bare `pwd` answers with the logical one — so under any symlinked path (macOS's /tmp →
+    # /private/tmp, a symlinked projects dir) the two never matched, and a standalone repo was read as
+    # a monorepo SUBDIRECTORY. The prefix strip below then failed too, leaving `rel` as a full absolute
+    # path: a workflow named `candor--tmp-initdemo.yml` carrying `working-directory: /tmp/initdemo`,
+    # which cannot resolve on a CI runner. Found by running `candor init` in /tmp.
+    abs_idir="$(cd "$idir" && pwd -P)"; gitroot=""
+    have git && gitroot="$(cd "$idir" && git rev-parse --show-toplevel 2>/dev/null | sed 's|/*$||')"
+    [ -n "$gitroot" ] && [ -d "$gitroot" ] && gitroot="$(cd "$gitroot" && pwd -P)"
     wfdir="$idir/.github/workflows"; wfname="candor.yml"; jobname="candor"; wdir=""; wfloc=".github/workflows/candor.yml"
     if [ -n "$gitroot" ] && [ "$gitroot" != "$abs_idir" ]; then
       rel="${abs_idir#"$gitroot"/}"
@@ -1295,32 +1340,51 @@ PY
         [ -n "$wdir" ] && { echo "    defaults:"; echo "      run:"; echo "        working-directory: $wdir"; }
         echo "    steps:"
         echo "      - uses: actions/checkout@v4"
+        # The TOOLCHAIN the runner needs — not the engine. `.candor/run` fetches the pinned ENGINE
+        # itself, reading the pin from `.candor/config`, so the version appears in exactly one place.
+        # It used to be restated here in YAML, decoupled from the baseline it is married to, and
+        # nothing made the two move together.
         case "$langs" in
           rust)  echo "      - uses: dtolnay/rust-toolchain@stable"
-                 echo "      - uses: Swatinem/rust-cache@v2   # keep the gate off the multi-minute cold-compile path"
-                 echo "      - run: cargo install candor-scan --version '=$pin' --locked   # pin tracks .candor/baseline's engine — bump both together"
-                 echo "      - run: candor-scan . --gate-json candor-verdict.json";;
+                 echo "      - uses: Swatinem/rust-cache@v2   # keep the gate off the multi-minute cold-compile path";;
           ts)    echo "      - uses: actions/setup-node@v4"
-                 echo "        with: { node-version: 20 }"
-                 echo "      - run: npx -y candor-ts@$pin . --gate-json candor-verdict.json   # pin tracks .candor/baseline's engine — bump both together";;
-          swift) # macos-14 is arm64, which the released binary targets. This arm did not exist before
-                 # 0.27 because candor-swift published no binary at all — `init` printed a note telling a
-                 # Swift user to go and build one, which is a dead end in a generator whose entire job is
-                 # producing a workflow that runs.
-                 echo "      - run: |"
-                 echo "          curl -fsSL -o candor-swift https://github.com/tombaldwin/candor-swift/releases/download/v$pin/candor-swift-macos-arm64"
-                 echo "          chmod +x candor-swift"
-                 echo "      - run: ./candor-swift . --gate-json candor-verdict.json"
-                 echo "      # Per SHIPPED BINARY, not per repo: add --target <name> on a multi-target package,"
-                 echo "      # and one privacy-manifest step per Info.plist you ship."
-                 echo "      # - run: ./candor-swift privacy-manifest --verify Resources/Info.plist";;
+                 echo "        with: { node-version: 20 }";;
           java)  echo "      - uses: actions/setup-java@v4"
-                 echo "        with: { distribution: temurin, java-version: '21' }"
-                 echo "      - run: mvn -q compile           # EDIT: your build (or ./gradlew classes)"
-                 echo "      - run: |"
-                 echo "          curl -fsSL -o candor-java https://github.com/tombaldwin/candor-java/releases/download/v$pin/candor-linux-x64"
-                 echo "          chmod +x candor-java"
-                 echo "      - run: ./candor-java target/classes --gate-json candor-verdict.json  # EDIT: your compiled-classes dir";;
+                 echo "        with: { distribution: temurin, java-version: '21' }";;
+        esac
+        if [ -f "$runsh" ]; then
+          echo "      # The SAME command a developer runs before pushing. It reads the engine pin from"
+          echo "      # .candor/config, fetches that engine, and runs the gate — so \"it passes locally\""
+          echo "      # and \"it passes in CI\" are the same claim rather than two similar ones."
+          case "$langs" in
+            java) echo "      # EDIT .candor/run's BUILD= line if your build is not \`mvn -q compile\`.";;
+          esac
+          echo "      - run: .candor/run"
+        else
+          # No runner (it existed already, or adopt/ was not found) — restate the gate inline, and say
+          # in the file that the pin is now duplicated, because a duplicated pin that nobody knows is
+          # duplicated is exactly the drift this rung exists to stop.
+          echo "      # NOTE: .candor/run was not generated, so the engine version is pinned HERE as well"
+          echo "      # as in .candor/config. Keep them equal, or delete this and use .candor/run."
+          case "$langs" in
+            rust)  echo "      - run: cargo install candor-scan --version '=$pin' --locked"
+                   echo "      - run: candor-scan . --gate-json candor-verdict.json";;
+            ts)    echo "      - run: npx -y candor-ts@$pin . --gate-json candor-verdict.json";;
+            swift) echo "      - run: |"
+                   echo "          curl -fsSL -o candor-swift https://github.com/tombaldwin/candor-swift/releases/download/v$pin/candor-swift-macos-arm64"
+                   echo "          chmod +x candor-swift"
+                   echo "      - run: ./candor-swift . --gate-json candor-verdict.json";;
+            java)  echo "      - run: mvn -q compile           # EDIT: your build (or ./gradlew classes)"
+                   echo "      - run: |"
+                   echo "          curl -fsSL -o candor-java https://github.com/tombaldwin/candor-java/releases/download/v$pin/candor-linux-x64"
+                   echo "          chmod +x candor-java"
+                   echo "      - run: ./candor-java target/classes --gate-json candor-verdict.json  # EDIT: your classes dir";;
+          esac
+        fi
+        case "$langs" in
+          swift) echo "      # Per SHIPPED BINARY, not per repo: add --target <name> on a multi-target package,"
+                 echo "      # and one privacy-manifest step per Info.plist you ship."
+                 echo "      # - run: .candor/run privacy-manifest --verify Resources/Info.plist";;
         esac
       } > "$wf"
       case "$langs" in
@@ -1338,6 +1402,138 @@ PY
       esac
     elif [ -f "$wf" ]; then
       echo "  · $wfloc exists — kept"
+    fi
+    # BITBUCKET PIPELINES: a SNIPPET, never an edit. `bitbucket-pipelines.yml` is one file holding every
+    # pipeline a repo has, so generating over it would destroy the build; and a repo that already has one
+    # is exactly the repo that cannot afford that. So init writes a paste-ready step beside the config and
+    # says where it goes. (GitHub Actions gets a whole file because its workflows are one-per-file.)
+    bbstep="$idir/.candor/bitbucket-step.yml"
+    if [ "$nlang" -eq 1 ] && [ -f "$runsh" ] && [ ! -f "$bbstep" ]; then
+      { echo "# candor architecture gate — a paste-ready step for bitbucket-pipelines.yml."
+        echo "# Generated by \`candor init\`; NOT wired up automatically, because bitbucket-pipelines.yml"
+        echo "# holds every pipeline this repo has and generating over it would destroy the build."
+        echo "# Paste this under the pipeline you want gated (e.g. pipelines: default: or pull-requests:)."
+        echo "#"
+        echo "# The engine version is NOT here: .candor/run reads it from .candor/config, so the pin and"
+        echo "# the committed baseline stay married. A verdict file is written for the PR to surface."
+        echo "- step:"
+        echo "    name: Candor Gate"
+        case "$langs" in
+          java)  echo "    image: maven:3-eclipse-temurin-21";;
+          ts)    echo "    image: node:20";;
+          rust)  echo "    image: rust:latest";;
+          swift) echo "    # candor-swift ships a macOS arm64 binary; Bitbucket's Linux runners cannot run it."
+                 echo "    # Use a self-hosted macOS runner, or build the engine from source in this step.";;
+        esac
+        echo "    caches:"
+        echo "      - candor"
+        echo "    script:"
+        case "$langs" in
+          java)  echo "      - mvn -q compile      # or ./gradlew classes — must match .candor/run's BUILD=";;
+        esac
+        echo "      - ./.candor/run"
+        echo "    artifacts:"
+        echo "      - candor-verdict.json"
+        echo ""
+        echo "# …and once, at the top level of bitbucket-pipelines.yml, so the engine is fetched once"
+        echo "# rather than on every build:"
+        echo "#"
+        echo "# definitions:"
+        echo "#   caches:"
+        echo "#     candor: ~/.cache/candor"; } > "$bbstep"
+      if [ -f "$idir/bitbucket-pipelines.yml" ]; then
+        echo "  ✔ .candor/bitbucket-step.yml — you have a bitbucket-pipelines.yml; paste this step into it"
+      else
+        echo "  ✔ .candor/bitbucket-step.yml (paste-ready, if you use Bitbucket Pipelines)"
+      fi
+    fi
+    # THE DOCS STUB: `.candor/README.md`, POINTING at candor's docs rather than restating them. A copy of
+    # the concepts in every consumer repo is a copy that goes stale silently — the drift class this
+    # project keeps finding in its own contracts. Written to `.candor/`, never to the repo's own
+    # AGENTS.md/README.md: those are the consumer's, and a generator has no business overwriting them.
+    stub="$idir/.candor/README.md"
+    # The query examples name the BASELINE the config actually wired, not a guessed `baseline.json`:
+    # the file is per-engine and decorated (`baseline.<pkg>.<backend>.json`), so a hardcoded name would
+    # be a copy-paste that fails on first use — a docs stub whose commands do not run.
+    blname="$(sed -n 's|^[[:space:]]*baseline[[:space:]]\{1,\}||p' "$cfg" 2>/dev/null | head -1)"
+    blname="${blname:-.candor/baseline.json}"
+    if [ ! -f "$stub" ]; then
+      { echo "# candor — the effect gate in this repo"
+        echo ""
+        echo "Generated by \`candor init\`. What is committed here, and what each file is for:"
+        echo ""
+        echo "| file | what it is |"
+        echo "|---|---|"
+        echo "| \`config\` | the checked-in settings (spec §3.4) — policy, baseline, and the \`engine\` pin |"
+        echo "| \`arch.policy\` | the architecture rules. Every rule passed when it was proposed |"
+        echo "| \`baseline*.json\` | what the code reached at adoption. A function GAINING an effect fails the gate |"
+        [ -f "$runsh" ] && echo "| \`run\` | the gate as one command — the same one CI runs |"
+        [ -f "$bbstep" ] && echo "| \`bitbucket-step.yml\` | a paste-ready Bitbucket Pipelines step |"
+        echo ""
+        echo "## The one rule that matters"
+        echo ""
+        echo "**The engine pin and the baseline move together.** The baseline records what one engine"
+        echo "build saw. A newer engine resolves more dispatch, so it legitimately reports more effects —"
+        echo "and the ratchet then fires on functions nobody touched. Bump \`engine\` in \`config\` and"
+        echo "regenerate the baseline in the SAME change, never one without the other."
+        echo ""
+        echo "## Running it"
+        echo ""
+        if [ -f "$runsh" ]; then
+          echo '```'
+          echo ".candor/run              # the gate — exit 1 on a violation, 2 if it could not be evaluated"
+          echo ".candor/run --regen      # regenerate the baseline (a deliberate act: it re-blesses what is there now)"
+          echo ".candor/run show <fn>    # anything else passes through to the pinned engine"
+          echo '```'
+        else
+          echo '```'
+          echo "candor scan .            # then: candor gate, candor show <fn>, candor where <effect>"
+          echo '```'
+        fi
+        echo ""
+        echo "## Use it to investigate, not just to gate"
+        echo ""
+        echo "The gate is the part that runs in CI, but most of the value is in ASKING. candor answers"
+        echo "effect questions faster and far more reliably than reading call chains by hand, because it"
+        echo "has already computed the transitive closure — and where it cannot resolve a call it says"
+        echo "\`Unknown\`, never a quiet \"nothing here\"."
+        echo ""
+        echo '```sh'
+        if [ -f "$runsh" ]; then
+          echo ".candor/run show    $blname <fn>      # this function's transitive effects"
+          echo ".candor/run where   $blname Net       # every function that reaches the network"
+          echo ".candor/run callers $blname <fn>      # who calls this"
+          echo ".candor/run blast   $blname <fn>      # what breaks if this changes"
+          echo ".candor/run diff    old.json new.json          # what a change altered"
+        else
+          echo "candor show    <fn>            # this function's transitive effects"
+          echo "candor where   Net             # every function that reaches the network"
+          echo "candor callers <fn>            # who calls this"
+          echo "candor blast   <fn>            # what breaks if this changes"
+          echo "candor diff    old.json new.json"
+        fi
+        echo '```'
+        echo ""
+        echo "Good moments to reach for it:"
+        echo ""
+        echo "- **Before editing a function** — what does it already touch? A function that looks local"
+        echo "  may reach \`Db\` or \`Net\` three calls down, and that is the thing you are about to change."
+        echo "- **After a refactor** — did I add an effect? \`diff\` against the committed baseline answers"
+        echo "  it directly, instead of waiting for CI to tell you on the push."
+        echo "- **When auditing an effect** — \`where Net\` is the whole answer to \"what talks to the"
+        echo "  network\", including the paths nobody remembers."
+        echo "- **Before deleting or changing a signature** — \`blast\` names what depends on it."
+        echo ""
+        echo "## The concepts, in one place — not restated here"
+        echo ""
+        echo "- **What the report means, and the verdict JSON shape** — <https://candor.poly.io>"
+        echo "- **Query verbs** (\`show\`, \`where\`, \`blast\`, \`whatif\`, \`path\`) — \`candor --help\`"
+        echo "- **AS-EFF codes**, including AS-EFF-005 (the baseline ratchet) — <https://candor.poly.io>"
+        echo "- **The agent contract** for this exact engine build — \`candor agents\`"
+        echo ""
+        echo "Kept as links on purpose. A copy of these concepts in this repo is a copy that goes stale"
+        echo "without anyone noticing, and a stale explanation of a gate is worse than no explanation."; } > "$stub"
+      echo "  ✔ .candor/README.md — what is committed here and why (links to the concepts, never a copy)"
     fi
     # Loud notice for manifests in SUBDIRECTORIES init didn't cover (detect_langs only sees the top level) —
     # the polyglot blind spot where a root Cargo.toml + web/package.json left the TS half silently ungated.

@@ -599,6 +599,37 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   _Remaining:_ the public writeup — `candor/docs/case-study-privacy-manifest.md` is written, every
   factual claim re-measured against the current engine, and awaiting Tom's publish decision. It needs
   0.27 published first (it documents `--target` and the read/write direction).
+- **[P1 — a GATE-LEVEL false all-clear, MEASURED four-way 2026-08-05] A policy rule that matches ZERO
+  functions passes silently, and `unverified` then calls the layer "PROVABLY clean".**
+
+  Found by a usability review; reproduced in candor-rust, candor-swift and candor-ts (java not yet
+  checked, and there is no reason to expect it differs). A one-character typo in a LAYER name turns a
+  failing gate green:
+
+      deny Net orders   →  exit 1   (the real layer; a genuine violation)
+      deny Net ordrs    →  exit 0   "candor-query gate: policy ✓"
+      candor unverified --policy <that>
+                        →  "every function in a pure/deny layer is PROVABLY clean (no Unknown holes) ✓"
+
+  **The asymmetry is the tell.** A typo'd EFFECT token is loud — `deny Netz orders` exits 2 with
+  "names no known effect (accepted: Clipboard, Clock, Db, …)" and refuses to evaluate. A typo'd LAYER
+  token binds nothing and is scored as satisfied. Same file, same rule, opposite treatment.
+
+  This is the cardinal sin at GATE level rather than at report level: not a silent under-report by the
+  analyzer, but a silent PASS by the thing users actually act on, wearing a "provably clean"
+  endorsement. A team can hold a permanently green gate over a typo and never learn.
+
+  **THE FIX IS DISCLOSURE, NOT REFUSAL, and the spec already says so.** Exit 2 would be wrong: a
+  zero-match rule is legitimate when one policy is shared across repos or modules and a layer exists in
+  only some of them. But silence is also wrong. ⟨0.24⟩ §3.1 already rules that **an unanswerable
+  condition must be DISCLOSED, never scored as a satisfied one** — a rule that binds nothing is exactly
+  an unanswerable condition, so this is that rule applied to the policy layer rather than a new concept.
+  Minimum: report each rule's match count and name the zero-match rules in the verdict. The
+  machine-readable verdict (`--gate-json`) needs it too, or a CI consumer is in the same position.
+
+  Four-engine + spec-text work, so it wants a rung and a conformance PART rather than four local
+  patches — that is why it is filed rather than fixed on the spot.
+
 - **[P1 — DESIGNED AND UNBUILT; two filed items now wait on it] Interprocedural value provenance.**
   Design: `candor-spec/VALUE-PROVENANCE-DESIGN.md`. Tom's "absolute best product" call (2026-07-19):
   dissolve the source/sink trade-off by recovering a value's CONCRETE ORIGIN across construction and

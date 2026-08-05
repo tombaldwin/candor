@@ -3,6 +3,8 @@
 **App:** Pollen — a real, shipping Swift app with a macOS build and an iOS build sharing a core module.
 **Tool:** `candor privacy-manifest`, run over the source. No configuration, no annotations, no source
 changes. **Swift only today** — this is a candor-swift extension (`privacy/2`), not a floor feature.
+Needs candor-swift **0.27 or later**: `--target` and the read/write direction below both landed in that
+release, and on 0.26 the scoping has to be done by hand.
 
 An iOS app that touches a sensor without the matching `Info.plist` usage-description key doesn't warn you.
 It gets rejected, or it crashes on the device of whoever hits that code path first. The key must be there

@@ -111,7 +111,11 @@ PRIORS="$(printf '%s' "$PRIORS" | tr -s ' ')"
 # ASSERTION is loud wherever it lives; only a line that CONSTRUCTS a document is advisory. That is a
 # denylist over the advisory bucket, which is the direction this family's own rule requires.
 ASSERTION_RE='(want|assert|assert_eq|expect|check|XCTAssert|toBe|toEqual|deepEqual|should)'
-FIXTURE_PATH_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?[.]|test[-_.][a-z]*[.](mjs|py|sh|rs|js)|src/tests[.]rs|[.]test[.]'
+# The SUFFIX form was missing: this matched `test-foo.sh` but not `foo-test.sh`, so `bin/release-test.sh`
+# — a file whose entire job is to BUILD a fixture changelog at the prior version — was reported as a
+# shipped-source bump-miss on every cut. A fixture flagged as a defect trains the reader to skim the list
+# that exists to be read.
+FIXTURE_PATH_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?[.]|test[-_.][a-z]*[.](mjs|py|sh|rs|js)|[-_.]test[.](mjs|py|sh|rs|js)|src/tests[.]rs|[.]test[.]'
 # Two content rules that override the assertion verb, because the verb list is made of ENGLISH WORDS and
 # fires on prose. Both were found by running this against a clean tree and reading the 15 false positives:
 #   COMMENT_RE  — `check`/`expect`/`should` in a doc comment EXPLAINING the defect. Scoped to fixture paths

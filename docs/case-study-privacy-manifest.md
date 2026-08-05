@@ -162,7 +162,7 @@ The rest, stated plainly because a green exit code should not be read as more th
   a silent purity claim over every other type in it.
 - **This is Swift-only.** The privacy manifest is a candor-swift extension. The four-engine floor says
   nothing about it, and no other engine implements it.
-- **It checks 35 usage-description keys, and names the 22 it does not.** Every verify prints its own
+- **It checks 42 of the 57 keys Apple documents, and names the 15 it does not.** Every verify prints its own
   vocabulary bound — `NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus,
   GameKit friends, VideoSubscriberAccount, clinical health records and the rest — with the reason each
   is absent. Neither number is a guess: Apple's protected-resources list was **fetched from

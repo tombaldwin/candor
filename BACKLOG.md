@@ -665,18 +665,6 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   Four-engine + spec-text work, so it wants a rung and a conformance PART rather than four local
   patches — that is why it is filed rather than fixed on the spot.
 
-- **[P2 — the Homebrew tap is not checked out here, so this is the one item from the install sweep I
-  could not fix] The brew formula installs neither `adopt/` nor the swift binary.**
-  Two consequences, both on the most-travelled road:
-    · `candor init`'s headline feature — the policy PROPOSER — lives at `adopt/candor-init`, resolved as
-      `$tooldir/adopt/candor-init` beside the dispatcher. The formula does not install `adopt/`, so a
-      Homebrew user gets "policy proposal skipped" and a baseline-only init, while the caveats promise
-      the full gate. Fix: `pkgshare.install "adopt"` and have the dispatcher fall back to it.
-    · from 0.27 candor-swift publishes `candor-swift-macos-arm64`; the formula should install or fetch
-      it on macOS, so `brew install candor` covers the engine that owns `privacy-manifest`.
-  Everything else in the 2026-08-05 install sweep is fixed (release asset, `candor update`, dispatcher
-  resolution, `release-verify`, `candor init`'s Swift CI workflow, auto-scan and auto-fetch).
-
 - **[P1 — DESIGNED AND UNBUILT; two filed items now wait on it] Interprocedural value provenance.**
   Design: `candor-spec/VALUE-PROVENANCE-DESIGN.md`. Tom's "absolute best product" call (2026-07-19):
   dissolve the source/sink trade-off by recovering a value's CONCRETE ORIGIN across construction and

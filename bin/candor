@@ -21,6 +21,22 @@ QUERY_VERBS=" show where callers map containment diff reachable impact blindspot
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
 
 die()  { echo "candor: $*" >&2; exit 2; }
+# A SIDECAR IS NOT A REPORT. Discovery globs `.candor/report*.json`, and every engine writes companion
+# files beside the primary report; if one is mistaken for a second engine's report, every bare query
+# dead-ends with "multiple engines' reports … disambiguate".
+#
+# THIS LIST EXISTED IN FIVE PLACES AND `.locs.json` WAS IN NONE OF THEM. candor-ts writes it on every
+# scan, so a TS scan broke every subsequent bare verb — including the command the scan itself prints as
+# its suggested next step — and `candor init` in a polyglot tree baselined the SIDECAR and emitted a
+# nonsense CI gate line attributed to the wrong engine. Five copies of a rule is five places to forget
+# the sixth suffix, which is what happened, so there is now one.
+is_sidecar() {
+  case "$1" in
+    *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.locs.json|*.encountered-*.json) return 0;;
+  esac
+  return 1
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Validate an effect token against the §6 vocabulary; die with a did-you-mean on a miss. This closes the
@@ -241,6 +257,7 @@ route_query() {
     famprefix="$base"; files=("$base".*.json)
   fi
 
+
   # the distinct backends present (the token before .json), excluding EVERY non-report sidecar the
   # engines write beside the reports — not just the callgraph/hierarchy pair: candor-scan also writes
   # `report.calibrated.json` + `report.encountered-<crate>.json` ledgers and `--gate-json` verdicts,
@@ -249,9 +266,7 @@ route_query() {
   local f b uniq="" n=0
   for f in "${files[@]}"; do
     [ -e "$f" ] || continue
-    case "$f" in
-      *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;;
-    esac
+    is_sidecar "$f" && continue
     b="${f%.json}"
     case "$(basename "$b")" in
       *.*) b="${b##*.}";;
@@ -458,7 +473,7 @@ context_arm() {
     local f b uniq="" n=0
     for f in "$base".*.json "$base.json"; do
       [ -e "$f" ] || continue
-      case "$f" in *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;; esac
+      is_sidecar "$f" && continue
       b="${f%.json}"
       case "$(basename "$b")" in *.*) b="${b##*.}";; *) b="$(sniff_backend "$f")";; esac
       case " $uniq " in *" $(backend_arm "$b") "*) ;; *) uniq="$uniq $(backend_arm "$b")"; n=$((n+1));; esac
@@ -1048,7 +1063,7 @@ PY
     reps=()
     for f in "$idir"/.candor/report*.json; do
       [ -e "$f" ] || continue
-      case "$f" in *.callgraph.json|*.hierarchy.json|*.calibrated.json|*.gate.json|*.encountered-*.json) continue;; esac
+      is_sidecar "$f" && continue
       reps+=("$f")
     done
     [ "${#reps[@]}" -gt 0 ] || die "init: no report was written — fix the failure above and re-run"
@@ -1358,7 +1373,7 @@ PY
     hbl=""
     for f in "$hrepo"/.candor/baseline*.json; do
       [ -e "$f" ] || continue
-      case "$f" in *.callgraph.json|*.hierarchy.json) continue;; esac
+      is_sidecar "$f" && continue
       hbl=".candor/$(basename "$f")"; break
     done
     if [ -z "$hbl" ]; then

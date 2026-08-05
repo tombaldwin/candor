@@ -126,6 +126,26 @@ mkdir -p "$T/tsfam/.candor"
 : > "$T/tsfam/.candor/report.callgraph.json"
 ok "token-less report.json → candor-ts-query" "WOULD-RUN: candor-ts-query tour" \
    bash -c "cd '$T/tsfam' && '$D' tour"
+# THE candor-ts `.locs.json` SIDECAR. Found by a usability review actually using the tool: candor-ts
+# writes report.locs.json on every scan, the sidecar-exclusion list did not name it, so discovery read it
+# as a SECOND ENGINE and every bare verb after a TS scan dead-ended with "multiple engines' reports …
+# disambiguate" — including the command the scan itself prints as the next step. The list lived in FIVE
+# places and `.locs.json` was in none of them; there is one now (`is_sidecar`).
+mkdir -p "$T/tslocs/.candor"
+: > "$T/tslocs/.candor/report.json"
+: > "$T/tslocs/.candor/report.callgraph.json"
+: > "$T/tslocs/.candor/report.hierarchy.json"
+: > "$T/tslocs/.candor/report.locs.json"
+ok "ts scan family + .locs sidecar → candor-ts-query (not 'multiple engines')" "WOULD-RUN: candor-ts-query tour" \
+   bash -c "cd '$T/tslocs' && '$D' tour"
+no "…and no disambiguate error"                    "disambiguate"                bash -c "cd '$T/tslocs' && '$D' tour"
+# the same sidecar beside a TOKENED report family must behave too
+mkdir -p "$T/rlocs/.candor"
+: > "$T/rlocs/.candor/report.p.scan.json"
+: > "$T/rlocs/.candor/report.p.scan.locs.json"
+ok "rust family + .locs sidecar still routes"      "WOULD-RUN: candor-query where Net" \
+   bash -c "cd '$T/rlocs' && '$D' where Net"
+
 # and a --report pointing directly at a token-less .json file routes to ts too
 ok "--report <token-less .json> → candor-ts-query" "WOULD-RUN: candor-ts-query where Net" \
    bash -c "cd /tmp && '$D' where Net --report '$T/tsfam/.candor/report.json'"

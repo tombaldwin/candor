@@ -665,7 +665,24 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   Four-engine + spec-text work, so it wants a rung and a conformance PART rather than four local
   patches — that is why it is filed rather than fixed on the spot.
 
-- **[P1 — DESIGNED AND UNBUILT; two filed items now wait on it] Interprocedural value provenance.**
+- **[P1 — DESIGNED AND UNBUILT; THREE items now wait on it, across two ecosystems] Value provenance —
+  and it has TWO AXES, only one of which was designed.**
+  `candor-spec/VALUE-PROVENANCE-DESIGN.md` recovers a value's concrete TYPE (which `newType` reaches a
+  call — the primitive for dispatch). Measuring candor-swift against Apple's key list on 2026-08-05
+  surfaced a second question that nothing covers: **which CONSTANT is this** — which literal or enum case
+  reaches an argument. A `String` is a `String` whichever folder it names, so the type axis cannot answer
+  it, and two unrelated features are blocked on the same missing primitive:
+    · **five Apple privacy keys** (Desktop/Documents/Downloads/removable/network volumes) — the same
+      `FileManager` call needs a different key, or none, depending on a path;
+    · **the consumer half of Android permissions** — the same `ContentResolver.query` needs a different
+      permission depending on a URI constant, which is why Google annotates *zero* of that surface.
+  Designed 2026-08-05: `candor-spec/CONSTANT-PROVENANCE-DESIGN.md`. Key decisions: resolve to path/URI
+  **classes** rather than reconstructed strings (a proved prefix decides the class, the unknown tail is
+  irrelevant — no string solver); an undetermined value is a **disclosed third state with a count**,
+  never charged to every key (fabrication) and never silent (the cardinal sin); a five-rung ladder where
+  rungs 1–2 need no dataflow at all. The primitive is FLOOR, the class→key tables stay in the extensions.
+
+
   Design: `candor-spec/VALUE-PROVENANCE-DESIGN.md`. Tom's "absolute best product" call (2026-07-19):
   dissolve the source/sink trade-off by recovering a value's CONCRETE ORIGIN across construction and
   fields, interprocedurally — so a report can say not just *this function writes a file* but *it writes

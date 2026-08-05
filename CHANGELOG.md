@@ -9,7 +9,7 @@ in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main
 keeps its own.
 
 
-## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (unreleased)
+## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (released 2026-08-05 as 0.27.0)
 
 ⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces
 a producer actually computes — so an absent optional field means "undetermined" only when the surface is

@@ -572,8 +572,21 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   extensions disclosure, PART 4n tolerance pin). Six effects Location/Camera/Mic/Contacts/Photos/
   Notify. spec strings still 0.12 — rides the 0.13 floor bump with Llm. SHIPPED (2026-07-14): the privacy-manifest
   generate/verify verb (candor-swift b9a68a6, 196 tests) — the real-app exhibit is LIVE (pollen's iOS
-  Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach). _Remaining:_
-  per-target scoping (whole-tree scan caveat); a public marketing writeup.
+  Info.plist under-declares NSContactsUsageDescription vs a real ContactsService reach).
+  **PER-TARGET SCOPING DONE 2026-08-05** (`candor-swift . --target <name>`, riding 0.27): resolves the
+  target's in-package dependency closure from Package.swift and scans exactly those sources, so the
+  whole-tree caveat is a flag rather than a hand-built Package.swift per binary. Measured on the real
+  app: whole repo → ✗ Mic ✗ Motion against the macOS plist (the artifact); `--target Pollen` → exit 0
+  clean at 4 effects; `--target PolleniOS` → exit 1 on Contacts, the finding that survives correct
+  methodology. Two soundness bugs found while building it, both in the see-less direction: `.target(
+  name:)` inside a `dependencies:` array parsed as a second target DECLARATION (phantom entry with no
+  deps, so the closure walk could stop early and drop sources), and a scoped report was joinable as the
+  WHOLE package (every unscanned function then a purity claim) — fixed by qualifying the key to
+  `<pkg>/<target>#…` so a miss is disclosed. SOUNDNESS-LOG 2026-08-05; the vein was checked in
+  candor-rust and candor-ts and is NOT there.
+  _Remaining:_ the public writeup — `candor/docs/case-study-privacy-manifest.md` is written, every
+  factual claim re-measured against the current engine, and awaiting Tom's publish decision. It needs
+  0.27 published first (it documents `--target` and the read/write direction).
 - **[OPEN — P3, and the measurement REFRAMED it: blocked on value provenance, not on a table] An
   Android/JVM analogue of the privacy manifest.**
   Raised by Tom 2026-08-04, off the back of `privacy/2`. The shape transfers exactly: code reaches a

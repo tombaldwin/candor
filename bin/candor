@@ -434,6 +434,21 @@ autofetch_engine() {
   engine_present "$lang"
 }
 
+# `adopt/` helpers live BESIDE the dispatcher in a git checkout, and under share/candor/adopt when
+# installed by Homebrew — the same two layouts the hook scripts already search. Without the second, a
+# `brew install candor` silently lost `candor init`'s headline feature, the policy PROPOSER: init fell
+# back to a baseline-only setup and printed "policy proposal skipped", while the formula's caveats
+# promised the full gate. The formula lives in a separate repo (~/git/homebrew-tap), which is why the
+# two halves could drift without either looking wrong on its own.
+adopt_tool() {
+  local scriptdir; scriptdir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+  local cand
+  for cand in "$scriptdir/../adopt/$1" "$scriptdir/../share/candor/adopt/$1"; do
+    [ -f "$cand" ] && { echo "$cand"; return 0; }
+  done
+  return 1
+}
+
 # is the engine for <lang> resolvable right now? (mirrors engine_scan's resolution)
 engine_present() {
   case "$1" in
@@ -1142,19 +1157,19 @@ PY
     # its own layers, so a combined polyglot policy is safe). Never clobber an existing one.
     if [ -f "$idir/.candor/arch.policy" ]; then
       echo "  · .candor/arch.policy exists — kept (delete it and re-run to re-propose)"
-    elif [ -x "$tooldir/adopt/candor-init" ] || [ -f "$tooldir/adopt/candor-init" ]; then
+    elif proposer="$(adopt_tool candor-init)"; then
       : > "$idir/.candor/arch.policy.tmp"
       pi=0; for r in "${reps[@]}"; do
         # only the FIRST report's rules carry the comment header; the rest append rules-only (re-audit #18).
-        if [ "$pi" -eq 0 ]; then python3 "$tooldir/adopt/candor-init" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null
-        else python3 "$tooldir/adopt/candor-init" "$r" --no-header >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; fi
+        if [ "$pi" -eq 0 ]; then python3 "$proposer" "$r" >> "$idir/.candor/arch.policy.tmp" 2>/dev/null
+        else python3 "$proposer" "$r" --no-header >> "$idir/.candor/arch.policy.tmp" 2>/dev/null; fi
         pi=$((pi+1))
       done
       if [ -s "$idir/.candor/arch.policy.tmp" ]; then mv "$idir/.candor/arch.policy.tmp" "$idir/.candor/arch.policy"
         echo "  ✔ proposed .candor/arch.policy (every rule currently passes — review, keep what matches intent)"
       else rm -f "$idir/.candor/arch.policy.tmp"; echo "  · policy proposal skipped (the inference tool could not read the report)"; fi
     else
-      echo "  · policy proposal skipped (adopt/candor-init not found beside the dispatcher)"
+      echo "  · policy proposal skipped (adopt/candor-init not found beside the dispatcher or in share/candor/adopt)"
     fi
     # BASELINE each report → its sibling baseline (never clobber; per-engine, since a baseline is only
     # comparable to its OWN engine's report — a shared one would fail-closed on the others).

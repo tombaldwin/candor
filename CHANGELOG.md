@@ -28,9 +28,12 @@ keeps its own.
     editing a function, after a refactor, when auditing an effect). It LINKS the concepts rather than
     restating them — a copy in every consumer repo is a copy that goes stale silently. Written to
     `.candor/`, never over the repo's own AGENTS.md or README.md: those belong to the consumer.
-- **`candor init` writes the `engine` pin** into `.candor/config`, so the engine and the committed
-  baseline can no longer drift. candor-java refuses a mismatched pin (exit 2) rather than comparing a
-  report against a baseline it cannot match.
+- **`candor init` writes the `engine` pin** into `.candor/config`, so the version a repo intends is
+  declared in one place. candor-java refuses a mismatched pin (exit 2). Engines already refused a
+  baseline whose §2.1 build id differed from the running one — but a build hash is not something a
+  consumer can *declare*, and that refusal lives inside the baseline comparison, so a policy-only gate
+  had no coupling check at all. A declared pin also tells `.candor/run` and the CI step which engine to
+  fetch, which is what collapses the version to one place.
 - **Fixed: `init` misread a standalone repo as a monorepo subdirectory under any symlinked path.**
   `git rev-parse --show-toplevel` always answers with the PHYSICAL path while a bare `pwd` answers with
   the logical one, so on macOS (`/tmp` → `/private/tmp`) they never matched. The prefix strip then failed

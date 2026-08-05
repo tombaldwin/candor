@@ -46,7 +46,11 @@ jobs:
       # `bash -n` catches exactly that shape before anyone runs the script for real.
       - name: parse every release script
         run: |
-          for f in bin/release*.sh scripts/update-candor.sh bin/candor; do
+          # `bin/changelog-lag.sh` and `adopt/candor-run` are named explicitly: neither matches
+          # `bin/release*.sh`, and `adopt/candor-run` is a TEMPLATE shipped into consumer repos, so a
+          # parse error in it breaks someone else's CI rather than ours. It carries @KIND@ placeholders,
+          # which are inert to the parser (they sit inside double quotes).
+          for f in bin/release*.sh bin/changelog-lag.sh scripts/update-candor.sh bin/candor adopt/candor-run; do
             [ -f "$f" ] || continue
             bash -n "$f" && echo "  ok  $f"
           done

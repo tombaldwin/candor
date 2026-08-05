@@ -364,6 +364,16 @@ elif [ "$PUB" = "$VFY" ]; then ok "both name $(printf '%s' "$PUB" | grep -c .) r
 else
   bad "publisher and verifier disagree — cut only: $(comm -23 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')| checked only: $(comm -13 <(printf '%s\n' "$PUB") <(printf '%s\n' "$VFY") | tr '\n' ' ')"
 fi
+# …and [5b]'s repo list must be the SAME list. changelog-lag.sh carries its own hard-coded REPOS line —
+# an ALLOWLIST, in a script whose own header argues against allowlists because their omissions are
+# silent. An eighth family repo would simply never be checked, and [5b] would go on printing OK. This
+# ties it to the publisher's list, so adding a repo to the release without adding it there fails here.
+LAG="$(sed -n 's/^REPOS="${1:-\(.*\)}"$/\1/p' "$HERE/changelog-lag.sh" 2>/dev/null | tr ' ' '\n' | grep -c . )"
+LAGSET="$(sed -n 's/^REPOS="${1:-\(.*\)}"$/\1/p' "$HERE/changelog-lag.sh" 2>/dev/null | tr ' ' '\n' | grep . | sort -u)"
+if [ -z "$LAGSET" ]; then bad "could not read changelog-lag.sh's REPOS list — [5b] may be checking nothing"
+elif [ "$LAGSET" = "$PUB" ]; then ok "changelog-lag [5b] covers the same $LAG repos the release cuts"
+else bad "changelog-lag [5b] checks a DIFFERENT set than release.sh cuts — unchecked: $(comm -23 <(printf '%s\n' "$PUB") <(printf '%s\n' "$LAGSET") | tr '\n' ' ')"
+fi
 
 # ── [9] NOTHING MAY STILL BE SITTING UNDER `## Unreleased` WHEN A VERSION IS CUT ───────────────────
 # Cutting 0.25 left FOUR engine CHANGELOGs with a non-empty `## Unreleased` section — and the v0.25.0 tag

@@ -300,6 +300,22 @@ printf '\n## [0.1.1]\n- it changed\n' >> "$CL/candor-ts/CHANGELOG.md";  clcommit
 printf '\n## [0.1.1]\n- it changed\n' >> "$CL/candor-spec/CHANGELOG.md"; clcommit candor-spec "note it"
 clrun candor-ts candor-spec >/dev/null 2>&1 && ok "writing the line clears it" || bad "a documented change still failed"
 
+# A MERGED BRANCH whose commits PREDATE the changelog's last touch. This is the ordinary shape of any
+# feature branch, and the timestamp-based version of this check greened straight over it: the source
+# work lands on main AFTER the changelog moved but carries OLDER committer dates, so "newest source
+# date <= newest changelog date" held while the merged work was described nowhere. A wrong CLEAR, which
+# is the class this script's own header calls the cardinal sin. Found by adversarial review, not by me.
+git -C "$CL/candor-ts" checkout -qb feat
+printf 'merged\n' > "$CL/candor-ts/scan.mjs"; clcommit candor-ts "branch: source work with an older date"
+git -C "$CL/candor-ts" checkout -q -
+printf '\n## [0.1.2]\n- unrelated\n' >> "$CL/candor-ts/CHANGELOG.md"; clcommit candor-ts "changelog moves on main"
+git -C "$CL/candor-ts" -c user.email=t@t -c user.name=t merge -q --no-ff feat -m "merge feat" 2>/dev/null
+clrun candor-ts >/dev/null 2>&1 \
+  && bad "a merged branch's source work was never described and the check passed (timestamps, not topology)" \
+  || ok "a merged branch is caught even though its commits are older than the changelog"
+printf '\n## [0.1.3]\n- the merged work\n' >> "$CL/candor-ts/CHANGELOG.md"; clcommit candor-ts "describe it"
+clrun candor-ts >/dev/null 2>&1 && ok "…and describing it clears it" || bad "still red after the entry"
+
 printf 'hello\n' > "$CL/candor-ts/README.md"; clcommit candor-ts "prose only"
 clrun candor-ts >/dev/null 2>&1 && ok "a README-only commit does not demand an entry" \
   || bad "prose was treated as a shipped change"

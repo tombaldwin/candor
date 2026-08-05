@@ -6,6 +6,13 @@ changes. **Swift only today** — this is a candor-swift extension (`privacy/2`)
 Needs candor-swift **0.27 or later**: `--target` and the read/write direction below both landed in that
 release, and on 0.26 the scoping has to be done by hand.
 
+**First, a disambiguation, because Apple uses this phrase for something else.** Since 2024 Apple ships a
+file literally called a *privacy manifest* — `PrivacyInfo.xcprivacy`, carrying `NSPrivacyAccessedAPITypes`
+declarations for "required reason" APIs. **This page is not about that file.** It is about `Info.plist`
+usage-description keys (`NSCameraUsageDescription` and friends), which are a different requirement with a
+different failure mode. candor does not generate or verify `PrivacyInfo.xcprivacy` today, and a clean
+result here says nothing about it.
+
 An iOS app that touches a sensor without the matching `Info.plist` usage-description key doesn't warn you.
 It gets rejected, or it crashes on the device of whoever hits that code path first. The key must be there
 because the *binary* can reach the API — not because a screen you remember writing calls it.
@@ -155,6 +162,16 @@ The rest, stated plainly because a green exit code should not be read as more th
   a silent purity claim over every other type in it.
 - **This is Swift-only.** The privacy manifest is a candor-swift extension. The four-engine floor says
   nothing about it, and no other engine implements it.
+- **It checks 26 usage-description keys, and names the 14 it does not.** Every verify prints its own
+  vocabulary bound — `NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus,
+  GameKit friends, VideoSubscriberAccount, clinical health records and the rest — with the reason each
+  is absent. That list is not a guess: it comes from a recall battery (`tools/privacy-recall.py`) that
+  exercises one canonical API per key family and is run as a gate, so a family the vocabulary *claims*
+  cannot silently stop working. **A clean verify here is not a clean App Store review**, and the tool
+  says so on every run rather than leaving you to infer it.
+- **The battery found a real one.** `AVAudioSession.setCategory(.record)` — how most recording apps
+  reach the microphone — emitted nothing until 0.27, on a sensor the vocabulary claimed. That is the
+  class of defect this page would otherwise have helped somebody walk into.
 
 ---
 

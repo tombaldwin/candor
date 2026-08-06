@@ -897,6 +897,37 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P1 — spec rung, FOR 0.28, opened 2026-08-06] The stale-document rule binds the REPORT, not just the
+  verdict. Tom: "make sure we fix the exit 2 issue in 0.28."**
+
+  SPEC §3.3.1 ⟨0.24⟩ already says it — *"the stale-document rule binds EVERY machine-output path, not
+  just `--gate-json`"*, and adds that it is WORSE for `scan --json` — and it is implemented on NO engine.
+  Measured 2026-08-06: a scan that exits 2 leaves the previous `report.json` **byte-identical** on disk,
+  and a downstream `gate --report <it>` then goes green over a report the failed run never produced. The
+  ⟨0.27⟩ arming work closed exactly this hole for the VERDICT and left the report channel open, so the
+  supply-chain route is poisoned one step upstream of the gate that was just made fail-closed.
+
+  **Why it is a rung and not a fix, i.e. why it was NOT done for 0.27.** The verdict had an obvious
+  fail-closed document to write (`ok:false, refused:true`, no `violations` key). A report has no such
+  shape yet: you cannot write "this report refuses" in a wire format whose consumers read `functions`.
+  Deleting the path is explicitly rejected by the same section — *"a consumer that treats a missing file
+  as 'nothing to report' fails open by a different route."*
+
+  **The shape the answer probably takes**, to be confirmed by measurement, not assumed: ⟨0.21⟩ already
+  gives reports an `analyzed`/`unanalyzed` manifest, and a report declaring itself INCOMPLETE already
+  grants no coverage when chained (⟨0.26⟩ PART 30 pins the sidecar analogue). So the fail-closed report
+  is plausibly one with empty `functions` and an `unanalyzed` that names the refusal — a shape every
+  existing consumer already reads correctly, which would make this a rung with no new consumer logic.
+  **Check that claim before building it**: the ⟨0.26⟩ lesson was that a PARTIAL artifact answered WORSE
+  than an ABSENT one, and that is exactly the risk here.
+
+  **Conformance**: PART 34 pins the verdict sink; this needs its sibling over `--json`/`--out`, seeded
+  the same way (write a green report first — a fresh path proves nothing when the failure mode IS the
+  stale one), plus the end-to-end row that PART 34 does not have: scan exits 2, then `gate --report`
+  over what is left must NOT be green. Also extend PART 34 itself to the `gate` QUERY verbs and to
+  candor-agents, which the ⟨0.27⟩ part does not cover (it probes the scan path on four engines only).
+
+
 - **[P3 — spec rung, 2026-08-04] `execute` as a per-effect KIND: reading a file as CODE rather than data.**
 
   **Context: the kind mechanism is now proven four-way.** SPEC §2's `fs: read|write` was spec'd long ago

@@ -20,7 +20,7 @@ ENGINE_PIN="0.26.0"                          # the engine release line `candor u
 # The first engine release that ENFORCES the §3.4 `engine` pin (⟨0.28 PROPOSED⟩, candor-java leads it).
 # `candor init` writes the pin regardless — `.candor/run` reads it to fetch the right engine — but it
 # must not claim enforcement an OLDER pinned engine does not perform. Move this when the rung ships.
-PIN_ENFORCED_FROM="0.28.0"
+PIN_ENFORCED_FROM="0.27.0"
 QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents gate privacy-manifest "
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
 
@@ -504,6 +504,27 @@ ensure_engine() {
 }
 # scan ONE named language in a dir, bypassing the mixed-repo guard (used by init per language). Carries
 # the consistent missing-engine errors — all point at `candor update <engine>`.
+# The RELEASE version of the engine that will actually run for <lang>, or empty when it cannot be told.
+#
+# WHY `candor init` NEEDS THIS. It used to write `engine v$ENGINE_PIN` — the version the UMBRELLA pins —
+# while the baseline beside it was produced by whatever engine was actually installed. Those are not the
+# same thing whenever a developer has a newer engine than the umbrella pins (which is the normal state
+# between releases), and now that every engine ENFORCES the pin, `candor init` was generating a repo
+# whose very first `.candor/run` refuses: the pin says one version, the baseline was written by another.
+# A setup command must not produce a configuration that fails its own gate.
+engine_release() {
+  local lang="$1" v=""
+  case "$lang" in
+    rust)  local c; c=$(rust_bin candor-scan 2>/dev/null) && v=$("$c" --version 2>/dev/null | head -1 | awk '{print $2}');;
+    ts)    if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1 | awk '{print $2}')
+           elif have node; then v=$(npx -y "candor-ts@$ENGINE_PIN" --version 2>/dev/null | head -1 | awk '{print $2}'); fi;;
+    swift) local s; s=$(rust_bin candor-swift 2>/dev/null) && v=$("$s" --version 2>/dev/null | head -1 | awk '{print $2}');;
+    java)  v=$(CANDOR_DISPATCH_NOEXEC=1 run_java --version 2>/dev/null | head -1 | awk '{print $2}');;
+  esac
+  # Only a clean release semver is usable as a pin; a build id or an unexpected shape is not.
+  case "$v" in [0-9]*.[0-9]*) printf '%s' "$v";; *) printf '';; esac
+}
+
 engine_scan() {
   local lang="$1"; shift
   case "$lang" in
@@ -1237,17 +1258,25 @@ PY
     # (the §3.4 lexer strips leading whitespace), so anchoring at column 0 missed it and appended a
     # SECOND pin — and two disagreeing `engine` lines is precisely the case candor-java now refuses.
     grep -qE "^[[:space:]]*engine([[:space:]]|$)" "$cfg" 2>/dev/null || {
-      printf 'engine v%s\n' "$ENGINE_PIN" >> "$cfg"
+      # THE PIN MUST NAME THE ENGINE THAT WROTE THE BASELINE, not the version the umbrella happens to
+      # pin. Those differ whenever a developer's engine is newer than ENGINE_PIN — the normal state
+      # between releases — and since every engine now ENFORCES the pin, writing ENGINE_PIN here produced
+      # a repo whose FIRST `.candor/run` refuses: the pin says one version, the baseline was written by
+      # another. A setup command must not generate a configuration that fails its own gate.
+      # Single-language only: a polyglot repo needs one qualified line per engine, written below.
+      _pin=""; [ "$nlang" -eq 1 ] && _pin="$(engine_release "$langs")"
+      [ -n "$_pin" ] || _pin="$ENGINE_PIN"
+      printf 'engine v%s\n' "$_pin" >> "$cfg"
       # HONEST ABOUT WHEN THIS STARTS BITING. The pin is enforced by candor-java from the release that
       # implements SPEC §3.4's ⟨0.28⟩ rung; an ENGINE_PIN older than that names an engine which does not
       # know the key and will say so ("recognized … but not implemented", or on a pre-0.28 build,
       # "ignoring unknown config key"). Claiming enforcement that the pinned engine does not perform
       # would be a false disclosure about the disclosure feature itself.
-      if [ "$(printf '%s\n%s\n' "$ENGINE_PIN" "$PIN_ENFORCED_FROM" | sort -V | head -1)" = "$PIN_ENFORCED_FROM" ]; then
-        echo "  ✔ config: engine pinned to v$ENGINE_PIN (a different build now fails rather than comparing"
+      if [ "$(printf '%s\n%s\n' "$_pin" "$PIN_ENFORCED_FROM" | sort -V | head -1)" = "$PIN_ENFORCED_FROM" ]; then
+        echo "  ✔ config: engine pinned to v$_pin (a different build now fails rather than comparing"
         echo "    a report against a baseline it cannot match — bump the pin and the baseline together)"
       else
-        echo "  ✔ config: engine pinned to v$ENGINE_PIN — read by .candor/run to fetch the right engine."
+        echo "  ✔ config: engine pinned to v$_pin — read by .candor/run to fetch the right engine."
         echo "    Enforcement lands in the engines from v$PIN_ENFORCED_FROM; until the pin reaches it they"
         echo "    will report the key as recognized-but-not-implemented."
       fi; }
@@ -1364,7 +1393,14 @@ PY
         # nothing made the two move together.
         case "$langs" in
           rust)  echo "      - uses: dtolnay/rust-toolchain@stable"
-                 echo "      - uses: Swatinem/rust-cache@v2   # keep the gate off the multi-minute cold-compile path";;
+                 echo "      - uses: Swatinem/rust-cache@v2   # your crate's deps"
+                 # …and the PINNED ENGINE, which `.candor/run` cargo-installs into ~/.cache/candor.
+                 # rust-cache does not cover that path, so without this the gate paid a multi-minute
+                 # candor-scan compile on every push — while the line above claimed to prevent it.
+                 echo "      - uses: actions/cache@v4"
+                 echo "        with:"
+                 echo "          path: ~/.cache/candor"
+                 echo "          key: candor-engine-\${{ hashFiles('.candor/config') }}";;
           ts)    echo "      - uses: actions/setup-node@v4"
                  echo "        with: { node-version: 20 }";;
           java)  echo "      - uses: actions/setup-java@v4"
@@ -1410,11 +1446,13 @@ PY
         swift) # HONEST ABOUT THE PIN. The generated job curls candor-swift-macos-arm64 at ENGINE_PIN, and
                # candor-swift published NO release assets before 0.27 — so on an older pin the workflow
                # 404s on its first run while init calls it "ready".
-               if curl -fsI --max-time 4 "https://github.com/tombaldwin/candor-swift/releases/download/v$pin/candor-swift-macos-arm64" >/dev/null 2>&1; then
+               if curl -fsI --max-time 4 "https://github.com/tombaldwin/candor-swift/releases/download/v${_pin:-$pin}/candor-swift-macos-arm64" >/dev/null 2>&1; then
                  echo "  ✔ CI workflow → $wfloc (ready — gates on your next push)"
                else
-                 echo "  ✔ CI workflow → $wfloc — but candor-swift v$pin publishes no macOS binary yet, so"
-                 echo "    its download step will 404 until that release exists. Bump the pin when it does."
+                 echo "  ✔ CI workflow → $wfloc — but candor-swift v${_pin:-$pin} publishes no macOS binary,"
+                 echo "    so BOTH the CI download step and \`.candor/run\` will 404 until that release ships one."
+                 echo "    \`.candor/run\` falls back to a candor-swift already on this machine, so local gating"
+                 echo "    works; CI does not until the binary is published."
                fi;;
         *)       echo "  ✔ CI workflow → $wfloc (review the marked EDIT lines: your build + engine setup)";;
       esac
@@ -1449,9 +1487,18 @@ PY
         case "$langs" in
           java)  echo "      - mvn -q compile      # or ./gradlew classes — must match .candor/run's BUILD=";;
         esac
-        echo "      - ./.candor/run"
-        echo "    artifacts:"
-        echo "      - candor-verdict.json"
+        if [ -n "$wdir" ]; then
+          # Bitbucket has no `working-directory:`, so a monorepo step must cd itself — and the artifact
+          # path is repo-relative, so it needs the prefix too. Without both, a step this file calls
+          # "paste-ready" fails on its first run in exactly the layout that most needs it.
+          echo "      - cd $wdir && ./.candor/run"
+          echo "    artifacts:"
+          echo "      - $wdir/candor-verdict.json"
+        else
+          echo "      - ./.candor/run"
+          echo "    artifacts:"
+          echo "      - candor-verdict.json"
+        fi
         echo ""
         echo "# …and once, at the top level of bitbucket-pipelines.yml, so the engine is fetched once"
         echo "# rather than on every build:"
@@ -1544,12 +1591,12 @@ PY
         echo "  it directly, instead of waiting for CI to tell you on the push."
         echo "- **When auditing an effect** — \`where Net\` is the whole answer to \"what talks to the"
         echo "  network\", including the paths nobody remembers."
-        echo "- **Before deleting or changing a signature** — \`blast\` names what depends on it."
+        echo "- **Before deleting or changing a signature** — \`impact\` names what depends on it."
         echo ""
         echo "## The concepts, in one place — not restated here"
         echo ""
         echo "- **What the report means, and the verdict JSON shape** — <https://candor.poly.io>"
-        echo "- **Query verbs** (\`show\`, \`where\`, \`blast\`, \`whatif\`, \`path\`) — \`candor --help\`"
+        echo "- **Query verbs** (\`show\`, \`where\`, \`impact\`, \`whatif\`, \`path\`) — \`candor --help\`"
         echo "- **AS-EFF codes**, including AS-EFF-005 (the baseline ratchet) — <https://candor.poly.io>"
         [ -f "$runsh" ] && echo "- **The agent contract** for this exact engine build — \`.candor/run --agents\`"
         echo ""
@@ -1561,7 +1608,7 @@ PY
     # the polyglot blind spot where a root Cargo.toml + web/package.json left the TS half silently ungated.
     subdirs="$(find "$idir" \( -name .git -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist -o -name vendor -o -name .candor -o -name .github \) -prune -o \
       -type f \( -name Cargo.toml -o -name package.json -o -name Package.swift -o -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print 2>/dev/null \
-      | while IFS= read -r m; do d="$(cd "$(dirname "$m")" 2>/dev/null && pwd)"; [ -n "$d" ] && [ "$d" != "$abs_idir" ] && printf '%s\n' "${d#"$abs_idir"/}"; done | sort -u | head -12)"
+      | while IFS= read -r m; do d="$(cd "$(dirname "$m")" 2>/dev/null && pwd -P)"; [ -n "$d" ] && [ "$d" != "$abs_idir" ] && printf '%s\n' "${d#"$abs_idir"/}"; done | sort -u | head -12)"
     if [ -n "$subdirs" ]; then
       echo ""
       echo "  ⚠ other project manifests below $idir — init scanned only the top level ($langs). NOT gated:"

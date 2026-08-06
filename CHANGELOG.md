@@ -10,6 +10,30 @@ keeps its own.
 
 ## 2026-08-06 — both 0.27 rungs land four-way, and the backlog catches up (unreleased)
 
+- **A four-lens adversarial panel reviewed the whole wave; three of four said DO-NOT-SHIP, and were
+  right.** The regression lens said SHIP and is the evidence that matters: before/after binaries built
+  in throwaway worktrees, compared on REAL repositories, gave byte-identical reports, verdicts, exit
+  codes and stderr across five engines for anyone who has not adopted the new key.
+- **Five of the twelve `adopt/candor-run` assertions could not fail** — the conformance PART 13b defect
+  class, in glue that ships into consumer repos, written hours after that lesson. The baseline row ran
+  `sed` over a config the test itself had written and never invoked the runner; two pin rows asserted
+  only a nonzero exit, which cannot tell "read the pin" from "failed to read it"; and two rows used an
+  unobtainable pin, so engine resolution exited before the code under test ran. Rewritten around a stub
+  engine so all sixteen rows are reachable, and verified by mutation.
+- **The Swift adoption path was dead on arrival.** candor-swift's latest release carries no assets, so
+  `.candor/run` 404'd with no version that would fix it while `init` called it "the gate as one
+  command". The runner now falls back to an installed candor-swift — safe only because the engine
+  enforces the pin itself, which is the guarantee the Rust arm lacked before today.
+- **`candor init` pinned the wrong engine.** It wrote the umbrella's `ENGINE_PIN` while the baseline
+  beside it came from whatever engine was installed — different whenever a developer is ahead of the
+  umbrella, which is the normal state between releases. Since engines now enforce the pin, init was
+  generating a repo whose first `.candor/run` refuses. It now pins the engine that actually scanned.
+- Smaller, all from the same pass: `blast` survived in two README prose lines after only the code fence
+  was fixed; the subdir sweep compared a logical `pwd` against a physical one, so under `/tmp` every
+  project reported ITSELF as an ungated sibling; a missing `.candor/config` died inside `awk` under
+  `set -e` before its own remedy could print; the Bitbucket step had no `cd` for a monorepo; the GitHub
+  workflow cached cargo but not the directory the engine installs into.
+
 - **`adopt/candor.yml` now says which pin is which.** It keeps `CANDOR_JAVA_VERSION` (it chooses the jar
   to download) but records that `.candor/config`'s `engine` key is the one every engine ENFORCES, and
   that the YAML variable is checked by nothing. A family shipping two competing pin mechanisms without

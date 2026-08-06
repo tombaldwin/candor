@@ -350,6 +350,16 @@ if [ -z "$JGRADLE" ]; then bad "candor-java/build.gradle.kts: no top-level versi
 elif [ -n "$WANT_VER" ] && [ "$JGRADLE" != "$WANT_VER" ]; then
   bad "candor-java gradle version is $JGRADLE, not $WANT_VER — release.sh needs candor-java-$WANT_VER-all.jar and dies without it"
 else ok "gradle version $JGRADLE"; fi
+# …AND THE JAR MUST ACTUALLY EXIST. The check above compares a version STRING; `release.sh` step 3 then
+# needs the FILE, and it is the third step — after crates.io (unyankable) and the npm tag. A never-built
+# jar therefore kills the publish PART-WAY, with the earlier artifacts already out. That is the same
+# distinction release-verify.sh's own header is about: a pin naming a URL is not the URL existing, and a
+# version naming a jar is not the jar existing.
+if [ -n "$WANT_VER" ]; then
+  JJAR="$ROOT/candor-java/build/libs/candor-java-$WANT_VER-all.jar"
+  if [ -f "$JJAR" ]; then ok "the jar release.sh will upload exists ($(du -h "$JJAR" | cut -f1))"
+  else bad "candor-java-$WANT_VER-all.jar is NOT built — release.sh needs it at step 3, AFTER crates.io (unyankable) and the npm tag; build it first: (cd candor-java && ./gradlew shadowJar)"; fi
+fi
 
 # ── [8] THE PUBLISHER AND THE VERIFIER MUST AGREE ON WHAT A RELEASE IS ─────────────────────────────
 # `release.sh` cut FOUR GitHub releases while `release-verify.sh` checked SEVEN, so three repos were

@@ -10,6 +10,18 @@ keeps its own.
 
 ## 2026-08-06 — both 0.27 rungs land four-way, and the backlog catches up (unreleased)
 
+- **`release-verify.sh` verified the release and not the front door.** It derived the `candor update`
+  URLs from the version under test, which asks "does v0.27.0 have assets?" — not the question a
+  consumer's machine asks, since `candor update` and `candor init` fetch whatever `ENGINE_PIN` says. A
+  release that forgot to move the pin therefore published a working version while every install kept
+  pulling the old engine, and the verifier passed it. That is the literal 0.18-engines-under-a-0.23-
+  umbrella failure. It now READS `ENGINE_PIN` and both `adopt/` pins and fails on a mismatch — proven by
+  running it against the current pre-publish tree, where all three are correctly red.
+- **Preflight [7] compared a version string and never asked whether the jar exists.** `release.sh` needs
+  the file at step 3 — *after* crates.io (unyankable) and the npm tag — so a never-built jar kills a
+  publish part-way with artifacts already out. It now asserts the file, proven by moving the jar aside
+  and watching the check go red.
+
 - **A four-lens adversarial panel reviewed the whole wave; three of four said DO-NOT-SHIP, and were
   right.** The regression lens said SHIP and is the evidence that matters: before/after binaries built
   in throwaway worktrees, compared on REAL repositories, gave byte-identical reports, verdicts, exit

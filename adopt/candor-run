@@ -43,9 +43,20 @@ read_pin() {
     { sub(/#.*/, "") }                                   # §6.2: inline comments, exactly as the engines do
     { gsub(/\r/, "") }                                   # a CRLF config must not put \r inside the version
     tolower($1) != "engine" { next }
+    # THIS IS A SIXTH PIN PARSER and it must agree with the five engines, which is what its header
+    # claims and what a review measured it failing: a KNOWN qualifier decides the OWNER of a line before
+    # anything else is judged (SPEC 3.4 whole-line skip), so `engine swift ...` -- junk, bare, or fine --
+    # belongs to swift, never to this runner. Getting that wrong reintroduces at the front door the
+    # family-wide outage the engines just closed.
+    tolower($2) ~ /^(java|rust|ts|swift|agents)$/ {
+        if (tolower($2) == impl) { if (NF == 3) { if (qual != "" && qual != $3) bad = 1; qual = $3 } else bad = 1 }
+        next
+    }
     NF == 1 { bad = 1; next }                            # a bare `engine` line
-    NF == 2 { wild = $2; next }                          # engine <version>
-    NF == 3 && tolower($2) ~ /^(java|rust|ts|swift|agents)$/ { if (tolower($2) == impl) qual = $3; next }
+    # CONFLICTING DUPLICATES ARE MALFORMED, not last-wins. The engines keep both spellings so the value
+    # cannot parse; this runner silently took the last and fetched it, so one config meant two different
+    # engines to the two components -- the exact drift the pin exists to end.
+    NF == 2 { if (wild != "" && wild != $2) bad = 1; wild = $2; next }
     { bad = 1 }                                          # trailing junk, or an unknown qualifier
     END { if (bad) print "!"; else print (qual != "" ? qual : wild) }
   ' "$CFG" 2>/dev/null

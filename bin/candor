@@ -1263,10 +1263,21 @@ PY
       # between releases — and since every engine now ENFORCES the pin, writing ENGINE_PIN here produced
       # a repo whose FIRST `.candor/run` refuses: the pin says one version, the baseline was written by
       # another. A setup command must not generate a configuration that fails its own gate.
-      # Single-language only: a polyglot repo needs one qualified line per engine, written below.
-      _pin=""; [ "$nlang" -eq 1 ] && _pin="$(engine_release "$langs")"
-      [ -n "$_pin" ] || _pin="$ENGINE_PIN"
-      printf 'engine v%s\n' "$_pin" >> "$cfg"
+      # A POLYGLOT REPO GETS ONE QUALIFIED LINE PER ENGINE, and the comment here used to promise that
+      # while the code fell through to an unqualified `engine v$ENGINE_PIN` — the very "setup command
+      # writes a config that fails its own gate" defect this block exists to fix, left in place for the
+      # case where it is MOST likely to bite (several engines, each possibly ahead of the umbrella pin).
+      _pin=""
+      if [ "$nlang" -eq 1 ]; then
+        _pin="$(engine_release "$langs")"; [ -n "$_pin" ] || _pin="$ENGINE_PIN"
+        printf 'engine v%s\n' "$_pin" >> "$cfg"
+      else
+        for _l in $langs; do
+          _lv="$(engine_release "$_l")"; [ -n "$_lv" ] || _lv="$ENGINE_PIN"
+          printf 'engine %s v%s\n' "$_l" "$_lv" >> "$cfg"
+          [ -n "$_pin" ] || _pin="$_lv"     # for the message below; each engine checks its own line
+        done
+      fi
       # HONEST ABOUT WHEN THIS STARTS BITING. The pin is enforced by candor-java from the release that
       # implements SPEC §3.4's ⟨0.28⟩ rung; an ENGINE_PIN older than that names an engine which does not
       # know the key and will say so ("recognized … but not implemented", or on a pre-0.28 build,

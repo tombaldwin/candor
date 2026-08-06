@@ -50,6 +50,16 @@ read_pin() {
     END { if (bad) print "!"; else print (qual != "" ? qual : wild) }
   ' "$CFG" 2>/dev/null
 }
+# THE MISSING-CONFIG CASE IS CHECKED FIRST, and it is the likeliest CI first-run mistake (`.candor/`
+# committed, `config` not). It used to fall through to `read_pin`, where awk exits 2 on a file that is
+# not there — under `set -euo pipefail` that killed the script BEFORE the carefully-written remedy
+# below could print. The exit code was right by accident: it was awk's, not ours. Silence is the
+# failure mode this whole file is about, so it must not be how the commonest mistake reports itself.
+if [ ! -f "$CFG" ]; then
+  echo "candor: no $CFG — this runner reads the engine pin and the baseline path from it." >&2
+  echo "        If .candor/ is committed but config is not, commit it; otherwise re-run \`candor init\`." >&2
+  exit 2
+fi
 PIN="$(read_pin)"
 if [ "${PIN:-}" = "!" ]; then
   echo "candor: $CFG has an \`engine\` line this grammar cannot read. Want \`engine <version>\` or" >&2
@@ -96,11 +106,34 @@ resolve_engine() {
       ENGINE=(java -jar "$jar") ;;
     swift)
       local bin="$CACHE/candor-swift-$VER"
-      [ -f "$bin" ] || { echo "candor: fetching candor-swift $PIN …" >&2
-        curl -fsSL -o "$bin.part" \
-          "https://github.com/tombaldwin/candor-swift/releases/download/v$VER/candor-swift-macos-arm64" \
-          || { rm -f "$bin.part"; echo "candor: could not fetch candor-swift $PIN" >&2; exit 2; }
-        chmod +x "$bin.part"; mv "$bin.part" "$bin"; }
+      if [ ! -f "$bin" ]; then
+        echo "candor: fetching candor-swift $PIN …" >&2
+        if curl -fsSL -o "$bin.part" \
+             "https://github.com/tombaldwin/candor-swift/releases/download/v$VER/candor-swift-macos-arm64"; then
+          chmod +x "$bin.part"; mv "$bin.part" "$bin"
+        else
+          rm -f "$bin.part"
+          # FALL BACK TO AN ALREADY-INSTALLED candor-swift. Unlike the other three engines, candor-swift
+          # is distributed as a GitHub release ASSET, and a release can exist with no asset attached —
+          # which is the state today, so a strict fetch made the whole Swift adoption path dead on
+          # arrival: `candor init` printed "the gate as one command" and the first run 404'd with no
+          # version that would fix it.
+          #
+          # This is safe ONLY because the engine enforces the pin itself: a local binary of the wrong
+          # version exits 2 on the `engine` key rather than quietly analysing with something else. That
+          # is exactly the guarantee the Rust arm did NOT have before today, which is why an unpinned
+          # PATH binary there was a hole and this is not.
+          local local_sw=""
+          for c in "$HOME/.candor/bin/candor-swift" "$(command -v candor-swift 2>/dev/null || true)"; do
+            [ -n "$c" ] && [ -x "$c" ] && { local_sw="$c"; break; }
+          done
+          [ -n "$local_sw" ] || { echo "candor: candor-swift $PIN has no published binary and none is installed here." >&2
+                                  echo "        Install one (\`candor update swift\`, or build from source) — exit 2." >&2; exit 2; }
+          echo "candor: no published binary for candor-swift $PIN; using $local_sw." >&2
+          echo "        The engine checks the pin itself, so a wrong version still refuses." >&2
+          ENGINE=("$local_sw"); return 0
+        fi
+      fi
       ENGINE=("$bin") ;;
     rust)
       # THE PIN WAS NOT ENFORCED HERE AT ALL. `command -v candor-scan || cargo install --version =$VER`

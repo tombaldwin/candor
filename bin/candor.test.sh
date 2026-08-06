@@ -251,87 +251,143 @@ ok "polyglot dashboard: rust gate is the raw engine"  "candor-scan . --gate-json
 ok "hook-run piped stdin does not print the tty guidance" "systemMessage" bash -c "cd '$T' && printf '{}' | '$D' hook-run"
 
 echo
-echo "adopt/candor-run — the generated local runner (\`candor init\`'s consumer glue):"
-# This harness is DRYRUN with stub engines, so a REAL `candor init` cannot run here. What can be tested
-# without an engine is the part that went wrong: the runner's reading of `.candor/config`. Its first
-# version hardcoded `--regen` to write `.candor/baseline.json` while init had wired
-# `baseline .candor/baseline.<pkg>.<engine>.json` — so regen wrote a file nothing read, the gate went on
-# comparing against the stale baseline, and the whole thing EXITED 0 while a function that had gained an
-# effect sailed through. Silence is the failure mode, so these assert the refusals and the derivation.
+echo "adopt/candor-run — the generated local runner (the candor init consumer glue):"
+# This harness is DRYRUN with stub engines, so a REAL `candor init` cannot run here. What CAN be tested
+# without a real engine is the runner's own logic — and the first version of this block tested almost
+# none of it. An adversarial review found FIVE of twelve rows VACUOUS, which is the PART 13b defect class
+# (a check that cannot fail) reappearing in the glue `candor init` ships into consumer repos, in code
+# written hours after that lesson. What made them vacuous, because the shape recurs:
+#
+#   · the baseline row ran `sed` over a config the TEST had just written and compared the result to the
+#     string it wrote. It never invoked `.candor/run` at all — a runner hardcoding any filename passed.
+#   · the pin rows asserted only `rc != 0`, which cannot tell "read the pin and proceeded" from "failed
+#     to read the pin and refused".
+#   · the update-check and build rows used an unobtainable pin (`v9.9.9`), so `resolve_engine` exited 2
+#     BEFORE `update_check` or `build` ran. Both defects were re-introduced live and both rows stayed
+#     green.
+#
+# THE FIX IS A STUB ENGINE ON PATH REPORTING THE PINNED VERSION, so `resolve_engine` short-circuits
+# without a network and everything after it is reachable. Every row below now asserts behaviour a
+# mutation would change, and the rows were re-checked by breaking the runner.
 TPL="$HERE/../adopt/candor-run"
 if [ ! -f "$TPL" ]; then
-  echo "  FAIL adopt/candor-run is missing — \`candor init\` cannot emit a runner"; fails=$((fails+1))
+  echo "  FAIL adopt/candor-run is missing — `candor init` cannot emit a runner"; fails=$((fails+1))
 else
   bash -n "$TPL" && echo "  ok   adopt/candor-run parses" || { echo "  FAIL adopt/candor-run is not valid bash"; fails=$((fails+1)); }
-  render() { # $1 dest dir ; renders the template the way init does
-    mkdir -p "$1/.candor"
-    sed -e "s|@KIND@|rust|" -e "s|@BUILD@||" -e "s|@TARGET@|.|" "$TPL" > "$1/.candor/run"
-    chmod +x "$1/.candor/run"
+  SV=9.9.9
+  mkdir -p "$T/stub"
+  # A stub candor-scan reporting the PINNED version: `resolve_engine`'s rust arm then uses it directly
+  # and never reaches `cargo install`. It records its argv so a row can assert what the runner ASKED
+  # the engine to do, and honours --out so `--regen` produces a real file.
+  cat > "$T/stub/candor-scan" <<STUB
+#!/bin/sh
+case "\$1" in --version) echo "candor-scan $SV (spec 0.27)"; exit 0;; esac
+echo "\$@" >> "\$STUB_ARGV"
+out=""; prev=""
+for a in "\$@"; do [ "\$prev" = --out ] && out="\$a"; prev="\$a"; done
+[ -n "\$out" ] && printf '{"candor":{"version":"stub"},"functions":[]}' > "\$out.pkg.scan.json"
+exit \${STUB_RC:-0}
+STUB
+  chmod +x "$T/stub/candor-scan"
+  render() { mkdir -p "$1/.candor"
+    sed -e "s|@KIND@|rust|" -e "s|@BUILD@|$2|" -e "s|@TARGET@|.|" "$TPL" > "$1/.candor/run"; chmod +x "$1/.candor/run"; }
+  runner() { # $1 dir ; rest: args — with the stub engine on PATH and the update check disabled
+    ( cd "$1" && PATH="$T/stub:$PATH" STUB_ARGV="$1/argv" CANDOR_CACHE_DIR="$1/cache" "$1/.candor/run" "${@:2}" 2>&1 )
   }
-  # NO PIN → refuse. `.candor/run` exists to fetch the PINNED engine; with no pin it has no idea which
-  # engine to run, and guessing would silently reintroduce the drift the pin exists to stop.
-  render "$T/runA"; printf 'policy .candor/arch.policy\n' > "$T/runA/.candor/config"
-  outA="$("$T/runA/.candor/run" 2>&1)"; rcA=$?
-  if [ "$rcA" = 2 ] && [[ "$outA" == *"no \`engine\` pin"* ]]; then echo "  ok   no engine pin → exit 2, naming the remedy"
-  else echo "  FAIL no-pin case: rc=$rcA out=$outA"; fails=$((fails+1)); fi
-  # THE PIN IS READ FROM THE CONFIG, in both spellings §3.4 allows. A qualified `engine java v0.27.0`
-  # and a bare `engine v0.27.0` are the same pin; the runner takes the last field of either.
-  for spelling in "engine v9.9.9" "engine rust v9.9.9"; do
-    render "$T/runB"; printf '%s\n' "$spelling" > "$T/runB/.candor/config"
-    # KIND=rust with an absent candor-scan would try `cargo install` — force the miss to be visible by
-    # asking for a version that cannot exist, and assert the runner got that far with the right version.
-    outB="$(PATH="/usr/bin:/bin" "$T/runB/.candor/run" 2>&1)"; rcB=$?
-    if [ "$rcB" != 0 ]; then echo "  ok   pin read from '$spelling' (runner proceeded to the engine)"
-    else echo "  FAIL '$spelling' unexpectedly succeeded with no engine present"; fails=$((fails+1)); fi
+
+  # NO PIN → refuse. `.candor/run` exists to run the PINNED engine; guessing would silently reintroduce
+  # the drift the pin exists to stop.
+  render "$T/runA" ""; printf 'policy .candor/arch.policy\n' > "$T/runA/.candor/config"
+  outA="$(runner "$T/runA")"; rcA=$?
+  { [ "$rcA" = 2 ] && [[ "$outA" == *"no \`engine\` pin"* ]]; } \
+    && echo "  ok   no engine pin → exit 2, naming the remedy" \
+    || { echo "  FAIL no-pin case: rc=$rcA out=$outA"; fails=$((fails+1)); }
+
+  # A MISSING CONFIG is the likeliest CI first-run mistake (`.candor/` committed, `config` not). It used
+  # to die inside awk under `set -e` before the remedy could print — right exit code, no message.
+  render "$T/runM" ""; rm -f "$T/runM/.candor/config"
+  outM="$(runner "$T/runM")"; rcM=$?
+  { [ "$rcM" = 2 ] && [ -n "$outM" ]; } \
+    && echo "  ok   a missing config refuses OUT LOUD (not a silent exit from awk)" \
+    || { echo "  FAIL missing config: rc=$rcM out='$outM'"; fails=$((fails+1)); }
+
+  # THE PIN IS READ, in both §3.4 spellings — asserted by what the runner DOES with it, not by a bare
+  # nonzero rc. With a stub reporting $SV, a correctly-read pin reaches the engine; a misread one refuses.
+  for spelling in "engine v$SV" "engine rust v$SV" "engine v$SV # a trailing comment"; do
+    render "$T/runB" ""; printf '%s\n' "$spelling" > "$T/runB/.candor/config"
+    outB="$(runner "$T/runB")"; rcB=$?
+    { [ "$rcB" = 0 ] && [ -s "$T/runB/argv" ]; } \
+      && echo "  ok   pin read from '$spelling' — the engine actually ran" \
+      || { echo "  FAIL '$spelling': rc=$rcB, engine invoked=$([ -s "$T/runB/argv" ] && echo yes || echo no)"; fails=$((fails+1)); }
+    rm -f "$T/runB/argv"
   done
-  # THE BASELINE PATH COMES FROM THE CONFIG TOO — the defect above, asserted directly on the derivation.
-  render "$T/runC"
-  printf 'engine v9.9.9\nbaseline .candor/baseline.pkg.scan.json\n' > "$T/runC/.candor/config"
-  derived="$(sed -n 's|^[[:space:]]*baseline[[:space:]]\{1,\}||p' "$T/runC/.candor/config" | head -1)"
-  if [ "$derived" = ".candor/baseline.pkg.scan.json" ]; then echo "  ok   baseline path is read from the config, not assumed"
-  else echo "  FAIL baseline derivation: '$derived'"; fails=$((fails+1)); fi
-  # AN UNRECOGNISED VERB MUST REFUSE, NEVER FORWARD. Blind passthrough sent `.candor/run blast …` to the
-  # scanning engine, which took `blast` as a DIRECTORY TO SCAN, found nothing, and exited 0 — a false
-  # all-clear wearing a CLI typo. Found by running the commands the generated README tells a reader to
-  # run (`blast` is not a verb in any engine; the verb is `impact`).
-  render "$T/runD"; printf 'engine v9.9.9\n' > "$T/runD/.candor/config"
-  outD="$("$T/runD/.candor/run" blast x 2>&1)"; rcD=$?
-  if [ "$rcD" = 2 ] && [[ "$outD" == *"not a candor verb"* ]]; then echo "  ok   an unknown verb refuses (never a silent scan exiting 0)"
-  else echo "  FAIL unknown verb: rc=$rcD out=$outD"; fails=$((fails+1)); fi
-  # …and a FLAG still passes through to the engine rather than being refused as a verb.
-  outE="$("$T/runD/.candor/run" --version 2>&1)"; rcE=$?
-  if [[ "$outE" != *"not a candor verb"* ]]; then echo "  ok   a flag is still passed through"
-  else echo "  FAIL a flag was refused as a verb"; fails=$((fails+1)); fi
-  # THE UPDATE CHECK MUST NOT BE ABLE TO KILL THE GATE. `set -euo pipefail` plus `latest=$(curl … | sed …)`
-  # meant a FAILING curl — offline, DNS timeout, a rate-limited 403 through `-f` — failed the assignment
-  # and `set -e` killed the runner BEFORE the engine ran. Measured: exit 6, silence, no gate. That is an
-  # exit code outside the 0/1/2 contract from the one function documented as unable to affect the verdict.
-  mkdir -p "$T/stub"; printf '#!/bin/sh\nexit 6\n' > "$T/stub/curl"; chmod +x "$T/stub/curl"
-  render "$T/runU"; printf 'engine v9.9.9\n' > "$T/runU/.candor/config"
-  PATH="$T/stub:$PATH" "$T/runU/.candor/run" >/dev/null 2>&1; rcU=$?
-  case "$rcU" in 0|1|2) echo "  ok   a failing update check cannot take the run outside 0/1/2 (was exit 6)";;
-    *) echo "  FAIL a failing curl exited $rcU"; fails=$((fails+1));; esac
-  # A BUILD FAILURE IS UNEVALUABLE (2), NOT A POLICY VIOLATION (1). `set -e` propagated mvn's exit 1.
-  mkdir -p "$T/runB2/.candor"
-  sed -e "s|@KIND@|rust|" -e "s|@BUILD@|false|" -e "s|@TARGET@|.|" "$TPL" > "$T/runB2/.candor/run"
-  chmod +x "$T/runB2/.candor/run"; printf 'engine v9.9.9\n' > "$T/runB2/.candor/config"
-  CANDOR_NO_UPDATE_CHECK=1 "$T/runB2/.candor/run" >/dev/null 2>&1
-  [ "$?" = 2 ] && echo "  ok   a failed build is exit 2 (unevaluable), not 1 (violation)" \
-    || { echo "  FAIL a failed build did not exit 2"; fails=$((fails+1)); }
-  # AN `engine` LINE THE GRAMMAR CANNOT READ MUST REFUSE. `$NF` of the first match took the last token of
-  # an INLINE COMMENT — `engine v0.26.0 # was v0.25.0` fetched 0.25.0 — and a qualified line for another
-  # implementation hijacked the pin. Both silently run the wrong engine.
-  render "$T/runP"; printf 'engine v9.9.9 # was v0.1.0\n' > "$T/runP/.candor/config"
-  outP="$(CANDOR_NO_UPDATE_CHECK=1 "$T/runP/.candor/run" 2>&1)"
-  if [[ "$outP" != *"0.1.0"* ]]; then echo "  ok   an inline comment does not become the pin"
-  else echo "  FAIL the comment's token was taken as the pin: $outP"; fails=$((fails+1)); fi
-  render "$T/runQ"; printf 'engine v9.9.9 junk\n' > "$T/runQ/.candor/config"
-  CANDOR_NO_UPDATE_CHECK=1 "$T/runQ/.candor/run" >/dev/null 2>&1
-  [ "$?" = 2 ] && echo "  ok   an unreadable engine line refuses rather than guessing" \
-    || { echo "  FAIL trailing junk on the engine line did not refuse"; fails=$((fails+1)); }
-  # The template must never hardcode a baseline filename again — that is what made regen a silent no-op.
-  # CODE only, and a FIXED string: the first version of this check matched its own explanatory COMMENT,
-  # because an unescaped `.` is a regex wildcard and `baseline…json` therefore matched `baseline.json`.
+
+  # A pin for ANOTHER implementation is not ours: it must be ignored, not refused.
+  render "$T/runO" ""; printf 'engine v%s\nengine java v0.0.1\n' "$SV" > "$T/runO/.candor/config"
+  runner "$T/runO" >/dev/null 2>&1
+  [ "$?" = 0 ] && echo "  ok   another impl's qualified pin is ignored" \
+    || { echo "  FAIL a java-qualified pin changed the rust runner's behaviour"; fails=$((fails+1)); }
+
+  # AN UNREADABLE PIN REFUSES — and, now that the engine resolves, for the RIGHT reason: the message,
+  # not an incidental install failure.
+  render "$T/runQ" ""; printf 'engine v%s junk\n' "$SV" > "$T/runQ/.candor/config"
+  outQ="$(runner "$T/runQ")"; rcQ=$?
+  { [ "$rcQ" = 2 ] && [[ "$outQ" == *"cannot read"* ]]; } \
+    && echo "  ok   an unreadable engine line refuses, saying so" \
+    || { echo "  FAIL unreadable pin: rc=$rcQ out=$outQ"; fails=$((fails+1)); }
+
+  # THE BASELINE PATH COMES FROM THE CONFIG — asserted by RUNNING `--regen` and looking at what appeared
+  # on disk. The previous row sed'd the config the test itself wrote and compared it to that same string.
+  render "$T/runC" ""
+  printf 'engine v%s\nbaseline .candor/base.pkg.scan.json\n' "$SV" > "$T/runC/.candor/config"
+  printf 'old\n' > "$T/runC/.candor/base.pkg.scan.json"
+  runner "$T/runC" --regen >/dev/null 2>&1
+  if grep -q '"candor"' "$T/runC/.candor/base.pkg.scan.json" 2>/dev/null; then
+    echo "  ok   --regen wrote the file the CONFIG names (not a guessed \`baseline.json\`)"
+  else
+    echo "  FAIL --regen did not rewrite .candor/base.pkg.scan.json"; fails=$((fails+1))
+  fi
+  [ -f "$T/runC/.candor/baseline.pkg.scan.json" ] \
+    && { echo "  FAIL --regen ALSO wrote a guessed filename nothing reads"; fails=$((fails+1)); } \
+    || echo "  ok   …and wrote no second file under a guessed name"
+
+  # A FAILING UPDATE CHECK MUST NOT TAKE THE RUN OUTSIDE 0/1/2. Reachable only because the stub engine
+  # resolves: with an unobtainable pin this row exited 2 before `update_check` ever ran.
+  printf '#!/bin/sh\nexit 6\n' > "$T/stub/curl"; chmod +x "$T/stub/curl"
+  render "$T/runU" ""; printf 'engine v%s\n' "$SV" > "$T/runU/.candor/config"
+  ( cd "$T/runU" && PATH="$T/stub:$PATH" STUB_ARGV="$T/runU/argv" CANDOR_CACHE_DIR="$T/runU/cache" ./.candor/run >/dev/null 2>&1 )
+  rcU=$?
+  { case "$rcU" in 0|1|2) [ -s "$T/runU/argv" ];; *) false;; esac; } \
+    && echo "  ok   a failing update check cannot take the run outside 0/1/2, and the gate still ran" \
+    || { echo "  FAIL failing curl: rc=$rcU, gate ran=$([ -s "$T/runU/argv" ] && echo yes || echo no)"; fails=$((fails+1)); }
+  rm -f "$T/stub/curl"
+
+  # A BUILD FAILURE IS UNEVALUABLE (2), NOT A POLICY VIOLATION (1) — and the engine must NOT have run.
+  render "$T/runB2" "false"; printf 'engine v%s\n' "$SV" > "$T/runB2/.candor/config"
+  runner "$T/runB2" >/dev/null 2>&1; rcB2=$?
+  { [ "$rcB2" = 2 ] && [ ! -s "$T/runB2/argv" ]; } \
+    && echo "  ok   a failed build is exit 2 (unevaluable) and the engine never ran" \
+    || { echo "  FAIL failed build: rc=$rcB2, engine ran=$([ -s "$T/runB2/argv" ] && echo yes || echo no)"; fails=$((fails+1)); }
+
+  # A VIOLATION (engine exit 1) must reach the caller unchanged — the runner must not swallow or remap it.
+  render "$T/runV" ""; printf 'engine v%s\n' "$SV" > "$T/runV/.candor/config"
+  ( cd "$T/runV" && PATH="$T/stub:$PATH" STUB_ARGV="$T/runV/argv" CANDOR_CACHE_DIR="$T/runV/cache" STUB_RC=1 ./.candor/run >/dev/null 2>&1 )
+  [ "$?" = 1 ] && echo "  ok   the engine's exit 1 (a violation) reaches the caller unchanged" \
+    || { echo "  FAIL a violation did not surface as exit 1"; fails=$((fails+1)); }
+
+  # AN UNRECOGNISED VERB MUST REFUSE, NEVER FORWARD: blind passthrough made the engine treat `blast` as
+  # a DIRECTORY TO SCAN, find nothing, and exit 0 — a false all-clear wearing a CLI typo.
+  outD="$(runner "$T/runV" blast x)"; rcD=$?
+  { [ "$rcD" = 2 ] && [[ "$outD" == *"not a candor verb"* ]]; } \
+    && echo "  ok   an unknown verb refuses (never a silent scan exiting 0)" \
+    || { echo "  FAIL unknown verb: rc=$rcD"; fails=$((fails+1)); }
+  outE="$(runner "$T/runV" --version)"
+  [[ "$outE" != *"not a candor verb"* ]] && echo "  ok   a flag is still passed through" \
+    || { echo "  FAIL a flag was refused as a verb"; fails=$((fails+1)); }
+
+  # The template must never hardcode a baseline filename again — CODE only, and a FIXED string: the
+  # first version of this check matched its own explanatory COMMENT, because an unescaped `.` is a regex
+  # wildcard and `baseline…json` therefore matched `baseline.json`.
   if grep -v '^[[:space:]]*#' "$TPL" | grep -qF -- '--json .candor/baseline.json'; then
     echo "  FAIL the runner hardcodes .candor/baseline.json — regen would write a file nothing reads"; fails=$((fails+1))
   else echo "  ok   no hardcoded baseline filename in the template"; fi

@@ -59,16 +59,30 @@ prints the call chain from your function down to the sensor, ending at the exact
 
 Then decide: declare the key, or remove the reach.
 
-## Multi-target projects
+## Multi-target projects — pick the right plist, or the answer is about the wrong binary
 
-A privacy manifest is per **shipped binary**. If your package builds more than one product, scope the
-scan so you're asking about the code that product actually compiles — otherwise you're verifying one
-app's plist against another target's sensors:
+A privacy manifest is per **shipped binary**, and a real iOS repo has several: the app, a share
+extension, a widget, a notification service. Each has its own `Info.plist`, and they are not
+interchangeable — a share extension does not need the app's camera key.
+
+So don't let a `find` pick one for you. A big repo will hand you the first plist in directory order,
+which is very often an extension's, and you'll get a page of "missing key" findings that are really
+"you asked about the wrong target". Name both halves explicitly:
 
 ```sh
-./candor-swift . --target MyAppTarget
-./candor-swift privacy-manifest --verify MyApp/Info.plist
+./candor-swift . --target MyAppTarget                    # the code THIS product compiles
+./candor-swift privacy-manifest --verify MyApp/Info.plist # the plist THAT product ships
 ```
+
+To find the app's own plist, look for the one whose directory matches the app target — it's the plist
+with `CFBundleDisplayName` and no `NSExtension` key:
+
+```sh
+grep -L NSExtension $(grep -rl CFBundleDisplayName --include=Info.plist .)
+```
+
+If the two halves don't match, the verify is comparing one target's code against another's manifest,
+and every finding it prints is noise.
 
 ## What it will and won't tell you
 

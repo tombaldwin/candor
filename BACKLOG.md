@@ -211,6 +211,9 @@ _Last reviewed 2026-08-05 (floor 0.26 PUBLISHED; **0.27 staged across all six re
   this code"* and *"I do not look for health"* — precisely the ambiguity ⟨0.26⟩ closed for sidecar keys
   and for the §5 reconciliation trio. So optional-in-spec vocabulary is safe ONLY alongside a positive
   capability declaration; without one it reintroduces the defect at the vocabulary level.
+  **⟨0.27⟩ SHIPPED THAT PREREQUISITE for refinement surfaces: `resolves` is the positive declaration**,
+  so an absent optional field means "undetermined" only where the surface is declared. The open half is
+  now the customer question, not the design one.
   The encouraging half: `extensions: [...]` is ALREADY that shape — a positive declaration of what is
   active — so the manifest would be a generalisation rather than a new concept.
   Counterweights, stated so the decision is made with them in view: it is more machinery on the wire; and
@@ -634,12 +637,14 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   patched. **This is the highest-value item on this list**: it is the one class where the product's
   central promise ("never a silent false clean") is measurably untrue on ordinary inputs.
 
-- **[P1 — a GATE-LEVEL false all-clear, MEASURED four-way 2026-08-05] A policy rule that matches ZERO
-  functions passes silently, and `unverified` then calls the layer "PROVABLY clean".**
+- **[SHIPPED 2026-08-06 — ⟨0.27⟩ SPEC §4, four-way, conformance PART 32] A policy rule that matches ZERO
+  functions passed silently, and `unverified` then called the layer "PROVABLY clean".**
 
-  Found by a usability review; reproduced in candor-rust, candor-swift and candor-ts (java not yet
-  checked, and there is no reason to expect it differs). A one-character typo in a LAYER name turns a
-  failing gate green:
+  Found by a usability review; reproduced in candor-rust, candor-swift, candor-ts AND candor-java (it did
+  not differ). Now DISCLOSED in all four, with the verdict and exit code deliberately unchanged — a
+  zero-match rule is legitimate when one policy is shared across repositories. A scopeless `deny` is
+  exempt: it binds every function by construction, so it can never be this typo. Kept for the record;
+  the original write-up follows. A one-character typo in a LAYER name turned a failing gate green:
 
       deny Net orders   →  exit 1   (the real layer; a genuine violation)
       deny Net ordrs    →  exit 0   "candor-query gate: policy ✓"
@@ -895,7 +900,10 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 - **[P3 — spec rung, 2026-08-04] `execute` as a per-effect KIND: reading a file as CODE rather than data.**
 
   **Context: the kind mechanism is now proven four-way.** SPEC §2's `fs: read|write` was spec'd long ago
-  and implemented in rust + java only; candor-swift and candor-ts gained it 2026-08-04, and `privacy/2`
+  and implemented in java only — the in-family precedent this line originally claimed for rust was HALF
+  FALSE: rust carried `pub fs: Vec<String>` in the wire model with `fs: Vec::new()` hardcoded, never
+  populated, which is worse than absent (a present-but-always-empty field says "undetermined" forever
+  while wearing a schema that implies support). candor-swift and candor-ts gained it 2026-08-04, and `privacy/2`
   applied the identical contract to a second effect family the same day. So "a per-effect kind, omitted
   rather than guessed" is no longer a proposal — it is a shipped pattern with two instances.
 
@@ -926,9 +934,14 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   exactly this cost. The closure is a classification ratchet against baseline, and any kind rung should
   ship with one rather than after it.
 
-- **[P3 — spec rung, 2026-08-04] Direction (`read`/`write`) for the effects beyond `Fs` where it pays.**
-  The general half of the same question. `fs` proves the mechanism and `privacy/2` proves it generalises;
-  these are the remaining places the distinction is worth the wire:
+- **[P3 — spec rung, 2026-08-04; MECHANISM SETTLED 2026-08-06] Direction (`read`/`write`) for the
+  effects beyond `Fs` where it pays.**
+  The general half of the same question. **Build it the way ⟨0.27⟩ `fs` ended up, NOT the direct-only
+  shape this entry originally prescribed:** kinds TRAVEL the call graph and an undetermined contributor
+  SUPPRESSES the whole field (a partial answer reads as the positive claim "writes but never reads"),
+  pinned four-way by conformance PART 31 — which found all four engines wrong on its first run,
+  including the reference engine propagating without the undetermined guard. The remaining places the
+  distinction is worth the wire:
 
   · **`Clipboard` — and this is the best candidate, because the sensitive direction is the one nobody
     expects.** READING the clipboard is what iOS shows a paste banner for; writing to it is benign. One
@@ -1131,6 +1144,15 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   guard path should tolerate the same cosmetic nonzero that `snapshot` now does. See candor-rust/BACKLOG.md.
 
 ## Housekeeping (small, real, easy to forget)
+
+- **[P2 — two pin mechanisms now exist; consolidate onto one] `adopt/candor.yml` still pins the engine
+  in CI YAML (`CANDOR_JAVA_VERSION`), beside the ⟨0.27⟩ `.candor/config` `engine` key that every engine
+  ENFORCES.** The YAML variable only chooses which jar to download — nothing checks it against anything,
+  which is exactly the decoupling the §3.4 rung exists to end. `candor init` already writes the config
+  pin and generates `.candor/run`, which reads it to fetch the jar, so the version appears once. The
+  adopt starter should do the same: drop `CANDOR_JAVA_VERSION` and call `.candor/run`. Annotated in the
+  file for now (2026-08-06) so nobody reads the two as independent, but an annotation is not a fix and
+  a family shipping two competing pin mechanisms indefinitely is the thing to avoid.
 
 - **[FIXED 2026-08-04] `release-stage.sh` stages five engines and left two umbrella sites to be found by a
   downstream refusal.** `release-stage.sh` now bumps UMBRELLA_VERSION and preflight [4] reads it (replayed

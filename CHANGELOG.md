@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-06 — both 0.27 rungs land four-way, and the backlog catches up (unreleased)
+
+- **`adopt/candor.yml` now says which pin is which.** It keeps `CANDOR_JAVA_VERSION` (it chooses the jar
+  to download) but records that `.candor/config`'s `engine` key is the one every engine ENFORCES, and
+  that the YAML variable is checked by nothing. A family shipping two competing pin mechanisms without
+  saying so is how the decoupling the §3.4 rung exists to end comes straight back; filed in the backlog
+  to consolidate onto `.candor/run`, since an annotation is not a fix.
+- **Four stale backlog entries corrected**, each of which would have sent an implementer the wrong way:
+  the zero-match P1 is SHIPPED (and java did not differ, which the entry assumed untested); the
+  read/write-direction rung must follow ⟨0.27⟩ `fs` — kinds TRAVEL and an undetermined contributor
+  SUPPRESSES the field — not the direct-only shape it originally prescribed; the optional-vocabulary
+  design question now has its stated prerequisite in `resolves`; and the `execute`-kind entry claimed an
+  in-family precedent in rust that was half false (the field was hardcoded empty, never populated).
+
 ## 2026-08-05 — the umbrella becomes usable from nothing (unreleased)
 
 - **`candor init` now emits the consumer glue, not just the policy** — the three things every adopter
@@ -24,12 +38,12 @@ keeps its own.
     build; the repo that already has one is exactly the repo that cannot afford that. (GitHub Actions
     gets a whole file because its workflows are one-per-file.)
   - **`.candor/README.md`** — what is committed and why, plus an *"use it to investigate, not just to
-    gate"* section: `show`/`where`/`callers`/`blast`/`diff` with the moments to reach for them (before
+    gate"* section: `show`/`where`/`callers`/`impact`/`diff` with the moments to reach for them (before
     editing a function, after a refactor, when auditing an effect). It LINKS the concepts rather than
     restating them — a copy in every consumer repo is a copy that goes stale silently. Written to
     `.candor/`, never over the repo's own AGENTS.md or README.md: those belong to the consumer.
 - **`candor init` writes the `engine` pin** into `.candor/config`, so the version a repo intends is
-  declared in one place. candor-java refuses a mismatched pin (exit 2). Engines already refused a
+  declared in one place. Every engine refuses a mismatched pin (exit 2), pinned by conformance PART 33. Engines already refused a
   baseline whose §2.1 build id differed from the running one — but a build hash is not something a
   consumer can *declare*, and that refusal lives inside the baseline comparison, so a policy-only gate
   had no coupling check at all. A declared pin also tells `.candor/run` and the CI step which engine to
@@ -85,7 +99,7 @@ keeps its own.
   rather than an exception to it. `gate --help` says it applies a policy to an *existing* report, and its
   exit 2 means unevaluable — so auto-scanning turned a CI job whose scan step was deleted or misordered
   from a loud exit 2 into a green exit 0. That inverts the fail-closed guarantee the gate exists for, and
-  it composes with the zero-match silent green recorded in candor-spec's ⟨0.28 PROPOSED⟩ rule.
+  it composed with the zero-match silent green, now closed four-way by the ⟨0.27⟩ §4 rule.
 - **A capability refusal now precedes any write.** `candor privacy-manifest` in a Rust project refused —
   after auto-scanning and writing `.candor/`. A usage error must not mutate the working tree.
 - **The auto-scan triggers on "no REPORT", not "no `.candor/`".** `candor init` commits `.candor/` and

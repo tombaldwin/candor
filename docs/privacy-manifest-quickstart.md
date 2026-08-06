@@ -93,7 +93,12 @@ Run verbatim against three shipping open-source apps:
 |---|---|
 | [IceCubesApp](https://github.com/Dimillian/IceCubesApp) | clean — Camera + Photos reach, all declared (via build settings) |
 | [duckduckgo/iOS](https://github.com/duckduckgo/iOS) | clean — 5 effects, all declared |
-| [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | **found an undeclared `NSMotionUsageDescription`** |
+| [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | clean — Camera, Mic, Photos, all declared |
 
-The WordPress finding is real: `JetpackPrologueViewController` calls
-`motion.startDeviceMotionUpdates()`, and `NSMotionUsageDescription` appears nowhere in the repository.
+An earlier draft of this page reported an undeclared `NSMotionUsageDescription` in WordPress-iOS. **That
+was candor's error, not the app's**, and it is worth saying how it was caught. candor mapped every
+CoreMotion class to the key; Apple's own page for `NSMotionUsageDescription` names exactly four APIs
+(`CMSensorRecorder`, `CMPedometer`, `CMMotionActivityManager`, `CMMovementDisorderManager`), and
+`CMMotionManager` — raw accelerometer and gyroscope streams, which is what WordPress uses — requires no
+key at all. The classifier now splits the two, and reading Apple's list also turned up an API candor had
+mapped nowhere, which was a real gap in the other direction.

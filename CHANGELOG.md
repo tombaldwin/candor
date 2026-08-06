@@ -10,6 +10,19 @@ keeps its own.
 
 ## 2026-08-06 — both 0.27 rungs land four-way, and the backlog catches up (unreleased)
 
+- **`.candor/run` was a SIXTH pin parser, and it had the old grammar** — while its own header says
+  "READING THE CONFIG MUST AGREE WITH THE ENGINE THAT READS THE SAME FILE". A junked line qualified for
+  another implementation refused the run (reintroducing at the front door the family-wide outage the
+  engines had just closed), and conflicting duplicate lines were silently last-wins where every engine
+  treats them as malformed. Both aligned. While fixing it, an apostrophe in one of the new awk COMMENTS
+  terminated the single-quoted shell string and broke the script at parse time — caught by running it,
+  and the edit now asserts the block stays quote-clean.
+- **`candor init` in a POLYGLOT repo wrote an unqualified pin** while the comment beside it promised "one
+  qualified line per engine, written below" — code that did not exist. It now writes one qualified line
+  per detected engine, each naming the version of the engine that actually scanned.
+- **`docs/privacy-manifest-quickstart.md`** — turnkey instructions for the Swift privacy manifest,
+  written and then FOLLOWED against three shipping open-source apps.
+
 - **`release-verify.sh` verified the release and not the front door.** It derived the `candor update`
   URLs from the version under test, which asks "does v0.27.0 have assets?" — not the question a
   consumer's machine asks, since `candor update` and `candor init` fetch whatever `ENGINE_PIN` says. A

@@ -50,9 +50,32 @@ declare -a urls=()
 # derive from the pin files rather than hardcoding, so this tracks the pins instead of drifting beside them
 jb="$ROOT_C/candor-java/jbang-catalog.json"
 [ -f "$jb" ] && while read -r u; do urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
-# what `candor update` fetches for the JVM front door (bin/candor builds these from $ENGINE_PIN)
-for a in "candor-java-$VER-all.jar" candor-linux-x64 candor-macos-arm64; do
-  urls+=("https://github.com/tombaldwin/candor-java/releases/download/v$VER/$a")
+# what `candor update` fetches for the JVM front door. THE VERSION IS READ FROM `bin/candor`'s
+# ENGINE_PIN, NOT FROM $VER — and that distinction is the whole point. Building these from $VER asks
+# "does v$VER have assets?", which is not the question a consumer's machine asks: `candor update` fetches
+# whatever ENGINE_PIN says, so a release that forgot to move the pin ships a working v$VER while every
+# `candor update` keeps installing the OLD engine — the literal 0.18-engines-under-a-0.23-umbrella
+# failure, which this verifier passed. Reading the pin makes the mismatch a FAILURE here rather than
+# something only a strict re-run of preflight [3] would catch, and the documented post-publish path says
+# "run release-verify", not "re-run preflight".
+EPIN="$(grep -oE '^ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT_C/candor/bin/candor" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "$EPIN" ]; then bad "could not read ENGINE_PIN from candor/bin/candor — the front door's version is unverifiable"
+elif [ "$EPIN" != "$VER" ]; then
+  bad "ENGINE_PIN is $EPIN, not $VER — \`candor update\` and \`candor init\` still install the OLD engine, whatever this release published"
+fi
+for a in "candor-java-${EPIN:-$VER}-all.jar" candor-linux-x64 candor-macos-arm64; do
+  urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a")
+done
+# THE adopt/ PINS ARE A CONSUMER-FACING SURFACE TOO, and nothing verified them at all: a repo that ran
+# `candor init` gets these workflows committed, so a stale pin there installs the old engine in THEIR CI
+# forever. Same question as ENGINE_PIN, different file.
+for pf in "candor/adopt/candor.yml:CANDOR_JAVA_VERSION" "candor/adopt/candor-digest.yml:candor-agents@v"; do
+  f="$ROOT_C/${pf%%:*}"; key="${pf##*:}"
+  [ -f "$f" ] || continue
+  pv="$(grep -oE "$key *:? *v?[0-9]+\.[0-9]+\.[0-9]+" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ -z "$pv" ]; then bad "${pf%%:*}: no $key pin found — a consumer-facing pin nothing verifies"
+  elif [ "$pv" != "$VER" ]; then bad "${pf%%:*} pins $pv, not $VER — every repo that ran \`candor init\` keeps installing $pv"
+  else ok "${pf%%:*} pins $VER"; fi
 done
 # candor-swift's binary. THE GAP THIS CLOSES: every candor-swift release through v0.26.0 had ZERO assets
 # — the workflow built, tested, smoked and cut the release, then attached nothing — and this verifier

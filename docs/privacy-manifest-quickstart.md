@@ -74,15 +74,31 @@ which is very often an extension's, and you'll get a page of "missing key" findi
 ./candor-swift privacy-manifest --verify MyApp/Info.plist # the plist THAT product ships
 ```
 
+`--target` resolves against a `Package.swift` **and** an `.xcodeproj`, so it works on either repo shape.
+For an Xcode target it reads the project file directly (no build, no `xcodebuild`), follows the target's
+dependency closure, and pulls in the **local** Swift packages the target uses — the `Packages/`-shaped
+layout where the app target is a thin shell over its own packages, and scoping to the shell alone would
+answer about almost nothing. Remote packages stay outside the scope and are disclosed as uncovered
+rather than read as pure.
+
+If it can't resolve the name soundly it **refuses** (exit 2) and lists the real target names, because a
+scope quietly resolved short is a purity claim over every file it dropped.
+
 To find the app's own plist, look for the one whose directory matches the app target — it's the plist
 with `CFBundleDisplayName` and no `NSExtension` key:
 
 ```sh
-grep -L NSExtension $(grep -rl CFBundleDisplayName --include=Info.plist .)
+grep -rl CFBundleDisplayName --include=Info.plist . | xargs grep -L NSExtension
 ```
+
+(`xargs`, not `$(…)`: with no matches the substitution form leaves `grep` reading stdin and it hangs.)
 
 If the two halves don't match, the verify is comparing one target's code against another's manifest,
 and every finding it prints is noise.
+
+**Without `--target` the scan is whole-repo**, so in a repo that ships several products from one Xcode
+project — a Mac and an iOS app, or an app plus widgets — a sensor reached only by the *other* product is
+attributed to the plist you named. That is what the flag is for; name it.
 
 ## What it will and won't tell you
 
@@ -101,13 +117,30 @@ It is deliberately explicit about its own limits, and prints them on every verif
 
 ### Tested on
 
-Run verbatim against three shipping open-source apps:
+Run verbatim against shipping open-source apps. The first three are the ones the verb was developed
+against; the rest were added afterwards, deliberately, because a tool tested only on the apps it was
+debugged against tells you nothing about the next one.
 
 | app | result |
 |---|---|
 | [IceCubesApp](https://github.com/Dimillian/IceCubesApp) | clean — Camera + Photos reach, all declared (via build settings) |
-| [duckduckgo/iOS](https://github.com/duckduckgo/iOS) | clean — 5 effects, all declared |
-| [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | clean — Camera, Mic, Photos, all declared |
+| [duckduckgo/iOS](https://github.com/duckduckgo/iOS) | clean — Camera, Mic, Speech, all declared |
+| [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | clean — Camera, Mic, all declared |
+| [Bitwarden/ios](https://github.com/bitwarden/ios) | clean — Camera (QR scanner), declared |
+| [firefox-ios](https://github.com/mozilla-mobile/firefox-ios) | clean — Camera, Mic, Photos, Speech, all declared |
+| [Kingfisher](https://github.com/onevcat/Kingfisher) | clean |
+
+**Every app in that second group produced a WRONG finding first.** Each one was a defect in candor, not
+in the app, and each is now fixed: the system contacts and photo pickers were charged usage keys Apple
+does not require for them (they run out of process — the app never gains access); `GKLocalPlayer`
+authentication was charged the friend-list key; `CLGeocoder` was charged Location though it only converts
+coordinates you supply; a labelled `mediaType:` argument went unread, so a camera-only QR scanner was
+charged Mic; test code sitting beside its sources was cited as evidence a shipping manifest was wrong;
+and a key declared through a same-file build variable read as missing.
+
+The pattern is worth stating because it will recur: **every one was an over-report**, and over-reports
+are found only by running the tool on code you did not write and then checking whether the app is
+actually wrong. If you get a finding you believe is incorrect, it may well be — please report it.
 
 An earlier draft of this page reported an undeclared `NSMotionUsageDescription` in WordPress-iOS. **That
 was candor's error, not the app's**, and it is worth saying how it was caught. candor mapped every

@@ -897,6 +897,33 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P2 — needs EVIDENCE, opened 2026-08-07] `PHPickerViewController` probably requires no photo-library
+  usage key, and candor says it does.** Found on Kingfisher in a corpus pass.
+
+  `Classifier.swift:464` maps `PHPickerViewController` → `Photos`, and `Photos` requires
+  `NSPhotoLibraryUsageDescription`. Kingfisher's iOS demo reaches it via
+  `PHPickerResultViewController` and declares that key NOWHERE in the repository — no plist, no
+  `INFOPLIST_KEY_`. So either the demo has shipped broken for years, or candor is over-reporting.
+
+  **The strong prior is that candor is wrong**: PHPicker is the out-of-process picker introduced
+  precisely so an app can let someone choose photos WITHOUT photo-library authorization, and Apple's own
+  page describes it as rendered by the system on top of the app. That is the same shape as the
+  `CMMotionManager` over-report fixed 2026-08-06 — an API in a covered framework that does not itself
+  require the key.
+
+  **But the evidence that settled CMMotionManager does not transfer, which is why this is recorded and
+  not fixed.** That one was decidable because Apple's `NSMotionUsageDescription` page NAMES exactly four
+  APIs. The `NSPhotoLibraryUsageDescription` page names none — its JSON contains zero symbol references
+  — and neither `PHPickerViewController`'s page nor `PHPickerConfiguration`'s contains a citable
+  "requires no authorization" sentence. Fixing a classifier on recollection is how the first
+  CMMotionManager mapping got there.
+
+  **What would settle it**: the WWDC20 "Meet the new Photos picker" session, Apple's privacy
+  documentation for the picker, or an empirical check (a minimal app using only PHPicker, archived and
+  submitted). If confirmed, the fix has the `MotionRaw` shape — a keyless effect, so the REACH is still
+  reported and the manifest requirement is not — never dropping the effect, which would trade an
+  over-report for silence.
+
 - **[P2 — opened 2026-08-07] The ⟨0.24⟩ byte-equality MUST fails on a multi-crate WORKSPACE: two
   same-named violating functions merge into one on the `gate --report` route.**
 

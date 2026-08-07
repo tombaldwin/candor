@@ -1288,6 +1288,16 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2] candor's own test suites leak temp fixtures — 130,000 of them here.** `$TMPDIR` on this
+  machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
+  directories older than a day, left by runs that create a scratch tree and do not remove it (the
+  killed-mid-run case is the obvious one, but 130k is not all killed runs). That is not only untidy: it
+  made a single `candor-swift privacy-manifest --verify` take **72 seconds**, because a directory
+  listing of the plist's ancestor is a listing of `$TMPDIR`. The engine side is fixed (2026-08-07 — no
+  checkout ⇒ no ancestor walk, and `contentsOfDirectory(atPath:)` for the marker test), so this is now
+  a hygiene item rather than a correctness one. Wanted: every harness that makes a scratch dir removes
+  it on exit, including on failure — `defer`/`try/finally`/trap, not a happy-path `rm`.
+
 - **[P2] candor-swift `--target` on an `.xcodeproj` may EXECUTE the repo's `Package.swift`.** When a
   local package's manifest builds its target lists in code (WordPress's `XcodeSupport.products`), the
   structural parser cannot read it and the resolver falls back to `swift package dump-package` — SwiftPM

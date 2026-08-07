@@ -897,6 +897,35 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P1 — needs a RULING, opened 2026-08-07] A configured dep that cannot be read: two engines refuse,
+  two continue. Found by the new generative config differential, not by hand.**
+
+  Measured with a real path dependency, so the fixture is diagnostic (an earlier one was not — a call to
+  an undeclared crate is omitted with or without any dep config, which proves nothing):
+
+      dep report chained    → caller `inferred: ["Fs"]`     ← the coverage the operator configured
+      same config, report missing:
+        java   exit 2   "a configured dep must not silently read pure"
+        swift  exit 2
+        rust   exit 0   caller `inferred: []` + a COVERAGE DISCLOSURE naming the uncovered dep
+                        ("absent from the report, NOT a claim they're pure")
+        ts     exit 0   caller absent from `functions`; only "CANDOR_DEPS entry unreadable, skipped"
+
+  **Both postures are internally coherent, which is why this needs a ruling rather than a fix.** The
+  refusing arm reads a configured-but-unreadable dep as the §6.2 configured-but-unusable case, like a
+  policy that vanished. The continuing arm reads it as reduced COVERAGE, which is what the ⟨0.15⟩
+  coverage envelope exists to qualify — and rust's disclosure says exactly the right thing. What is not
+  defensible is the family disagreeing: one `.candor/config`, four engines, two answers.
+
+  If the ruling goes to DISCLOSURE, ts needs rust's coverage line (its "skipped" note does not qualify
+  the absence, so on that engine the caller's `inferred: []` stands unqualified — which IS the cardinal
+  sin). If it goes to REFUSAL, rust and ts need java's exit 2. Either way it wants a conformance row:
+  nothing in 34 parts covers a configured dep that is not there.
+
+  **Provenance worth keeping**: this came out of `conformance/differential/config_grammar_run.py` on its
+  first clean run — 2456 agreed, 90 diverged, 2 signatures, and this was one of them. Hand-written rows
+  had not covered it in 34 parts.
+
 - **[P1 — spec rung, FOR 0.28, opened 2026-08-07] A policy that yielded NO RULES is
   indistinguishable from a clean gate IN THE MACHINE CHANNEL, four-way.**
 

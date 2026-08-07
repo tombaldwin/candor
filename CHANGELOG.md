@@ -20,7 +20,13 @@ keeps its own.
   ran and found nothing. The human channel warns per line; the artifact a CI wrapper reads says nothing.
   PART 32's "a rule that binds nothing is disclosed" ruling, one level up.
 
-Both are recorded rather than built: each needs a wire-format field, so each wants a version and a
+- **BACKLOG: a configured dep that cannot be read gets two different answers.** java and swift exit 2;
+  rust and ts continue at exit 0 — rust qualifying the omission with a coverage disclosure, ts with only
+  a "skipped" note. Both postures are coherent; one config with two meanings is not. Found by the new
+  generative config differential on its first clean run, in a cell no hand-written conformance row
+  covers.
+
+Both format rungs are recorded rather than built: each needs a wire-format field, so each wants a version and a
 conformance part rather than four independent additions — and ⟨0.26⟩ already measured that a PARTIAL
 artifact can answer worse than an absent one.
 

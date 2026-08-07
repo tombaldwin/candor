@@ -897,6 +897,35 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P1 — spec rung, FOR 0.28, opened 2026-08-07] A policy that yielded NO RULES is
+  indistinguishable from a clean gate IN THE MACHINE CHANNEL, four-way.**
+
+  Measured 2026-08-07 on java, rust, ts and swift. Point `--policy` at an existing file that is not a
+  policy — a README, the wrong path in a CI script — and every engine writes
+
+      { "ok": true, "violations": [] }
+
+  which is byte-identical to the verdict of a gate that ran and found nothing. Exit 0. A wrapper reading
+  the artifact, which is the consumer this format exists for, cannot tell "your code is clean" from
+  "your gate had no rules". The HUMAN channel is fine and this is why it went unnoticed: all four warn
+  per line (`ignoring policy rule (unknown rule kind …)`), so the operator watching stderr is told. The
+  verdict document is silent.
+
+  **This is PART 32's ruling one level up.** ⟨0.24⟩ §4 says a RULE whose scope binds no function is
+  DISCLOSED, never scored as satisfied. A POLICY that contains no rules at all is the same shape and the
+  stronger case, and it is currently scored as satisfied.
+
+  **Why it is a rung and not a fix**: the answer is a field in the verdict document — the natural home is
+  beside ⟨0.24⟩'s `unevaluated` — and that is a wire-format change, so it wants a version and a
+  conformance part rather than four independent additions. Note the ⟨0.26⟩ lesson applies directly: a
+  PARTIAL artifact can answer worse than an absent one, so whatever the field is must make the NAIVE
+  read (`ok`) safe rather than adding a key only a careful reader consults.
+
+  Two things measured alongside it that are NOT defects, recorded so nobody re-opens them: the per-line
+  warning IS emitted by all four (an earlier read of "silent in ts and swift" was a truncated `head -3`),
+  and the "nothing hidden — every effect sits where its name says it should" line is the §6.1 containment
+  note, printed with no policy at all, not a claim about the gate.
+
 - **[P1 — spec rung, FOR 0.28, opened 2026-08-06] The stale-document rule binds the REPORT, not just the
   verdict. Tom: "make sure we fix the exit 2 issue in 0.28."**
 

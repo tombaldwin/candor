@@ -1288,6 +1288,15 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2] candor-swift `--target` on an `.xcodeproj` may EXECUTE the repo's `Package.swift`.** When a
+  local package's manifest builds its target lists in code (WordPress's `XcodeSupport.products`), the
+  structural parser cannot read it and the resolver falls back to `swift package dump-package` — SwiftPM
+  running the manifest. That is disclosed in the scope note by name, and it is the only way to resolve
+  those repos soundly (the alternative is refusing the scan). But "no project changes, no build, no
+  account" is the quickstart's promise, and this path quietly breaks it for an untrusted checkout.
+  Wanted: an explicit opt-out (`--no-manifest-exec`, refusing rather than executing) so a reader
+  scanning code they did not write can hold the promise. Added 2026-08-07 with the `.xcodeproj` rung.
+
 - **[P2 — two pin mechanisms now exist; consolidate onto one] `adopt/candor.yml` still pins the engine
   in CI YAML (`CANDOR_JAVA_VERSION`), beside the ⟨0.27⟩ `.candor/config` `engine` key that every engine
   ENFORCES.** The YAML variable only chooses which jar to download — nothing checks it against anything,

@@ -20,6 +20,11 @@ keeps its own.
   ran and found nothing. The human channel warns per line; the artifact a CI wrapper reads says nothing.
   PART 32's "a rule that binds nothing is disclosed" ruling, one level up.
 
+- **BACKLOG: the ⟨0.24⟩ byte-equality MUST fails on a multi-crate workspace.** 41 of 43 real projects
+  produce a `gate --report` verdict byte-equal to the scan's; the two that do not are both cargo
+  workspaces where two crates share a function name, and the verdict's `fn` carries no crate qualifier,
+  so the report route collapses two violating sites into one. Every conformance gate fixture is a single
+  package, so the collision cannot arise there.
 - **BACKLOG: a configured dep that cannot be read gets two different answers.** java and swift exit 2;
   rust and ts continue at exit 0 — rust qualifying the omission with a coverage disclosure, ts with only
   a "skipped" note. Both postures are coherent; one config with two meanings is not. Found by the new

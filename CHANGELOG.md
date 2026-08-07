@@ -8,6 +8,27 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-07 — two 0.28 rungs recorded, from measurement rather than design (unreleased)
+
+- **BACKLOG P1: the stale-document rule binds the REPORT, not just the verdict.** A scan that exits 2
+  leaves the previous `report.json` byte-identical, and a downstream `gate --report` then goes green over
+  a report the failed run never produced. SPEC §3.3.1 ⟨0.24⟩ already says this and no engine implements
+  it — the ⟨0.27⟩ arming work closed the hole for the verdict and left the report channel open, one step
+  upstream of the gate it had just made fail-closed.
+- **BACKLOG P1: a zero-rule policy reads as a clean gate in the machine channel.** `--policy <a README>`
+  writes `{"ok": true, "violations": []}` and exits 0 in all four engines — byte-identical to a gate that
+  ran and found nothing. The human channel warns per line; the artifact a CI wrapper reads says nothing.
+  PART 32's "a rule that binds nothing is disclosed" ruling, one level up.
+
+Both are recorded rather than built: each needs a wire-format field, so each wants a version and a
+conformance part rather than four independent additions — and ⟨0.26⟩ already measured that a PARTIAL
+artifact can answer worse than an absent one.
+
+- **docs: the privacy-manifest quickstart now says how to pick the right `Info.plist`.** Following the
+  page's own instructions on a multi-target repo picked a ShareExtension's plist and printed four
+  "missing key" findings that were pure artefact — a reader could reach that state and conclude the tool
+  is wrong.
+
 ## 2026-08-06 — both 0.27 rungs land four-way, and the backlog catches up (unreleased)
 
 - **`.candor/run` was a SIXTH pin parser, and it had the old grammar** — while its own header says

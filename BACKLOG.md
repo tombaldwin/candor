@@ -897,6 +897,33 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 
+- **[P2 — opened 2026-08-07] The ⟨0.24⟩ byte-equality MUST fails on a multi-crate WORKSPACE: two
+  same-named violating functions merge into one on the `gate --report` route.**
+
+  SPEC §3.3.1 requires `gate --report <it> --policy P` to produce a verdict BYTE-EQUAL to
+  `scan --policy P`'s. Measured over 43 real projects (9 rust, 9 ts, 17 swift, 8 java jars): **41 are
+  byte-equal**. The two that are not are both cargo WORKSPACES, and both fail the same way:
+
+      rustls   scan 57 violations · gate --report 56    (`main`, present in several binaries)
+      zellij   scan 23 violations · gate --report 22    (`commands::web_server_status`)
+
+  The violation SETS are identical; the counts differ because the live scan emits two byte-identical
+  rows and the report route emits one. The rows are byte-identical because `fn` carries no crate
+  qualifier — so two DISTINCT violating functions in two crates are indistinguishable in the verdict,
+  and the report route collapses them.
+
+  **Which side is right is the question.** If they are two functions, the report route UNDER-REPORTS the
+  number of violating sites — a fix list one short. If the verdict is meant to be a set of violating
+  NAMES, the scan route double-counts. Either way the two routes disagree about a real repository, which
+  is what the MUST exists to forbid.
+
+  Same shape as [[candor-global-unit-identity]]: same-named units merging because the key is not
+  qualified. That one was closed for the report's `functions`; the VERDICT's `fn` was not part of it.
+
+  **Why conformance did not catch it**: every gate fixture is a single crate/package, so the collision
+  cannot arise. The differential that found it is a corpus pass, not a fixture — worth a conformance row
+  with a two-crate workspace whose crates share a function name.
+
 - **[P1 — needs a RULING, opened 2026-08-07] A configured dep that cannot be read: two engines refuse,
   two continue. Found by the new generative config differential, not by hand.**
 

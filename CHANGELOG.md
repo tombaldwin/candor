@@ -20,6 +20,10 @@ keeps its own.
   ran and found nothing. The human channel warns per line; the artifact a CI wrapper reads says nothing.
   PART 32's "a rule that binds nothing is disclosed" ruling, one level up.
 
+- **BACKLOG: `PHPickerViewController` probably needs no photo-library key, and candor says it does** —
+  a probable false "missing key" on a real project, recorded rather than fixed because Apple's key page
+  names no symbols at all, so the evidence that settled the `CMMotionManager` over-report does not
+  transfer.
 - **BACKLOG: the ⟨0.24⟩ byte-equality MUST fails on a multi-crate workspace.** 41 of 43 real projects
   produce a `gate --report` verdict byte-equal to the scan's; the two that do not are both cargo
   workspaces where two crates share a function name, and the verdict's `fn` carries no crate qualifier,

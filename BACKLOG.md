@@ -980,6 +980,42 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   first clean run — 2456 agreed, 90 diverged, 2 signatures, and this was one of them. Hand-written rows
   had not covered it in 34 parts.
 
+- **[P2 — candor-swift, FOR 0.28, opened 2026-08-08, depends on the P1 below] A WHOLE-REPO scan of an
+  `.xcodeproj` repo still names analyzed modules as blind spots, because no `--target` means no resolved
+  closure.**
+
+  **Measured** (NetNewsWire, whole repo, on branch `rung/per-file-module-identity`): 32 modules listed
+  uncovered, **15 of them analyzed in that same run** — Account, RSCore, RSParser, Articles,
+  ArticlesDatabase, CloudKitSync, ErrorLog, HTMLMetadata, Images, RSCoreResources, RSDatabase, RSTree,
+  RSWeb, Secrets, ActivityLog. The line printed about them says their effects are "INVISIBLE to the scan
+  (absent from the report, NOT a claim they're pure)", which for those 15 is simply untrue: their
+  functions are in the report. The other 17 are real (WebKit, CloudKit, Sparkle, Zip, the ObjC modules).
+  A list that is half wrong teaches the reader to skim it, and they then skim the 17 — which is how
+  over-disclosure becomes under-disclosure without a line of unsound code. Precedent:
+  [[candor-scan-guards]], where `net-partner` was reported "ignoring unknown config key" WHILE BEING
+  HONOURED — "a FALSE disclosure, worse than a missing one".
+
+  **The plan, and why it is not another inference.** `--target X` already fixes this (NetNewsWire iOS: 14
+  uncovered, all true) because the resolver walks that target's local-package closure. The whole-repo case
+  needs the same thing N times, not something new:
+  1. enumerate the project's targets — the resolver already does this for the unknown-name refusal
+     (8 on NetNewsWire, verified);
+  2. resolve each target's scope, which also yields its FILE list and its `localPackageDirs`;
+  3. map each analyzed file to its owning Xcode target, and give it that target's importable set.
+  Verified premise: the closures genuinely differ per target — NetNewsWire's iOS app resolves 17 local
+  packages, its Widget Extension resolves 3 (`RSCore`, `RSParser`, `RSWeb`). So a union over targets
+  would be WRONG, and per-target is the whole point.
+
+  **Do NOT take the shortcut of unioning every target's closure.** It is one line and it re-opens the
+  class that produced ten silent under-reports: a file in the Widget Extension importing something only
+  the app links would be claimed internal on evidence that does not apply to it.
+
+  **Acceptance**: the sixteen-fixture battery in `XcodeTargetScopeTests`, PLUS the two shapes the battery
+  provably cannot see — (a) declared-but-not-analyzed (a `.package(path:)` outside the scan; caught only
+  by `WorkspaceCacheProcessTests`), and (b) cross-target shadowing (a file in target A importing a module
+  only target B links must stay disclosed), which needs a NEW fixture and does not exist yet. Cost check
+  required: N target resolutions on a whole-repo scan, firefox-ios being the worst case at ~18.
+
 - **[P1 — candor-swift, FOR 0.28, opened 2026-08-08] The κ ledger names local packages the scan
   ANALYZED, because module identity is decided per-SCAN when it is a per-FILE fact.**
 

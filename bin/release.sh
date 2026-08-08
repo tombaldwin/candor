@@ -92,19 +92,13 @@ rel candor-swift  "v$VER" "candor-swift v$VER"
 rel candor-agents "v$VER" "candor-agents v$VER"
 rel candor-rust   "v$VER" "candor-rust v$VER"
 rel candor-ts     "v$VER" "candor-ts v$VER"
-rel candor        "v$VER" "candor v$VER"
+# THE UMBRELLA IS NOT CUT HERE. Its tarball carries ENGINE_PIN, which step 6 has not moved yet — so a
+# release cut at this point ships a $VER umbrella that fetches the PREVIOUS line's engines, and the brew
+# formula hashes exactly that tarball. See step 7.
 # the SPEC is tagged at its OWN version — no patch component; release-verify.sh checks `v$SPEC` to match.
 rel candor-spec   "v$SPEC" "candor-spec $SPEC"
 
-# --- 4. umbrella + Homebrew front door ------------------------------------------------------------------
-say "4. umbrella tag + Homebrew tap"
-cd "$ROOT/candor"
-git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
-# PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line
-# asks for `v0.16.0`; this passed `$VER`, so every release grew a SECOND umbrella tag and a second GitHub
-# release beside `v$VER` — 0.25 and 0.26 both carry the pair. Harmless (both resolve) and untidy, and the
-# tap formula ended up pointing at the odd one out.
-if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "v$VER" && ok "brew tap → v$VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
+# --- 4. (the umbrella moved to step 7 — it must follow the pin bump) -----------------------------------
 
 # --- 5. release-verify ----------------------------------------------------------------------------------
 say "5. release-verify (allow a minute for npm/crates/gh to propagate)"
@@ -120,5 +114,31 @@ grep -rn "0\.[0-9]*\.[0-9]*" "$ROOT/candor/bin/candor" 2>/dev/null | grep ENGINE
 echo "    · candor/bin/candor           ENGINE_PIN"
 echo "    · candor/adopt/               java + agents pins"
 echo "    · candor-java/jbang-catalog.json"
+
+# --- 7. THE UMBRELLA, LAST, BECAUSE ITS TARBALL CARRIES THE PIN ----------------------------------------
+# The umbrella release used to be cut in step 3 and its tag + brew formula in step 4 — both BEFORE step 6
+# moves ENGINE_PIN. `scripts/update-candor.sh` hashes the tarball of that tag, so brew would ship a $VER
+# umbrella whose `candor update` fetches the PREVIOUS line's engines: a version mismatch nobody sees until
+# a new install runs `candor doctor` and reports spec drift against itself. The v0.26.0 tag sits on the
+# pin-bump commit, which says the operator hit this and worked around it by hand rather than the script
+# recording it. Found by a release-mechanics review, 2026-08-08.
+#
+# The guard is a CHECK, not a comment: the pin must already name this version or this step refuses.
+say "7. umbrella release + tag + Homebrew tap (AFTER the pins)"
+PINNED=$(grep -oE 'ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor/bin/candor" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+if [ "$PINNED" != "$VER" ]; then
+  die "ENGINE_PIN is ${PINNED:-unset}, not $VER — the umbrella tarball carries that pin and brew hashes it,
+     so cutting the umbrella now ships a $VER front door that fetches ${PINNED:-the wrong} engines.
+     Do step 6 first (bump ENGINE_PIN + the adopt/jbang pins, commit, push), then re-run this script:
+     steps 1-3 skip what already exists and this step will proceed."
+fi
+cd "$ROOT/candor"
+rel candor "v$VER" "candor v$VER"
+git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
+# PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line
+# asks for `v0.16.0`; this passed `$VER`, so every release grew a SECOND umbrella tag and a second GitHub
+# release beside `v$VER` — 0.25 and 0.26 both carry the pair. Harmless (both resolve) and untidy, and the
+# tap formula ended up pointing at the odd one out.
+if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "v$VER" && ok "brew tap → v$VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
 
 say "DONE — $SPEC / $VER published. Verify each channel reports spec $SPEC, then run release-verify.sh."

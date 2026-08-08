@@ -87,7 +87,11 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
       # below and would publish a release whose notes read, in full, `## Unreleased`. That is the 0.26
       # empty-notes defect with one line of camouflage; it did not fire then only because no empty
       # Unreleased sat on top yet. Found by a release-mechanics review, 2026-08-08.
-      awk '/^## [Uu]nreleased/{skip=1;next} /^## /{if(skip){skip=0;n++} else n++} n==1&&!skip{print} n==2{exit}' \
+      # `\[?…\]?`: the bracketed `## [Unreleased]` is the other spelling this family writes, and the first
+      # version of this skip matched only the bare one — an empty bracketed heading published as a
+      # one-line body. Unreachable for 0.27.0 (only the umbrella reaches this fallback and it has no
+      # Unreleased heading) but a one-spelling guard is how the defect it fixes got in.
+      awk '/^## \[?[Uu]nreleased\]?/{skip=1;next} /^## /{if(skip){skip=0;n++} else n++} n==1&&!skip{print} n==2{exit}' \
           "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
       skip "$repo: no '## [$VER]' heading (dated changelog) — using the newest non-empty section"
     fi

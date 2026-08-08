@@ -36,6 +36,17 @@ keeps its own.
   and the row blamed the wrapper for its own setup. Green locally / red in CI, reintroduced inside the
   test written to catch an integration gap. The setup is now checked rather than assumed, and the fix was
   verified by reproducing the runner (`HOME=/tmp/nohome GIT_CONFIG_GLOBAL=/dev/null`).
+- **A heading claimed a release that does not exist.** `## 2026-08-05 … (released 2026-08-05 as 0.27.0)`
+  was written by an aborted staging run on the 5th; no 0.27.0 artifact exists anywhere (npm, crates.io
+  and every GitHub release still top out at 0.26.0 — resolved, not assumed). It would have shipped inside
+  the v0.27.0 tag with a wrong date, and the `re.sub` that marks headings matches `(unreleased)` only, so
+  re-staging could never have corrected it. Back to `(unreleased)`, which is both true and re-stageable.
+  The root cause is that staging writes "released" at STAGING time, before anything is published —
+  recorded rather than fixed, because moving it would mean a second pass after the publish.
+- **The empty-Unreleased skip in the notes extractor knew one spelling.** `## [Unreleased]` — the
+  bracketed form this family also writes — slipped past it and published as a one-line release body.
+  Unreachable for 0.27.0 (only the umbrella reaches that fallback and it has no Unreleased heading), but
+  a one-spelling guard is exactly how the defect it fixes got in.
 - **The umbrella release was cut before `ENGINE_PIN` moved.** Steps 3–4 released and tagged the umbrella
   while the pin still named the previous line, and `update-candor.sh` hashes that tag's tarball — so brew
   would ship a 0.27.0 front door whose `candor update` fetches 0.26 engines, invisible until a new
@@ -255,7 +266,7 @@ artifact can answer worse than an absent one.
   (scan, query, the availability probe, and three status surfaces) — otherwise a binary `candor update`
   fetched would be invisible to the tool that fetched it.
 
-## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (released 2026-08-05 as 0.27.0)
+## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (unreleased)
 
 ⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces
 a producer actually computes — so an absent optional field means "undetermined" only when the surface is

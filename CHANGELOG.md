@@ -29,6 +29,13 @@ keeps its own.
   - **The umbrella's SECOND `(unreleased)` heading stayed unreleased.** Two are live; one was marked per
     run, so the older section shipped mislabelled inside the tag and a re-run mutated the file although
     the contract says re-running is a no-op. All of them are marked now.
+- **…and the harness row added to catch that was green locally for a reason CI does not have.** Every
+  commit in `release-test.sh` passes `-c user.email=… -c user.name=…` because a CI runner has NO git
+  identity and a bare `git commit` fails there; the two new ones omitted it under a `2>/dev/null`. On the
+  runner they failed silently, the copied fixture stayed dirty, `release-stage.sh` correctly refused it,
+  and the row blamed the wrapper for its own setup. Green locally / red in CI, reintroduced inside the
+  test written to catch an integration gap. The setup is now checked rather than assumed, and the fix was
+  verified by reproducing the runner (`HOME=/tmp/nohome GIT_CONFIG_GLOBAL=/dev/null`).
 - **The umbrella release was cut before `ENGINE_PIN` moved.** Steps 3–4 released and tagged the umbrella
   while the pin still named the previous line, and `update-candor.sh` hashes that tag's tarball — so brew
   would ship a 0.27.0 front door whose `candor update` fetches 0.26 engines, invisible until a new

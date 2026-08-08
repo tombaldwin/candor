@@ -984,19 +984,30 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   `.xcodeproj` repo still names analyzed modules as blind spots, because no `--target` means no resolved
   closure.**
 
-  **Measured** (NetNewsWire, whole repo, on branch `rung/per-file-module-identity`): 32 modules listed
-  uncovered, **15 of them analyzed in that same run** — Account, RSCore, RSParser, Articles,
-  ArticlesDatabase, CloudKitSync, ErrorLog, HTMLMetadata, Images, RSCoreResources, RSDatabase, RSTree,
-  RSWeb, Secrets, ActivityLog. The line printed about them says their effects are "INVISIBLE to the scan
-  (absent from the report, NOT a claim they're pure)", which for those 15 is simply untrue: their
-  functions are in the report. The other 17 are real (WebKit, CloudKit, Sparkle, Zip, the ObjC modules).
+  **Measured** (NetNewsWire at its 2026-08-08 HEAD, whole repo — no `--target` — on branch
+  `rung/per-file-module-identity` at `80d3c48`): 32 modules listed uncovered, **14 of them local packages
+  whose sources are reported in that same run** — Account, ActivityLog, Articles, ArticlesDatabase,
+  CloudKitSync, ErrorLog, HTMLMetadata, Images, RSCore, RSDatabase, RSParser, RSTree, RSWeb, Secrets.
+  On main at `430c5ef` the same scan lists 35, so the branch already removes three; the remaining 14 are
+  what this entry is for. The line printed about them says their effects are "INVISIBLE to the scan
+  (absent from the report, NOT a claim they're pure)", which for those 14 is untrue: their functions are
+  in the report. The other 18 are real (WebKit, CloudKit, Sparkle, Zip, the ObjC modules).
+
+  **Test the membership properly.** An earlier count here said 15 and was arrived at by matching the
+  module name against a path SEGMENT — which credits `Modules/Account/Sources/Account/CloudKit/` as
+  proof that module `CloudKit` was analyzed. That is the same "a directory named like a module is not
+  that module" sin the engine was fixed for, committed in the measurement instead of the code. The 14
+  above are each confirmed by a `Modules/<name>/Package.swift` that exists AND a reported function whose
+  `loc` begins `Modules/<name>/`.
   A list that is half wrong teaches the reader to skim it, and they then skim the 17 — which is how
   over-disclosure becomes under-disclosure without a line of unsound code. Precedent:
   [[candor-scan-guards]], where `net-partner` was reported "ignoring unknown config key" WHILE BEING
   HONOURED — "a FALSE disclosure, worse than a missing one".
 
   **The plan, and why it is not another inference.** `--target X` already fixes this (NetNewsWire iOS: 14
-  uncovered, all true) because the resolver walks that target's local-package closure. The whole-repo case
+  uncovered, all true) because the resolver walks that target's local-package closure. The per-target
+  evidence that walk needs now EXISTS — `XcodeTargetScope.filesByTarget` and `localPackageDirsByTarget`,
+  landed on the branch — so step 3 below is a lookup rather than a new inference. The whole-repo case
   needs the same thing N times, not something new:
   1. enumerate the project's targets — the resolver already does this for the unknown-name refusal
      (8 on NetNewsWire, verified);
@@ -1010,16 +1021,18 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   class that produced ten silent under-reports: a file in the Widget Extension importing something only
   the app links would be claimed internal on evidence that does not apply to it.
 
-  **A second, closely-related case, found reviewing the branch (2026-08-08):** even WITH `--target`, an
-  Xcode target's own module identity can never be claimed, because `analyzedModules` and `importable`
-  speak only SwiftPM target names. Measured on `firefox-ios --target Client`, whose closure scans ELEVEN
-  Xcode targets: `Storage` (111 imports), `Account` (20) and `Sync` are named "INVISIBLE to the scan"
-  while their sources were analyzed in that same run and their functions are in the report. Same false
+  **A second, closely-related case, found reviewing the branch (2026-08-08), STILL OPEN and re-measured
+  at `80d3c48`:** even WITH `--target`, an Xcode target's own module identity can never be claimed,
+  because `analyzedModules` and `importable` speak only SwiftPM target names. Measured on
+  `firefox-ios --target Client`, whose closure scans ELEVEN Xcode targets: `Storage` is named "INVISIBLE
+  to the scan" against 112 imports while **332 of its functions are in that same report**; `Account`
+  (20 imports / 3 reported) and `Sync` (2 / 5) the same. Same false
   disclosure, same fix family — the resolver knows each Xcode target's file list, so an Xcode target is
   a module whose sources are exactly those files. Do it in the same pass as the whole-repo case above.
 
-  **A THIRD case, and the one that currently blocks the branch (review 3, 2026-08-08):** the
-  `.xcodeproj` arm's evidence is CLOSURE-keyed while the question is TARGET-keyed.
+  **A THIRD case — CLOSED 2026-08-08 on the branch (`431c1f6`, hardened by `ef53a2a`).** Kept here
+  because the reasoning under it is the template for the two cases above, which are still open. The
+  `.xcodeproj` arm's evidence was CLOSURE-keyed while the question is TARGET-keyed.
   `XcodeTargetScope.localPackageDirs` is a flat union over every closure member, and `Driver.analyze`
   gives every ownerless file `exposed(by:)` over all of it — so a file in target T inherits a claim
   justified only by sibling target S's link. Measured on a buildable mixed-dependency shape: App links
@@ -1027,7 +1040,7 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   exposing a target named `Lottie`; App's `import Lottie` went silent on BOTH channels, and the SCOPED
   scan was more silent than the unscoped scan of the same tree — which both scoping headers forbid.
 
-  **Do not patch the manifestation.** The obvious narrow fix — let a same-name binary in the file's own
+  **Do not patch the manifestation** — and this is what was done. The obvious narrow fix — let a same-name binary in the file's own
   target's frameworks phase refute the claim — covers one shape of a general defect, and patching
   manifestations is what produced six cardinal sins on main. The correct fix is per-target evidence the
   pbxproj already carries: the resolver must record files-by-target and linked-packages-by-target, and
@@ -1035,8 +1048,19 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   resolver surgery (`XcodeTargets.swift` accumulates both flat today, inside `for tid in closureIds`),
   not a driver tweak.
 
-  Note the whole NetNewsWire win (31 → 14) comes from this arm, so it cannot simply be dropped: without
-  it an `.xcodeproj` repo claims nothing and every local package it depends on is named a blind spot.
+  Note the scoped NetNewsWire result (14 uncovered, all true) comes from this arm, so it cannot simply
+  be dropped: without it an `.xcodeproj` repo claims nothing and every local package it depends on is
+  named a blind spot. (An earlier draft wrote that as a "31 → 14 win". 31 does not reproduce against
+  today's corpus — the whole-repo figure is 35 on main — and it was a different invocation from the 14.
+  A number recorded without its command or its date decays into a claim nobody can check.)
+
+  **What landed, and the two defects found IN the fix** (both by measuring, neither by reading): per-file
+  attribution first read each target's files as the GROWTH of a shared set, which credits only whichever
+  target ran first wherever two targets compile the same file; and the per-target link list was first the
+  DIRECT links, when Xcode puts the whole reachable package graph on a target's import path — that named
+  `RSParser`, `Articles` and `CloudKitSync` blind spots across three NetNewsWire targets in a run that had
+  read all three. The graph walk is product- and target-granular, because a package-directory-keyed one
+  pools the graphs of every product a package vends.
 
   **Acceptance**: the sixteen-fixture battery in `XcodeTargetScopeTests`, PLUS the two shapes the battery
   provably cannot see — (a) declared-but-not-analyzed (a `.package(path:)` outside the scan; caught only

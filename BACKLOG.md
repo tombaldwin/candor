@@ -1328,14 +1328,6 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
-- **[P2] `--target` scopes the SCAN; the `privacy-manifest --verify` that follows does not know about
-  it.** The verify's `.entitlements` discovery is anchored on the plist, so on a multi-target repo it
-  still says "several .entitlements files here — not read. Entitlement-sourced keys (1) are unchecked"
-  even when the report it is reading was scoped to one target (measured on NetNewsWire, 2026-08-08).
-  The note tells the reader what to do, so nothing is silent — but the resolved scope already knows
-  which target's tree is the right one, and could hand the verify its entitlements file instead of
-  asking. Wants the scope to travel with the report, or a `--target` on the verify.
-
 - **[P2] candor's own test suites leak temp fixtures — 130,000 of them here.** `$TMPDIR` on this
   machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
   directories older than a day, left by runs that create a scratch tree and do not remove it (the

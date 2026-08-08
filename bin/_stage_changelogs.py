@@ -10,7 +10,13 @@ nothing would ship unlabelled.
 import os, re, sys
 
 ROOT, VER, DATE = os.environ["ROOT"], os.environ["VER"], os.environ["DATE"]
-for repo in ("candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-agents"):
+
+# candor-spec IS IN THE LOOP. It was not, while preflight [9] checked it — so the one repo the rung is
+# AUTHORED in was the one repo staging could not stage, and the only way to clear the gate was by hand.
+# Its headings are floor-shaped (`## 0.27 — …`) rather than `## [0.27.0]`, which is why `fold_into`
+# below matches either spelling. Same class of miss as the 0.24 release forgetting to TAG candor-spec:
+# the repo you work IN is the one you forget to treat as a repo.
+for repo in ("candor-spec", "candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-agents"):
     f = os.path.join(ROOT, repo, "CHANGELOG.md")
     if not os.path.isfile(f):
         continue
@@ -22,8 +28,35 @@ for repo in ("candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-
     body = s[m.end(): m.end() + (nxt.start() if nxt else len(s))]
     if not body.strip():
         print("SAME %s: `## Unreleased` is empty — nothing would ship unlabelled" % repo); continue
-    if re.search(r"^## \[%s\]" % re.escape(VER), s, re.M):
-        print("SAME %s: already has a `## [%s]` heading" % (repo, VER)); continue
+    # ── THE HEADING ALREADY EXISTS: FOLD, DO NOT SKIP ────────────────────────────────────────────
+    # Skipping here was a DEADLOCK, found by a release-mechanics review on 2026-08-08. Writing the
+    # version heading early is the normal way this project works — you cut `## [0.27.0]`, then keep
+    # working, and the new work lands under a fresh `## Unreleased` above it. Staging then refused every
+    # one of those repos ("already has a heading"), preflight [9] stayed red on the stranded sections,
+    # and `release.sh` gates on preflight — so the tooling could not clear a state the tooling's own
+    # workflow produces, and the only route left was hand-editing six changelogs. Hand-driving the
+    # release is what lost three steps on 0.24.
+    #
+    # Folding is the honest resolution: the stranded work IS part of the version being cut, so it belongs
+    # INSIDE that section, at the top (newest first, matching how entries are written), with the date
+    # refreshed because the section is being closed today rather than whenever the heading was drafted.
+    existing = re.search(r"^## (\[%s\]|%s)([ \t]+—[^\n]*)?$" % (re.escape(VER), re.escape(VER)), s, re.M)
+    if not existing:
+        # Floor-shaped spelling (candor-spec writes `## 0.27 — …`, not the full patch version).
+        floor = VER.rsplit(".", 1)[0]
+        existing = re.search(r"^## (\[%s\]|%s)([ \t]+—[^\n]*)?$" % (re.escape(floor), re.escape(floor)), s, re.M)
+    if existing:
+        head_end = existing.end()
+        s = (s[:m.start()]                      # everything before `## Unreleased`
+             + "## Unreleased\n"                # a fresh empty one
+             + s[m.end() + len(body):existing.start()]   # whatever sat between the two headings
+             + s[existing.start():head_end]      # the existing version heading, verbatim
+             + "\n" + body.rstrip("\n") + "\n"   # the stranded work, folded in at the TOP
+             + s[head_end:])
+        open(f, "w").write(s)
+        print("FOLD %s: `## Unreleased` (%d line(s)) → the existing `%s` section"
+              % (repo, len([l for l in body.splitlines() if l.strip()]), existing.group(0).strip()))
+        continue
     # PRESERVE THE RUNG MARKER. The bare heading is often `## Unreleased — ⟨spec 0.26⟩`, and dropping that
     # suffix strips the released entry of the one thing that records WHICH CONTRACT it carries — which
     # every prior release entry has. Measured on 0.26: all five engines lost it before this line existed.

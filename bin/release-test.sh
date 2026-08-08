@@ -150,6 +150,43 @@ nb="$(awk '/^## 2026-08-02/{getline; if (length($0)) print "NONBLANK"}' "$FIX/ca
 [ -z "$nb" ] && ok "umbrella heading did not eat the following blank line" \
              || bad "the blank line after the dated heading was consumed — the stager reflowed the file"
 
+# ── 2026-08-08: THE FOLD. Writing the version heading early is how this project actually works — you
+# cut `## [0.27.0]`, keep working, and the new work lands under a fresh `## Unreleased` ABOVE it. The
+# stager used to SKIP any repo in that state ("already has a heading"), preflight [9] stayed red on the
+# stranded section, and release.sh gates on preflight — so the tooling could not clear a state the
+# tooling's own workflow produces. Found by a release-mechanics review; the only route left was
+# hand-editing six changelogs, which is what lost three steps on 0.24.
+say "1b. release-stage.sh FOLDS into an existing version heading instead of skipping"
+FOLD="$FIX/candor-swift/CHANGELOG.md"
+printf '# Changelog\n\n## Unreleased\n\n- **stranded work** that landed after the heading was drafted.\n\n## [0.27.0] — 2026-08-07\n\n- the entry that was already written.\n' > "$FOLD"
+(cd "$FIX/candor-swift" && git add -A && git commit -qm "fold fixture" 2>/dev/null)
+ROOT="$FIX" VER=0.27.0 DATE=2026-08-08 python3 "$FIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
+grep -qE '^## Unreleased$' "$FOLD" && [ -z "$(awk '/^## Unreleased$/{f=1;next} /^## /{f=0} f && NF' "$FOLD")" ] \
+  && ok "Unreleased is left EMPTY, so preflight [9] can go green" \
+  || { bad "work is still stranded under Unreleased — the deadlock"; sed -n '1,12p' "$FOLD"; }
+awk '/^## \[0\.27\.0\]/{f=1;next} /^## /{f=0} f' "$FOLD" | grep -q "stranded work" \
+  && ok "the stranded entry was folded INTO the version section" || bad "the entry did not land in [0.27.0]"
+awk '/^## \[0\.27\.0\]/{f=1;next} /^## /{f=0} f' "$FOLD" | grep -q "already written" \
+  && ok "…and the entry that was already there survived" || bad "folding overwrote the existing entry"
+# candor-spec was not in the stager's loop at all while preflight [9] checked it — the repo the rung is
+# AUTHORED in was the one repo staging could not stage. Its headings are floor-shaped, not `## [x.y.z]`.
+mkdir -p "$FIX/candor-spec"
+printf '# Changelog\n\n## Unreleased\n\n- **spec work** that landed after the floor heading.\n\n## 0.27 — current floor (a thing)\n\n- the floor entry.\n' > "$FIX/candor-spec/CHANGELOG.md"
+ROOT="$FIX" VER=0.27.0 DATE=2026-08-08 python3 "$FIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
+awk '/^## 0\.27 —/{f=1;next} /^## /{f=0} f' "$FIX/candor-spec/CHANGELOG.md" | grep -q "spec work" \
+  && ok "candor-spec folds too, into its FLOOR-shaped heading" || bad "candor-spec still unstaged"
+
+# ── 2026-08-08: the umbrella tarball carries ENGINE_PIN, and brew hashes that tarball. Cutting the
+# umbrella before the pin moves ships a $VER front door that fetches the PREVIOUS line's engines.
+say "1c. release.sh REFUSES to cut the umbrella while ENGINE_PIN lags"
+# The REAL script: the fixture tree carries only what this test copies into it, and release.sh is read
+# rather than run here (running it would publish).
+REALREL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release.sh"
+grep -q 'PINNED=' "$REALREL" && ok "the ENGINE_PIN guard exists in release.sh" || bad "no ENGINE_PIN guard"
+awk '/^rel candor +"/{u=NR} /^say "6\. cross-repo pins/{p=NR} END{exit !(u>p && p>0)}' "$REALREL" \
+  && ok "the umbrella release is cut AFTER the pin step, not before" \
+  || bad "the umbrella is still cut before ENGINE_PIN moves"
+
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
 # so an un-committed second run tests the refusal, not idempotence. (It did, and reported "not idempotent".)

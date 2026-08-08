@@ -18,7 +18,7 @@ chmod +x candor-swift
 ## 2. Ask what your app needs
 
 ```sh
-./candor-swift .                  # scan (a few seconds — 424 files in ~6s)
+./candor-swift .                  # scan (a few seconds — IceCubesApp's 391 files in ~5s)
 ./candor-swift privacy-manifest   # the keys your code's sensor reach requires
 ```
 
@@ -46,16 +46,20 @@ often has none of them.
 ## 4. If it finds something, ask why
 
 ```sh
-./candor-swift path JetpackPrologueViewController.init Motion
+./candor-swift path JetpackPrologueViewController.init MotionRaw
 ```
 
 prints the call chain from your function down to the sensor, ending at the exact file and line:
 
 ```
-  AbstractPostListViewController.automaticallySyncIfAppropriate
-    → … → LoginPrologueViewController.init()
-      → JetpackPrologueViewController.init   [Motion source @ …/JetpackPrologueViewController.swift:9:17]
+candor path — how `JetpackPrologueViewController.init` comes to perform MotionRaw:
+
+  JetpackPrologueViewController.init   [MotionRaw source @ …/JetpackPrologueViewController.swift:9:17]
 ```
+
+Name the wrong effect and it says so rather than printing nothing — `path … Motion` on that function
+answers `does not perform Motion (inferred: ["MotionRaw"])`, which is the raw-accelerometer split
+described at the end of this page telling you which effect you actually wanted.
 
 Then decide: declare the key, or remove the reach.
 
@@ -108,9 +112,11 @@ attributed to the plist you named. That is what the flag is for; name it.
 
 It is deliberately explicit about its own limits, and prints them on every verify:
 
-- **56 of Apple's 57 documented usage-description keys are modelled.** It says nothing in either
-  direction about the last one (`NSFileProviderPresenceUsageDescription` — Apple documents no symbol
-  for it, so there is nothing in code to see). A clean result here is not a clean App Store review.
+- **56 of Apple's 57 documented usage-description keys are modelled**, and the verify prints that
+  figure derived from its own tables rather than asserting it. The last one
+  (`NSFileProviderPresenceUsageDescription`) has no symbol in Apple's docs, so there is nothing in code
+  to see: the verify raises it only as a CONDITION where a file provider exists, and says nothing in
+  either direction otherwise. A clean result here is not a clean App Store review.
 - **File-path keys depend on the path.** If a file operation's path can't be determined statically, it
   says so and counts them, rather than guessing — those are where a Desktop/Downloads/removable-volume
   requirement could hide.

@@ -1010,6 +1010,14 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   class that produced ten silent under-reports: a file in the Widget Extension importing something only
   the app links would be claimed internal on evidence that does not apply to it.
 
+  **A second, closely-related case, found reviewing the branch (2026-08-08):** even WITH `--target`, an
+  Xcode target's own module identity can never be claimed, because `analyzedModules` and `importable`
+  speak only SwiftPM target names. Measured on `firefox-ios --target Client`, whose closure scans ELEVEN
+  Xcode targets: `Storage` (111 imports), `Account` (20) and `Sync` are named "INVISIBLE to the scan"
+  while their sources were analyzed in that same run and their functions are in the report. Same false
+  disclosure, same fix family — the resolver knows each Xcode target's file list, so an Xcode target is
+  a module whose sources are exactly those files. Do it in the same pass as the whole-repo case above.
+
   **Acceptance**: the sixteen-fixture battery in `XcodeTargetScopeTests`, PLUS the two shapes the battery
   provably cannot see — (a) declared-but-not-analyzed (a `.package(path:)` outside the scan; caught only
   by `WorkspaceCacheProcessTests`), and (b) cross-target shadowing (a file in target A importing a module

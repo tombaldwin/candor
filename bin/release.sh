@@ -75,9 +75,21 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
     # `## [X.Y.Z]` heading and never should. Fall back to the newest section for that shape — but only as a
     # FALLBACK, so the five engines still get the version-anchored selection that stops the empty-notes bug,
     # and an empty result stays fatal either way.
+    # candor-spec's headings are FLOOR-shaped (`## 0.27 — …`), not `## [0.27.0]`, so the version anchor
+    # above misses it. Try the floor before falling back to position.
     if [ ! -s "/tmp/rel-body-$repo.md" ]; then
-      awk '/^## /{n++} n==1{print} n==2{exit}' "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
-      skip "$repo: no '## [$VER]' heading (dated changelog) — using the newest section"
+      awk -v v="## $SPEC " 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' \
+          "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+    fi
+    if [ ! -s "/tmp/rel-body-$repo.md" ]; then
+      # SKIP A FRESH EMPTY `## Unreleased`. Staging opens one at the top, so "the newest section" is now
+      # that heading and its single line of body — which passes the empty-file and whitespace-only guards
+      # below and would publish a release whose notes read, in full, `## Unreleased`. That is the 0.26
+      # empty-notes defect with one line of camouflage; it did not fire then only because no empty
+      # Unreleased sat on top yet. Found by a release-mechanics review, 2026-08-08.
+      awk '/^## [Uu]nreleased/{skip=1;next} /^## /{if(skip){skip=0;n++} else n++} n==1&&!skip{print} n==2{exit}' \
+          "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
+      skip "$repo: no '## [$VER]' heading (dated changelog) — using the newest non-empty section"
     fi
     [ -s "/tmp/rel-body-$repo.md" ] || die "$repo: CHANGELOG yields no release notes — refusing to publish an empty release"
     grep -q '[^[:space:]]' "/tmp/rel-body-$repo.md" || die "$repo: release notes are whitespace only — refusing"

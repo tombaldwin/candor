@@ -116,6 +116,13 @@ cl_out="$(ROOT="$ROOT" VER="$VER" DATE="$DATE" python3 "$ROOT/candor/bin/_stage_
 while IFS= read -r line; do
   case "$line" in
     OK*)      ok "${line#OK }";;
+    # `FOLD` is what the helper prints when a version heading ALREADY EXISTS and the stranded
+    # `## Unreleased` body is folded into it. Adding that verb to the helper without adding it here made
+    # the FIRST fold line hit the `die` arm below — so the canonical staging run for 0.27 exited RED over
+    # edits that were already correctly on disk (python runs before this loop reads a word of its output).
+    # The 55-assertion harness could not see it: its fold rows invoke `_stage_changelogs.py` directly and
+    # never this wrapper. A test that bypasses the integration point is a test of the wrong thing.
+    FOLD*)    ok "${line#FOLD }";;
     SAME*)    same "${line#SAME }";;
     "")       ;;
     *)        die "changelog: $line";;

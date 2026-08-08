@@ -10,6 +10,35 @@ keeps its own.
 
 ## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (unreleased)
 
+- **The release machinery could not clear the state it produces, and then broke on its own fix.**
+  `_stage_changelogs.py` SKIPPED any repo already carrying a `## [0.27.0]` heading — which is every
+  engine, since writing the heading early and letting new work land under a fresh `## Unreleased` above
+  it is how this project works. Preflight [9] stayed red on the stranded sections and `release.sh` gates
+  on preflight, so the only route left was hand-editing six changelogs, which is what lost three steps on
+  0.24. It now FOLDS, and candor-spec is in the loop at last (it was checked by preflight and skipped by
+  staging — the repo the rung is AUTHORED in was the one repo staging could not stage).
+  - **…and the wrapper died on the new verb.** `release-stage.sh`'s `case` knew `OK`/`SAME` only, so the
+    first `FOLD` line hit its `die` arm and the canonical staging run exited RED over edits already
+    correctly on disk. The 55-assertion harness could not see it because the fold rows drove the helper
+    directly and never the wrapper — a test that bypasses the integration point tests the wrong thing.
+    There is now a row that drives the wrapper, on its own copy of the fixture.
+  - **The release notes would have read `## Unreleased`.** After a fold, candor-spec's top section is the
+    fresh empty heading, and the notes extractor's position fallback picked it up — passing the empty-file
+    and whitespace-only guards with one line of camouflage. It now tries the floor-shaped heading first
+    and skips an empty Unreleased in the fallback.
+  - **The umbrella's SECOND `(unreleased)` heading stayed unreleased.** Two are live; one was marked per
+    run, so the older section shipped mislabelled inside the tag and a re-run mutated the file although
+    the contract says re-running is a no-op. All of them are marked now.
+- **The umbrella release was cut before `ENGINE_PIN` moved.** Steps 3–4 released and tagged the umbrella
+  while the pin still named the previous line, and `update-candor.sh` hashes that tag's tarball — so brew
+  would ship a 0.27.0 front door whose `candor update` fetches 0.26 engines, invisible until a new
+  install runs `candor doctor` and reports spec drift against itself. The v0.26.0 tag sits on the pin-bump
+  commit, which says the operator hit this and worked around it by hand. The umbrella now goes LAST,
+  behind a guard that refuses unless the pin already names the version being cut — a check, not a comment.
+
+`bin/release-test.sh`: 49 → 57 assertions. Every new group was run against a reverted copy first and
+fails there. All of the above was found by a go/no-go review panel, not by the machinery's own tests.
+
 - **Four stray scan artifacts removed from the repo root.** `report.agents.Fleet.*` and
   `report.t-agents.Fleet.*` are output from scans whose working directory happened to be this repo; two
   went in via `git add -A` and two more were already tracked from an earlier review commit. Nothing

@@ -159,7 +159,10 @@ nb="$(awk '/^## 2026-08-02/{getline; if (length($0)) print "NONBLANK"}' "$FIX/ca
 say "1b. release-stage.sh FOLDS into an existing version heading instead of skipping"
 FOLD="$FIX/candor-swift/CHANGELOG.md"
 printf '# Changelog\n\n## Unreleased\n\n- **stranded work** that landed after the heading was drafted.\n\n## [0.27.0] — 2026-08-07\n\n- the entry that was already written.\n' > "$FOLD"
-(cd "$FIX/candor-swift" && git add -A && git commit -qm "fold fixture" 2>/dev/null)
+# `-c user.email/-c user.name`, like every other commit in this file: a CI runner has NO git identity,
+# so a bare `git commit` FAILS there and silently leaves the tree dirty. Green locally, red in CI — the
+# exact class this project keeps a checklist for, and I reintroduced it twice in one commit.
+(cd "$FIX/candor-swift" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "fold fixture" 2>/dev/null)
 ROOT="$FIX" VER=0.27.0 DATE=2026-08-08 python3 "$FIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
 grep -qE '^## Unreleased$' "$FOLD" && [ -z "$(awk '/^## Unreleased$/{f=1;next} /^## /{f=0} f && NF' "$FOLD")" ] \
   && ok "Unreleased is left EMPTY, so preflight [9] can go green" \
@@ -191,7 +194,11 @@ WFIX="$(mktemp -d)"; cp -R "$FIX/." "$WFIX/"
 for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
   [ -d "$WFIX/$r" ] || mkdir -p "$WFIX/$r"
   printf '# Changelog\n\n## Unreleased\n\n- stranded.\n\n## [0.28.0] — 2026-08-07\n\n- already here.\n' > "$WFIX/$r/CHANGELOG.md"
-  (cd "$WFIX/$r" && git add -A >/dev/null 2>&1 && git commit -qm fold >/dev/null 2>&1)
+  # Identity flags AND a hard check: a silent commit failure here leaves the copy dirty, `release-stage.sh`
+  # correctly refuses it, and the row then reports "the wrapper died" for a reason that is not the wrapper.
+  # A test whose setup can fail quietly measures its own setup.
+  ( cd "$WFIX/$r" && git add -A && git -c user.email=t@e -c user.name=t commit -qm fold ) >/dev/null 2>&1
+  [ -z "$(git -C "$WFIX/$r" status --porcelain 2>/dev/null)" ] || bad "1b2 setup: $r is dirty — the wrapper row would misreport"
 done
 wout="$(CANDOR_ROOT="$WFIX" bash "$WFIX/candor/bin/release-stage.sh" 0.28.0 2>&1)"; wrc=$?
 [ "$wrc" = 0 ] && ok "the wrapper exits 0 on a fold" \

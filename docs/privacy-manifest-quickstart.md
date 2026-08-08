@@ -82,7 +82,11 @@ answer about almost nothing. Remote packages stay outside the scope and are disc
 rather than read as pure.
 
 If it can't resolve the name soundly it **refuses** (exit 2) and lists the real target names, because a
-scope quietly resolved short is a purity claim over every file it dropped.
+scope quietly resolved short is a purity claim over every file it dropped. Two refusals you may meet on
+a real repo: a name that two projects both define (firefox-ios has four `.xcodeproj`s and declares
+`RustMozillaAppServices` in two of them — point the scan at one project's directory instead), and a repo
+that **generates** its project, where there is no `.xcodeproj` to read until you generate it. Bitwarden's
+iOS app is the latter: run its `xcodegen` step first, then `--target` works normally.
 
 To find the app's own plist, look for the one whose directory matches the app target — it's the plist
 with `CFBundleDisplayName` and no `NSExtension` key:
@@ -129,6 +133,14 @@ debugged against tells you nothing about the next one.
 | [Bitwarden/ios](https://github.com/bitwarden/ios) | clean — Camera (QR scanner), declared |
 | [firefox-ios](https://github.com/mozilla-mobile/firefox-ios) | clean — Camera, Mic, Photos, Speech, all declared |
 | [Kingfisher](https://github.com/onevcat/Kingfisher) | clean |
+| [NetNewsWire](https://github.com/Ranchero-Software/NetNewsWire) | clean — iOS and Mac apps scoped separately |
+| [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) — Jetpack | clean — 5 effects, all declared |
+
+The last three are `.xcodeproj` repos, and scoping is what makes their answers about the right binary.
+Two measured examples, both a wrong finding before `--target` and clean after: NetNewsWire's **iOS** plist
+was charged `NSAppleEventsUsageDescription` reached from `SendToMarsEditCommand` — Mac-only code, since
+MarsEdit is a Mac blog editor — and **Focus**'s plist was charged Speech reached from firefox's
+`DefaultQuickAnswersService`, a sibling project in the same repository.
 
 **Every app in that second group produced a WRONG finding first.** Each one was a defect in candor, not
 in the app, and each is now fixed: the system contacts and photo pickers were charged usage keys Apple

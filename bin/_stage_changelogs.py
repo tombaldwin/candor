@@ -38,8 +38,10 @@ for repo in ("candor-spec", "candor-rust", "candor-java", "candor-ts", "candor-s
     # release is what lost three steps on 0.24.
     #
     # Folding is the honest resolution: the stranded work IS part of the version being cut, so it belongs
-    # INSIDE that section, at the top (newest first, matching how entries are written), with the date
-    # refreshed because the section is being closed today rather than whenever the heading was drafted.
+    # INSIDE that section, at the top — newest first, matching how entries are written. The heading
+    # itself is kept VERBATIM, date included: it records when the version was cut, and a fold is not
+    # a re-cut. (This comment said "with the date refreshed" while line 53 copied the heading
+    # unchanged — a claim not matching the artifact, inside the fix that exists to stop exactly that.)
     existing = re.search(r"^## (\[%s\]|%s)([ \t]+—[^\n]*)?$" % (re.escape(VER), re.escape(VER)), s, re.M)
     if not existing:
         # Floor-shaped spelling (candor-spec writes `## 0.27 — …`, not the full patch version).
@@ -71,16 +73,21 @@ for repo in ("candor-spec", "candor-rust", "candor-java", "candor-ts", "candor-s
 # THE UMBRELLA'S CHANGELOG IS DATED, NOT VERSIONED — its own header says it is "not a versioned release
 # artifact". So the `## Unreleased` rename above never applies to it, and its entry sat marked
 # "(unreleased)" through the whole 0.26 run until a human noticed. Different shape, same obligation.
+# EVERY `(unreleased)` HEADING, NOT THE FIRST. The live file carries two — 2026-08-07 and 2026-08-05 —
+# and marking one per run shipped the older section still labelled "(unreleased)" inside the tag, while a
+# second run mutated the file again although the contract says re-running is a no-op. Found by a
+# release-mechanics review, 2026-08-08.
 u = os.path.join(ROOT, "candor", "CHANGELOG.md")
 if os.path.exists(u):
     t = open(u).read()
     # `[ \t]*`, NOT `\s*`: `\s` matches newlines, so with re.M the trailing-whitespace class swallowed the
     # BLANK LINE after the heading and silently reflowed the file. Caught by a one-line diff in the commit
     # that added this — a staging script that quietly reformats what it touches is one nobody will trust.
-    m2 = re.search(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)[ \t]*$", t, re.M)
-    if not m2:
+    pat = re.compile(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)[ \t]*$", re.M)
+    n = len(pat.findall(t))
+    if not n:
         print("SAME candor: no dated heading marked `(unreleased)`")
     else:
-        t = t[:m2.start()] + "%s (released %s as %s)" % (m2.group(1), DATE, VER) + t[m2.end():]
+        t = pat.sub(lambda m2: "%s (released %s as %s)" % (m2.group(1), DATE, VER), t)
         open(u, "w").write(t)
-        print("OK candor: dated heading marked released (%s as %s)" % (DATE, VER))
+        print("OK candor: %d dated heading(s) marked released (%s as %s)" % (n, DATE, VER))

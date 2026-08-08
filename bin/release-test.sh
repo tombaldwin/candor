@@ -178,6 +178,28 @@ awk '/^## 0\.27 —/{f=1;next} /^## /{f=0} f' "$FIX/candor-spec/CHANGELOG.md" | 
 
 # ── 2026-08-08: the umbrella tarball carries ENGINE_PIN, and brew hashes that tarball. Cutting the
 # umbrella before the pin moves ships a $VER front door that fetches the PREVIOUS line's engines.
+# THE WRAPPER, NOT THE HELPER. Rows 1b call `_stage_changelogs.py` directly — so when the helper gained
+# a `FOLD` verb the shell wrapper's `case` did not know, its `*) die` arm fired on the first fold line and
+# `release-stage.sh` exited RED over edits already correctly on disk, and all 55 assertions stayed green.
+# A test that bypasses the integration point is a test of the wrong thing. This row drives the WRAPPER.
+#
+# ON ITS OWN COPY, because the first version of this row staged a different version into the SHARED
+# fixture and broke groups 2 and 3 downstream — passing itself while failing its neighbours, which is its
+# own small lesson about tests that mutate what comes after them.
+say "1b2. release-stage.sh (the WRAPPER) survives a fold-shaped tree"
+WFIX="$(mktemp -d)"; cp -R "$FIX/." "$WFIX/"
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
+  [ -d "$WFIX/$r" ] || mkdir -p "$WFIX/$r"
+  printf '# Changelog\n\n## Unreleased\n\n- stranded.\n\n## [0.28.0] — 2026-08-07\n\n- already here.\n' > "$WFIX/$r/CHANGELOG.md"
+  (cd "$WFIX/$r" && git add -A >/dev/null 2>&1 && git commit -qm fold >/dev/null 2>&1)
+done
+wout="$(CANDOR_ROOT="$WFIX" bash "$WFIX/candor/bin/release-stage.sh" 0.28.0 2>&1)"; wrc=$?
+[ "$wrc" = 0 ] && ok "the wrapper exits 0 on a fold" \
+  || { bad "release-stage.sh died on its own helper's output (rc=$wrc)"; echo "$wout" | grep -iE "✘|FOLD" | head -3; }
+echo "$wout" | grep -q "^.*FOLD candor" && bad "a raw FOLD line reached the operator unformatted" \
+  || ok "fold lines are reported as edits, not raw helper output"
+rm -rf "$WFIX"
+
 say "1c. release.sh REFUSES to cut the umbrella while ENGINE_PIN lags"
 # The REAL script: the fixture tree carries only what this test copies into it, and release.sh is read
 # rather than run here (running it would publish).

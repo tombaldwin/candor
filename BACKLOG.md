@@ -980,6 +980,46 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   first clean run — 2456 agreed, 90 diverged, 2 signatures, and this was one of them. Hand-written rows
   had not covered it in 34 parts.
 
+- **[P1 — candor-swift, FOR 0.28, opened 2026-08-08] The κ ledger names local packages the scan
+  ANALYZED, because module identity is decided per-SCAN when it is a per-FILE fact.**
+
+  **The symptom.** A `--target`-scoped NetNewsWire scan lists 31 uncovered modules, among them `RSCore`
+  (20 analyzed files in that very report), `Account` (53), `NewsBlur` (7) — saying their effects are
+  "INVISIBLE to the scan" and advising the reader to chain dep reports or scan the workspace root to
+  close a gap that is already closed. A false disclosure: it prescribes work that does nothing and spends
+  the reader's trust in the ledger that carries the REAL blind spots.
+
+  **Why it is not a small fix, stated from measurement.** Closing it means deciding which modules were
+  analyzed. Nine review rounds on 2026-08-08 found **ten distinct silent under-reports** in that
+  decision, six of them introduced by the fix for the previous one. `internalModules` gates BOTH
+  disclosure channels — the ledger and the per-function `invisible` hedge — and `invisible` is the only
+  thing between an unresolved call into a blind module and a ⟨0.21⟩ purity claim, so every wrong claim is
+  a cardinal sin, not noise. The ten: the package NAME (live on firefox-ios, which is named `Danger` and
+  wraps the real `Danger`); any directory under `Sources/`; a commented-out `.target(…)`; a dead hoisted
+  `.target(name:)`; a ternary's dead branch; `.testTarget`/`.plugin`/`path:`-relocated declarations read
+  as source roots; the first `name:` in a span, which for a computed target name is a DEPENDENCY's
+  `.product(name:)`; a nested package's same-named target claiming the root's import; plus a trap on an
+  unclosed `.target(` and, the other way, candor-swift flagging its own `CandorCore`.
+
+  **Where it was left (commit `430c5ef`).** BOUNDED, not fixed: a module is internal only when an
+  analyzed file lives under a target declared in `rootDir/Package.swift`. That restores containment by
+  construction — every claim is a literal root-manifest declaration, and the shipped 0.26 regex matched
+  all of those and more — so 0.27 has strictly fewer sins than 0.26. The cost is that the noise is back:
+  NetNewsWire returns to 31. **The improvement was withdrawn; the ten fixes shipped.**
+
+  **What the rung actually needs.** Identity must become per-FILE, not per-scan: a module X is internal
+  *for file F* when X is declared by a package F's own package can import — i.e. honour the dependency
+  graph rather than the filesystem. The per-scan set cannot express that, which is why every attempt to
+  approximate it from directory shape produced another sin. Concretely: carry the owning package per
+  analyzed file, resolve each package's local dependency edges, and answer `blindModules(for:)` against
+  that. The ledger then becomes a union over files rather than a global set.
+
+  **The durable lesson, worth keeping with the item:** deciding a soundness-critical fact from filesystem
+  shape has an unbounded number of ways to be wrong, and the way out was not a better heuristic but a
+  smaller claim. Sixteen fixtures from those nine rounds live in `candor-swift`'s
+  `XcodeTargetScopeTests` and are the acceptance battery for any replacement — a candidate that cannot
+  pass all of them is not a candidate.
+
 - **[P1 — spec rung, FOR 0.28, opened 2026-08-07] A policy that yielded NO RULES is
   indistinguishable from a clean gate IN THE MACHINE CHANNEL, four-way.**
 

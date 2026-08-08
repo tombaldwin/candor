@@ -1018,6 +1018,26 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   disclosure, same fix family — the resolver knows each Xcode target's file list, so an Xcode target is
   a module whose sources are exactly those files. Do it in the same pass as the whole-repo case above.
 
+  **A THIRD case, and the one that currently blocks the branch (review 3, 2026-08-08):** the
+  `.xcodeproj` arm's evidence is CLOSURE-keyed while the question is TARGET-keyed.
+  `XcodeTargetScope.localPackageDirs` is a flat union over every closure member, and `Driver.analyze`
+  gives every ownerless file `exposed(by:)` over all of it — so a file in target T inherits a claim
+  justified only by sibling target S's link. Measured on a buildable mixed-dependency shape: App links
+  `Lottie.xcframework` (binary, never analyzed) while a sibling embedded framework links a local package
+  exposing a target named `Lottie`; App's `import Lottie` went silent on BOTH channels, and the SCOPED
+  scan was more silent than the unscoped scan of the same tree — which both scoping headers forbid.
+
+  **Do not patch the manifestation.** The obvious narrow fix — let a same-name binary in the file's own
+  target's frameworks phase refute the claim — covers one shape of a general defect, and patching
+  manifestations is what produced six cardinal sins on main. The correct fix is per-target evidence the
+  pbxproj already carries: the resolver must record files-by-target and linked-packages-by-target, and
+  the driver must ask "what does THIS FILE's target link", not "what did the closure link". That is
+  resolver surgery (`XcodeTargets.swift` accumulates both flat today, inside `for tid in closureIds`),
+  not a driver tweak.
+
+  Note the whole NetNewsWire win (31 → 14) comes from this arm, so it cannot simply be dropped: without
+  it an `.xcodeproj` repo claims nothing and every local package it depends on is named a blind spot.
+
   **Acceptance**: the sixteen-fixture battery in `XcodeTargetScopeTests`, PLUS the two shapes the battery
   provably cannot see — (a) declared-but-not-analyzed (a `.package(path:)` outside the scan; caught only
   by `WorkspaceCacheProcessTests`), and (b) cross-target shadowing (a file in target A importing a module

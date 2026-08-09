@@ -965,7 +965,13 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
                         ("absent from the report, NOT a claim they're pure")
         ts     exit 0   caller absent from `functions`; only "CANDOR_DEPS entry unreadable, skipped"
 
-  **Both postures are internally coherent, which is why this needs a ruling rather than a fix.** The
+  **⟨RESOLVED — SPEC §2 ⟨0.27⟩ ruled for the refusing arm, and all four engines now implement it.⟩** The
+  measurement above is the state BEFORE that ruling; it is kept because the reasoning is why conformance
+  PART 35 exists. rust and ts were corrected on 2026-08-09, when a release panel found they had shipped
+  only the "does not exist" clause of a MUST whose sentence also says "or cannot be read" — rows (d) and
+  (e) pin the other clause now.
+
+  **Both postures were internally coherent, which is why this needed a ruling rather than a fix.** The
   refusing arm reads a configured-but-unreadable dep as the §6.2 configured-but-unusable case, like a
   policy that vanished. The continuing arm reads it as reduced COVERAGE, which is what the ⟨0.15⟩
   coverage envelope exists to qualify — and rust's disclosure says exactly the right thing. What is not

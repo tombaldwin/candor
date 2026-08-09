@@ -1009,8 +1009,18 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   a new shape — extension members rather than globals or free functions — so it wants the same care:
   measure the collision rate on real corpora before changing the key.
 
-  **Acceptance**: `scope-monotonicity.sh /tmp/heldout/ha-ios` goes from 12 violations to 0 for the right
-  reason (the two units stay distinct), with the live-cell count unchanged at 1086.
+  **⚠ THAT ACCEPTANCE CRITERION IS ALREADY SATISFIED AND THE DEFECT IS UNTOUCHED.** It read
+  "`scope-monotonicity.sh` on ha-ios goes from 12 violations to 0". It now reports 0 — because the
+  whole-repo identity pass gives the App-module file its `Shared` claim in the UNSCOPED run too, so both
+  runs agree and the discrepancy the property keyed on is gone. The merge is still there, verified after
+  the change: ONE entry for `Promise.asyncValue` carrying `unitKind: "accessor"` from the App
+  declaration and `loc: Sources/HANetworking/…` from the HANetworking one. A property going green
+  because its observable vanished is not evidence, which is exactly why an acceptance criterion should
+  name the DEFECT and not a symptom.
+
+  **Acceptance, restated**: an unscoped scan of home-assistant/iOS reports TWO entries for
+  `Promise.asyncValue` — or one per module — rather than one whose `unitKind` and `loc` come from
+  different declarations.
 
 - **[P2 — candor-swift, FOR 0.28, opened 2026-08-08, depends on the P1 below] A WHOLE-REPO scan of an
   `.xcodeproj` repo still names analyzed modules as blind spots, because no `--target` means no resolved

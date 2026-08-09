@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (unreleased)
+## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (released 2026-08-09 as 0.27.0)
 
 - **`release.sh`'s step-7 remedy no longer garbles itself, and the harness now renders it.** The text
   telling an operator that a pins-only commit dies at changelog-lag put filenames in backticks inside a
@@ -168,7 +168,7 @@ artifact can answer worse than an absent one.
   "missing key" findings that were pure artefact — a reader could reach that state and conclude the tool
   is wrong.
 
-## 2026-08-05 — the umbrella becomes usable from nothing (unreleased)
+## 2026-08-05 — the umbrella becomes usable from nothing (released 2026-08-09 as 0.27.0)
 
 - **`candor init` now emits the consumer glue, not just the policy** — the three things every adopter
   was hand-rolling per repo. Driven by a real adoption (uflexi), whose hand-written versions of all
@@ -277,7 +277,7 @@ artifact can answer worse than an absent one.
   (scan, query, the availability probe, and three status surfaces) — otherwise a binary `candor update`
   fetched would be invisible to the tool that fetched it.
 
-## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (unreleased)
+## 2026-08-05 — spec 0.27: a producer declares which refinements it computes (released 2026-08-09 as 0.27.0)
 
 ⟨spec 0.27⟩ the rung: `resolves`, a top-level envelope array naming the optional §2 refinement surfaces
 a producer actually computes — so an absent optional field means "undetermined" only when the surface is

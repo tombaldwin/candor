@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (unreleased)
 
+- **`release.sh`'s step-7 remedy no longer garbles itself, and the harness now renders it.** The text
+  telling an operator that a pins-only commit dies at changelog-lag put filenames in backticks inside a
+  double-quoted string — live command substitution, so it printed "CHANGELOG. ,  and
+  jbang-catalog.json all count as SOURCE", losing exactly the three names it exists to give. `bash -n`
+  cannot see this: it is valid syntax. This die fires on every release's FIRST pass by design, so it is
+  the one message an operator is guaranteed to read. `release-test.sh` now RENDERS the block and asserts
+  all three names survive — 59 assertions, and the assertion was checked against an unescaped copy to
+  confirm it discriminates.
+
 - **The release machinery could not clear the state it produces, and then broke on its own fix.**
   `_stage_changelogs.py` SKIPPED any repo already carrying a `## [0.27.0]` heading — which is every
   engine, since writing the heading early and letting new work land under a fresh `## Unreleased` above

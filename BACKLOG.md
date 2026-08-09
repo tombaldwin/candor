@@ -1028,6 +1028,29 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   `Promise.asyncValue` — or one per module — rather than one whose `unitKind` and `loc` come from
   different declarations.
 
+- **[SPEC QUESTION — opened 2026-08-09] Does §3.1's "MUST NOT print anything else to a stdout that
+  carries a verdict" bind the SCAN route's `--json` too?**
+
+  On the GATE verbs `--json` IS `--gate-json -` — the same document, so naming both is one artifact
+  named twice, and that is now pinned by PART 36 (b6)/(b9)/(b10). On the SCAN route `--json` means
+  something else entirely: write the REPORT to stdout. So `--json --gate-json -` there puts a report AND
+  a verdict on one stream, which the sentence at SPEC.md:1872 appears to forbid.
+
+  **Measured, all four engines, clean scan, `--json --gate-json -`:** rust 374 bytes, ts 353, swift 414,
+  java 781 — every one of them TWO documents. This is not a divergence to fix; it is four engines
+  agreeing on a reading the spec text does not obviously license.
+
+  **So it is a spec question, and the row was NOT written.** A row asserting "exactly one document"
+  would have gone red four-way on a behaviour nobody has argued is wrong; a row asserting the current
+  behaviour would have pinned it before deciding whether it is right. Either would have been worse than
+  the question. (This is the [[candor-theory-spec-verification]] hazard the other way round: last time a
+  theory wrong in the STRICT direction produced a finding shaped like a code defect; here measuring
+  first stopped the same mistake reaching a conformance row.)
+
+  **To decide:** either scope the sentence to the gate verbs, where `--json` denotes the verdict — the
+  reading the engines have implemented — or rule that the combination is a sink conflict and must be
+  refused like a sink over an input, in which case four engines need the refusal and a row can pin it.
+
 - **[SPEC QUESTION — opened 2026-08-09, NOT an engine defect] `coveredPkgs` is scan-global and
   name-keyed, and SPEC §2 rule 3 says it must be.**
 

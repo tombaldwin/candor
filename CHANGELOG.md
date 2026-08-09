@@ -10,6 +10,11 @@ keeps its own.
 
 ## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (released 2026-08-09 as 0.27.0)
 
+- **ENGINE_PIN and the `adopt/` pins move to 0.27.0.** They name published artifacts, so they move
+  AFTER the release exists — `release.sh` step 7 refuses until they do, because the umbrella tarball
+  carries the pin and Homebrew hashes it: cutting the front door early ships a 0.27.0 installer that
+  fetches 0.26.0 engines.
+
 - **`release.sh`'s step-7 remedy no longer garbles itself, and the harness now renders it.** The text
   telling an operator that a pins-only commit dies at changelog-lag put filenames in backticks inside a
   double-quoted string — live command substitution, so it printed "CHANGELOG. ,  and

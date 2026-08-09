@@ -1022,6 +1022,41 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   `Promise.asyncValue` — or one per module — rather than one whose `unitKind` and `loc` come from
   different declarations.
 
+- **[SPEC QUESTION — opened 2026-08-09, NOT an engine defect] `coveredPkgs` is scan-global and
+  name-keyed, and SPEC §2 rule 3 says it must be.**
+
+  Every other conjunct of the disclosure predicate became per-file during the 0.27 identity rung. This
+  one did not, and a review flagged it as "the one door through which a same-named module could be
+  certified for a file whose target cannot link it". **It reproduces**, measured on the built engine:
+
+  ```
+  Root/Package.swift      declares NO dependencies
+  Root/Sources/App/main   import Utils; func ship() { UtilsClient().send() }
+  CANDOR_DEPS             a genuine report for an UNRELATED package that happens to be named Utils
+  ```
+
+  → `uncovered: []`, `functions: []`. `ship` absent under ⟨0.21⟩ is a purity claim over an unresolved
+  SDK call, and one chained report for a package this code does not use produced it.
+
+  **It is nonetheless the SPECIFIED behaviour**, and the engine is right: §2 rule 3 says "a coverage
+  disclosure must treat EVERY package a loaded report covers as accounted for, even with zero joins",
+  with no qualification about whether the consumer declares the dependency. A gate on "the file's target
+  actually names this dependency" was implemented and **reverted**: 31 tests across the chaining suite
+  went red, all of them pinning the contract correctly. Four engines implement rule 3 and conformance
+  pins it, so changing it unilaterally in one engine would break the four-way suite — this is a spec
+  rung or it is nothing.
+
+  **The standing hazard this is an instance of** ([[candor-theory-spec-verification]]): a theory wrong in
+  the STRICT direction produces a finding shaped exactly like a real code defect. Check which side the
+  contract and the conformance suite are on BEFORE writing the fix; I wrote it first and read the spec
+  second.
+
+  **If it is ever taken up**, the discriminator that works is `declaredNames` (in-package targets plus
+  product names, resolved or not) rather than `importable` — a chained dep is usually REMOTE, so it
+  resolves to no local sources and is absent from `importable` by construction; gating on that would
+  delete the feature rather than narrow it. The measured cost of the strict form is exactly the fixtures
+  whose manifests omit the dependency their code imports, i.e. trees that do not compile.
+
 - **[P2 — candor-swift, FOR 0.28, opened 2026-08-08, depends on the P1 below] A WHOLE-REPO scan of an
   `.xcodeproj` repo still names analyzed modules as blind spots, because no `--target` means no resolved
   closure.**

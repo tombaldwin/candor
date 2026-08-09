@@ -980,6 +980,38 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   first clean run — 2456 agreed, 90 diverged, 2 signatures, and this was one of them. Hand-written rows
   had not covered it in 34 parts.
 
+- **[P1 — candor-swift, opened 2026-08-09] TWO EXTENSION MEMBERS OF THE SAME TYPE, DECLARED IN
+  DIFFERENT MODULES, MERGE INTO ONE UNIT.** Found by `scripts/scope-monotonicity.sh` on a HELD-OUT repo
+  (home-assistant/iOS) within minutes of the checker existing — the first thing either the property or
+  the held-out corpus produced.
+
+  ```swift
+  // Sources/HANetworking/Sources/Guarantee+Additions.swift   (module HANetworking, imports PromiseKit)
+  public extension Promise { func asyncValue() async throws -> T { … } }
+
+  // Sources/App/Settings/Notifications/NotificationRateLimitView.swift  (module App, imports Shared)
+  private extension Promise { var asyncValue: T { get async throws { … } } }
+  ```
+
+  Both key as `Promise.asyncValue`. A whole-repo scan reports ONE entry carrying the union of their
+  hedges (`["PromiseKit", "Shared"]`), the accessor's `unitKind`, and the OTHER file's `loc`. A scan
+  scoped to a target holding only one reports just that one's. They are two units: different modules,
+  different kinds, and the App one is `private`, so it is not visible outside its own file.
+
+  **Direction: FABRICATION, not silence.** A caller of either gets the other's effects, and the `loc`
+  misattributes one of them. It does not block a release, and it is PRE-EXISTING — nothing to do with
+  the per-file identity rung, which is how the property found it: the two runs disagreed, and the
+  disagreement was the engine's, not the scope's.
+
+  **Related, and why this is not a quick fix:** [[candor-global-unit-identity]] records that qualifying
+  swift unit names by module was measured and reverted TWICE, because swift's units are keyed by bare
+  name and every scoping refinement just changes which colliding declaration wins. This is that vein in
+  a new shape — extension members rather than globals or free functions — so it wants the same care:
+  measure the collision rate on real corpora before changing the key.
+
+  **Acceptance**: `scope-monotonicity.sh /tmp/heldout/ha-ios` goes from 12 violations to 0 for the right
+  reason (the two units stay distinct), with the live-cell count unchanged at 1086.
+
 - **[P2 — candor-swift, FOR 0.28, opened 2026-08-08, depends on the P1 below] A WHOLE-REPO scan of an
   `.xcodeproj` repo still names analyzed modules as blind spots, because no `--target` means no resolved
   closure.**
@@ -1068,8 +1100,17 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   only target B links must stay disclosed), which needs a NEW fixture and does not exist yet. Cost check
   required: N target resolutions on a whole-repo scan, firefox-ios being the worst case at ~18.
 
-- **[P1 — candor-swift, FOR 0.28, opened 2026-08-08] The κ ledger names local packages the scan
-  ANALYZED, because module identity is decided per-SCAN when it is a per-FILE fact.**
+- **[DONE — candor-swift, SHIPPING IN 0.27, opened + closed 2026-08-08] The κ ledger names local packages
+  the scan ANALYZED, because module identity is decided per-SCAN when it is a per-FILE fact.**
+
+  Built on `rung/per-file-module-identity` and merged. Three review rounds found ten defects; the two
+  most serious shared one shape — the producer computed the right answer and the CONSUMER flattened it,
+  while the producer's own fixture stayed green. Round 3 found no silence at all and gives the reason:
+  every name that can be claimed internal has passed `analyzedTargets`, so a module is called internal
+  only if a file under that target's real source root was read in this run. Kept below in full, because
+  the P2 above is the same problem in the shapes this did not reach. Measured result: IceCubesApp's app
+  target 48 → 38 uncovered, all ten names removed having analyzed functions in the same report; the
+  other 15 target scans unchanged.
 
   **The symptom.** A `--target`-scoped NetNewsWire scan lists 31 uncovered modules, among them `RSCore`
   (20 analyzed files in that very report), `Account` (53), `NewsBlur` (7) — saying their effects are

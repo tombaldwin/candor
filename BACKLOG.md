@@ -1051,7 +1051,25 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   contract and the conformance suite are on BEFORE writing the fix; I wrote it first and read the spec
   second.
 
-  **If it is ever taken up**, the discriminator that works is `declaredNames` (in-package targets plus
+  **MEASURED 2026-08-09, and the measurement argues AGAINST the rung.** Every package of two real
+  repos was scanned and chained, then the whole repo re-scanned:
+
+  | repo | packages chained | files importing a covered package their target does not name |
+  |---|---|---|
+  | NetNewsWire | 17 | **0** — the strict gate would change nothing here |
+  | IceCubesApp | 13 | **3** — `AppAccount`, `Env`, `MediaUI` |
+
+  All three IceCubes cases are in SHIPPING code that builds: `Packages/Account`'s manifest declares
+  NetworkClient, Models, StatusKit, Env, DesignSystem, ButtonKit and WrappingHStack, and
+  `Sources/Account/AccountsList/AccountsListRow.swift` imports `AppAccount` regardless. So the strict
+  gate would have DENIED coverage and disclosed all three — a false disclosure on code that compiles,
+  which is reach lost for nothing. Zero gain on one repo, three losses on the other.
+
+  **What shipped instead is the note** (⟨0.27⟩): where a covered package is imported by a file whose
+  target does not name it, say so on stderr and change no answer. It found the three IceCubes cases,
+  stays silent on NetNewsWire, and stays silent on the declared-dependency control.
+
+  **If it is ever taken up anyway**, the discriminator that works is `declaredNames` (in-package targets plus
   product names, resolved or not) rather than `importable` — a chained dep is usually REMOTE, so it
   resolves to no local sources and is absent from `importable` by construction; gating on that would
   delete the feature rather than narrow it. The measured cost of the strict form is exactly the fixtures

@@ -49,6 +49,9 @@ NOSHIP=(':(exclude)*.md' ':(exclude)LICENSE*' ':(exclude).github' ':(exclude).gi
 # Paths that ship DESPITE matching an exclude above. candor-spec's product is a document, and the
 # conformance suite is the executable half of the same contract — a new PART is a shipped change there
 # in the way a new unit test is not in an engine.
+# Read via INDIRECT expansion below (`ev="EXTRA_${r//-/_}[@]"`), which the linter cannot follow.
+# Renaming this silently disables the per-repo extra paths.
+# shellcheck disable=SC2034
 EXTRA_candor_spec=(SPEC.md conformance)
 
 newest() { # repo-dir, since-rev, pathspec… -> committer timestamp of the newest matching commit, or ""

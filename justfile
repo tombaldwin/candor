@@ -1,0 +1,53 @@
+# candor — family task runner. `just` (https://github.com/casey/just), `brew install just`.
+#
+# WHY: every recipe here is a command that was got WRONG by hand during the 0.27 release. The rust
+# build is the sharpest example — `cargo build --release` at that repo's root builds the dylint LINT,
+# not the engines, so a release binary silently aged eight days and a reviewer measuring it reported one
+# defect that was already fixed and one that never existed.
+
+root := justfile_directory() / ".."
+
+default:
+    @just --list
+
+# Build every engine. NOT `cargo build --release` at the rust root — see the note above.
+build:
+    cd {{root}}/candor-rust && cargo build --release -p candor-scan -p candor-query
+    cd {{root}}/candor-java && ./gradlew shadowJar -q
+    cd {{root}}/candor-swift && swift build -c release
+    @echo "ts and agents run from source — nothing to build"
+
+# Every engine's own suite.
+test:
+    cd {{root}}/candor-swift && swift test
+    cd {{root}}/candor-rust && cargo test -q
+    cd {{root}}/candor-agents && python3 test.py
+    cd {{root}}/candor && bash bin/release-test.sh
+
+# The four-way differential. Run it after ANY classifier change — never one generator.
+conformance:
+    cd {{root}}/candor-spec && bash conformance/run.sh
+
+# One part of the differential, for iterating. A FILTERED run is not a conformance result and says so.
+conformance-part n:
+    cd {{root}}/candor-spec && CONFORMANCE_ONLY={{n}} bash conformance/run.sh
+
+# The exit-2 cause matrix: every cause a user can trigger, both sink forms, all four engines.
+probe *engines:
+    cd {{root}}/candor && bash bin/probe-causes.sh {{engines}}
+
+# Lint the release machinery. Backticks inside a double-quoted shell string are live command
+# substitution — that silently deleted three filenames from the one message an operator is guaranteed
+# to read, and `bash -n` cannot see it because it is valid syntax.
+lint:
+    shellcheck -S warning {{root}}/candor/bin/*.sh {{root}}/candor-spec/conformance/run.sh
+
+# Everything a change should pass before it is pushed.
+check: build test conformance probe
+
+# Release gates (read-only — publishing is deliberately NOT a recipe).
+preflight spec version:
+    cd {{root}}/candor && bash bin/release-preflight.sh {{spec}} {{version}}
+
+verify spec version:
+    cd {{root}}/candor && bash bin/release-verify.sh {{spec}} {{version}}

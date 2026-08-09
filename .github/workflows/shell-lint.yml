@@ -1,0 +1,28 @@
+# Lint the release machinery.
+#
+# WHY THIS EXISTS, precisely. `release.sh`'s step-7 refusal — the message an operator is GUARANTEED to
+# read, because that step refuses on every release's first pass by design — was written with filenames
+# in backticks inside a double-quoted string. Backticks there are live command substitution, so it
+# printed "CHANGELOG. ,  and jbang-catalog.json all count as SOURCE", silently deleting the three names
+# the sentence exists to give. `bash -n` passed: it is valid syntax, just not the intended semantics.
+# ShellCheck flags exactly this (SC2006/SC2016 family), which is cheaper than the assertion that now
+# guards the one instance.
+name: shell-lint
+on:
+  push:
+    paths: ['bin/**', '.github/workflows/shell-lint.yml', 'justfile']
+  pull_request:
+    paths: ['bin/**', '.github/workflows/shell-lint.yml', 'justfile']
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+      - name: lint bin/
+        # -S warning, not the default: the release scripts are long-lived and deliberately idiomatic in
+        # places (word-splitting a built command array, for one), so `info`-level noise would train the
+        # next person to ignore the run. Warnings and errors only, and they must be zero.
+        run: shellcheck -S warning bin/*.sh

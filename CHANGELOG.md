@@ -26,7 +26,9 @@ keeps its own.
     fresh empty heading, and the notes extractor's position fallback picked it up — passing the empty-file
     and whitespace-only guards with one line of camouflage. It now tries the floor-shaped heading first
     and skips an empty Unreleased in the fallback.
-  - **The umbrella's SECOND `(unreleased)` heading stayed unreleased.** Two are live; one was marked per
+  - **The umbrella's SECOND `(unreleased)` heading stayed unreleased.** THREE are live at HEAD (this entry was written when it was two, which is
+    itself the reason the count belongs in the code and not in prose — the marking handles all of them);
+    one was marked per
     run, so the older section shipped mislabelled inside the tag and a re-run mutated the file although
     the contract says re-running is a no-op. All of them are marked now.
 - **…and the harness row added to catch that was green locally for a reason CI does not have.** Every

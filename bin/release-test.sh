@@ -216,6 +216,26 @@ awk '/^rel candor +"/{u=NR} /^say "6\. cross-repo pins/{p=NR} END{exit !(u>p && 
   && ok "the umbrella release is cut AFTER the pin step, not before" \
   || bad "the umbrella is still cut before ENGINE_PIN moves"
 
+# THE DIE MESSAGE MUST SURVIVE BEING PRINTED. `bash -n` cannot see this: backticks inside a
+# double-quoted string are valid syntax AND live command substitution, so a message written with
+# `bin/candor` in prose renders as the OUTPUT of running bin/candor — which is to say, as nothing, with
+# the file names silently deleted. Measured: the step-7 remedy came out reading "CHANGELOG. ,  and
+# jbang-catalog.json all count as SOURCE", losing exactly the three filenames it exists to name. This
+# die fires on EVERY release's first pass by design, so it is the one message an operator is guaranteed
+# to read. Render it and compare, rather than trusting a parse check.
+STEP7=$(awk '/THE PIN-BUMP COMMIT MUST ALSO TOUCH/,/fails on a pending run/' "$REALREL")
+printf '%s\n' "$STEP7" | grep -q 'bin/candor' \
+  && ok "step 7's remedy names bin/candor in its SOURCE text" \
+  || bad "step 7's remedy lost bin/candor from its source text"
+RENDERED=$(cd /tmp && eval "cat <<CANDOR_EOF
+$STEP7
+CANDOR_EOF" 2>/dev/null)
+case "$RENDERED" in
+  *'bin/candor'*'adopt/*.yml'*'## Unreleased'*)
+    ok "…and all three survive being RENDERED (no live backtick substitution)" ;;
+  *) bad "step 7's remedy is garbled when printed — backticks are executing; escape them as \\\`" ;;
+esac
+
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
 # so an un-committed second run tests the refusal, not idempotence. (It did, and reported "not idempotent".)

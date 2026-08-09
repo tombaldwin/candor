@@ -146,7 +146,11 @@ The rest, stated plainly because a green exit code should not be read as more th
   *"your plist is right"*. The second wave (`privacy/2`) added Health, Motion, Calendar, Reminders,
   Bluetooth, Speech, Biometrics, MediaLibrary, HomeKit, Tracking, NearbyInteraction and Siri, which is why
   the macOS run above reports **4 effects** where it reported 3.
-- **`LocalNetwork` is still absent, deliberately.** `NSLocalNetworkUsageDescription` is real, but the reach
+- **`LocalNetwork` WAS absent when this page was written; it is modelled now.** The paragraph below is
+  kept because its reasoning — that a key with no reachable symbol cannot be inferred from code — is
+  still the rule; it is no longer true of this key.
+
+  ORIGINALLY: `NSLocalNetworkUsageDescription` is real, but the reach
   is not separable from ordinary `Net` by type — `NWBrowser`/`NWConnection` serve both — and the key
   travels with an entitlement this engine does not read. Guessing would fabricate on every networking app,
   so it stays uncovered and disclosed.
@@ -162,7 +166,9 @@ The rest, stated plainly because a green exit code should not be read as more th
   a silent purity claim over every other type in it.
 - **This is Swift-only.** The privacy manifest is a candor-swift extension. The four-engine floor says
   nothing about it, and no other engine implements it.
-- **It checks 42 of the 57 keys Apple documents, and names the 15 it does not.** Every verify prints its own
+- **It checks 56 of the 57 keys Apple documents, and names the one it does not.** (This page said "42 of
+  the 57 … and names the 15" until 2026-08-09; the coverage grew and the page did not. The figure is
+  derived by the verify from its own tables and printed on every run — read it there rather than here.) Every verify prints its own
   vocabulary bound — `NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus,
   GameKit friends, VideoSubscriberAccount, clinical health records and the rest — with the reason each
   is absent. Neither number is a guess: Apple's protected-resources list was **fetched from

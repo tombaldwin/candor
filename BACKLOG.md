@@ -1,6 +1,6 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-08-05 (floor 0.26 PUBLISHED; **0.27 staged across all six repos and unpublished** — `resolves` + §2 `fs` kinds travelling the call graph, conformance PART 31). Rungs 0.24 CONTRIBUTES/ambiguous, 0.25 ambiguous-join-key-UNIONED, 0.26 sidecar-key-set-is-its-manifest and 0.27 all landed since the previous review line, which still said 0.18→0.23 and was the first thing a new session read. Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md` (**month-stale — see the audit note below**), and — not previously linked from here — `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`, which is where candor-ts's and candor-swift's open rows actually live._
+_Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 ## Direction — next strategic bets (family-level)
 
@@ -951,8 +951,14 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   cannot arise. The differential that found it is a corpus pass, not a fixture — worth a conformance row
   with a two-crate workspace whose crates share a function name.
 
-- **[P1 — needs a RULING, opened 2026-08-07] A configured dep that cannot be read: two engines refuse,
-  two continue. Found by the new generative config differential, not by hand.**
+- **[RESOLVED 2026-08-09, SHIPPED IN 0.27 — opened 2026-08-07] A configured dep that cannot be read: two
+  engines refused, two continued. Found by the generative config differential, not by hand.**
+
+  SPEC §2 ⟨0.27⟩ ruled for the refusing arm and all four engines now implement BOTH clauses of the MUST
+  ("does not exist OR cannot be read"). rust and ts had shipped only the first; a release panel caught
+  it by testing their own changelog claims. Conformance PART 35 rows (d)/(e) pin the second clause — the
+  part's title had said "cannot be read" while its three rows only ever posed "not there", which is how
+  a half-implementation passed a green suite for a release. Kept for that lesson.
 
   Measured with a real path dependency, so the fixture is diagnostic (an earlier one was not — a call to
   an undeclared crate is omitted with or without any dep config, which proves nothing):
@@ -1027,6 +1033,21 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   **Acceptance, restated**: an unscoped scan of home-assistant/iOS reports TWO entries for
   `Promise.asyncValue` — or one per module — rather than one whose `unitKind` and `loc` come from
   different declarations.
+
+- **[P2 — conformance, opened 2026-08-09] The exit-2 cause matrix is green where it is posed, and the
+  unposed cells are now the whole risk.**
+
+  0.27 took PART 36 from 3 stream rows to 17 and every cell it poses is green four-way. What is NOT
+  posed, in priority order: **the gate-verb route** for most causes (rows cover the scan route plus
+  b4/b5/b6); **candor-agents** for the causes it fails (see the P1 below); and the FILE-sink form of
+  several causes where only the stream is posed. The two forms are not interchangeable — measured, an
+  engine streamed a refusal correctly for an unreadable config while leaving a previous run's
+  `{"ok": true}` on disk, and only a file-sink probe could see it.
+
+  **Method that worked, and should be reused rather than re-derived**: enumerate the causes a user can
+  TRIGGER (12), not the exit sites (25 in one engine, 30 in another); run each against both sink forms;
+  write the row BEFORE the fix. Every defect that stayed fixed in 0.27 was caught by a row, not by a
+  review. See the memory file `candor-027-release-lessons`.
 
 - **[P1 — candor-agents, opened 2026-08-09] Four exit-2 causes leave `--gate-json -` EMPTY.**
 

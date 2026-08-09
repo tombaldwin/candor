@@ -146,7 +146,13 @@ if [ "$PINNED" != "$VER" ]; then
   die "ENGINE_PIN is ${PINNED:-unset}, not $VER — the umbrella tarball carries that pin and brew hashes it,
      so cutting the umbrella now ships a $VER front door that fetches ${PINNED:-the wrong} engines.
      Do step 6 first (bump ENGINE_PIN + the adopt/jbang pins, commit, push), then re-run this script:
-     steps 1-3 skip what already exists and this step will proceed."
+     steps 1-3 skip what already exists and this step will proceed.
+
+     THE PIN-BUMP COMMIT MUST ALSO TOUCH THAT REPO'S CHANGELOG. `bin/candor`, `adopt/*.yml` and
+     jbang-catalog.json all count as SOURCE to preflight [5b] (changelog-lag), which step 0 of this
+     script runs unconditionally — so a pins-only commit makes the re-run die at the gate, AFTER the
+     engines are published. Add the line to the existing [VERSION] section; a new `## Unreleased`
+     would trip [9] instead. And wait for CI before the re-run: [10] fails on a pending run."
 fi
 cd "$ROOT/candor"
 rel candor "v$VER" "candor v$VER"

@@ -1028,6 +1028,32 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   `Promise.asyncValue` — or one per module — rather than one whose `unitKind` and `loc` come from
   different declarations.
 
+- **[P1 — candor-agents, opened 2026-08-09] Four exit-2 causes leave `--gate-json -` EMPTY.**
+
+  Measured against the other four engines, which all write a refusal document on the same inputs:
+
+  | cause | agents | java / rust / ts / swift |
+  |---|---|---|
+  | nonexistent fleet path | **empty** | document |
+  | unreadable `.candor/config` | **empty** | document |
+  | engine pin not satisfied | **empty** | document |
+  | unknown flag, valueless flag, unreadable/missing policy | document | document |
+
+  The FILE sink is already correct for these (arming leaves a placeholder and the refusal replaces it —
+  fixed earlier today). A stream has no placeholder, so it needs the write, and only the usage-error
+  path does it. Two forms of one cause; one covered.
+
+  **Not fixed, and the reason is worth recording.** An attempt tonight routed three of the four and
+  broke a passing test: two string replacements matched the SAME site, duplicating a line and leaving a
+  `raise` outside its guard, so ANY set `CANDOR_CONFIG` — readable or not — exited 2. Reverted; 466
+  tests green. That is the second self-inflicted defect in this file in an hour, both from batch edits
+  applied without re-reading the result. Do this one with a single deliberate edit per site and a
+  measurement after each.
+
+  **Acceptance**: the four rows above write a parseable refusal document, `python3 test.py` stays at
+  466, and a conformance row poses the causes for the agents arm the way PART 36 (b16)/(b17) do for the
+  other engines.
+
 - **[SPEC QUESTION — opened 2026-08-09] Does §3.1's "MUST NOT print anything else to a stdout that
   carries a verdict" bind the SCAN route's `--json` too?**
 

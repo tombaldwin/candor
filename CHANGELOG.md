@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (released 2026-08-09 as 0.27.0)
 
+- **Tooling the 0.27 release proved was missing.** `bin/probe-causes.sh` runs the exit-2 cause matrix —
+  every cause a user can TRIGGER (12), against every engine, on BOTH sink forms (68 cells) — because
+  counting exit SITES is the wrong measure (25 in one engine, 30 in another) and because the two sink
+  forms are different properties: one engine streamed a refusal correctly while leaving a previous run's
+  `{"ok": true}` on disk. A `justfile` fronts build/test/conformance/probe/lint, starting with the rust
+  build, which is `-p candor-scan -p candor-query` and NOT a root `cargo build` — that mistake aged a
+  release binary eight days and produced a review finding for a defect that did not exist. And
+  `shell-lint.yml` runs ShellCheck over `bin/`, which found three `cd` calls in the PUBLISHING script
+  with no `|| exit` — a failed `cd` there runs `cargo publish` from the wrong repository.
+
 - **ENGINE_PIN and the `adopt/` pins move to 0.27.0.** They name published artifacts, so they move
   AFTER the release exists — `release.sh` step 7 refuses until they do, because the umbrella tarball
   carries the pin and Homebrew hashes it: cutting the front door early ships a 0.27.0 installer that

@@ -38,7 +38,7 @@ ok "all mains clean + pushed"
 # cargo publish waits for index propagation of each dep before the next resolves. A crate already at $VER on
 # crates.io errors "already uploaded" → we treat that as a skip and continue.
 say "1. crates.io (dep order)"
-cd "$ROOT/candor-rust"
+cd "$ROOT/candor-rust" || die "cannot cd to $ROOT/candor-rust"
 for crate in candor-report candor-classify candor-scan candor-query; do
   if cargo publish -p "$crate" 2>/tmp/rel-$crate.txt; then ok "published $crate@$VER"
   elif grep -qiE "already (uploaded|exists)|crate version .* is already" /tmp/rel-$crate.txt; then skip "$crate@$VER already on crates.io"
@@ -47,7 +47,7 @@ done
 
 # --- 2. candor-ts → npm via the tag-triggered OIDC action (never manual npm publish) ---------------------
 say "2. candor-ts npm (via v$VER tag → OIDC publish.yml)"
-cd "$ROOT/candor-ts"
+cd "$ROOT/candor-ts" || die "cannot cd to $ROOT/candor-ts"
 if git rev-parse "v$VER" >/dev/null 2>&1; then skip "tag v$VER already exists"
 else git tag "v$VER" && git push origin "v$VER" && ok "tagged + pushed v$VER (OIDC action publishes candor-ts@$VER with provenance)"; fi
 
@@ -156,7 +156,7 @@ if [ "$PINNED" != "$VER" ]; then
      section; a new \`## Unreleased\` would trip [9] instead. And wait for CI before the re-run:
      [10] fails on a pending run."
 fi
-cd "$ROOT/candor"
+cd "$ROOT/candor" || die "cannot cd to $ROOT/candor"
 rel candor "v$VER" "candor v$VER"
 git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
 # PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line

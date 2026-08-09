@@ -111,6 +111,8 @@ say "4. CHANGELOGs — rename the bare Unreleased heading to the version being c
 # contains the commits that wrote it). preflight [9] catches that now; this performs the fix.
 # One python invocation for all repos: a heredoc nested inside `$(...)` is a parse hazard, and the loop
 # reads more clearly on the python side anyway.
+# shellcheck disable=SC2097,SC2098  # these are ENV for the python3 child, not assignments this shell
+# reads back — which is exactly the intent.
 cl_out="$(ROOT="$ROOT" VER="$VER" DATE="$DATE" python3 "$ROOT/candor/bin/_stage_changelogs.py")" \
   || die "changelog staging failed: $cl_out"
 while IFS= read -r line; do

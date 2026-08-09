@@ -190,6 +190,8 @@ ok "update rust ts → only those" "rust ts" \
 # (DRYRUN doesn't affect the status dashboard — it reads the report directly, no engine needed.)
 mkdir -p "$T/corruptshape/.candor"
 printf '{"functions":{"a":1},"candor":"nope","coverage":"nope"}' > "$T/corruptshape/.candor/report.json"
+# shellcheck disable=SC1007  # the empty assignment is deliberate: it UNSETS the dry-run for this one
+# command, which is what the row is testing.
 notrace="$(cd "$T/corruptshape" && CANDOR_DISPATCH_DRYRUN= "$D" 2>&1)"
 if [[ "$notrace" != *Traceback* ]]; then echo "  ok   corrupt-shape report → no python traceback in status"; else echo "  FAIL corrupt-shape traceback"; echo "$notrace"; fails=$((fails+1)); fi
 # (init's report iteration is space-safe now — reps is a quoted bash array, not an unquoted string —
@@ -315,6 +317,7 @@ STUB
   # nonzero rc. With a stub reporting $SV, a correctly-read pin reaches the engine; a misread one refuses.
   for spelling in "engine v$SV" "engine rust v$SV" "engine v$SV # a trailing comment"; do
     render "$T/runB" ""; printf '%s\n' "$spelling" > "$T/runB/.candor/config"
+    # shellcheck disable=SC2034  # capturing stdout is how it is SUPPRESSED here; only rcB is asserted.
     outB="$(runner "$T/runB")"; rcB=$?
     { [ "$rcB" = 0 ] && [ -s "$T/runB/argv" ]; } \
       && echo "  ok   pin read from '$spelling' — the engine actually ran" \

@@ -169,9 +169,11 @@ The rest, stated plainly because a green exit code should not be read as more th
 - **It checks 56 of the 57 keys Apple documents, and names the one it does not.** (This page said "42 of
   the 57 … and names the 15" until 2026-08-09; the coverage grew and the page did not. The figure is
   derived by the verify from its own tables and printed on every run — read it there rather than here.) Every verify prints its own
-  vocabulary bound — `NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus,
-  GameKit friends, VideoSubscriberAccount, clinical health records and the rest — with the reason each
-  is absent. Neither number is a guess: Apple's protected-resources list was **fetched from
+  vocabulary bound and the reason for what it does not model. (That list used to read
+  "`NSLocalNetworkUsageDescription`, the macOS folder-access keys, FocusStatus, GameKit friends,
+  VideoSubscriberAccount, clinical health records and the rest" — every one of which is MODELLED now.
+  A page that enumerates a tool's gaps decays the moment the tool improves, which is why the figure is
+  derived by the verify and printed on every run rather than copied here.) Neither number is a guess: Apple's protected-resources list was **fetched from
   developer.apple.com**, the unmodelled set is *derived* from it minus what candor models, and a recall
   battery (`tools/privacy-recall.py`) exercises one canonical API per family as a gate — so a family the
   vocabulary *claims* cannot silently stop working. The hand-written version of this disclosure named 14

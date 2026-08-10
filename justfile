@@ -74,6 +74,11 @@ lint:
 # Everything a change should pass before it is pushed.
 check: build test props clippy conformance probe
 
+# Reproduce this development environment on a fresh macOS machine (seven sibling repos, five toolchains,
+# two rust toolchains with components, the dispatcher symlink). Re-runnable.
+bootstrap *flags:
+    bash {{root}}/candor/bin/bootstrap-dev.sh {{flags}}
+
 # Release gates (read-only — publishing is deliberately NOT a recipe).
 preflight spec version:
     cd {{root}}/candor && bash bin/release-preflight.sh {{spec}} {{version}}

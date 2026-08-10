@@ -26,6 +26,8 @@ JAR=$(ls "$ROOT"/candor-java/build/libs/candor-java-*-all.jar 2>/dev/null | tail
 SCAN="$ROOT/candor-rust/target/release/candor-scan"
 TSS="$ROOT/candor-ts/scan.mjs"
 SWB="$ROOT/candor-swift/.build/release/candor-swift"
+QUERY="$ROOT/candor-rust/target/release/candor-query"
+TSQ="$ROOT/candor-ts/query.mjs"
 
 # FRESHNESS IS PART OF THE MEASUREMENT. A stale binary produced a review finding for a defect that had
 # already been fixed AND one that never existed — `cargo build --release` at the candor-rust ROOT builds
@@ -57,6 +59,23 @@ mkfixtures() {
   printf 'engine 9.9.9\n' > "$W/pincfg"
   printf 'not json{' > "$W/bad.json"
   printf '{}' > "$W/unread.json";        chmod 000 "$W/unread.json"
+
+  # ── the GATE VERB route needs a report to gate, and a report that VIOLATES ─────────────────────────
+  # The scan-route fixtures above are deliberately clean. A gate over a clean report exits 0, and every
+  # cell posed against it would be "not exit 2 here" — a probe that never poses its question. So the gate
+  # route gets its own effectful trees, and a CONTROL below asserts the gate actually fires on each. That
+  # control is not ceremony: PART 34 row (e) exists because a fixture stopped violating and took a whole
+  # group of rows silently vacuous with it.
+  mkdir -p "$W/gts/src" "$W/grs/src" "$W/gsw/Sources/App" "$W/gjv/src"
+  printf "import * as fs from 'fs'\nexport function f(): void { fs.readFileSync('/tmp/x') }\n" > "$W/gts/src/a.ts"
+  printf '{"name":"gp","version":"1.0.0"}\n' > "$W/gts/package.json"
+  printf 'fn main(){ std::fs::read("/tmp/x").ok(); }\n' > "$W/grs/src/main.rs"
+  printf '[package]\nname="gp"\nversion="0.1.0"\nedition="2021"\n' > "$W/grs/Cargo.toml"
+  printf 'import Foundation\nfunc f() { _ = FileManager.default.contents(atPath: "/tmp/x") }\n' > "$W/gsw/Sources/App/main.swift"
+  printf '// swift-tools-version: 6.0\nimport PackageDescription\nlet package = Package(name:"GP",targets:[.executableTarget(name:"App")])\n' > "$W/gsw/Package.swift"
+  printf 'import java.io.*;\npublic class B { public static void main(String[] a) throws Exception { new FileInputStream("/tmp/x"); } }\n' > "$W/gjv/src/B.java"
+  javac -d "$W/gjv/out" "$W/gjv/src/B.java" 2>/dev/null || { echo "FAIL: javac could not build the gate-route fixture"; return 1; }
+  printf 'deny Fs\n' > "$W/fire.policy"
 }
 mkfixtures || exit 2
 
@@ -75,6 +94,43 @@ run_engine() { # engine, target, then extra args
 }
 target_for() { case $1 in java) echo "$W/jv/out";; rust) echo "$W/rs";; ts) echo "$W/ts";; swift) echo "$W/sw";; esac; }
 
+# THE `gate` VERB IS A SECOND ROUTE TO THE SAME CONTRACT, and until now it had no cells here at all.
+# §3.3.1 does not exempt it: a CI job that scans once and gates many times reaches every exit-2 cause
+# through this CLI instead, and an engine can satisfy the rule on the scan route while missing it here —
+# which is precisely the "two spellings" shape that produced every sink defect in this family.
+run_gate() { # engine, report locator, then extra args
+  local e=$1 rep=$2; shift 2
+  case $e in
+    java)  java -jar "$JAR" gate --report "$rep" "$@" ;;
+    rust)  "$QUERY" gate --report "$rep" "$@" ;;
+    ts)    node "$TSQ" gate --report "$rep" "$@" ;;
+    swift) "$SWB" gate --report "$rep" "$@" ;;
+    *) return 127 ;;
+  esac
+}
+# WHAT IS SCANNED vs WHAT `--report` IS HANDED are not the same thing, and assuming they were left java
+# unmeasured on this whole route: java writes a report only with `--json <file>`, so scanning its tree
+# produced nothing to gate and the control reported rc=2. Three engines discover a report from the tree;
+# java is handed a file. Stated per engine rather than inferred from one that happened to work.
+gate_src_for()    { case $1 in java) echo "$W/gjv/out";;      rust) echo "$W/grs";; ts) echo "$W/gts";; swift) echo "$W/gsw";; esac; }
+gate_target_for() { case $1 in java) echo "$W/rep.java.json";; rust) echo "$W/grs";; ts) echo "$W/gts";; swift) echo "$W/gsw";; esac; }
+mkgatereport() { # engine — produce the report the gate route reads
+  case $1 in
+    java) java -jar "$JAR" "$(gate_src_for java)" --json "$(gate_target_for java)" >/dev/null 2>&1 ;;
+    *)    run_engine "$1" "$(gate_src_for "$1")" >/dev/null 2>&1 ;;
+  esac
+}
+
+# One dispatcher so the cells are route-agnostic: they assert a property of the CONTRACT, not of a CLI.
+run_probe() { # engine, target, extra…
+  local e=$1 tgt=$2; shift 2
+  if [ "${ROUTE:-scan}" = gate ]; then run_gate "$e" "$tgt" --policy "$GATE_POLICY" "$@"
+  else run_engine "$e" "$tgt" "$@"; fi
+}
+probe_target_for() {
+  if [ "${ROUTE:-scan}" = gate ]; then gate_target_for "$1"; else target_for "$1"; fi
+}
+
 one_json() { python3 - "$1" <<'PY'
 import json, sys
 try:
@@ -89,7 +145,7 @@ PY
 # read as a pass. Parse it.
 cell_stream() { # engine, label, env, target-override, extra args…
   local e=$1 lbl=$2 envk=$3 tgtover=$4; shift 4
-  local tgt="${tgtover:-$(target_for "$e")}" out rc
+  local tgt="${tgtover:-$(probe_target_for "$e")}" out rc
   out="$W/out.$e.json"
   # SINK_FIRST arms the sink BEFORE the argv under test. It matters: with the sink appended, a pair that
   # itself contains a value-taking flag swallows `--gate-json`, and the run then exits 2 with no sink ever
@@ -98,7 +154,7 @@ cell_stream() { # engine, label, env, target-override, extra args…
   # so the refusal must reach it.
   local pre="" post="--gate-json -"
   [ -n "${SINK_FIRST:-}" ] && { pre="--gate-json -"; post=""; }
-  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $pre $* $post" > "$out" 2>/dev/null; rc=$?
+  env $envk bash -c "$(declare -f run_engine run_gate run_probe target_for gate_target_for probe_target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; QUERY='$QUERY'; TSQ='$TSQ'; W='$W'; ROUTE='${ROUTE:-scan}'; GATE_POLICY='${GATE_POLICY:-}'; run_probe $e '$tgt' $pre $* $post" > "$out" 2>/dev/null; rc=$?
   POSED=$((POSED+1))
   if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
   if [ ! -s "$out" ]; then printf "  %-8s %-26s ✘ EMPTY STREAM after exit 2\n" "$e" "$lbl"; FAILED=1; return 1; fi
@@ -110,11 +166,11 @@ cell_stream() { # engine, label, env, target-override, extra args…
 # the refusal replaces it; a surviving `ok:true` is the stale green the whole mechanism exists to stop.
 cell_file() { # engine, label, env, extra args…
   local e=$1 lbl=$2 envk=$3; shift 3
-  local tgt sink rc; tgt=$(target_for "$e"); sink="$W/sink.$e.json"
+  local tgt sink rc; tgt=$(probe_target_for "$e"); sink="$W/sink.$e.json"
   printf '{"spec":"0.27","ok":true,"violations":[]}\n' > "$sink"
   local pre="" post="--gate-json '$sink'"
   [ -n "${SINK_FIRST:-}" ] && { pre="--gate-json '$sink'"; post=""; }
-  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $pre $* $post" >/dev/null 2>&1; rc=$?
+  env $envk bash -c "$(declare -f run_engine run_gate run_probe target_for gate_target_for probe_target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; QUERY='$QUERY'; TSQ='$TSQ'; W='$W'; ROUTE='${ROUTE:-scan}'; GATE_POLICY='${GATE_POLICY:-}'; run_probe $e '$tgt' $pre $* $post" >/dev/null 2>&1; rc=$?
   POSED=$((POSED+1))
   if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('$sink')).get('ok') is True else 1)" 2>/dev/null; then
@@ -151,6 +207,67 @@ for e in "${ENGINES[@]}"; do
   cell_file "$e" "dep missing"         "CANDOR_DEPS=$W/no-such-dep.json"
 done
 
+
+# ── THE `gate` VERB ROUTE ────────────────────────────────────────────────────────────────────────────
+# Everything above reaches the contract through the SCAN CLI. A CI job that scans once and gates many
+# times reaches every one of these causes through `gate` instead, and §3.3.1 exempts neither. This was
+# named as NOT COVERED in this file for a release; naming a gap is not measuring it.
+gate_route() {
+  echo
+  echo "── gate VERB route: the same causes, reached through the query CLI"
+  local runnable=()
+  for e in "${ENGINES[@]}"; do
+    local tgt rc; tgt=$(gate_target_for "$e")
+    mkgatereport "$e"
+    # THE CONTROL, and it decides whether this engine is posed at all. A gate over a report that does not
+    # violate exits 0, so every cell below would print "not exit 2 here" — a probe that never asks its
+    # question, reading as coverage. PART 34 row (e) exists because exactly that happened once.
+    run_gate "$e" "$tgt" --policy "$W/fire.policy" >/dev/null 2>&1; rc=$?
+    if [ "$rc" = 1 ]; then
+      runnable+=("$e")
+    else
+      printf "  %-8s ✘ CONTROL: the gate did not FIRE on an effectful fixture (rc=%s) — cells SKIPPED, not passed\n" "$e" "$rc"
+      FAILED=1
+    fi
+  done
+  [ "${#runnable[@]}" -gt 0 ] || { echo "  no engine posed — nothing here is evidence"; return; }
+
+  # SINK_FIRST on every cell, for the reason the sweep taught: with the sink appended last, a valueless
+  # `--policy` swallows `--gate-json` and the run exits 2 having never registered a sink. That is an argv
+  # whose sink specification is the broken part, not an engine hiding a refusal.
+  local e
+  for e in "${runnable[@]}"; do
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/fire.policy" cell_stream "$e" "gate: unknown flag"      "X=1" "" --zzz-not-a-flag
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/fire.policy" cell_stream "$e" "gate: valueless flag"    "X=1" "" --policy
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/fire.policy" cell_stream "$e" "gate: extra positional"  "X=1" "" "$W/empty"
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/bad.policy"  cell_stream "$e" "gate: unreadable policy" "X=1" ""
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/no-such.policy" cell_stream "$e" "gate: missing policy" "X=1" ""
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/fire.policy" cell_stream "$e" "gate: unreadable config" "CANDOR_CONFIG=$W/badcfg" ""
+    # THE PIN IS OUT OF SCOPE HERE, BY NAME. SPEC §3.4 "Scope": the pin binds a producer that analyses
+    # code and emits a verdict from that analysis, and explicitly NOT "a verb that only reads an EXISTING
+    # report (`gate --report`, the §3.1 queries)" — there the engine is an evaluator, not the producer.
+    # So the assertion INVERTS: the pin must not change the gate's answer. Written as a positive cell
+    # because the first version of this probe asserted exit 2 here and made all three measured engines
+    # look defective; the spec had already decided, and my expectation was the thing that was wrong.
+    cell_pin_out_of_scope "$e"
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/fire.policy" cell_file   "$e" "gate: unknown flag"      "X=1" --zzz-not-a-flag
+    ROUTE=gate SINK_FIRST=1 GATE_POLICY="$W/bad.policy"  cell_file   "$e" "gate: unreadable policy" "X=1"
+  done
+}
+# The pin must NOT reach the evaluator. An engine that "helpfully" enforced it here would break every
+# consumer gating a committed report with a pinned config, so this is a real cell, not a formality.
+cell_pin_out_of_scope() {
+  local e=$1 tgt rc; tgt=$(gate_target_for "$e")
+  POSED=$((POSED+1))
+  env CANDOR_CONFIG="$W/pincfg" bash -c "$(declare -f run_gate); JAR='$JAR'; QUERY='$QUERY'; TSQ='$TSQ'; SWB='$SWB'; run_gate $e '$tgt' --policy '$W/fire.policy'" >/dev/null 2>&1; rc=$?
+  if [ "$rc" = 1 ]; then
+    [ -n "${QUIET:-}" ] || printf "  %-8s %-26s ok (pin ignored, as §3.4 Scope requires)\n" "$e" "gate: engine pin"
+  else
+    printf "  %-8s %-26s ✘ the pin CHANGED the evaluator's answer (rc=%s, want 1) — §3.4 scopes it to producers\n" "$e" "gate: engine pin" "$rc"; FAILED=1
+  fi
+}
+
+[ "${CANDOR_GATE_ROUTE:-1}" = 1 ] && gate_route
 
 # ── COMBINATION SWEEP (--sweep) ──────────────────────────────────────────────────────────────────────
 # The cells above are a hand-written list of causes, so they test exactly the causes someone thought of.

@@ -1049,7 +1049,24 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   write the row BEFORE the fix. Every defect that stayed fixed in 0.27 was caught by a row, not by a
   review. See the memory file `candor-027-release-lessons`.
 
-- **[P1 — candor-agents, opened 2026-08-09] Four exit-2 causes leave `--gate-json -` EMPTY.**
+- **[CLOSED 2026-08-10 — candor-agents] ~~Four~~ THREE exit-2 causes left `--gate-json -` EMPTY.**
+
+  Fixed with ONE wrapper at the module entry (`_main_streaming_verdict`) rather than three patched
+  sites, because the fourth cause nobody enumerated is the one that matters — measured the same day,
+  when a generated argv sweep found an exit-2 cause absent from a hand-written list of twelve. The
+  narrower copy inside `main` was removed rather than kept alongside it. Acceptance met in full: eight
+  causes emit exactly one parseable refusal, `test.py` still 466/0, and conformance PART 36 gained rows
+  (b4)/(b5)/(b6) which were PROVEN to fail against the pre-fix entry before being believed.
+
+  Two things the fix turned up that outlive it: the conformance shim had been importing
+  `scan.main` directly while the CLI runs the wrapper, so the agents rows were exercising a different
+  program than anyone ships; and the count in this entry's own heading ("Four") disagreed with its own
+  table ("three") — the measurement said three. **The heading was a claim, and nothing checked it**,
+  which is the failure this file's 2026-08-05 audit note already describes.
+
+  Original entry follows.
+
+- **[was P1 — candor-agents, opened 2026-08-09] Four exit-2 causes leave `--gate-json -` EMPTY.**
 
   Measured against the other four engines, which all write a refusal document on the same inputs:
 

@@ -91,12 +91,19 @@ cell_stream() { # engine, label, env, target-override, extra args…
   local e=$1 lbl=$2 envk=$3 tgtover=$4; shift 4
   local tgt="${tgtover:-$(target_for "$e")}" out rc
   out="$W/out.$e.json"
-  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $* --gate-json -" > "$out" 2>/dev/null; rc=$?
+  # SINK_FIRST arms the sink BEFORE the argv under test. It matters: with the sink appended, a pair that
+  # itself contains a value-taking flag swallows `--gate-json`, and the run then exits 2 with no sink ever
+  # armed — which is not a defect, it is an argv whose sink specification is the broken part. Arming first
+  # makes the property the one SPEC §3.3.1 actually states: the sink was armed, then something went wrong,
+  # so the refusal must reach it.
+  local pre="" post="--gate-json -"
+  [ -n "${SINK_FIRST:-}" ] && { pre="--gate-json -"; post=""; }
+  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $pre $* $post" > "$out" 2>/dev/null; rc=$?
   POSED=$((POSED+1))
-  if [ "$rc" != 2 ]; then printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
+  if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
   if [ ! -s "$out" ]; then printf "  %-8s %-26s ✘ EMPTY STREAM after exit 2\n" "$e" "$lbl"; FAILED=1; return 1; fi
   if ! one_json "$out"; then printf "  %-8s %-26s ✘ NOT ONE DOCUMENT (concatenated?)\n" "$e" "$lbl"; FAILED=1; return 1; fi
-  printf "  %-8s %-26s ok\n" "$e" "$lbl"
+  [ -n "${QUIET:-}" ] || printf "  %-8s %-26s ok\n" "$e" "$lbl"
 }
 
 # FILE: a pre-seeded GREEN must not survive an exit-2 run. Arming leaves a fail-closed placeholder and
@@ -105,13 +112,15 @@ cell_file() { # engine, label, env, extra args…
   local e=$1 lbl=$2 envk=$3; shift 3
   local tgt sink rc; tgt=$(target_for "$e"); sink="$W/sink.$e.json"
   printf '{"spec":"0.27","ok":true,"violations":[]}\n' > "$sink"
-  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $* --gate-json '$sink'" >/dev/null 2>&1; rc=$?
+  local pre="" post="--gate-json '$sink'"
+  [ -n "${SINK_FIRST:-}" ] && { pre="--gate-json '$sink'"; post=""; }
+  env $envk bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' $pre $* $post" >/dev/null 2>&1; rc=$?
   POSED=$((POSED+1))
-  if [ "$rc" != 2 ]; then printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
+  if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('$sink')).get('ok') is True else 1)" 2>/dev/null; then
     printf "  %-8s %-26s ✘ STALE GREEN survived exit 2\n" "$e" "$lbl"; FAILED=1; return 1
   fi
-  printf "  %-8s %-26s ok\n" "$e" "$lbl"
+  [ -n "${QUIET:-}" ] || printf "  %-8s %-26s ok\n" "$e" "$lbl"
 }
 
 ENGINES=("${@:-java rust ts swift}"); read -r -a ENGINES <<< "${ENGINES[*]}"
@@ -142,8 +151,50 @@ for e in "${ENGINES[@]}"; do
   cell_file "$e" "dep missing"         "CANDOR_DEPS=$W/no-such-dep.json"
 done
 
+
+# ── COMBINATION SWEEP (--sweep) ──────────────────────────────────────────────────────────────────────
+# The cells above are a hand-written list of causes, so they test exactly the causes someone thought of.
+# Every sink defect found during 0.27 was at a COMBINATION rather than at a cause: a refusal that reached
+# the stream alone but not when a second flag had already opened a document, a flag that consumed the
+# next flag as its value, a `--gate-json -` that behaved differently once `--json` was also present. Two
+# tokens is where that lives, so this poses every ordered pair from a small alphabet.
+#
+# The property is the same one the hand-written cells assert, and it holds for ANY argv: if the run exits
+# 2, the stream carries exactly one parseable document, and a pre-seeded green does not survive. Pairs
+# that do not exit 2 are not failures — they are simply outside the property, and are counted so the
+# summary cannot read as more coverage than it is.
+sweep() {
+  # `--gate-json` is deliberately NOT in this alphabet: the cells supply the sink, so a pair containing
+  # one poses "which of two sinks wins", a real question this harness cannot attribute an answer to. It is
+  # named in the NOT-COVERED note rather than answered by accident.
+  local toks=(--zzz-not-a-flag --policy --strict --json "$W/bad.policy" "$W/no-such.policy" --out "$W/empty")
+  local n=0
+  echo
+  echo "── COMBINATION SWEEP: ordered pairs from ${#toks[@]} tokens, both sink forms"
+  for e in "${ENGINES[@]}"; do
+    local before=$FAILED
+    for a in "${toks[@]}"; do
+      for b in "${toks[@]}"; do
+        [ "$a" = "$b" ] && continue
+        n=$((n+1))
+        QUIET=1 SINK_FIRST=1 cell_stream "$e" "pair ${a##*/} ${b##*/}" "X=1" "" "$a" "$b"
+        QUIET=1 SINK_FIRST=1 cell_file   "$e" "pair ${a##*/} ${b##*/}" "X=1"     "$a" "$b"
+      done
+    done
+    if [ "$FAILED" != "$before" ]; then
+      printf "  %-8s ✘ the ✘ line(s) above name the pair\n" "$e"
+    else
+      printf "  %-8s ok across every pair\n" "$e"
+    fi
+  done
+  echo "  $n pair(s) per engine, ×2 sink forms. Pairs that did not exit 2 are outside the property, not passes."
+}
+[ "${CANDOR_SWEEP:-}" = 1 ] && sweep
+
 echo
 echo "probe-causes: $POSED cell(s) posed, $([ "$FAILED" = 0 ] && echo "0 failures" || echo "FAILURES above")"
-# NOT COVERED HERE, and named so it is not mistaken for covered: the `gate` VERB route (these are all
-# the scan route), and candor-agents, whose CLI shape differs — see the umbrella BACKLOG.
+[ "${CANDOR_SWEEP:-}" = 1 ] || echo "  (cause list only — set CANDOR_SWEEP=1 to add the argv combination sweep)"
+# NOT COVERED HERE, and named so none of it is mistaken for covered: the `gate` VERB route (these are all
+# the scan route); candor-agents, whose CLI shape differs; and TWO SINKS in one argv (`--gate-json a
+# --gate-json b`), which has no stated answer in the spec — see the umbrella BACKLOG.
 exit "$FAILED"

@@ -8,6 +8,34 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-10 — the exit-2 cause matrix grows a generator, and it finds a cardinal sin
+
+- **`bin/probe-causes.sh` now GENERATES the argv instead of only listing causes** (`CANDOR_SWEEP=1`): every
+  ordered pair from a small token alphabet, against each engine, on both sink forms, on BOTH the scan and
+  `gate` verb routes — 888 cells, and it found a cause the twelve-entry hand list did not hold. An extra
+  positional was a GREEN GATE in candor-scan (the last positional silently won, so it scanned the other
+  tree) and an empty stream in candor-swift. Both fixed; conformance PART 36 (b18).
+
+  Two construction errors are recorded in the file because the first run's findings were all artifacts:
+  `--gate-json` was in the alphabet while the cells append their own sink (you cannot arm a sink whose
+  specification is the broken part), and the sink was appended AFTER the argv under test, so a
+  value-taking flag swallowed it. The real defect only appeared once both were removed.
+
+  And the number that makes "ok across every pair" mean something: cells that actually REACH exit 2 are
+  counted separately (799 of 888), and a sweep where that count is zero fails as VACUOUS.
+- **The `gate` VERB route gets cells at all.** It had been named as NOT COVERED for a release; naming a gap
+  is not measuring it, and it held a defect — an unreadable config left the stream empty in candor-scan and
+  candor-ts while java and swift wrote the refusal. The route needs its own EFFECTFUL fixtures (a gate over
+  a clean report exits 0, so every cell would be "not exit 2 here" — a probe that never asks its question)
+  and a CONTROL asserting the gate fires, which is what caught java sitting unmeasured because it writes a
+  report only with `--json <file>`.
+- **The engine-pin cell is INVERTED, and that is the point.** Asserting exit 2 for a pin on the gate route
+  made all three measured engines look defective; SPEC §3.4 "Scope" had already excluded `gate --report` by
+  name. The cell now asserts what the spec requires — the pin must NOT change an evaluator's answer.
+- **`just props`, `just conformance-part`, `just conformance-parts-check`** wired in, and `just check` now
+  runs the policy-parser properties. The `conformance-part` recipe had been written against an env var
+  `run.sh` never read — it would have run the whole 476s suite and looked like it had filtered.
+
 ## 2026-08-07 — the 0.27 rungs land four-way, and two 0.28 rungs are recorded (released 2026-08-09 as 0.27.0)
 
 - **Tooling the 0.27 release proved was missing.** `bin/probe-causes.sh` runs the exit-2 cause matrix —

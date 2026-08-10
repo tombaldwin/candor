@@ -51,11 +51,19 @@ conformance-parts-check:
 probe *engines:
     cd {{root}}/candor && bash bin/probe-causes.sh {{engines}}
 
-# CLIPPY EXACTLY AS CI RUNS IT. `cargo build` and `cargo test` both pass on lints that `-D warnings`
+# CLIPPY EXACTLY AS CI RUNS IT — `+stable`, which is the whole point. candor-rust pins a NIGHTLY
+# (rust-toolchain, for the dylint lint), so a bare `cargo clippy` here runs nightly's lint set while CI
+# runs stable's. The first version of this recipe omitted `+stable` and passed clean while CI failed on
+# `collapsible_if` — a local check that reproduces a different check is worse than none, because it is
+# believed. It is also SCOPED with -p exactly as CI is: stable clippy cannot compile the rustc_private
+# dylint lib at the repo root, so an unscoped `cargo +stable clippy` here dies on `can't find crate for
+# rustc_driver` before it lints a single engine crate. The second line is CI's other leg — the pinned
+# nightly over the whole workspace, which covers the lint lib and build.rs that stable cannot see. `cargo build` and `cargo test` both pass on lints that `-D warnings`
 # rejects, so this class only ever failed in CI — measured: a doc comment separated from its item by a
 # blank line (`empty_line_after_doc_comments`) built and tested clean locally and broke the rust CI run.
 clippy:
-    cd {{root}}/candor-rust && cargo clippy --all-targets -- -D warnings
+    cd {{root}}/candor-rust && cargo +stable clippy -p candor-report -p candor-query -p candor-classify -p candor-scan --all-targets -- -D warnings
+    cd {{root}}/candor-rust && cargo clippy --workspace --all-targets -- -D warnings
 
 # Lint the release machinery. Backticks inside a double-quoted shell string are live command
 # substitution — that silently deleted three filenames from the one message an operator is guaranteed

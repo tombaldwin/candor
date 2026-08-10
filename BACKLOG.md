@@ -1646,8 +1646,8 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   Two things the build taught, kept because they generalise: the route needs its own EFFECTFUL fixtures
   (a gate over a clean report exits 0, so every cell would have been "not exit 2 here" — a probe that
   never asks its question), and it needs a CONTROL asserting the gate fires, which is what caught java
-  sitting unmeasured because it writes a report only with `--json <file>`. What is left: the argv
-  COMBINATION sweep still runs the scan route only.
+  sitting unmeasured because it writes a report only with `--json <file>`. ~~What is left: the argv COMBINATION sweep still runs the scan route only.~~ **Also closed** — the
+  sweep is route-agnostic and runs both.
 
 - **[P3] Rust code intelligence needed a rustup component, not a config.** `~/.cargo/bin/rust-analyzer` is
   a shim, candor-rust pins a nightly for the dylint lint, and neither that toolchain nor the default

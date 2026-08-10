@@ -324,7 +324,10 @@ SWEEP_GATE_TOKS=(--zzz-not-a-flag --policy --report --json "$W/bad.policy" "$W/n
 # arm the sink, then hand the engine an argv it should reject, and require the refusal to arrive.
 sweep_route() { # route label, then the token alphabet
   local route=$1 label=$2; shift 2
-  local toks=( "$@" ) n=0 e a b before asserted_at_start=$ASSERTED
+  # `n` counts pairs ONCE, not once per engine: it used to be incremented inside the engine loop, so a
+  # 56-pair alphabet reported 224 across four engines — a 4x overstatement in the very line the changelog
+  # quotes for coverage. POSED/ASSERTED were always right; this number was not.
+  local toks=( "$@" ) n=0 e a b before asserted_at_start=$ASSERTED first_engine=1
   echo
   echo "── COMBINATION SWEEP ($label): ordered pairs from ${#toks[@]} tokens, both sink forms"
   for e in "${ENGINES[@]}"; do
@@ -332,13 +335,14 @@ sweep_route() { # route label, then the token alphabet
     for a in "${toks[@]}"; do
       for b in "${toks[@]}"; do
         [ "$a" = "$b" ] && continue
-        n=$((n+1))
+        [ "$first_engine" = 1 ] && n=$((n+1))
         QUIET=1 SINK_FIRST=1 ROUTE="$route" GATE_POLICY="$W/fire.policy" \
           cell_stream "$e" "pair ${a##*/} ${b##*/}" "X=1" "" "$a" "$b"
         QUIET=1 SINK_FIRST=1 ROUTE="$route" GATE_POLICY="$W/fire.policy" \
           cell_file   "$e" "pair ${a##*/} ${b##*/}" "X=1"     "$a" "$b"
       done
     done
+    first_engine=0
     if [ "$FAILED" != "$before" ]; then
       printf "  %-8s ✘ the ✘ line(s) above name the pair\n" "$e"
     else
@@ -366,8 +370,8 @@ sweep() {
 echo
 echo "probe-causes: $POSED cell(s) posed, $ASSERTED reached exit 2 and were checked, $([ "$FAILED" = 0 ] && echo "0 failures" || echo "FAILURES above")"
 [ "${CANDOR_SWEEP:-}" = 1 ] || echo "  (cause list only — set CANDOR_SWEEP=1 to add the argv combination sweep)"
-# NOT COVERED HERE, and named so none of it is mistaken for covered: the `gate` VERB route (these are all
-# the scan route, though the `gate` verb now has its own cells above) and candor-agents, whose CLI shape
-# differs — see the umbrella BACKLOG. Two sinks in one argv WAS listed here as unanswered; ⟨0.28⟩ answers
-# it and the cell above poses it.
+# NOT COVERED HERE, and named so none of it is mistaken for covered: candor-agents, whose CLI shape differs
+# (conformance PART 36 carries its rows instead) — see the umbrella BACKLOG. The `gate` VERB route WAS the
+# head of this list; it now has its own cause cells and its own sweep above, so the fifth engine is what
+# remains. Two sinks in one argv was listed as unanswered; ⟨0.28⟩ answers it and the cell above poses it.
 exit "$FAILED"

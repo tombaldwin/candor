@@ -8,6 +8,35 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-10 (later) — the release panel, and what it found in the same day's work
+
+A go/no-go panel over the unpublished ⟨0.28⟩ work. Verdict was NO-GO, and the pattern in the findings was
+one habit rather than eight mistakes: **the rule was applied where the work was, and never to its sibling
+route.** Six behavioural defects, three of them introduced that morning by the very commits that closed
+the original ones.
+
+- **⟨0.28⟩ was half-shipped** — the scan CLI in five engines, the `gate --report` verb in none. A gate that
+  FIRED left the operator's first named sink publishing a previous run's green. Two lenses found it
+  independently, and conformance row (b19) — written that morning — exists because "a route is not covered
+  by its sibling".
+- **`candor-agents observe` had no sink layer at all**, and three regressions: a duplicate sink naming
+  `.candor/config` destroyed it, `candor-query gate` overwrote a `CANDOR_CONFIG` file, and agents put two
+  JSON documents on a stream that had carried one.
+- **The §3.3.1 input exemption covered the run rather than the path**, so refusing one sink left the others
+  publishing whatever they held.
+- **`part.sh --check` printed an all-clear having checked nothing** when invoked as `bash part.sh --check`
+  — `$0` was a bare name, the id list came back empty, and it reported success at exit 0. In the file
+  whose whole purpose is preventing exactly that.
+- **PART 36 dropped candor-ts and candor-swift silently** when either was absent, while the agents arm
+  printed a note — so every row written that day inherited a green covering fewer engines than it claimed.
+- **Two published claims rested on contaminated measurements.** "One engine refused" (in the SPEC's own
+  rationale) came from handing that engine a second POSITIONAL and recording its extra-argument refusal as
+  a duplicate-sink one; a cited byte count belonged to a different cause. Both corrected against re-runs,
+  not deleted.
+
+Everything above is fixed, pinned, and each new row demonstrated failing against the engine with its rule
+disabled. The probe's own pair count was 4x (incremented inside the engine loop) and is now counted once.
+
 ## 2026-08-10 — the exit-2 cause matrix grows a generator, and it finds a cardinal sin
 
 - **`bin/probe-causes.sh` now GENERATES the argv instead of only listing causes** (`CANDOR_SWEEP=1`): every

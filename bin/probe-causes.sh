@@ -204,6 +204,30 @@ for e in "${ENGINES[@]}"; do
 done
 
 echo
+echo "── TWO SINKS IN ONE ARGV (SPEC §3.3.1 ⟨0.28⟩): refused, and EVERY path named gets the refusal"
+# The rung this file's own measurement produced. Before it: three engines wrote the verdict to the LAST
+# path, one refused, and all four left the FIRST holding a previous run's `{"ok": true}` while the gate
+# fired. The losing sink's reader has no way to learn that it lost, so whatever it held is published as
+# this run's answer — the ⟨0.27⟩ stale green through a spelling nobody had considered.
+for e in "${ENGINES[@]}"; do
+  tgt=$(target_for "$e"); a="$W/dup.a.$e.json"; b="$W/dup.b.$e.json"
+  printf '{"spec":"0.27","ok":true,"violations":[]}\n' > "$a"; rm -f "$b"
+  env X=1 bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' --gate-json '$a' --gate-json '$b'" >/dev/null 2>&1; rc=$?
+  POSED=$((POSED+1))
+  if [ "$rc" != 2 ]; then
+    printf "  %-8s %-26s ✘ exited %s, not 2 — a run publishes one verdict to one sink\n" "$e" "two sinks" "$rc"; FAILED=1; continue
+  fi
+  ASSERTED=$((ASSERTED+1))
+  if python3 -c "import json,sys; sys.exit(0 if json.load(open('$a')).get('ok') is True else 1)" 2>/dev/null; then
+    printf "  %-8s %-26s ✘ the LOSING sink still holds the stale green\n" "$e" "two sinks"; FAILED=1
+  elif ! one_json "$a" || [ ! -s "$b" ] || ! one_json "$b"; then
+    printf "  %-8s %-26s ✘ not every named sink got a parseable refusal\n" "$e" "two sinks"; FAILED=1
+  else
+    printf "  %-8s %-26s ok\n" "$e" "two sinks"
+  fi
+done
+
+echo
 echo "── FILE sink: a pre-seeded green must NOT survive an exit-2 run"
 for e in "${ENGINES[@]}"; do
   cell_file "$e" "unknown flag"        "X=1" --zzz-not-a-flag
@@ -287,8 +311,10 @@ cell_pin_out_of_scope() {
 # that do not exit 2 are not failures — they are simply outside the property, and are counted so the
 # summary cannot read as more coverage than it is.
 # `--gate-json` is deliberately NOT in either alphabet: the cells supply the sink, so a pair containing
-# one poses "which of two sinks wins", a real question this harness cannot attribute an answer to. It is
-# named in the NOT-COVERED note rather than answered by accident.
+# one poses TWO sinks in one argv. That was an open spec question when this file was written and is now
+# answered — ⟨0.28⟩ refuses it, and every path named gets the refusal — but it is still the wrong thing
+# for the SWEEP to pose, because the sweep's property is about the sink it armed and a second one changes
+# the question. It has its own cell below, and conformance PART 36 (b20) pins it four-way.
 SWEEP_SCAN_TOKS=(--zzz-not-a-flag --policy --strict --json "$W/bad.policy" "$W/no-such.policy" --out "$W/empty")
 # The gate verb's own surface. `--report` is here because it is the verb's ONE required input and a flag
 # that takes a value — the two properties that made `--out` and `--policy` interesting on the scan route.
@@ -341,6 +367,7 @@ echo
 echo "probe-causes: $POSED cell(s) posed, $ASSERTED reached exit 2 and were checked, $([ "$FAILED" = 0 ] && echo "0 failures" || echo "FAILURES above")"
 [ "${CANDOR_SWEEP:-}" = 1 ] || echo "  (cause list only — set CANDOR_SWEEP=1 to add the argv combination sweep)"
 # NOT COVERED HERE, and named so none of it is mistaken for covered: the `gate` VERB route (these are all
-# the scan route); candor-agents, whose CLI shape differs; and TWO SINKS in one argv (`--gate-json a
-# --gate-json b`), which has no stated answer in the spec — see the umbrella BACKLOG.
+# the scan route, though the `gate` verb now has its own cells above) and candor-agents, whose CLI shape
+# differs — see the umbrella BACKLOG. Two sinks in one argv WAS listed here as unanswered; ⟨0.28⟩ answers
+# it and the cell above poses it.
 exit "$FAILED"

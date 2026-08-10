@@ -1613,7 +1613,22 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
-- **[P2] TWO SINKS IN ONE ARGV has no stated answer.** `--gate-json a --gate-json b`: which file gets the
+- **[CLOSED 2026-08-10 — spec 0.28] ~~TWO SINKS IN ONE ARGV has no stated answer.~~**
+
+  Answered by measuring rather than by deciding: three engines took the LAST path and wrote the verdict
+  there, one refused, and **all four left the first path exactly as they found it** — a previous run's
+  `{"ok": true}` surviving a gate that fired. That made only half of it a real choice. The spec now
+  refuses a repeated `--gate-json` and requires the refusal at EVERY path named; two spellings of one
+  path stay one sink, and the input exemption outranks the refusal. Shipped five-way, PART 36 (b20a–d),
+  and the probe cell that was excluded for being unanswerable now poses it.
+
+  Kept because it is the sharper half: the ts draft ran the input checks against the LAST sink only, so
+  `--policy P --gate-json P --gate-json B` DESTROYED the policy — a fix closing one channel by opening
+  another, caught only because the check was run against all four engines rather than against itself.
+
+  Original entry follows.
+
+- **[was P2] TWO SINKS IN ONE ARGV has no stated answer.** `--gate-json a --gate-json b`: which file gets the
   verdict, and does the other get anything? Every engine does *something*, and the spec says nothing, so
   today the answer is whatever each parse loop happens to do. Surfaced 2026-08-10 while building the argv
   combination sweep: `--gate-json` had to be removed from the sweep's token alphabet precisely because the

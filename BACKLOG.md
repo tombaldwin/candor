@@ -1613,6 +1613,15 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2] PUSH THE ENGINES BEFORE THE SPEC.** candor-spec's `conformance.yml` checks out the sibling repos
+  at their MAIN branches and builds them, so a spec push that adds rows the engines must satisfy will fail
+  CI if the engine commits are not already up. Measured 2026-08-10: the spec run checked out the engines at
+  15:22 and the fixes landed at 16:19, so the new (b24)/(b25) rows ran against engines without them and
+  reported five FAILs that were pure ordering. The run passes on re-run with nothing changed, which is the
+  tell — and also the hazard, because "re-run it and it goes green" is exactly what a flaky suite looks
+  like. Wanted: either a note in `release-preflight` step [11], or a workflow that pins the sibling SHAs it
+  was tested against rather than tracking main.
+
 - **[CLOSED 2026-08-10 — spec 0.28] ~~TWO SINKS IN ONE ARGV has no stated answer.~~**
 
   Answered by measuring rather than by deciding: three engines took the LAST path and wrote the verdict

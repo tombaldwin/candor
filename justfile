@@ -51,6 +51,12 @@ conformance-parts-check:
 probe *engines:
     cd {{root}}/candor && bash bin/probe-causes.sh {{engines}}
 
+# CLIPPY EXACTLY AS CI RUNS IT. `cargo build` and `cargo test` both pass on lints that `-D warnings`
+# rejects, so this class only ever failed in CI — measured: a doc comment separated from its item by a
+# blank line (`empty_line_after_doc_comments`) built and tested clean locally and broke the rust CI run.
+clippy:
+    cd {{root}}/candor-rust && cargo clippy --all-targets -- -D warnings
+
 # Lint the release machinery. Backticks inside a double-quoted shell string are live command
 # substitution — that silently deleted three filenames from the one message an operator is guaranteed
 # to read, and `bash -n` cannot see it because it is valid syntax.
@@ -58,7 +64,7 @@ lint:
     shellcheck -S warning {{root}}/candor/bin/*.sh {{root}}/candor-spec/conformance/run.sh {{root}}/candor-spec/conformance/part.sh
 
 # Everything a change should pass before it is pushed.
-check: build test props conformance probe
+check: build test props clippy conformance probe
 
 # Release gates (read-only — publishing is deliberately NOT a recipe).
 preflight spec version:

@@ -106,6 +106,21 @@ rustup toolchain install "$PINNED" -c rustc-dev -c clippy -c rust-analyzer -c ll
 rustup toolchain install stable -c clippy -c rust-analyzer >/dev/null 2>&1
 ok "rust: stable + $PINNED (both with clippy + rust-analyzer)"
 
+# EVERY cargo build in candor-rust needs `dylint-link`, not just the lint. `.cargo/config.toml` there sets
+# `rustflags = ["-C", "linker=dylint-link"]` under `cfg(all())` — ALL targets — so without it even the
+# engine crates fail, and they fail confusingly: the first errors are `could not compile proc-macro2 (build
+# script)`, which reads like a broken toolchain rather than a missing linker shim. Pinned to the version
+# this environment was built with, so a newer release cannot change the lint's behaviour underneath us.
+DYLINT_VERSION=6.0.1
+if command -v dylint-link >/dev/null; then
+  ok "dylint-link (present)"
+else
+  say "installing the dylint linker shim (compiles from source — a few minutes)"
+  cargo install --quiet --version "$DYLINT_VERSION" cargo-dylint dylint-link \
+    && ok "cargo-dylint + dylint-link $DYLINT_VERSION" \
+    || die "dylint-link install failed — every cargo build in candor-rust needs it (see its .cargo/config.toml)"
+fi
+
 # ── 3. build every engine ───────────────────────────────────────────────────────────────────────────
 say "building the engines"
 ( cd "$ROOT/candor-rust"  && cargo build --release -q -p candor-scan -p candor-query ) && ok "candor-scan + candor-query" || warn "rust build failed"

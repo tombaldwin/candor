@@ -79,10 +79,21 @@ for f in node python@3.11 gh just shellcheck; do brew_need "$f" && ok "brew $f" 
 command -v java >/dev/null || { brew install --cask temurin@21 >/dev/null 2>&1 || warn "install a JDK 21 yourself"; }
 ok "java: $(java -version 2>&1 | head -1)"
 
-command -v rustup >/dev/null || curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path >/dev/null 2>&1
+# NOT `--no-modify-path`. That flag was here to be polite, and its effect was that rustup installed cargo
+# correctly and nothing ever put it on PATH — so the script finished green and the very next command,
+# `just check`, died with `cargo: command not found`. Sourcing ~/.cargo/env below only fixes THIS shell;
+# the profile line is what the next one needs. An installer that leaves the tool unusable has not
+# installed it.
+command -v rustup >/dev/null || curl -sSf https://sh.rustup.rs | sh -s -- -y >/dev/null 2>&1
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 command -v rustup >/dev/null || die "rustup install failed"
+# …and belt-and-braces for a shell rustup did not know how to edit (zsh users whose PATH is set in
+# .zprofile rather than .zshenv, which is exactly the case that bit us).
+for prof in "$HOME/.zprofile" "$HOME/.bash_profile"; do
+  [ -f "$prof" ] || continue
+  grep -q 'cargo/env' "$prof" 2>/dev/null || printf '\n. "$HOME/.cargo/env"\n' >> "$prof"
+done
 
 # BOTH TOOLCHAINS NEED THE COMPONENTS, and this is the step that is easy to get wrong.
 #  · candor-rust pins a NIGHTLY (rust-toolchain) because the dylint lint is rustc_private.
@@ -134,6 +145,15 @@ NOTE
 
 # ── 6. verify ───────────────────────────────────────────────────────────────────────────────────────
 say "verification"
+# A LOGIN SHELL, not this one. This script has already sourced ~/.cargo/env, so checking `command -v
+# cargo` here would pass while the next terminal fails — which is precisely how `cargo: command not
+# found` survived a green bootstrap run.
+if ! ${SHELL:-/bin/zsh} -lc 'command -v cargo' >/dev/null 2>&1; then
+  warn "cargo is installed but a fresh login shell cannot see it — add \`. \"\$HOME/.cargo/env\"\` to your
+        shell profile, or open a new terminal and re-run"
+else
+  ok "cargo is on PATH in a fresh login shell"
+fi
 # `candor doctor` exits NON-ZERO when it finds drift — which is it working, not it failing. Piping it to
 # `tail` under `set -o pipefail` and treating that as an error would report a doctor that ran and found
 # real problems as "unavailable", which is the same mislabel as the ssh check above. Separate the two.

@@ -28,9 +28,17 @@ test:
 conformance:
     cd {{root}}/candor-spec && bash conformance/run.sh
 
-# One part of the differential, for iterating. A FILTERED run is not a conformance result and says so.
-conformance-part n:
-    cd {{root}}/candor-spec && CONFORMANCE_ONLY={{n}} bash conformance/run.sh
+# One part of the differential, for iterating (PART 31 in 6s rather than the suite's 476s). A FILTERED
+# run is not a conformance result and says so on every run. `just conformance-parts` lists the ids.
+conformance-part +ids:
+    cd {{root}}/candor-spec && bash conformance/part.sh {{ids}}
+
+conformance-parts:
+    cd {{root}}/candor-spec && bash conformance/part.sh --list
+
+# Do part.sh's boundary rules still fit run.sh? ~10s, runs no engine. Run it after editing run.sh.
+conformance-parts-check:
+    cd {{root}}/candor-spec && bash conformance/part.sh --check
 
 # The exit-2 cause matrix: every cause a user can trigger, both sink forms, all four engines.
 probe *engines:
@@ -40,7 +48,7 @@ probe *engines:
 # substitution — that silently deleted three filenames from the one message an operator is guaranteed
 # to read, and `bash -n` cannot see it because it is valid syntax.
 lint:
-    shellcheck -S warning {{root}}/candor/bin/*.sh {{root}}/candor-spec/conformance/run.sh
+    shellcheck -S warning {{root}}/candor/bin/*.sh {{root}}/candor-spec/conformance/run.sh {{root}}/candor-spec/conformance/part.sh
 
 # Everything a change should pass before it is pushed.
 check: build test conformance probe

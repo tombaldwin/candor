@@ -24,6 +24,13 @@ test:
     cd {{root}}/candor-agents && python3 test.py
     cd {{root}}/candor && bash bin/release-test.sh
 
+# The POLICY-PARSER properties (candor-classify, proptest). Seconds, and the one surface the family's
+# generative fuzzers miss: they all generate CODE and check effect propagation, none generates a POLICY —
+# which is where the fail-open defects have actually lived. Shrinking is the point: a failure names the
+# minimal offending line, not the 40-line policy that contained it.
+props:
+    cd {{root}}/candor-rust && cargo test -p candor-classify policy_props
+
 # The four-way differential. Run it after ANY classifier change — never one generator.
 conformance:
     cd {{root}}/candor-spec && bash conformance/run.sh
@@ -51,7 +58,7 @@ lint:
     shellcheck -S warning {{root}}/candor/bin/*.sh {{root}}/candor-spec/conformance/run.sh {{root}}/candor-spec/conformance/part.sh
 
 # Everything a change should pass before it is pushed.
-check: build test conformance probe
+check: build test props conformance probe
 
 # Release gates (read-only — publishing is deliberately NOT a recipe).
 preflight spec version:

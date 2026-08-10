@@ -1348,26 +1348,28 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   integer ⟨0.24⟩ Row 1 specifically reads as "no claim", so the fail-closed report is a partial artifact
   that consumers already refuse to grant coverage from. No new consumer logic required.
 
-  **Open — engine implementations (5 targets).** Each engine needs the arm-at-parse rule for `--json
-  <file>` and the stream-form fail-closed document on any exit-2 (currently 0 bytes on all four):
-  candor-rust `candor-scan`, candor-java, candor-ts, candor-swift, candor-agents `scan` AND `observe`.
-  Sibling-route rule: apply to every engine's every entry point THAT WRITES A REPORT, not one CLI per
-  engine.
+  **STREAM FORM — CLOSED FOUR-WAY 2026-08-10.** PART 37 (b) went from SKIP×4 to PASS×4 on the same
+  full-suite `conformance: OK` run, one commit per engine (all unpushed): candor-rust `7e1d8cd`,
+  candor-java `b4cd5c5`, candor-ts `0e03f87`, candor-swift `1462bb2`. Each writes the ⟨0.21⟩ Row-1
+  fail-closed report to stdout as its only content on any exit-2 when `--json` was requested and stdout
+  isn't claimed by `--gate-json -`. Same-shape latch per language: rust `REPORT_STREAM_WRITTEN` /
+  java `reportDocEmitted` + shutdown hook / ts `reportStreamWritten` module-scope (with a TDZ hoist fix)
+  / swift `reportStreamWritten` module var. Pattern per engine: latch on success, write fail-closed on
+  every direct `exit(2)` site plus any shared refusal helper.
 
-  **Open — conformance PART.** Drafted in this session but NOT LANDED (adding a red PART to a green suite
-  blocks CI). PART 37 modelled on PART 34: seed a green report at `--json <file>`, trigger exit-2 via
-  unknown flag, assert the fail-closed manifest-carrying-empty shape at the sink; plus (b) argv order,
-  (c) input-exemption (`--policy P --json P`), (d) `--json <target>/.candor/config`, (e) stream form
-  (`--json` alone, must not be empty), (f) end-to-end that PART 34 doesn't have (after the failed scan,
-  `gate --report <that>` records `invisible` not green over stale data), (g) vacuity floor. Land the PART
-  once at least one engine passes it, else conformance goes red on every downstream repo. Draft in
-  `/private/tmp/claude-501/.../scratchpad/rung-stale-report-DRAFT.md`.
+  **Open — file sink (`--json <file>` / `--out <prefix>`) — the row (a) reach.** Row (a) is still SKIP×4
+  because PART 37 (a) tests `--json <file>` and only java implements that shape as a file sink; rust/ts/
+  swift file sinks live at `--out <prefix>`. Two follow-on items:
+  1. Java file-sink arming — trivial, java already supports `--json <file>`; needs the same latch and
+     placeholder on that path, then PART 37 (a) for java flips to PASS.
+  2. `--out <prefix>` follow-on rung — single-package case is the same shape as `--json <file>`, but
+     the multi-package/workspace case needs a design decision between a `<prefix>.__failed.json` marker
+     (new reader logic) and per-package placeholders (needs set-membership at parse time — the failure
+     mode is exactly that this isn't known yet). Measure on a workspace target before pinning.
 
-  **Deferred — `--out <prefix>` multi-file case.** Same defect measured across all four (`.<pkg>.json`
-  files byte-identical on exit-2), same shape works for a single-package `--out`. The multi-package /
-  workspace case has two candidate answers: a `<prefix>.__failed.json` marker (requires new reader logic)
-  or per-package placeholders (requires knowing the set at parse time, which is what fails). Needs
-  measurement on a workspace target before pinning. Filed as follow-on rung.
+  **Open — candor-agents.** `scan` and `observe` both publish a §2 report shape via `--out` / `--json`.
+  Sibling-route rule: neither is covered by scan on the four code engines. Same shape as row (b) for
+  now — the smallest reach that closes the visible surface.
 
 
 - **[P3 — spec rung, 2026-08-04] `execute` as a per-effect KIND: reading a file as CODE rather than data.**

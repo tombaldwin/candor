@@ -21,6 +21,10 @@ set -uo pipefail
 ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 W="$(mktemp -d)"; trap 'chmod -R u+w "$W" 2>/dev/null; rm -rf "$W"' EXIT
 FAILED=0; POSED=0
+# POSED counts cells RUN; ASSERTED counts cells that actually reached exit 2 and therefore had the
+# property checked against them. The gap between the two is the whole difference between "56 pairs, all
+# fine" and "56 pairs, none of which asked anything" — and only the second number can distinguish them.
+ASSERTED=0
 
 JAR=$(ls "$ROOT"/candor-java/build/libs/candor-java-*-all.jar 2>/dev/null | tail -1)
 SCAN="$ROOT/candor-rust/target/release/candor-scan"
@@ -157,6 +161,7 @@ cell_stream() { # engine, label, env, target-override, extra args…
   env $envk bash -c "$(declare -f run_engine run_gate run_probe target_for gate_target_for probe_target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; QUERY='$QUERY'; TSQ='$TSQ'; W='$W'; ROUTE='${ROUTE:-scan}'; GATE_POLICY='${GATE_POLICY:-}'; run_probe $e '$tgt' $pre $* $post" > "$out" 2>/dev/null; rc=$?
   POSED=$((POSED+1))
   if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
+  ASSERTED=$((ASSERTED+1))
   if [ ! -s "$out" ]; then printf "  %-8s %-26s ✘ EMPTY STREAM after exit 2\n" "$e" "$lbl"; FAILED=1; return 1; fi
   if ! one_json "$out"; then printf "  %-8s %-26s ✘ NOT ONE DOCUMENT (concatenated?)\n" "$e" "$lbl"; FAILED=1; return 1; fi
   [ -n "${QUIET:-}" ] || printf "  %-8s %-26s ok\n" "$e" "$lbl"
@@ -173,6 +178,7 @@ cell_file() { # engine, label, env, extra args…
   env $envk bash -c "$(declare -f run_engine run_gate run_probe target_for gate_target_for probe_target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; QUERY='$QUERY'; TSQ='$TSQ'; W='$W'; ROUTE='${ROUTE:-scan}'; GATE_POLICY='${GATE_POLICY:-}'; run_probe $e '$tgt' $pre $* $post" >/dev/null 2>&1; rc=$?
   POSED=$((POSED+1))
   if [ "$rc" != 2 ]; then [ -n "${QUIET:-}" ] || printf "  %-8s %-26s rc=%s (not exit 2 here)\n" "$e" "$lbl" "$rc"; return 0; fi
+  ASSERTED=$((ASSERTED+1))
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('$sink')).get('ok') is True else 1)" 2>/dev/null; then
     printf "  %-8s %-26s ✘ STALE GREEN survived exit 2\n" "$e" "$lbl"; FAILED=1; return 1
   fi
@@ -280,22 +286,31 @@ cell_pin_out_of_scope() {
 # 2, the stream carries exactly one parseable document, and a pre-seeded green does not survive. Pairs
 # that do not exit 2 are not failures — they are simply outside the property, and are counted so the
 # summary cannot read as more coverage than it is.
-sweep() {
-  # `--gate-json` is deliberately NOT in this alphabet: the cells supply the sink, so a pair containing
-  # one poses "which of two sinks wins", a real question this harness cannot attribute an answer to. It is
-  # named in the NOT-COVERED note rather than answered by accident.
-  local toks=(--zzz-not-a-flag --policy --strict --json "$W/bad.policy" "$W/no-such.policy" --out "$W/empty")
-  local n=0
+# `--gate-json` is deliberately NOT in either alphabet: the cells supply the sink, so a pair containing
+# one poses "which of two sinks wins", a real question this harness cannot attribute an answer to. It is
+# named in the NOT-COVERED note rather than answered by accident.
+SWEEP_SCAN_TOKS=(--zzz-not-a-flag --policy --strict --json "$W/bad.policy" "$W/no-such.policy" --out "$W/empty")
+# The gate verb's own surface. `--report` is here because it is the verb's ONE required input and a flag
+# that takes a value — the two properties that made `--out` and `--policy` interesting on the scan route.
+SWEEP_GATE_TOKS=(--zzz-not-a-flag --policy --report --json "$W/bad.policy" "$W/no-such.policy" "$W/empty")
+
+# One sweep body for both routes, because the property is a property of the CONTRACT and not of a CLI:
+# arm the sink, then hand the engine an argv it should reject, and require the refusal to arrive.
+sweep_route() { # route label, then the token alphabet
+  local route=$1 label=$2; shift 2
+  local toks=( "$@" ) n=0 e a b before asserted_at_start=$ASSERTED
   echo
-  echo "── COMBINATION SWEEP: ordered pairs from ${#toks[@]} tokens, both sink forms"
+  echo "── COMBINATION SWEEP ($label): ordered pairs from ${#toks[@]} tokens, both sink forms"
   for e in "${ENGINES[@]}"; do
-    local before=$FAILED
+    before=$FAILED
     for a in "${toks[@]}"; do
       for b in "${toks[@]}"; do
         [ "$a" = "$b" ] && continue
         n=$((n+1))
-        QUIET=1 SINK_FIRST=1 cell_stream "$e" "pair ${a##*/} ${b##*/}" "X=1" "" "$a" "$b"
-        QUIET=1 SINK_FIRST=1 cell_file   "$e" "pair ${a##*/} ${b##*/}" "X=1"     "$a" "$b"
+        QUIET=1 SINK_FIRST=1 ROUTE="$route" GATE_POLICY="$W/fire.policy" \
+          cell_stream "$e" "pair ${a##*/} ${b##*/}" "X=1" "" "$a" "$b"
+        QUIET=1 SINK_FIRST=1 ROUTE="$route" GATE_POLICY="$W/fire.policy" \
+          cell_file   "$e" "pair ${a##*/} ${b##*/}" "X=1"     "$a" "$b"
       done
     done
     if [ "$FAILED" != "$before" ]; then
@@ -304,12 +319,26 @@ sweep() {
       printf "  %-8s ok across every pair\n" "$e"
     fi
   done
-  echo "  $n pair(s) per engine, ×2 sink forms. Pairs that did not exit 2 are outside the property, not passes."
+  local asked=$(( ASSERTED - asserted_at_start ))
+  echo "  $n pair(s) per engine, ×2 sink forms; $asked cell(s) actually reached exit 2 and had the property"
+  echo "  checked. The rest are outside it — not passes. A route reporting 0 here proved nothing."
+  [ "$asked" -gt 0 ] || { printf "  ✘ VACUOUS: no cell in this sweep exited 2, so \"ok across every pair\" is empty\n"; FAILED=1; }
+}
+
+sweep() {
+  sweep_route scan "scan CLI" "${SWEEP_SCAN_TOKS[@]}"
+  # The gate route's reports were built by `gate_route`; without them every pair here would be posed
+  # against a locator that resolves to nothing, which is a different question than the one being asked.
+  if [ "${CANDOR_GATE_ROUTE:-1}" = 1 ]; then
+    sweep_route gate "gate VERB" "${SWEEP_GATE_TOKS[@]}"
+  else
+    echo "  gate-route sweep SKIPPED — CANDOR_GATE_ROUTE=0 means no reports were built to gate"
+  fi
 }
 [ "${CANDOR_SWEEP:-}" = 1 ] && sweep
 
 echo
-echo "probe-causes: $POSED cell(s) posed, $([ "$FAILED" = 0 ] && echo "0 failures" || echo "FAILURES above")"
+echo "probe-causes: $POSED cell(s) posed, $ASSERTED reached exit 2 and were checked, $([ "$FAILED" = 0 ] && echo "0 failures" || echo "FAILURES above")"
 [ "${CANDOR_SWEEP:-}" = 1 ] || echo "  (cause list only — set CANDOR_SWEEP=1 to add the argv combination sweep)"
 # NOT COVERED HERE, and named so none of it is mistaken for covered: the `gate` VERB route (these are all
 # the scan route); candor-agents, whose CLI shape differs; and TWO SINKS in one argv (`--gate-json a

@@ -1605,12 +1605,17 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   Wanted: a §3.3.1 sentence, then a PART 36 row — probably "the last wins and the earlier ones are still
   armed and refused", but that is a decision, not an observation.
 
-- **[P2] The `gate` VERB route is still outside the exit-2 matrix.** `bin/probe-causes.sh` poses the SCAN
-  route on all four engines and now sweeps argv pairs over it; the query-side `gate` verb is covered only
-  by PART 36's `gate --report` cells. Spot-checked 2026-08-10: candor-query rejects an extra positional
-  with a clear diagnostic, so there is no known defect — but "no known defect" and "measured" are the two
-  things this file exists to keep apart. Wanted: a `VD_GATE`-shaped command per engine wired into the
-  probe so the verb route gets the same cause list and the same sweep.
+- **[P3] The `gate` VERB route now has the cause list, but not the argv sweep.** ~~Outside the exit-2
+  matrix entirely.~~ **Closed the same day it was filed, and it held a defect** — which is the argument
+  against ever letting "spot-checked, no known defect" stand in for measured. `bin/probe-causes.sh` poses
+  nine causes per engine on the verb route (104 cells total across both routes); an unreadable config
+  exited 2 with an EMPTY stream in candor-scan and candor-ts while java and swift wrote the refusal, both
+  through a shared config loader sitting below the verb's sink. Fixed in both, pinned by PART 36 (b19).
+  Two things the build taught, kept because they generalise: the route needs its own EFFECTFUL fixtures
+  (a gate over a clean report exits 0, so every cell would have been "not exit 2 here" — a probe that
+  never asks its question), and it needs a CONTROL asserting the gate fires, which is what caught java
+  sitting unmeasured because it writes a report only with `--json <file>`. What is left: the argv
+  COMBINATION sweep still runs the scan route only.
 
 - **[P3] Rust code intelligence needed a rustup component, not a config.** `~/.cargo/bin/rust-analyzer` is
   a shim, candor-rust pins a nightly for the dylint lint, and neither that toolchain nor the default

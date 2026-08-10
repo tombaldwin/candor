@@ -1305,8 +1305,31 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   `XcodeTargetScopeTests` and are the acceptance battery for any replacement — a candidate that cannot
   pass all of them is not a candidate.
 
-- **[P1 — spec rung, FOR 0.28, opened 2026-08-07] A policy that yielded NO RULES is
+- **[SPEC + PART LANDED 2026-08-10 — engines pending] A policy that yielded NO RULES is
   indistinguishable from a clean gate IN THE MACHINE CHANNEL, four-way.**
+
+  SPEC ⟨0.28⟩ `70620ef` + conformance PART 38 `aea9cfa` (reference-led, 12 SKIPs, suite OK). The rung:
+  a CONFIGURED policy yielding zero rules refuses — exit 2 with the fail-closed document, the
+  unreadable-policy posture, using the `unevaluated` whole-policy entry §3.1 already pins. Re-measured
+  2026-08-10 four-way and on the `gate --report` VERB (the sibling route has it too). The line-level
+  ignore-with-a-warning leniency is untouched; the rung is about what it composes to.
+
+  **The decisive argument, worth keeping**: there is ALREADY a way to say "I am not gating" — do not
+  configure a policy — so a configured zero-rule policy is never a legitimate expression of intent. And
+  the defect's verdict is byte-identical to the no-gate-configured verdict, which is what makes the
+  machine channel unable to tell them apart.
+
+  **Open — 4 engine implementations**, each flipping its PART 38 rows from SKIP to PASS: rust, java, ts,
+  swift. Note the CONTROL row (d): no-policy MUST stay exit 0, and a fix that refuses both has broken
+  the no-gate case rather than implemented the rule.
+
+  **Named adoption cost**: the empty file and the all-comments file refuse too. Anyone with a committed
+  placeholder policy starts getting exit 2; the remedy is to remove the `policy` key. This is the one
+  part of the rung that is a judgment call rather than a derivation — scoping it to the readable-non-
+  policy case only, and leaving empty files green, is the available alternative if the adoption cost
+  proves real.
+
+  ORIGINAL ENTRY BELOW (the measurement that opened it):
 
   Measured 2026-08-07 on java, rust, ts and swift. Point `--policy` at an existing file that is not a
   policy — a README, the wrong path in a CI script — and every engine writes

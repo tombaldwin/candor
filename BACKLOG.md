@@ -1596,6 +1596,29 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2] TWO SINKS IN ONE ARGV has no stated answer.** `--gate-json a --gate-json b`: which file gets the
+  verdict, and does the other get anything? Every engine does *something*, and the spec says nothing, so
+  today the answer is whatever each parse loop happens to do. Surfaced 2026-08-10 while building the argv
+  combination sweep: `--gate-json` had to be removed from the sweep's token alphabet precisely because the
+  cells append their own sink, and a pair containing one poses this question rather than the property
+  under test. It is named in `bin/probe-causes.sh`'s NOT-COVERED note so it is not mistaken for covered.
+  Wanted: a §3.3.1 sentence, then a PART 36 row — probably "the last wins and the earlier ones are still
+  armed and refused", but that is a decision, not an observation.
+
+- **[P2] The `gate` VERB route is still outside the exit-2 matrix.** `bin/probe-causes.sh` poses the SCAN
+  route on all four engines and now sweeps argv pairs over it; the query-side `gate` verb is covered only
+  by PART 36's `gate --report` cells. Spot-checked 2026-08-10: candor-query rejects an extra positional
+  with a clear diagnostic, so there is no known defect — but "no known defect" and "measured" are the two
+  things this file exists to keep apart. Wanted: a `VD_GATE`-shaped command per engine wired into the
+  probe so the verb route gets the same cause list and the same sweep.
+
+- **[P3] Rust code intelligence needed a rustup component, not a config.** `~/.cargo/bin/rust-analyzer` is
+  a shim, candor-rust pins a nightly for the dylint lint, and neither that toolchain nor the default
+  stable had the `rust-analyzer` component — so every request failed with `Unknown binary` and the client
+  reported it as the server crashing. Both toolchains now have it and `rust-toolchain` lists it. Fixed
+  2026-08-10; the end-to-end check through the editor is still pending a fresh session, and an earlier
+  `rust-analyzer.toml` that named a different (refuted) cause was deleted rather than left in place.
+
 - **[P2] candor's own test suites leak temp fixtures — 130,000 of them here.** `$TMPDIR` on this
   machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
   directories older than a day, left by runs that create a scratch tree and do not remove it (the

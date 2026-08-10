@@ -42,10 +42,17 @@ ok "homebrew: $(brew --version | head -1)"
 command -v git >/dev/null || die "git missing"
 # SSH to GitHub: every remote is git@github.com, so a fresh box with no key fails at the FIRST clone
 # rather than after twenty minutes of toolchain installs. Check it up front.
-if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | grep -q 'successfully authenticated'; then
-  die "no SSH auth to github.com — add a key (ssh-keygen; gh auth login; or copy one over) and re-run"
-fi
-ok "github ssh auth"
+#
+# CAPTURE THEN MATCH — never `ssh … | grep`. `ssh -T git@github.com` exits 1 even on SUCCESS ("you've
+# successfully authenticated, but GitHub does not provide shell access"), and with `set -o pipefail` that
+# non-zero overrides grep's 0, so the pipeline form reports NO AUTH on precisely the machines where auth
+# works. Shipped that way and it failed on the first real box; the reply text is the only signal here.
+GH_REPLY="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)"
+case "$GH_REPLY" in
+  *"successfully authenticated"*) ok "github ssh auth (${GH_REPLY%%!*}!)" ;;
+  *) die "no SSH auth to github.com — add a key (ssh-keygen; gh auth login; or copy one over) and re-run.
+        github replied: ${GH_REPLY:-<nothing>}" ;;
+esac
 
 # ── 1. the seven repos, as SIBLINGS ─────────────────────────────────────────────────────────────────
 say "repos under $ROOT (they MUST be siblings — the tooling resolves ../../<repo>)"
@@ -127,7 +134,19 @@ NOTE
 
 # ── 6. verify ───────────────────────────────────────────────────────────────────────────────────────
 say "verification"
-command -v candor >/dev/null && candor doctor 2>&1 | tail -12 || warn "candor doctor unavailable"
+# `candor doctor` exits NON-ZERO when it finds drift — which is it working, not it failing. Piping it to
+# `tail` under `set -o pipefail` and treating that as an error would report a doctor that ran and found
+# real problems as "unavailable", which is the same mislabel as the ssh check above. Separate the two.
+if command -v candor >/dev/null; then
+  DOCTOR_OUT="$(candor doctor 2>&1)"; DOCTOR_RC=$?
+  printf '%s\n' "$DOCTOR_OUT" | tail -14
+  [ "$DOCTOR_RC" = 0 ] && ok "candor doctor: clean" \
+    || warn "candor doctor exited $DOCTOR_RC — it found the issues above (usually: engines built here are
+        older than the checkout, or declare different specs). Rebuild and re-run before trusting a
+        measurement against them."
+else
+  warn "candor not on PATH yet — open a new shell, or check the symlink above"
+fi
 if [ "$RUN_CHECK" = 1 ]; then
   say "full check (slow — builds, tests, clippy, conformance, probe)"
   ( cd "$ROOT/candor" && just check )

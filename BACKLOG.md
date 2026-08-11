@@ -1343,6 +1343,43 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   policy case only, and leaving empty files green, is the available alternative if the adoption cost
   proves real.
 
+- **[P1 — SPEC LANDED 2026-08-11, engines pending] A report-consuming verb MUST re-disclose the ⟨0.21⟩
+  manifest, and the obligation binds ANSWERS not only verdicts.**
+
+  §2 ⟨0.15⟩ already makes re-disclosure a MUST for `coverage`, and it IS implemented: measured, `gains`
+  over a baseline carrying `coverage.uncovered` emits `coverageDelta` naming it. **The same verb, same
+  report, same output, drops `unanalyzed` entirely.** The mechanism exists and was pointed at the weaker
+  caveat — `coverage` says "I could not see into this dependency", `unanalyzed` says "I could not read
+  this file of YOUR OWN CODE", `analyzed.count: 0` says "I judged nothing at all".
+
+  And the scope was narrower than its own argument: the clause binds verbs "whose VERDICT could change",
+  but both cases it reasons from are ANSWERS that read as all-clears. Measured over a report declaring
+  `unanalyzed`: `show` → `[]`, `where Fs` → `{directly:[],inherited:[]}`, `map` → `{}`, and **`blindspots`
+  → `{totalUnknown:0}` — reporting NO BLIND SPOTS out of a report whose manifest names a file it could not
+  read.** None hedges.
+
+  SPEC `2cea6fd`. **PART 39 pins it**: half (i) coverage travels (a hard FAIL — it is the live precedent
+  the new clause argues from) PASS four-way; half (ii) manifest travels, reference-led, SKIP four-way.
+  Engine work is the open half, across ~8 verbs × 4 engines.
+
+  *Third time in SPEC a rule has been stated over the instance rather than the condition (after §3.3.1's
+  two ⟨0.24⟩ corrections). The tell each time: the clause's justification is broader than the clause.*
+
+- **[P2 — opened 2026-08-11] `path <real fn> <typo'd Effect>` answers exit 0 in ALL FOUR engines.**
+  Same all-clear-for-a-question-never-posed shape that §17 (1b) pins for `where`/`callers`, and now for
+  `impact`/`path` on a nonexistent FUNCTION. A typo'd EFFECT is the remaining hole and it is four-way, so
+  it wants its own rung — gating one engine alone would manufacture a divergence. Named in (1b)'s comment
+  so it stays measured rather than becoming another untested parenthetical.
+
+- **[P2 — MEASURED, DO NOT BUILD AS CONCEIVED, 2026-08-11] A coverage-gap checker for the suite.**
+  Falsification cannot catch a part that silently omits an engine — a row that never runs for swift still
+  fails correctly when rust breaks. PART 39 shipped green covering three of four. Proposed: flag
+  (part, verb, engine) where the engine drives that verb elsewhere but not here. **Measured against the
+  real bug: catches it, and emits 8 permanent false positives** from PART 4k (which drives all four
+  through loops a static scan cannot attribute). 1:8 broken, 8-false steady — an ignored checker is worse
+  than none. **The design that works is DECLARATION not inference**: `# ENGINES: …` per part, checked both
+  ways. Cost: annotating ~25 parts, and a half-annotated file makes the checker lie.
+
 - **[P2 — THE THIRD ROUTE, opened 2026-08-10] The ADVISORY verbs proceed silently over a zero-rule
   policy.** `whatif`, `fix-gate` and `unverified` share the policy loader with the gate verbs and were
   NOT touched by the ⟨0.28⟩ rung; PART 38 does not probe them. Found by the java arm while implementing
@@ -1383,8 +1420,39 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   and the "nothing hidden — every effect sits where its name says it should" line is the §6.1 containment
   note, printed with no policy at all, not a claim about the gate.
 
-- **[SPEC LANDED 2026-08-10 — engine work + PART pending] The stale-document rule binds the REPORT, not
-  just the verdict. Tom: "make sure we fix the exit 2 issue in 0.28."**
+- **[CLOSED FOUR-WAY 2026-08-11 — all unpushed] The stale-document rule binds the REPORT, not just the
+  verdict. Tom: "make sure we fix the exit 2 issue in 0.28."**
+
+  **PART 37 is (a)(b)(c)(d)(e) green four-way**; PART 38 PASS×12; PART 39 pins the re-disclosure MUST;
+  SEMANTICS gained **C3**. `conformance: OK` on a clean tree with every engine idle.
+
+  Rows: (a) file sink armed · (b) stream sink · (c) a failed run must not touch the DEFAULT prefix —
+  a FLOOR that never SKIPs · (d) the §2.2 sidecars go with the armed report, DELETED not emptied ·
+  (e) unanswerable reaches the MACHINE channel.
+
+  **Six things this rung cost, each measured and each now pinned** — recorded because the shapes recur:
+  1. *Leaving un-overwritten files armed* turned a COMPLETE scan into a permanent exit-2 (a placeholder's
+     `unanalyzed` is the ⟨0.21⟩ incompleteness trigger). Fixed by remembering prior bytes and restoring.
+  2. *Arming the FIRST `--out`* when the parse loop is last-wins — the real sink stayed stale.
+  3. *Arming the DEFAULT prefix* destroyed a COMMITTED report. The rule is "arm a sink the operator
+     NAMED"; ⟨0.27⟩ never had to say so because `--gate-json` has no default.
+  4. *A suffix denylist over §2.2's SEVEN reserved segments* overwrote `<prefix>.gate.json`, a VERDICT.
+     Denylist-over-allowlist is about CLASSIFYING; **for a WRITER it inverts.**
+  5. *Identification before the input exemption* lost the disclosure for a non-JSON policy under the prefix.
+  6. *Sidecars deleted even when the arm write FAILED*, leaving a stale report with no callgraph.
+
+  **Not one was caught by me.** Two by candor-swift's arm checking its OWN semantics instead of copying the
+  reference, one by candor-ts tripping over rust's dirty tree, one by a Fable review citing a clause I had
+  not read, one by candor-java seeing a write result rust discarded. **A wrong REFERENCE is worse than a
+  wrong one-off: delegation multiplies it before the first check.**
+
+  **Open follow-ons**, all filed below: the machine-channel vein (Class B), the orphaned report, a repeated
+  `--out`, candor-agents on both rungs, tightening the origin rule so `{}` is unanswerable by RULE rather
+  than by four engines' good judgement, and `path <real fn> <typo'd Effect>` answering exit 0 four-way.
+
+  ORIGINAL ENTRY BELOW (the measurement that opened it):
+
+- **[SUPERSEDED by the entry above] The stale-document rule binds the REPORT, not just the verdict.**
 
   SPEC ⟨0.28⟩ landed as five MUSTs beside the ⟨0.24⟩ generalisation: arm at parse time, the fail-closed
   report is a manifest-carrying empty under ⟨0.21⟩ Row 1 (`functions: []` + `analyzed.count: 0` +

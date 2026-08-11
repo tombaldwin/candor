@@ -1319,15 +1319,41 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   the defect's verdict is byte-identical to the no-gate-configured verdict, which is what makes the
   machine channel unable to tell them apart.
 
-  **Open — 4 engine implementations**, each flipping its PART 38 rows from SKIP to PASS: rust, java, ts,
-  swift. Note the CONTROL row (d): no-policy MUST stay exit 0, and a fix that refuses both has broken
-  the no-gate case rather than implemented the rule.
+  **CLOSED FOUR-WAY 2026-08-10 — PART 38 is PASS × 12** (three forms × four engines) against fully
+  committed state, suite `conformance: OK`, and the control row green everywhere. Scan route: rust
+  `960b879`, java `027aaa2`, ts `7d56df4`, swift `5552a36`. **`gate --report` VERB route**: java and ts
+  closed both in one commit; rust `d665be3` and swift `bffc868` followed. All unpushed.
+
+  **THE SIBLING-ROUTE HABIT RECURRED, IN THE SAME SESSION THAT WROTE THE SENTENCE.** I measured the verb
+  route having this defect, put "Measured on the `gate --report` verb too — a route is not covered by its
+  sibling" INTO the spec clause, then implemented rust on the scan route only and briefed three agents
+  scan-route-only. Two of the three closed the verb route anyway by reading the spec; one flagged it and
+  correctly declined to close it alone (that would have created a fresh divergence). Having the lesson
+  written down, and having written that sentence hours earlier, did not prevent it. See
+  [[candor-generated-argv-beats-enumeration]].
+
+  Two rows to keep: an `allow`-only and a `forbid`-only policy already refuse on the VERB route for
+  their own specific reasons (a report's `calls` graph is effect-relevant; the AS-EFF-008 marker does not
+  ride the report wire). Both were confirmed pre-existing by rebuilding the pre-change tree, not reasoned
+  about, in rust and swift independently.
 
   **Named adoption cost**: the empty file and the all-comments file refuse too. Anyone with a committed
   placeholder policy starts getting exit 2; the remedy is to remove the `policy` key. This is the one
   part of the rung that is a judgment call rather than a derivation — scoping it to the readable-non-
   policy case only, and leaving empty files green, is the available alternative if the adoption cost
   proves real.
+
+- **[P2 — THE THIRD ROUTE, opened 2026-08-10] The ADVISORY verbs proceed silently over a zero-rule
+  policy.** `whatif`, `fix-gate` and `unverified` share the policy loader with the gate verbs and were
+  NOT touched by the ⟨0.28⟩ rung; PART 38 does not probe them. Found by the java arm while implementing
+  the rung — the sibling question asked one level further out than the rung itself reached.
+
+  **It probably does NOT get the same answer, and that is why it is its own item.** These verbs are
+  ADVISORY: they do not set a gate verdict, so `ok: true` is not on the table and the exit-2 refusal
+  posture may be the wrong shape entirely. The likely answer is a DISCLOSURE — `unverified` over a
+  zero-rule policy currently calls a layer "PROVABLY clean" on the strength of a policy that asked
+  nothing, which is the ⟨0.24⟩ zero-match harm arriving through a third channel. Decide the shape before
+  implementing; do not assume the gate verbs' refusal transfers.
 
   ORIGINAL ENTRY BELOW (the measurement that opened it):
 

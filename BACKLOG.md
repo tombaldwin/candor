@@ -1406,19 +1406,65 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   / swift `reportStreamWritten` module var. Pattern per engine: latch on success, write fail-closed on
   every direct `exit(2)` site plus any shared refusal helper.
 
-  **Open — file sink (`--json <file>` / `--out <prefix>`) — the row (a) reach.** Row (a) is still SKIP×4
-  because PART 37 (a) tests `--json <file>` and only java implements that shape as a file sink; rust/ts/
-  swift file sinks live at `--out <prefix>`. Two follow-on items:
-  1. Java file-sink arming — trivial, java already supports `--json <file>`; needs the same latch and
-     placeholder on that path, then PART 37 (a) for java flips to PASS.
-  2. `--out <prefix>` follow-on rung — single-package case is the same shape as `--json <file>`, but
-     the multi-package/workspace case needs a design decision between a `<prefix>.__failed.json` marker
-     (new reader logic) and per-package placeholders (needs set-membership at parse time — the failure
-     mode is exactly that this isn't known yet). Measure on a workspace target before pinning.
+  **FILE SINK CLOSED FOUR-WAY 2026-08-10 — PART 37 is (a) PASS×4, (b) PASS×4, (c) PASS×3 + n/a.**
+  java `0526584` (`--json <file>`), rust `f439dea`+`35a7c92`+`df64922`, ts `1446a65`+`6493eec`, swift
+  `0952cf7`+`add5fa6`. PART 37 was also made surface-aware (`261a93a`) — it had probed `--json <file>`
+  on all four, which is a file sink only on java, so three engines were SKIPping a question nobody had
+  asked them.
+
+  **The `--out` design question the BACKLOG deferred is settled, and BOTH candidate answers were wrong.**
+  Measured: only rust FANS OUT (one report per crate); java/ts/swift write a single report, so the
+  multi-file problem exists in one engine. And the "per-package placeholders need set-membership at
+  parse time" objection dissolves — the set that matters is the one the PREVIOUS run left, which is
+  knowable by globbing. Arming rewrites those to the ⟨0.21⟩ Row-1 placeholder; each member that scans
+  overwrites its own.
+
+  **THREE DEFECTS I INTRODUCED WHILE FIXING THIS, all caught downstream rather than by me:**
+  1. *Leaving un-overwritten files armed.* Looked like a free fix for the orphan defect; actually made a
+     COMPLETE scan refuse exit 2 permanently, because a placeholder's non-empty `unanalyzed` is the
+     ⟨0.21⟩ incompleteness trigger. Fixed by remembering prior bytes and handing them back on
+     completion. The orphan is now left exactly as found — see its own entry below.
+  2. *Arming the FIRST `--out` when the parse loop is last-wins.* `--out p1 --out p2 --zzz-not-a-flag`
+     armed p1 and left p2 — the real sink — STALE. Caught by candor-swift's arm, which checked its own
+     loop instead of copying the reference.
+  3. *Arming the DEFAULT prefix.* Destroyed a COMMITTED report on a run that died in argv parsing —
+     found in candor-rust's own tree, which commits reports for six crates. Committed reports/baselines
+     are the pattern this project recommends. The rule is "arm a sink the operator NAMED"; ⟨0.27⟩ never
+     had to say so because `--gate-json` has no default. **Nothing in the conformance suite could see
+     it** (every probe passes an explicit `--out`), so PART 37 row (c) now pins it, never SKIPs, and was
+     falsified against a deliberately broken build before landing.
+
+  Durable: a wrong REFERENCE is worse than a wrong one-off — I wrote it, two agents mirrored it
+  faithfully, and it was found only when one tripped over rust's dirty tree.
+
+  **Open — sidecars.** `<prefix>.<pkg>.callgraph.json` / `.hierarchy.json` still go stale on exit-2; the
+  armer deliberately does not touch them. A live sidecar beside a placeholder report lets a chained
+  consumer join yesterday's call graph to today's empty report. Check against §2.2 ⟨0.26⟩'s existing
+  sidecar-manifest rules rather than inventing a rule here.
 
   **Open — candor-agents.** `scan` and `observe` both publish a §2 report shape via `--out` / `--json`.
-  Sibling-route rule: neither is covered by scan on the four code engines. Same shape as row (b) for
-  now — the smallest reach that closes the visible surface.
+  Sibling-route rule: neither is covered by the four code engines.
+
+- **[P2 — pre-existing, MEASURED 2026-08-10] An ORPHANED report survives its package being deleted, and
+  still sets gate outcomes.** Delete a crate from a workspace and rerun: `<prefix>.<gone>.scan.json`
+  survives, byte-shaped exactly like a live report, with nothing saying its source no longer exists —
+  and `gate --report <prefix> --policy 'deny Exec'` exits **1** on a function in the deleted crate.
+
+  Direction stated precisely: an orphan only ADDS entries, so for `deny` rules it is fail-CLOSED (a
+  false RED, not the cardinal sin). Two sharper variants are unmeasured: a RENAMED crate leaves the old
+  report beside the new one so both count, and an orphan inflates any completeness answer over the
+  prefix.
+
+  **Deliberately NOT fixed inside the ⟨0.28⟩ arming work**, though arming could have neutralised it for
+  free — that attempt is defect 1 above. It needs its own wire answer (delete the file? mark it
+  not-in-scan? a prefix can legitimately be shared between projects), and resolving it as a side effect
+  of a staleness fix would be deciding it by accident.
+
+- **[P3 — spec question, opened 2026-08-10] Should a repeated `--out` be refused?** ⟨0.28⟩ refuses a
+  repeated `--gate-json` on "one run names one sink, and the reader of the losing path cannot tell it
+  lost". `--out` names where the report SET goes and is currently silently last-wins in every engine.
+  The argument looks like it transfers; do not assume it does — `--out` differs in that it names a
+  prefix rather than an artifact. Surfaced by the first-vs-last arming bug (defect 2 above).
 
 
 - **[P3 — spec rung, 2026-08-04] `execute` as a per-effect KIND: reading a file as CODE rather than data.**

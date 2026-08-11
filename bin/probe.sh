@@ -80,12 +80,28 @@ provenance() {
   esac
   [ -e "$bin" ] || return 0
   bt=$(stat -f %m "$bin" 2>/dev/null || stat -c %Y "$bin" 2>/dev/null) || return 0
-  ct=$(git -C "$repo" log -1 --format=%ct 2>/dev/null) || return 0
-  printf '  provenance: %s\n              built %s · HEAD %s (%s)\n' \
+  # COMPARE AGAINST THE NEWEST SOURCE FILE, NOT THE HEAD COMMIT.
+  #
+  # The first version compared the binary's mtime to the repo HEAD commit time and warned STALE when it
+  # was older. That fires on the entirely ordinary sequence BUILD -> TEST -> COMMIT: the binary is built
+  # from the working tree, tested, and only then committed, so a fresh binary legitimately predates the
+  # commit object by minutes. Measured during a full verification gate: it flagged 4 of 5 binaries, and
+  # ALL FOUR were fresh — a rebuild changed nothing.
+  #
+  # A checker that fires on the normal path is worse than none: it trains you to skip the warning, and
+  # then it cannot warn you. (Same failure as a conformance floor that fired on SUCCESS rather than on
+  # vacuity — both were proxies that held only in the state they were first tested in.)
+  #
+  # The newest SOURCE mtime answers the question actually being asked: does this binary reflect the code
+  # on disk right now. It does not care when anything was committed.
+  st=$(find "$repo" -type f \( -name '*.rs' -o -name '*.java' -o -name '*.mjs' -o -name '*.swift' \) \
+         -not -path '*/target/*' -not -path '*/.build/*' -not -path '*/node_modules/*' -not -path '*/build/*' \
+         -exec stat -f %m {} \; 2>/dev/null | sort -rn | head -1)
+  printf '  provenance: %s\n              built %s · newest source %s (HEAD %s)\n' \
     "$bin" "$(date -r "$bt" '+%H:%M:%S' 2>/dev/null)" \
-    "$(date -r "$ct" '+%H:%M:%S' 2>/dev/null)" "$(git -C "$repo" log -1 --format=%h)"
-  if [ "$bt" -lt "$ct" ]; then
-    echo "  *** STALE: this binary PREDATES its repo HEAD. You are measuring older code than you think." >&2
+    "${st:+$(date -r "$st" '+%H:%M:%S' 2>/dev/null)}" "$(git -C "$repo" log -1 --format=%h)"
+  if [ -n "$st" ] && [ "$bt" -lt "$st" ]; then
+    echo "  *** STALE: this binary is OLDER THAN THE SOURCE. You are measuring code that is not on disk." >&2
     STALE=1
   fi
   case "$bin" in

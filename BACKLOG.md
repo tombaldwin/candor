@@ -1783,6 +1783,22 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
 
 ## Housekeeping (small, real, easy to forget)
 
+- **[P2] TWO FOUR-WAY QUESTIONS RAISED BY candor-ts's ⟨0.28⟩ ARM (2026-08-12), both left untouched
+  deliberately — fixing either in one engine manufactures a divergence.**
+
+  (i) **`--out X --policy --json` exits 2 with X UNARMED.** `preWantJson` reads the rejected candidate
+  value `--json` as the stream mode, so the staleness protection is skipped for that argv and a previous
+  run's report is left standing. Same pre-pass/parse-loop disagreement class as the `--policy --out X`
+  defect fixed in all four engines this rung, one flag over — and non-destructive, which is why it
+  survived the sweep: nothing is written, something merely fails to be protected. The sweep's own
+  measurement bias, worth naming.
+
+  (ii) **`scan <unparseable> --gate-json v.json` writes `ok:false, incomplete:true` and exits 0.**
+  `--gate-json` alone does not count as "a gate is configured" for the ⟨0.21⟩ incomplete-analysis exit 2.
+  Looks deliberate, but the document and the exit code then disagree, and an exit-code-only consumer —
+  the CI-step case this format exists for — reads a green. Needs a ruling on whether naming a verdict
+  sink is itself a request to gate.
+
 - **[P2] PUSH THE ENGINES BEFORE THE SPEC.** candor-spec's `conformance.yml` checks out the sibling repos
   at their MAIN branches and builds them, so a spec push that adds rows the engines must satisfy will fail
   CI if the engine commits are not already up. Measured 2026-08-10: the spec run checked out the engines at

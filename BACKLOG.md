@@ -1371,14 +1371,25 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   it wants its own rung — gating one engine alone would manufacture a divergence. Named in (1b)'s comment
   so it stays measured rather than becoming another untested parenthetical.
 
-- **[P2 — MEASURED, DO NOT BUILD AS CONCEIVED, 2026-08-11] A coverage-gap checker for the suite.**
-  Falsification cannot catch a part that silently omits an engine — a row that never runs for swift still
-  fails correctly when rust breaks. PART 39 shipped green covering three of four. Proposed: flag
-  (part, verb, engine) where the engine drives that verb elsewhere but not here. **Measured against the
-  real bug: catches it, and emits 8 permanent false positives** from PART 4k (which drives all four
-  through loops a static scan cannot attribute). 1:8 broken, 8-false steady — an ignored checker is worse
-  than none. **The design that works is DECLARATION not inference**: `# ENGINES: …` per part, checked both
-  ways. Cost: annotating ~25 parts, and a half-annotated file makes the checker lie.
+- **[CLOSED 2026-08-12 — built as the design said, conformance PART 44] ~~A coverage-gap checker for the
+  suite.~~** The measurement stood: inference was 1 true positive to 8 permanent false positives and was
+  right not to ship; **declaration** was right and is now `conformance/part_declarations.py`. All 44
+  addressable slices plus the preamble carry `# ENGINES:` / `# CONTROLS:`, checked both ways against
+  `part.sh --sections` — the one slicing implementation, never a second parser.
+
+  Two things the build got that the design did not anticipate. First, the grammar forces a **four-way
+  disposition**: every engine is listed or excluded *with a reason*, so an engine mentioned nowhere
+  cannot be written — the PART 39 shape is **unwritable**, not merely detectable. Second, it found four
+  live gaps on its first pass, one of them **in a row written the same day**: PART 40 probes only rust
+  (java and ts ship all ten read verbs); PART 4n's `tolerant` rows probe three engines under a MATCH line
+  claiming "every engine"; PART 8 credits a bare exit 2 with no answering arm; and PART 37's `ti_control`
+  ran for rust/ts/swift but not java — asserting java's refusal while never asking whether its guard is
+  artifact-shaped or containment-shaped. The last is fixed; the rest are recorded beside their
+  declarations.
+
+  Stated limit: the unit is the addressable slice, so a rider driving four engines can mask a headline
+  part covering three. PART 4n is the live example, recorded in prose beside its declaration rather than
+  left as a silent property of the granularity. 0.06s over 46 slices.
 
 - **[P2 — THE THIRD ROUTE, opened 2026-08-10] The ADVISORY verbs proceed silently over a zero-rule
   policy.** `whatif`, `fix-gate` and `unverified` share the policy loader with the gate verbs and were

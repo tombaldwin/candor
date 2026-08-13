@@ -35,7 +35,19 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 >   · `[P3]` blame-tracked `Unknown` (needs `candor verify` as a foundation)
 >   · `[gate]` structure-delta regression gate — DESIGNED, awaiting a go/no-go
 >   · `[adoption]` embeddable fingerprint badge
->   · `[P2]` candor-ts self-gate (no `.candor/policy`, no self-gate step in its CI)
+>   · ~~`[P2]` candor-ts self-gate (no `.candor/policy`, no self-gate step in its CI)~~ — **CLOSED
+>     2026-08-13** (`4356162`): `.candor/policy` (`deny Net Db Ipc`), `ci/self-gate.sh`, a CI step, and
+>     a `.candor/.gitignore` so the policy is actually tracked (the root ignores `.candor/` wholesale,
+>     which would have left CI reading a policy that exists only on the author's machine). Two halves,
+>     as candor-java does it, because a policy file cannot say "deny Exec everywhere except these
+>     three": the engine under the policy, plus an assertion that the Exec-performing units are exactly
+>     the declared self-invocation list — new Exec fails, and so does a declared entry that stops
+>     performing Exec. Falsified in all three directions.
+>     **What it found first was itself**: `candor-ts . --policy …` analyses ONE file (Cases.ts, the test
+>     fixture), because the engine is `.mjs` and that needs `--allow-js` — 38 functions, none of them
+>     the engine, and a verdict that reads like an answer. The same shape as the axios finding closed
+>     the same day, wearing our own name. **candor-swift has no `.candor/policy` either** — same gap,
+>     not yet filed as its own item.
 >   · ~~`[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)~~ — **CLOSED
 >     2026-08-13**, all five, with each repo's embedded-copy drift gate re-synced in the same commit
 >     (rust ×2 crates, java's jar resource, swift's generated `AgentsDoc.swift`). candor-rust and

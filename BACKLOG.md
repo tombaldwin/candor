@@ -91,10 +91,18 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   inherits it, and pinned by two rows that assert the byte count through a pipe. Note the shape: the
   function's header claimed one shared implementation "can never diverge within an install" — and it was
   the CALLERS that diverged (query.mjs drains on the way out, scan.mjs exits), inside the very function
-  written to prevent divergence. **The open half: every engine has print-and-exit paths** (`--help`,
-  `--version`, `--agents`, the usage errors), and only candor-ts's contract test happened to use a pipe.
-  Worth one sweep asking, per engine, whether any print-then-`exit` path can truncate — a cheap question
-  with a silent, exit-0 failure mode.
+  written to prevent divergence. **The open half — SWEPT 2026-08-13, CLEAN.** All four engines ×
+  `--agents`/`--help`/`--version`, pipe byte-count vs file byte-count, 18 cells, zero divergence: rust
+  16422/4600/74 + query 16423/5284/76, java 19506/4734/84, swift 21902/6000/116, ts (post-fix) both
+  binaries 23384/3093/70. The defect was Node-specific — asynchronous stdout on a pipe plus
+  `process.exit` — and the compiled engines flush on the way out.
+
+  **But note WHY the rest of ts is clean, because it is not by construction:** a pipe buffer is 64 KB,
+  and only the 23 KB contract is big enough to be caught mid-write. The nine remaining print-then-exit
+  sites in scan.mjs/query.mjs emit 3–6 KB of usage/version text, so they fit the buffer and survive by
+  SIZE. Any of them that grows past 64 KB truncates silently at exit 0. The printer they share is now
+  synchronous, so the durable fix is to route new bulk output through it rather than through
+  `console.log` — cheap to honour, and the failure mode if it is not is invisible.
 
 - **[SHIPPED 2026-08-04 — research] Mechanise the formal model in Lean — the MODEL, explicitly not the
   code.** Raised by Tom. `candor-spec/lean/`: **75 tier-A theorems with no axiom dependencies**, 7 bridge

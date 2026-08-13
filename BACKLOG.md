@@ -68,6 +68,17 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 >       auditing for what it stopped asking.** The excluded file was the one place a subprocess was
 >       expected, which is exactly why nobody looked at it again — and it was also the only file where
 >       a new one could hide.
+>
+>     · **SWEPT ALL FOUR ENGINES 2026-08-14 — the vein was in java too** (`e860460`). Its half (1)
+>       deleted the whole `io/poly/candor/verify` PACKAGE before scanning, so every class in it sat
+>       outside the Exec gate while half (2) asked only about Net/Db/Ipc. Ported to the same shape:
+>       whole tool under `deny Net Db Ipc`, Exec declared as exactly `Candor.main` +
+>       `verify.VerifyCli.main` (measured — those two are the only Exec in the tree). Decisive
+>       falsification: drop `VerifyCli.main` and the gate names it, a method the old arrangement
+>       *structurally could not see*. **candor-rust needed nothing** — it scans all four workspace
+>       members under `deny Net Db Exec Ipc` with no exemption at all, which was already the strongest
+>       form. So: four engines, four tracked policies, and no engine now excludes a file or package
+>       from its own gate.
 >   · ~~`[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)~~ — **CLOSED
 >     2026-08-13**, all five, with each repo's embedded-copy drift gate re-synced in the same commit
 >     (rust ×2 crates, java's jar resource, swift's generated `AgentsDoc.swift`). candor-rust and

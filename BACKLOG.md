@@ -477,7 +477,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   staged result would catch that class. The argument for doing it: these scripts now stand between a defect
   and a publish, which is exactly where an untested script is worst.
 
-- **[P3 — DX, 2026-08-03] Local clippy is weaker than CI's, so "clippy clean" locally is not evidence.**
+- **[CLOSED 2026-08-14 `a21967e` — and the filing named the wrong FILE] Local clippy is weaker than CI's, so "clippy clean" locally is not evidence.**
   `clippy 0.1.98` on this machine exits 0 on two adjacent `#[test]`; CI's stable toolchain errors
   (`duplicate-macro-attributes`). That cost a CI round-trip on 2026-08-03 — and the same commit had a
   stranded `#[test]` that SILENTLY DISABLED a liveness test, which local `cargo test` also could not see
@@ -1995,13 +1995,28 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   2026-08-10; the end-to-end check through the editor is still pending a fresh session, and an earlier
   `rust-analyzer.toml` that named a different (refuted) cause was deleted rather than left in place.
 
-- **[P2 — RE-MEASURED 2026-08-14: still leaking, and the dominant cause is now named] candor's own test suites leak temp fixtures — 130,000 of them here.**
+- **[MOSTLY CLOSED 2026-08-14 `0588842` — the 96% cause fixed, 48,556 swept] candor's own test suites leak temp fixtures — 130,000 of them here.**
   `$TMPDIR` holds **46,919** `candor-*` scratch directories today. The single biggest contributor is
   candor-ts's `project()` helper in `test.mjs` (~7,300 `candor-ts-test-*` and rising): it calls
   `fs.mkdtempSync` per fixture and never removes anything, so one full suite run leaks ~1,300 trees. That
   one function is a self-contained fix — register each dir and unlink them in a `process.on("exit")` —
   and it would take most of the ongoing growth out. The rest (`candor-test*`, `candor-swift-comp*`,
-  `candor-ts-gate-*`) are the same shape in other harnesses. `$TMPDIR` on this
+  `candor-ts-gate-*`) are the same shape in other harnesses.
+
+  **DONE for the dominant cause.** `scratch.mjs` registers each tree and sweeps on exit, including on
+  SIGINT/SIGTERM (a signal does not run exit handlers — the killed-mid-run case — so it re-raises after
+  sweeping). Trees are KEPT when the run FAILED: a failing assertion prints a path into one of them, and
+  deleting it on the way out removes the evidence exactly when it is wanted. Measured: a passing
+  1,345-test run now leaks **0**, was ~1,300. Both paths probed directly rather than assumed.
+  The accumulated backlog was swept too — **48,556 directories older than 24h removed**, $TMPDIR from
+  50,494 `candor-*` entries to 1,938 (today's runs, left alone).
+
+  **STILL OPEN, and smaller than it was:** the other harnesses. `candor-ts-gate-*` (2,270 accumulated),
+  `candor-verify-*`/`candor-ts-mutant`/`candor-ts-corrupt` (~140 each), and the ad-hoc `mkdtempSync`
+  calls in test-mcp.mjs / test-watch.mjs / fabrication_probe.mjs — roughly 40 call sites. Each is a
+  one-line swap to `scratch()` now that the helper exists; none is individually urgent, since together
+  they are ~4% of what `project()` alone produced. Same job in candor-swift's and candor-rust's
+  harnesses, unmeasured. `$TMPDIR` on this
   machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
   directories older than a day, left by runs that create a scratch tree and do not remove it (the
   killed-mid-run case is the obvious one, but 130k is not all killed runs). That is not only untidy: it

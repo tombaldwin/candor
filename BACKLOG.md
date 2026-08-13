@@ -89,6 +89,29 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 > Plus, from the verify entry: promoting candor-rust's or candor-swift's dynamic oracle from a CI harness
 > to a user-facing verb — a new feature, not productionization.
 
+> **RE-AUDITED 2026-08-14, method as above: heading, then the artifact, then the code.** Four headings
+> were stale — the two I closed on 2026-08-13 (`AGENTS.md`→umbrella, candor-ts self-gate) still read
+> `[P2]` in their own entries while the summary above said CLOSED, which is the same drift this note
+> documents, committed by the person documenting it. Also re-headed: the `--agents` pipe entry (its open
+> half swept clean across all four engines) and the rust-analyzer entry (verified: `rust-toolchain` lists
+> the component, with the reasoning inline).
+>
+> Two entries were re-measured rather than re-read, and both are still real:
+>   · `path <fn> <typo'd Effect>` still exits **0** with a confident negative — four-way, wants a rung.
+>   · the temp-fixture leak is **46,919** dirs, and candor-ts's `project()` is now named as the dominant
+>     single cause (~7,300 and rising, ~1,300 per suite run) — one function, self-contained.
+>
+> **Still open and genuinely small** (costed, so the next session does not re-derive it):
+>   · `[P3]` the clippy-is-advisory line in candor-rust/AGENTS.md — confirmed absent; one paragraph.
+>   · `[P2]` candor-ts `project()` cleanup — one function, removes most of the leak's growth.
+> **Small-looking but is not**: `path <typo'd Effect>` (four-way rung: spec + PART + four engines).
+> **Needs a closer read before costing**: `[P2]` PUSH THE ENGINES BEFORE THE SPEC — `conformance.yml`
+> already pins the suite to the latest released spec TAG, which may or may not cover the ordering failure
+> the entry measured on 2026-08-10; the entry and the workflow disagree and I did not resolve which is
+> right.
+> **Needs Tom, not effort**: the structure-delta gate go/no-go, the two ⟨0.28⟩ four-way spec questions,
+> and the umbrella's two-tags-per-release decision.
+
 
 
 - **[CLOSED 2026-08-13 — candor-ts + conformance PART 46] A CALLER OF A BODY-LESS LOCAL DECLARATION READ
@@ -129,7 +152,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     `unanalyzed` entry, or a ⟨0.24⟩-row question — is a real open design question and belongs to whoever
     picks up the `.js`-implementation half.
 
-- **[P2 — candor-ts, opened 2026-08-13] `--agents` truncated its own contract on a PIPE — fixed, and the
+- **[CLOSED 2026-08-14 — the open half swept clean] `--agents` truncated its own contract on a PIPE, and the
   general question it raises is not.** `printAgents` wrote asynchronously and scan.mjs called
   `process.exit(0)` on the next line: **8170 of 23121 characters**, cut mid-sentence, exit 0, nothing on
   stderr. An agent piping `candor-ts --agents` into its context read a third of its own instructions and
@@ -399,7 +422,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   Needs a real demo app rather than the toy fixture above, and it should say plainly that it is swift-only
   today. Ties to the adoption thread and to `candor.poly.io/case-studies/`.
 
-- **[P2 — onboarding, 2026-08-03] No engine's AGENTS.md leads to the umbrella `candor` command.** Each
+- **[CLOSED 2026-08-13 — all five engines, drift gates re-synced] No engine's AGENTS.md leads to the umbrella `candor` command.** Each
   engine doc teaches a DIFFERENT command and none mentions the one thing the umbrella README calls *"the
   one thing you install"*:
 
@@ -421,7 +444,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   So this is a docs change only — add a "you probably want the umbrella" pointer near the top of each
   engine's AGENTS.md, keeping the per-engine path for people who genuinely want one engine.
 
-- **[P2 — self-application, 2026-08-03] candor-ts does not gate itself.** Three of the four engines run a
+- **[CLOSED 2026-08-13 `4356162`; and the sweep it triggered closed java + swift too] candor-ts does not gate itself.** Three of the four engines run a
   self-gate in CI — candor-rust (`Self-gate (candor on candor)`), candor-java (`Self-gate (candor-java on
   candor-java)`, which proves TWO halves separately because a prefix scope cannot exclude one sub-package
   from a `deny`), and candor-swift (`§7.12 — the engine holds its own boundary`). **candor-ts does not, and
@@ -1470,7 +1493,12 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   *Third time in SPEC a rule has been stated over the instance rather than the condition (after §3.3.1's
   two ⟨0.24⟩ corrections). The tell each time: the clause's justification is broader than the clause.*
 
-- **[P2 — opened 2026-08-11] `path <real fn> <typo'd Effect>` answers exit 0 in ALL FOUR engines.**
+- **[P2 — opened 2026-08-11; RE-VERIFIED LIVE 2026-08-14] `path <real fn> <typo'd Effect>` answers exit 0 in ALL FOUR engines.**
+  Re-measured on candor-ts rather than re-read: `path Cases.fs_read Nett` prints **`Cases.fs_read does not
+  perform Nett  (inferred: ["Fs"])`** and exits **0**, while a nonexistent FUNCTION on the same report
+  correctly exits 2. So the negative answer is confident, well-formed, and about a question that was never
+  valid — the control right beside it already behaves correctly, which is what makes this a hole and not a
+  design choice.
   Same all-clear-for-a-question-never-posed shape that §17 (1b) pins for `where`/`callers`, and now for
   `impact`/`path` on a nonexistent FUNCTION. A typo'd EFFECT is the remaining hole and it is four-way, so
   it wants its own rung — gating one engine alone would manufacture a divergence. Named in (1b)'s comment
@@ -1960,14 +1988,20 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   sitting unmeasured because it writes a report only with `--json <file>`. ~~What is left: the argv COMBINATION sweep still runs the scan route only.~~ **Also closed** — the
   sweep is route-agnostic and runs both.
 
-- **[P3] Rust code intelligence needed a rustup component, not a config.** `~/.cargo/bin/rust-analyzer` is
+- **[FIXED 2026-08-10 — VERIFIED 2026-08-14: `rust-toolchain` lists the component, with the why] Rust code intelligence needed a rustup component, not a config.** `~/.cargo/bin/rust-analyzer` is
   a shim, candor-rust pins a nightly for the dylint lint, and neither that toolchain nor the default
   stable had the `rust-analyzer` component — so every request failed with `Unknown binary` and the client
   reported it as the server crashing. Both toolchains now have it and `rust-toolchain` lists it. Fixed
   2026-08-10; the end-to-end check through the editor is still pending a fresh session, and an earlier
   `rust-analyzer.toml` that named a different (refuted) cause was deleted rather than left in place.
 
-- **[P2] candor's own test suites leak temp fixtures — 130,000 of them here.** `$TMPDIR` on this
+- **[P2 — RE-MEASURED 2026-08-14: still leaking, and the dominant cause is now named] candor's own test suites leak temp fixtures — 130,000 of them here.**
+  `$TMPDIR` holds **46,919** `candor-*` scratch directories today. The single biggest contributor is
+  candor-ts's `project()` helper in `test.mjs` (~7,300 `candor-ts-test-*` and rising): it calls
+  `fs.mkdtempSync` per fixture and never removes anything, so one full suite run leaks ~1,300 trees. That
+  one function is a self-contained fix — register each dir and unlink them in a `process.on("exit")` —
+  and it would take most of the ongoing growth out. The rest (`candor-test*`, `candor-swift-comp*`,
+  `candor-ts-gate-*`) are the same shape in other harnesses. `$TMPDIR` on this
   machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
   directories older than a day, left by runs that create a scratch tree and do not remove it (the
   killed-mid-run case is the obvious one, but 130k is not all killed runs). That is not only untidy: it

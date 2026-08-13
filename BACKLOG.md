@@ -45,6 +45,57 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 
 
+- **[CLOSED 2026-08-13 — candor-ts + conformance PART 46] A CALLER OF A BODY-LESS LOCAL DECLARATION READ
+  PURE — the corpus round's F1, a cardinal sin, and it had never been written down anywhere but a memory
+  file.** `localName` mints a unit for any declaration it can name without asking whether it has a BODY.
+  An ambient `declare function`, any member of a local `.d.ts`, an `abstract` member no subclass
+  overrides — each got a unit, the call site edged the caller to it, the unit was EMPTY, so the caller
+  unioned nothing and was certified pure. `deny Unknown` exited **0** where rust, java and swift all exit
+  1 on identical code. On `axios`, whose entire report is 54 `index.d.ts` declarations while its 61 `.js`
+  files are never analyzed, the report read `analyzed.count: 54` + `functions: []` + no `unanalyzed` —
+  ⟨0.24⟩ **row 2**, the row that tells a consumer to believe it and not hedge — and stderr said "wrote 0
+  effectful functions", so BOTH channels read as a clean bill of health. Now 52 of 52 Unknown on both.
+
+  · **THE SIBLING ROUTE, for the fourth recorded time.** The identical shape crossing a PACKAGE boundary
+    has been pinned since the scan-boundary work (PART 21; candor-ts's own `boundary:` suite has four
+    rows on a chained dep's interface members, abstract members and function-valued property
+    signatures). Every one asks about a DEPENDENCY. Nobody asked it of the project's own source. The new
+    fixtures sit directly beneath the old ones so the pairing is visible.
+  · **Ruled four-way, no spec version moved.** §3's honesty invariant already required the disclosure and
+    §4 already defines `native:` as "a boundary to code the engine cannot analyse"; what was missing was
+    a ROW. The engines legitimately differ on WHERE the charge lands — java on the DECLARATION unit,
+    rust/swift at the EDGE — so PART 46 asserts on the CALLER's transitive set, which is what a gate
+    reads, and not on the reason string (§4 makes the class per-language and best-effort). candor-ts
+    takes java's shape because it already mints the unit and already forms the edge.
+  · **The over-charge control is most of the value, and it is measured.** Charge only where NO LOCAL BODY
+    ANSWERS: a base member with a local bodied override is already resolved by the class-CHA. With that
+    condition, zod **+0** and hono **+18 → +9**; without it, hono's `EventProcessor` (six abstracts,
+    three local subclasses) and zod's `ZodType._parse` get charged. The nine hono flips that remain are
+    all true positives (`Deno.mkdir`/`writeFile` Fs, `Deno.upgradeWebSocket`/`FetcherLike.fetch` Net).
+    The other trap is the OVERLOAD SET, where N body-less signatures precede the implementation under one
+    unit name — the marker mirrors `fns.set`'s last-write-wins or every overloaded function in every
+    project becomes unanalysable. Both are fixtures; PART 46 carries the control in all four arms.
+  · **Calibrated:** PART 46 re-run with the fix reverted reddens on ts alone.
+  · **RESIDUAL, open and deliberately not folded in:** this closes the *"candor cannot see"* channel, not
+    the blindness. `deny Unknown` on axios is exit 1 now; **`deny Net` is still exit 0**, because axios's
+    effects live in the 61 `.js` files the scan never reads (it read 2). Whether a TS scan whose analyzed
+    set is *entirely* declarations should say something stronger than per-function Unknown — an
+    `unanalyzed` entry, or a ⟨0.24⟩-row question — is a real open design question and belongs to whoever
+    picks up the `.js`-implementation half.
+
+- **[P2 — candor-ts, opened 2026-08-13] `--agents` truncated its own contract on a PIPE — fixed, and the
+  general question it raises is not.** `printAgents` wrote asynchronously and scan.mjs called
+  `process.exit(0)` on the next line: **8170 of 23121 characters**, cut mid-sentence, exit 0, nothing on
+  stderr. An agent piping `candor-ts --agents` into its context read a third of its own instructions and
+  could not tell. Fixed in the printer with a synchronous `fs.writeSync(1, …)` loop, so the next caller
+  inherits it, and pinned by two rows that assert the byte count through a pipe. Note the shape: the
+  function's header claimed one shared implementation "can never diverge within an install" — and it was
+  the CALLERS that diverged (query.mjs drains on the way out, scan.mjs exits), inside the very function
+  written to prevent divergence. **The open half: every engine has print-and-exit paths** (`--help`,
+  `--version`, `--agents`, the usage errors), and only candor-ts's contract test happened to use a pipe.
+  Worth one sweep asking, per engine, whether any print-then-`exit` path can truncate — a cheap question
+  with a silent, exit-0 failure mode.
+
 - **[SHIPPED 2026-08-04 — research] Mechanise the formal model in Lean — the MODEL, explicitly not the
   code.** Raised by Tom. `candor-spec/lean/`: **75 tier-A theorems with no axiom dependencies**, 7 bridge
   lemmas, a 147 400-row differential against `reference/policy_model.py`, and CI. Transcribed: §1's lattice

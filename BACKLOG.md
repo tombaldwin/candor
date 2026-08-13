@@ -56,12 +56,18 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 >     failure one layer down). Falsified: an unreadable policy path exits 2 "gate NOT enforced".
 >     **All four engines now declare a tracked boundary.**
 >
->     · `[P3]` **the remaining coarseness, swift only.** Its half (1) excludes *all of* `main.swift`
->       (2158 lines) to carve out the Exec/Ipc surface, so a NEW subprocess anywhere in that file is
->       not caught — only Net/Db is, via half (2). candor-ts's version declares the exempt UNITS
->       instead (four of them) and fails on both a new Exec and a declared-but-no-longer-Exec entry.
->       Porting that shape to swift is the finer gate; not urgent, since the file is the one place
->       spawning is expected.
+>     · ~~`[P3]` the remaining coarseness, swift only — half (1) excludes *all of* `main.swift`~~ —
+>       **CLOSED 2026-08-13** (`023d1f0`), candor-ts's shape ported. The whole engine is now scanned
+>       with no file excluded, under `deny Net Db`, plus an assertion that the Exec/Ipc units are
+>       exactly the four declared ones. **The policy string got weaker and the gate got stronger** —
+>       a policy is only as strong as the scope it is actually evaluated over. MEASURED rather than
+>       argued: with an unexplained `Process()` appended to `main.swift`, the new gate exits 1 naming
+>       it, and BOTH halves of the old arrangement exit 0.
+>
+>       Standing lesson, and it generalises past this repo: **an exclusion that buys a green is worth
+>       auditing for what it stopped asking.** The excluded file was the one place a subprocess was
+>       expected, which is exactly why nobody looked at it again — and it was also the only file where
+>       a new one could hide.
 >   · ~~`[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)~~ — **CLOSED
 >     2026-08-13**, all five, with each repo's embedded-copy drift gate re-synced in the same commit
 >     (rust ×2 crates, java's jar resource, swift's generated `AgentsDoc.swift`). candor-rust and

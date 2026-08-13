@@ -46,8 +46,22 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 >     **What it found first was itself**: `candor-ts . --policy …` analyses ONE file (Cases.ts, the test
 >     fixture), because the engine is `.mjs` and that needs `--allow-js` — 38 functions, none of them
 >     the engine, and a verdict that reads like an answer. The same shape as the axios finding closed
->     the same day, wearing our own name. **candor-swift has no `.candor/policy` either** — same gap,
->     not yet filed as its own item.
+>     the same day, wearing our own name.
+>     **candor-swift: CORRECTED and also closed** (`af7de30`). My first reading — "no `.candor/policy`
+>     either, same gap" — was wrong: candor-swift already self-gated, two halves, the same split java uses.
+>     What it lacked was a DECLARED policy; the rule lived in a `printf` inside `ci.yml`, so
+>     `candor-swift .` in a checkout applied nothing and the boundary existed only in a step nobody
+>     reads. Now `.candor/policy` + a `.candor/.gitignore` (the root ignores `.candor/` wholesale in
+>     both repos — without it the tracked policy exists only on the author's machine, which is the same
+>     failure one layer down). Falsified: an unreadable policy path exits 2 "gate NOT enforced".
+>     **All four engines now declare a tracked boundary.**
+>
+>     · `[P3]` **the remaining coarseness, swift only.** Its half (1) excludes *all of* `main.swift`
+>       (2158 lines) to carve out the Exec/Ipc surface, so a NEW subprocess anywhere in that file is
+>       not caught — only Net/Db is, via half (2). candor-ts's version declares the exempt UNITS
+>       instead (four of them) and fails on both a new Exec and a declared-but-no-longer-Exec entry.
+>       Porting that shape to swift is the finer gate; not urgent, since the file is the one place
+>       spawning is expected.
 >   · ~~`[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)~~ — **CLOSED
 >     2026-08-13**, all five, with each repo's embedded-copy drift gate re-synced in the same commit
 >     (rust ×2 crates, java's jar resource, swift's generated `AgentsDoc.swift`). candor-rust and

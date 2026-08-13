@@ -36,7 +36,10 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 >   · `[gate]` structure-delta regression gate — DESIGNED, awaiting a go/no-go
 >   · `[adoption]` embeddable fingerprint badge
 >   · `[P2]` candor-ts self-gate (no `.candor/policy`, no self-gate step in its CI)
->   · `[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)
+>   · ~~`[P2]` each engine's AGENTS.md should point at the umbrella (none mentions it)~~ — **CLOSED
+>     2026-08-13**, all five, with each repo's embedded-copy drift gate re-synced in the same commit
+>     (rust ×2 crates, java's jar resource, swift's generated `AgentsDoc.swift`). candor-rust and
+>     candor-ts also gained the candor-spec pointer they were missing.
 >   · publish-side release-script coverage — real open work currently hidden under a `[FIXED]` heading
 >     below: `cargo publish`, the npm OIDC tag, `gh release create` and the Homebrew tap are exercised
 >     only by a real release, and neither a dry-run mode nor stubs exist.

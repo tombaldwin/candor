@@ -8,6 +8,42 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-14 — the environment reproduced, the corpus round made re-runnable, and every engine gating itself
+
+Tooling and hygiene either side of the ⟨0.28⟩ floor publish.
+
+- **`bin/corpus.sh`** — the 2026-08-13 corpus round, as something that re-runs. 15 tag-pinned real
+  projects across four engines with oracles that need no ground truth. It exists because that round found
+  two cardinal sins nothing else could: neither was reachable from a hand-written fixture, because neither
+  was a case anyone had thought to write. Run it before a release.
+- **`bin/probe.sh`** — an ad-hoc measurement gets the same treatment as a conformance row, after five
+  measurement artifacts in one session versus zero falsified-row errors. Staleness keys on the newest
+  SOURCE rather than the HEAD commit.
+- **`bin/bootstrap-dev.sh`** — reproduce this environment on a fresh Mac. The script was wrong four times
+  on first contact, each time because it checked the state the author HAD rather than the state a fresh
+  box has; `dylint-link` is required by every cargo build in candor-rust and was missing from it.
+- **`bin/spec-bump.sh`: the remaining-mentions scan reported success over a scan that never ran.**
+  `⟨$OLD⟩` unbraced made bash read the multi-byte `⟩` as part of the variable name, so under `set -u`
+  every iteration died and step 3 printed a green "no remaining mentions" — hiding the 40-line triage list
+  the 0.28 bump needed. Braced, and the step now asserts its own liveness: a scan that finds nothing at
+  all fails as broken rather than passing as clean. It also now warns that a floor bump rewords SPEC.md's
+  Contents version line, so the MUST ledger will report it unclassified until re-anchored.
+- **Every engine's AGENTS.md now points at the umbrella** (all five, with each repo's embedded-copy drift
+  gate re-synced in the same commit). An agent landing in one engine repo learned that engine and stopped;
+  a polyglot repo scanned with one engine gets a confident answer about one language and nothing that
+  says so.
+- **The self-gate exclusion vein, swept four-way.** candor-ts had no self-gate at all; candor-swift and
+  candor-java had one that carved out the subprocess surface a whole FILE or PACKAGE at a time, leaving
+  regions where a new `Process()`/`exec` was caught by nothing. All three now declare the exempt UNITS and
+  scan everything else — measured strictly stronger: an unexplained `Process()` added to candor-swift's
+  `main.swift` reddens the new gate and passes both halves of the old one. candor-rust needed no change.
+  The policy STRING got weaker (`deny Net Db`) while the gate got stronger, which is the point: a policy
+  is only as strong as the scope it is actually evaluated over.
+- **The test-fixture leak is closed** — `$TMPDIR` held 50,494 `candor-*` directories, 96% of them from one
+  candor-ts helper that minted a tree per fixture and removed none. Swept, and both candor-ts and
+  candor-swift now clean up after themselves (keeping trees when a run FAILED, since that is when their
+  paths are printed and wanted). A full suite run now adds zero.
+
 ## 2026-08-10 (later) — the release panel, and what it found in the same day's work
 
 A go/no-go panel over the unpublished ⟨0.28⟩ work. Verdict was NO-GO, and the pattern in the findings was

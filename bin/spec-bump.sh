@@ -173,16 +173,33 @@ echo "  A blanket replace would be wrong: on the 0.27 bump, candor-rust's tests.
 echo "  at the old version as INPUTS (proving an older report still loads). Sweeping them would have"
 echo "  silently deleted a backward-compatibility test. Read each one."
 echo
+# KNOWN CONSEQUENCE, stated up front because it fails the conformance run and looks alarming. SPEC.md's
+# Contents carries "**Version X.Y** — all code engines declare `X.Y`", so a floor bump REWORDS a normative
+# statement and its `must-ledger.json` hash moves with it. The run then reports one unclassified statement
+# plus one orphaned entry — a correct catch, not a defect. Re-anchor by replacing the orphan's entry with
+# the JSON line the checker prints (keeping its `status`), then re-run `conformance/must_ledger.py`.
+echo "  NOTE: the floor bump rewords SPEC.md's Contents version line, so conformance's MUST LEDGER will"
+echo "  report it unclassified + the old entry orphaned. Re-anchor must-ledger.json with the line the"
+echo "  checker prints — expected on every bump, not a defect."
 found=0
 for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
   [ -d "$ROOT/$r" ] || continue
   hits="$(grep -rn "spec.\{0,3\}$OLD\|\"$OLD\"" "$ROOT/$r" \
     --include='*.rs' --include='*.java' --include='*.mjs' --include='*.swift' --include='*.py' \
     --include='*.sh' --include='*.md' --include='*.json' 2>/dev/null \
-    | grep -viE "/target/|/\.build/|node_modules|/build/|CHANGELOG|⟨$OLD⟩|$OLD\.[0-9]" | head -12)"
+    | grep -viE "/target/|/\.build/|node_modules|/build/|CHANGELOG|⟨${OLD}⟩|${OLD}\.[0-9]" | head -12)"
   [ -n "$hits" ] && { printf '  \033[1m%s\033[0m\n' "$r"; echo "$hits" | sed "s|$ROOT/||" | sed 's/^/    /' | cut -c1-118; found=1; }
 done
 [ "$found" = 0 ] && ok "no remaining mentions"
+# …and PROVE the scan above actually ran. `⟨$OLD⟩` unbraced made bash read the multi-byte `⟩` as part of
+# the variable name, so under `set -u` every iteration died with "unbound variable", `hits` came back
+# empty, and this step printed a green "no remaining mentions" over a scan that never executed. A step
+# whose failure mode is indistinguishable from its success has to assert its own liveness: the OLD
+# version must still appear SOMEWHERE in the family (the CHANGELOGs alone guarantee it), so a scan that
+# can find nothing at all is broken rather than clean.
+if [ "$found" = 0 ] && ! grep -rqF "$OLD" "$ROOT/candor-spec/CHANGELOG.md" 2>/dev/null; then
+  rc=1; bad "the remaining-mentions scan found nothing AND cannot see $OLD in a file known to contain it — the scan is broken, not the tree"
+fi
 
 echo
 # A skipped DECLARATION is not a suite failure, so it would not otherwise reach this line — which is

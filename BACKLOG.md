@@ -1995,7 +1995,7 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   2026-08-10; the end-to-end check through the editor is still pending a fresh session, and an earlier
   `rust-analyzer.toml` that named a different (refuted) cause was deleted rather than left in place.
 
-- **[MOSTLY CLOSED 2026-08-14 `0588842` — the 96% cause fixed, 48,556 swept] candor's own test suites leak temp fixtures — 130,000 of them here.**
+- **[CLOSED 2026-08-14 — `$TMPDIR` is at ZERO `candor-*` and a full run adds none] candor's own test suites leak temp fixtures — 130,000 of them here.**
   `$TMPDIR` holds **46,919** `candor-*` scratch directories today. The single biggest contributor is
   candor-ts's `project()` helper in `test.mjs` (~7,300 `candor-ts-test-*` and rising): it calls
   `fs.mkdtempSync` per fixture and never removes anything, so one full suite run leaks ~1,300 trees. That
@@ -2011,12 +2011,22 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   The accumulated backlog was swept too — **48,556 directories older than 24h removed**, $TMPDIR from
   50,494 `candor-*` entries to 1,938 (today's runs, left alone).
 
-  **STILL OPEN, and smaller than it was:** the other harnesses. `candor-ts-gate-*` (2,270 accumulated),
-  `candor-verify-*`/`candor-ts-mutant`/`candor-ts-corrupt` (~140 each), and the ad-hoc `mkdtempSync`
-  calls in test-mcp.mjs / test-watch.mjs / fabrication_probe.mjs — roughly 40 call sites. Each is a
-  one-line swap to `scratch()` now that the helper exists; none is individually urgent, since together
-  they are ~4% of what `project()` alone produced. Same job in candor-swift's and candor-rust's
-  harnesses, unmeasured. `$TMPDIR` on this
+  **FINISHED the same day** (`345307d`, candor-swift `9a1e09f`). The "roughly 40 call sites spread
+  across harnesses" estimate was wrong, and the CENSUS is what corrected it: every prefix that actually
+  ACCUMULATED lived in `test.mjs` — `candor-ts-gate` (2,270), the five `candor-verify-*` seeds, `mutant`,
+  `corrupt`, `cgcorrupt` (~140 each). `candor-mcp-*` and `candor-lsp-*` had **2 entries each**, which is
+  the signature of a harness that already cleans up. Confirmed by running them rather than inferring:
+  test-unit, test-mcp, test-lsp and test-watch each leak 0. So the job was 31 more swaps in ONE file,
+  not 40 across six.
+
+  candor-swift had one too, and it is the interesting one: `CompletenessManifestTests.reportFixture`
+  was the single fixture helper in that file WITHOUT a `defer` cleanup — because it returns the FILE
+  path, so the caller never sees the directory and has nothing to defer on. 11 call sites, 142
+  accumulated. Fixed with a `tearDown`; **A/B'd at 10 leaked per run → 0**, 781 tests passing either way.
+
+  **State now: `$TMPDIR` holds ZERO `candor-*` entries, and a full candor-ts suite run adds none.**
+  candor-rust's harnesses are still unmeasured — but nothing of theirs appeared in the census, which is
+  weak evidence they are clean rather than proof. `$TMPDIR` on this
   machine held 185k entries, of which ~130k were `candor-test*`/`candor-conc*`/`candor-swift-*`
   directories older than a day, left by runs that create a scratch tree and do not remove it (the
   killed-mid-run case is the obvious one, but 130k is not all killed runs). That is not only untidy: it

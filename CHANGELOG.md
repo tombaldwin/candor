@@ -39,6 +39,13 @@ Tooling and hygiene either side of the ⟨0.28⟩ floor publish.
   `main.swift` reddens the new gate and passes both halves of the old one. candor-rust needed no change.
   The policy STRING got weaker (`deny Net Db`) while the gate got stronger, which is the point: a policy
   is only as strong as the scope it is actually evaluated over.
+- **`bin/corpus.sh` and `bin/probe.sh` were failing the umbrella's own shell-lint**, and had been since
+  they landed — nothing surfaced it until release-preflight's CI check ran with an authenticated `gh`.
+  Two `ls | grep` pipelines (which turn a non-matching glob into a silent error) replaced with a glob
+  loop, and two declared-but-unused locals removed, one of them a positional placeholder callers were
+  passing purely to be shifted away.
+- **`bin/probe-causes.sh` placeholder verdicts drop their `spec` key** — like the wrapper's, they assert
+  REPLACEMENT, so the version was a literal needing a bump every floor.
 - **The test-fixture leak is closed** — `$TMPDIR` held 50,494 `candor-*` directories, 96% of them from one
   candor-ts helper that minted a tree per fixture and removed none. Swept, and both candor-ts and
   candor-swift now clean up after themselves (keeping trees when a run FAILED, since that is when their

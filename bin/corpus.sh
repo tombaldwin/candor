@@ -155,15 +155,20 @@ PY
   [ -x "$SW" ] && "$SW" "$P/swift" --out "$P/s" >/dev/null 2>&1
   # `deny Unknown` is the gate whose whole purpose is "fail if candor cannot see what this reaches".
   # An engine that cannot see the declaration's body and says nothing exits 0 here; the others exit 1.
-  gate() { local eng=$1 rep=$2 cmd=$3; shift 3
+  # First report matching a glob, skipping the callgraph sidecar. A glob loop, not `ls | grep`:
+  # an unmatched glob stays literal, so the `-e` guard is what makes 'no report' distinguishable
+  # from 'a report named callgraph'.
+  pick() { local f; for f in "$@"; do case "$f" in *callgraph*) continue;; esac
+           [ -e "$f" ] && { printf '%s' "$f"; return 0; }; done; return 0; }
+  gate() { local eng=$1 rep=$2; shift 2
     [ -s "$rep" ] || { echo "      $eng  (no report — skipped)"; return; }
     "$@" gate --report "$rep" --policy "$P/pol" >/dev/null 2>&1
     local rc=$?
     if [ "$rc" = 0 ]; then finding "$eng: \`deny Unknown\` is GREEN over a caller of a body-less declaration — it read PURE (cardinal sin; the other engines exit 1)"
     else echo "      $eng  exit=$rc (discloses)"; fi; }
-  gate "ts   " "$P/t.json" x node "$TS/query.mjs"
-  gate "rust " "$(ls "$P"/r.*.scan.json 2>/dev/null | grep -v callgraph | head -1)" x "$RS/candor-query"
-  [ -x "$SW" ] && gate "swift" "$(ls "$P"/s.*.Swift.json 2>/dev/null | grep -v callgraph | head -1)" x "$SW"
+  gate "ts   " "$P/t.json" node "$TS/query.mjs"
+  gate "rust " "$(pick "$P"/r.*.scan.json)" "$RS/candor-query"
+  [ -x "$SW" ] && gate "swift" "$(pick "$P"/s.*.Swift.json)" "$SW"
 }
 
 echo "corpus: $HOME_DIR"

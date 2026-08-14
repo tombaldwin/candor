@@ -70,7 +70,7 @@ quiet_tree_check() {
 # Failure (4): the suite builds candor-swift into .build/debug and ad-hoc probing reaches for
 # .build/release. They drift the moment an agent commits without a release rebuild.
 provenance() {
-  local bin="$1" repo="" bt ct
+  local bin="$1" repo="" bt
   case "$bin" in
     */candor-rust/*)  repo="$ROOT/candor-rust"  ;;
     */candor-swift/*) repo="$ROOT/candor-swift" ;;

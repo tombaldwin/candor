@@ -172,7 +172,7 @@ cell_stream() { # engine, label, env, target-override, extra args…
 cell_file() { # engine, label, env, extra args…
   local e=$1 lbl=$2 envk=$3; shift 3
   local tgt sink rc; tgt=$(probe_target_for "$e"); sink="$W/sink.$e.json"
-  printf '{"spec":"0.27","ok":true,"violations":[]}\n' > "$sink"
+  printf '{"ok":true,"violations":[]}\n' > "$sink"
   local pre="" post="--gate-json '$sink'"
   [ -n "${SINK_FIRST:-}" ] && { pre="--gate-json '$sink'"; post=""; }
   env $envk bash -c "$(declare -f run_engine run_gate run_probe target_for gate_target_for probe_target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; QUERY='$QUERY'; TSQ='$TSQ'; W='$W'; ROUTE='${ROUTE:-scan}'; GATE_POLICY='${GATE_POLICY:-}'; run_probe $e '$tgt' $pre $* $post" >/dev/null 2>&1; rc=$?
@@ -211,7 +211,7 @@ echo "── TWO SINKS IN ONE ARGV (SPEC §3.3.1 ⟨0.28⟩): refused, and EVERY
 # this run's answer — the ⟨0.27⟩ stale green through a spelling nobody had considered.
 for e in "${ENGINES[@]}"; do
   tgt=$(target_for "$e"); a="$W/dup.a.$e.json"; b="$W/dup.b.$e.json"
-  printf '{"spec":"0.27","ok":true,"violations":[]}\n' > "$a"; rm -f "$b"
+  printf '{"ok":true,"violations":[]}\n' > "$a"; rm -f "$b"
   env X=1 bash -c "$(declare -f run_engine target_for); JAR='$JAR'; SCAN='$SCAN'; TSS='$TSS'; SWB='$SWB'; run_engine $e '$tgt' --gate-json '$a' --gate-json '$b'" >/dev/null 2>&1; rc=$?
   POSED=$((POSED+1))
   if [ "$rc" != 2 ]; then

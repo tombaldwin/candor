@@ -83,6 +83,12 @@ bump "agents pyproject" "candor-agents/pyproject.toml"               '(?m)^versi
 bump "swift engine" "candor-swift/Sources/candor-swift/main.swift"   'engineVersion = "candor-swift-[0-9]+\.[0-9]+\.[0-9]+"' "engineVersion = \"candor-swift-$VER\""
 bump "ts package.json" "candor-ts/package.json"                      '"version": "[0-9]+\.[0-9]+\.[0-9]+"'        "\"version\": \"$VER\""
 bump "java gradle" "candor-java/build.gradle.kts"                        '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'    "version = \"$VER\""
+# candor-java's README repeats the build version in its `## Status` line, and nothing staged it: every
+# bump edited the SPEC number on that line and left the version, so it read `v0.19.x` for NINE releases
+# before a review noticed. candor-java/test/smoke.sh now GATES it (derived from build.gradle.kts), which
+# is what turns forgetting it into a red CI rather than a lie in the README — but the gate fired on this
+# script's own output first, so stage it here too.
+bump "java README status" "candor-java/README.md"                    '## Status: beta \(v[0-9]+\.[0-9]+\.[0-9]+'  "## Status: beta (v$VER"
 # THE UMBRELLA IS THE SEVENTH REPO AND THIS SCRIPT KEPT FORGETTING IT. `UMBRELLA_VERSION` was staged by
 # nothing and checked by preflight [4] not at all, so on 0.26 the umbrella declared 0.25.0 while everything
 # around it moved — caught only by `update-candor.sh` refusing the Homebrew step. Not cosmetic: the tap

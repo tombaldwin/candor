@@ -10,6 +10,14 @@ keeps its own.
 
 ## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
 
+- **0.28.2 — the patch's own patch.** A max-effort review of 0.28.1 found it had reopened the cardinal
+  sin it closed, in two shapes: a `declare function` merged with a namespace read PURE (a
+  `ts.ModuleDeclaration` has a `.body`), and a caller through a re-declaring intermediate abstract class
+  vanished from the report entirely. Both live on npm and crates.io until 0.28.2. **The control guarding
+  the second was vacuous** — it passed identically on an engine without the fix. The pattern this file
+  recorded yesterday held for a third time: a fix aimed at a defect class is the likeliest place to
+  reintroduce it, and its demonstration is where the self-deception lives.
+
 - **`release-preflight` [10] WAITS for in-progress CI instead of failing.** `release.sh` steps 2–3 push
   the release tags, which start candor-ts's OIDC `publish` and candor-swift's `release` — so the very
   next invocation, the one that resumes at step 7, was GUARANTEED to see its own workflows running and

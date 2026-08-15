@@ -498,7 +498,17 @@ print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status
     # `✔ all 7 repos green` below, and release.sh died on a family that was entirely passing. Ask the
     # question the check is about: is it STILL unfinished?
     if printf '%s' "$verdicts" | grep -qE "in_progress|queued|requested|waiting|pending"; then
-      bad "$r: CI still unfinished after the shared $((CI_WAIT_BUDGET/60))m wait budget — re-run when it settles"
+      # ci_bad=1, AND IT WAS THE POINT. The `continue` below skips the `case`, which is the only place
+      # ci_bad was ever set — so this branch reported ✘ for a stuck repo and then the summary printed
+      # "✔ all 7 repos green on HEAD" underneath it. That is the failed-AND-green contradiction the
+      # comment directly above says this hunk removed, reintroduced from the other side by the fix for it.
+      ci_bad=1
+      # THE WHOLE VERDICT, not just the word "unfinished". `BAD build:failure, publish:in_progress`
+      # matches the pending regex, so a repo with a REAL failure beside a running job was reported only
+      # as "still waiting" and the failure string never reached the operator at all.
+      waited_note="after the shared $((CI_WAIT_BUDGET/60))m wait budget"
+      [ -n "${CI_NO_WAIT:-}" ] && waited_note="and CI_NO_WAIT meant this run never waited for it"
+      bad "$r: CI still unfinished $waited_note — ${verdicts#BAD } — re-run when it settles"
       # …and skip the case statement below, which would count the same stuck repo a SECOND time via its
       # BAD* arm. The ⟨0.24⟩ note on this counter is explicit that the number is load-bearing: a preflight
       # that miscounts its own findings is the shape of an engine that under-reports.

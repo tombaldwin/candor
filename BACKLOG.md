@@ -114,6 +114,36 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 
 
+- **[MEASURED AND REJECTED 2026-08-15 — do not re-attempt without reading this] Parallelising the
+  conformance suite. It works, it is 4.4×, and it is WRONG.** Built as a two-lane runner: 8 expensive
+  parts hoisted into a parallel lane, the other 39 left in one ordered sequential run. **331s → 76s.**
+  Every one of the 47 declared parts present, every verdict MATCH, the runner's own predicate green.
+
+  **The skip-ratchet caught it.** PART 40's state×verb matrix — in the SEQUENTIAL lane — silently lost
+  its per-engine tallies, because parts it depends on were no longer upstream of it. Four tally lines in
+  the sequential log, none in the combined one. Coverage quietly reduced, at speed, with every verdict
+  saying MATCH. A gate built to detect an un-shipped RUNG is the only thing that saw it.
+
+  **THE MEASUREMENT ERROR IS THE DURABLE PART, and it is subtle enough to make again.** Independence was
+  established by running each part alone: 27 produced their suite verdict, 15 died on `set -u`
+  (part.sh's INCONCLUSIVE guard), 4 diverged alone, 1 exited 1. That measurement answers *"does part X
+  work alone?"* — but the question that licenses hoisting X is *"does REMOVING X change any other
+  part?"* Those are different questions. The first is O(n) and feels sufficient; the second is O(n²)
+  over 47 parts, and nothing cheaper than it can authorise the split.
+
+  Also measured, so the next attempt starts informed: sequential suite **331s** (an earlier ">600s"
+  claim was a tool TIMEOUT misreported as data); 20 of 47 parts are non-hermetic; the dependents cannot
+  run as a group (they need the unaddressable ride-along sections 1–6, 11, 12, 17, not each other); the
+  expensive parts are the independent-looking ones (61s, 35s, 25s, 22s…) so the theoretical prize is
+  real. **The prerequisite is making those 20 parts hermetic** — which would also fix `part.sh` for the
+  43% of parts it currently cannot run alone, a daily DX loss. That is the job; parallelism is a
+  consequence of it, not a substitute.
+
+  **And the cheaper win is elsewhere:** conformance ran SIX times in the 0.28.1 release, at most two
+  over changed inputs. Skipping provably-redundant runs saves ~22 min/release against parallelism's
+  ~21 min, with no exposure — a too-conservative skip costs five minutes, a false green costs the
+  contract.
+
 - **[CLOSED 2026-08-13 — candor-ts + conformance PART 46] A CALLER OF A BODY-LESS LOCAL DECLARATION READ
   PURE — the corpus round's F1, a cardinal sin, and it had never been written down anywhere but a memory
   file.** `localName` mints a unit for any declaration it can name without asking whether it has a BODY.

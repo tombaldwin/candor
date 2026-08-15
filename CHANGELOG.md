@@ -8,6 +8,26 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
+
+- **Floor 0.28 published** — crates ×4, npm with provenance, seven GitHub releases, the Homebrew tap,
+  every pinned URL resolving (`release-verify: OK`). Ships the F1 body-less-declaration cardinal-sin
+  fix and the ⟨0.28⟩ report-sink arming rung. `bin/candor`'s `ENGINE_PIN` moves with it;
+  `PIN_ENFORCED_FROM` does NOT — that names the first release to enforce the §3.4 pin, which is history.
+
+- **Then a review of that work found 19 findings, and 0.28.1 patches them.** The durable one is not any
+  single defect: THREE of them were a defect of exactly the class the fix that introduced them was
+  targeting — an over-charge guard that over-charged, a liveness check that could not fire in the
+  failure mode it was written for, a self-gate built against file-level exclusion that exempted 1.8k
+  lines. Each shipped with a passing demonstration that used the easiest shape rather than the weakest
+  one. **A fix aimed at a defect class is the most likely place to reintroduce it.**
+
+- **`bin/release.sh`'s manual step 6 earned itself.** Step 7 refused to cut the umbrella while
+  `ENGINE_PIN` still read 0.27.0 — proceeding would have shipped a 0.28.0 front door that fetches
+  0.27.0 engines, with brew hashing that tarball. The script's own warning about the pin commit was
+  exact too: `bin/candor`, `adopt/*.yml` and `jbang-catalog.json` count as SOURCE to changelog-lag, so
+  a pins-only commit dies at the gate with the engines already published.
+
 ## 2026-08-14 — the environment reproduced, the corpus round made re-runnable, and every engine gating itself
 
 - **Engine pins moved to 0.28.0** — `bin/candor`'s `ENGINE_PIN` (the line `candor update` fetches),

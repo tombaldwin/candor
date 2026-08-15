@@ -10,6 +10,24 @@ keeps its own.
 
 ## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
 
+- **`release-preflight` [10] WAITS for in-progress CI instead of failing.** `release.sh` steps 2–3 push
+  the release tags, which start candor-ts's OIDC `publish` and candor-swift's `release` — so the very
+  next invocation, the one that resumes at step 7, was GUARANTEED to see its own workflows running and
+  fail. Waiting rather than ignoring: those runs are the npm publish and the swift release build, and
+  cutting the umbrella before they finish points the front door at artifacts that may not exist —
+  the same class the ENGINE_PIN guard prevents. Bounded at 20 minutes; `CI_NO_WAIT` for the everyday
+  standalone check.
+
+- **[11] reuses a green conformance result when nothing that could change it moved.** A release runs it
+  at least twice and ran it SIX times on 0.28.1, at most two over changed inputs — ~330s each.
+  The list enumerates what LICENSES a skip (changelogs, pins, docs), and that direction is the safety
+  argument: listing what is RELEVANT means forgetting one path skips wrongly and silently, where
+  forgetting an irrelevant one merely costs a run you did not need. Note this INVERTS the classifier's
+  denylist-over-allowlist rule, because here skipping is the dangerous act. A dirty tree, a missing
+  stamp, an uncomputable diff or any unlisted path all force the full run, and a FAILED run deletes the
+  stamp so it can never be inherited.
+
+
 - **Engine pins moved to 0.28.1** after the patch published — `ENGINE_PIN`, `CANDOR_JAVA_VERSION`,
   the candor-agents ref and the jbang `script-ref`. `PIN_ENFORCED_FROM` stays at 0.27.0: it names the
   FIRST release that enforces the §3.4 pin, which is history rather than a current-version field.

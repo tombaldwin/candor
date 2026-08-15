@@ -456,6 +456,34 @@ if not mine: print('NONE'); raise SystemExit
 bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skipped')]
 print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
 " 2>/dev/null)"
+    # IN-PROGRESS IS NOT A FAILURE, IT IS A NOT-YET. `release.sh` steps 2–3 push the release TAGS, which
+    # start candor-ts's OIDC `publish` and candor-swift's `release` — so the very next invocation of this
+    # script, which is the one that resumes at step 7, is GUARANTEED to see its own workflows running and
+    # fail. Measured on 0.28.1: a whole cycle spent re-running the release for that.
+    #
+    # WAITING, not ignoring. Those runs are the npm publish and the swift release build: cutting the
+    # umbrella before they finish would point the front door at artifacts that may not exist, which is
+    # the same class of defect the ENGINE_PIN guard at step 7 exists to prevent. So the fix is to wait
+    # for the answer, never to stop asking the question. Bounded, and CI_NO_WAIT skips waiting for the
+    # everyday standalone check where a 20-minute block would be wrong.
+    waited=0
+    while [ -z "${CI_NO_WAIT:-}" ] && [ "$waited" -lt 1200 ] && \
+          printf '%s' "$verdicts" | grep -qE "in_progress|queued|requested|waiting|pending"; do
+      [ "$waited" = 0 ] && info "$r: CI still running — waiting (this is the release's own tag-triggered workflows)"
+      sleep 30; waited=$((waited+30))
+      verdicts="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status,workflowName 2>/dev/null \
+        | python3 -c "
+import json,sys
+h='$head_sha'
+try: runs=json.load(sys.stdin)
+except Exception: print('ERR'); raise SystemExit
+mine=[x for x in runs if x['headSha']==h]
+if not mine: print('NONE'); raise SystemExit
+bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skipped')]
+print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
+" 2>/dev/null)"
+    done
+    [ "$waited" -ge 1200 ] && bad "$r: CI still running after 20 minutes — not waiting further; re-run when it settles"
     case "$verdicts" in
       OK)   ;;
       NONE)
@@ -502,10 +530,53 @@ if [ -z "$WANT_VER" ]; then
 elif [ ! -x "$ROOT/candor-spec/conformance/run.sh" ]; then
   bad "candor-spec/conformance/run.sh is missing or not executable — the floor claim cannot be backed"
 else
-  if ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >/tmp/rel-conformance.txt 2>&1; then
-    ok "conformance OK ($(grep -c MATCH /tmp/rel-conformance.txt) MATCH) — see /tmp/rel-conformance.txt"
+  # ── REUSE A GREEN RESULT ONLY WHEN NOTHING THAT COULD CHANGE IT MOVED ─────────────────────────────
+  # A release runs this at least twice — `release.sh` re-runs preflight at step 0, and step 6's manual
+  # pin bump forces a second invocation. On 0.28.1 it ran SIX times, of which at most two were over
+  # changed inputs: ~330s each, most of it re-deriving an answer already known.
+  #
+  # THE LIST BELOW ENUMERATES WHAT LICENSES A SKIP, and that direction is the whole safety argument.
+  # The instinct is to list what is RELEVANT (the engines, the suite) and skip when none of it changed;
+  # that is unsafe, because forgetting one relevant path means skipping wrongly, silently, forever.
+  # Listing what is IRRELEVANT inverts the failure: forget something and you run conformance you did not
+  # need to — five minutes, never a false green. (Note this is the OPPOSITE of the classifier's
+  # denylist-over-allowlist rule, because here SKIPPING is the dangerous act, not reporting.)
+  #
+  # Anything not on this list — any engine source, the suite, SPEC.md, the ledger — forces the full run.
+  # So does a DIRTY tree (the recorded SHAs then describe something that is not what is on disk), a
+  # missing or unreadable stamp, and any repo whose diff cannot be computed.
+  SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^candor-java/jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
+  STAMP="$ROOT/candor-spec/conformance/.last-green-shas"
+  reuse=1; why=""
+  if [ ! -f "$STAMP" ]; then reuse=0; why="no recorded green run"; fi
+  for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+    [ "$reuse" = 1 ] || break
+    [ -d "$ROOT/$r/.git" ] || continue
+    if [ -n "$(git -C "$ROOT/$r" status --porcelain)" ]; then reuse=0; why="$r has uncommitted changes"; break; fi
+    was="$(grep -E "^$r " "$STAMP" 2>/dev/null | awk '{print $2}')"
+    now="$(git -C "$ROOT/$r" rev-parse HEAD)"
+    [ -n "$was" ] || { reuse=0; why="$r absent from the stamp"; break; }
+    [ "$was" = "$now" ] && continue
+    changed="$(git -C "$ROOT/$r" diff --name-only "$was" "$now" 2>/dev/null)" \
+      || { reuse=0; why="$r: cannot diff $was..$now"; break; }
+    [ -n "$changed" ] || continue
+    unlicensed="$(printf '%s\n' "$changed" | grep -vE "$SKIP_LICENSED" | head -3)"
+    [ -z "$unlicensed" ] || { reuse=0; why="$r changed $(printf '%s' "$unlicensed" | tr '\n' ' ')"; break; }
+  done
+
+  if [ "$reuse" = 1 ]; then
+    ok "conformance REUSED — every change since the last green run is release mechanics (changelogs, pins, docs)"
+    info "   the recorded run: $(head -1 "$STAMP" 2>/dev/null | sed 's/^# //')"
+  elif ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >/tmp/rel-conformance.txt 2>&1; then
+    ok "conformance OK ($(grep -c MATCH /tmp/rel-conformance.txt) MATCH) — see /tmp/rel-conformance.txt${why:+  [ran: $why]}"
+    # Record what was green, so the NEXT invocation can tell whether anything that matters moved.
+    { echo "# $(date -u +%Y-%m-%dT%H:%M:%SZ) conformance green"
+      for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+        [ -d "$ROOT/$r/.git" ] && echo "$r $(git -C "$ROOT/$r" rev-parse HEAD)"
+      done; } > "$STAMP"
   else
     bad "conformance FAILED — see /tmp/rel-conformance.txt. The floor is conformance-pinned; do not publish"
+    rm -f "$STAMP"   # never let a failed run leave a stamp a later invocation could reuse
   fi
 fi
 

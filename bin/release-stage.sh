@@ -112,6 +112,23 @@ for f in candor-rust/Cargo.toml candor-rust/crates/candor-classify/Cargo.toml \
     '(candor-(?:report|classify|scan|query) = \{ path = "[^"]+", version = ")[0-9]+\.[0-9]+\.[0-9]+(")' "\\g<1>$VER\\g<2>"
 done
 
+# ── 3b. Cargo.lock — it records the workspace members' versions, so bumping the manifests without it
+# leaves the lock stale. Nothing here noticed, because the FIRST cargo invocation afterwards rewrites it
+# — and if that happens after the staging commit (running the suites, or preflight's own conformance
+# build), `release.sh` step 0 then refuses with "candor-rust has uncommitted changes" AFTER the operator
+# has already reviewed and committed the staged diff. Order-dependent friction, so: refresh it here,
+# while the tree is being staged. `--workspace` touches only the member versions, never dependency
+# resolution, so this cannot quietly upgrade a third-party crate as part of a release.
+if command -v cargo >/dev/null 2>&1 && [ -f "$ROOT/candor-rust/Cargo.toml" ]; then
+  if ( cd "$ROOT/candor-rust" && cargo update --workspace --offline >/dev/null 2>&1 ); then
+    ok "rust Cargo.lock refreshed to $VER"
+  else
+    note "cargo update --workspace failed (offline?) — run it in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
+  fi
+else
+  note "cargo not on PATH — Cargo.lock not refreshed; do it before committing"
+fi
+
 say "4. CHANGELOGs — rename the bare Unreleased heading to the version being cut"
 # The 0.25 release left FOUR changelogs with shipped work still under `## Unreleased` (the v0.25.0 tag
 # contains the commits that wrote it). preflight [9] catches that now; this performs the fix.

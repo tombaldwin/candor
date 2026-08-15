@@ -22,6 +22,13 @@ keeps its own.
   lines. Each shipped with a passing demonstration that used the easiest shape rather than the weakest
   one. **A fix aimed at a defect class is the most likely place to reintroduce it.**
 
+- **`release-stage.sh` now refreshes `Cargo.lock`.** It bumped the crate manifests and left the lock,
+  which records the same member versions — so the first cargo invocation afterwards rewrote it, and if
+  that landed after the staging commit (running the suites, or preflight's own conformance build),
+  `release.sh` step 0 refused with "candor-rust has uncommitted changes" on a diff the operator had
+  already reviewed. `--workspace` moves only the member versions, never dependency resolution, so it
+  cannot smuggle a third-party upgrade into a release.
+
 - **And `bin/release-test.sh` caught the fix to `release-stage.sh`.** Teaching the stager to bump
   candor-java's README `## Status` line broke the fixture run — the fixture had no such file, and `bump`
   treats an absent file as a MOVED SITE and refuses, deliberately, so the stage aborted and every later

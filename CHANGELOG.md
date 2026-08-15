@@ -10,6 +10,13 @@ keeps its own.
 
 ## 2026-08-14 — the environment reproduced, the corpus round made re-runnable, and every engine gating itself
 
+- **Engine pins moved to 0.28.0** — `bin/candor`'s `ENGINE_PIN` (the line `candor update` fetches),
+  `adopt/candor.yml`'s `CANDOR_JAVA_VERSION` and `adopt/candor-digest.yml`'s candor-agents ref. These
+  name PUBLISHED artifacts, so they move after the release exists rather than with the version bump —
+  0.24 shipped a jbang pin to a release that did not exist. `PIN_ENFORCED_FROM` deliberately stays at
+  0.27.0: it names the FIRST engine release that enforces the §3.4 pin, which is history, not a
+  current-version field.
+
 Tooling and hygiene either side of the ⟨0.28⟩ floor publish.
 
 - **`bin/corpus.sh`** — the 2026-08-13 corpus round, as something that re-runs. 15 tag-pinned real

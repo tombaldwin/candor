@@ -74,11 +74,11 @@ jobs:
           # pinned one and it exits 2 rather than comparing a report against a baseline it cannot match.
           # This YAML variable only chooses which jar to download — nothing checks it against anything.
           #
-          # KEEP THEM EQUAL, or better: put `engine v0.27.0` in `.candor/config` and let the engine hold
+          # KEEP THEM EQUAL, or better: put `engine v0.28.0` in `.candor/config` and let the engine hold
           # you to it. `candor init` writes that pin and generates `.candor/run`, which reads it to fetch
           # the right jar, so the version appears exactly once. The version living HERE, decoupled from
           # the baseline it is married to, is the drift the §3.4 rung exists to end.
-          CANDOR_JAVA_VERSION: 0.27.0
+          CANDOR_JAVA_VERSION: 0.28.0
           CLASSES: target/classes
         run: >
           jbang "https://github.com/tombaldwin/candor-java/releases/download/v${CANDOR_JAVA_VERSION}/candor-java-${CANDOR_JAVA_VERSION}-all.jar"

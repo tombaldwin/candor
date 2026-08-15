@@ -150,8 +150,15 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   **PHASE B — ONE ⟨0.29⟩ rung (Tom's call: single rung), in this order.**
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`
-    running `Command::new("curl")` invisible. Measured in three engines; **java unmeasured, which is not
-    clean**. Highest-value soundness item outstanding.
+    running `Command::new("curl")` invisible. **NOW MEASURED IN ALL FOUR (java arm done 2026-08-15).**
+    java, pointed at a REPO ROOT (not a classes dir) under `deny Exec`: exit 0, `candor-java: no
+    violations`, `analyzed {count: 3}`, **`unanalyzed` absent entirely** — over a tree holding
+    `src/com/x/Deploy.java` calling `Runtime.exec("curl … | sh")` (present, never compiled, so no class
+    exists) and `scripts/deploy.sh` doing the same. Two files the engine never considered, and the whole
+    report says only that 3 things were analyzed. The ⟨0.21⟩ manifest reads as a completeness claim and
+    is answering a narrower question — "of the files I chose to open, how many failed" — so the shape is
+    the same in java as in the other three, with no advisory to soften it. Highest-value soundness item
+    outstanding.
   · B2 the PERMISSION FORM, `only <A> -> <B>…` — A may depend on A and the listed scopes, nothing else.
     **The design argument: `forbid` FAILS OPEN (a dependency you forgot to prohibit is silently
     permitted); `only` FAILS SAFE (one you forgot to permit is a loud violation).** That inverts the

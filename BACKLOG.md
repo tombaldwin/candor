@@ -118,25 +118,30 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
   **PHASE A — close what is live and wrong. No further release until A1–A6.** All from the max review of
   this session's work; most are defects the session itself introduced.
-  · A1 `SKIP_LICENSED` licenses `conformance/README.md`, which `must_ledger.py:209` READS — a FALSE
+  **A1–A8 DONE 2026-08-15** (umbrella `b927a41`, `e9d53c0`, `479a7c7`; spec `27fb3f0`). A9 in flight.
+  Two defects surfaced only by fixing the harness, both now closed: a dead mentions-scan in `spec-bump.sh`
+  printed its green "no remaining mentions" ABOVE the probe's ✘ (probe runs first and returns now), and
+  the extractor written to replace the run-to-EOF awk range reintroduced run-to-EOF in its own END block
+  — caught on the first run by the negative probe that ships beside it. release-test: 62 → 70 assertions.
+  · ~~A1~~ `SKIP_LICENSED` licenses `conformance/README.md`, which `must_ledger.py:209` READS — a FALSE
     GREEN in the conformance-reuse gate, shipped today while arguing that direction could only cost a
     wasted run. Not user-facing (`release-preflight.sh` is not installed by brew or npm), so no release
     is needed — but it is our release gate certifying a floor over an unre-run suite.
-  · A2 `note` is undefined in `release-stage.sh` (0 definitions, called twice) — the operator gets a raw
+  · ~~A2~~ `note` is undefined in `release-stage.sh` (0 definitions, called twice) — the operator gets a raw
     shell error in place of the remedy, at the moment the remedy matters.
-  · A3 the `candor-java/jbang-catalog.json` entry in `SKIP_LICENSED` is dead: `git -C <repo> diff` emits
+  · ~~A3~~ the `candor-java/jbang-catalog.json` entry in `SKIP_LICENSED` is dead: `git -C <repo> diff` emits
     repo-relative paths. Fails safe; costs a redundant run every release.
-  · A4 the CI wait: FALSE RED at the timeout boundary (a repo going green on the last poll is reported
+  · ~~A4~~ the CI wait: FALSE RED at the timeout boundary (a repo going green on the last poll is reported
     failed AND green), `fail` double-counted, the 20-minute bound is PER REPO (7 × 20 = 140), and the
     only line explaining the wait goes into `release.sh`'s redirect — a silent terminal for up to hours.
-  · A5 the stamp records SHAs from a run over a DIRTY tree; the read path refuses dirty, the write path
+  · ~~A5~~ the stamp records SHAs from a run over a DIRTY tree; the read path refuses dirty, the write path
     does not, so reuse can assert a green for a state the suite never ran against.
-  · A6 the `Cargo.lock` step calls `ok` on a no-op, breaking release-stage's documented idempotency —
+  · ~~A6~~ the `Cargo.lock` step calls `ok` on a no-op, breaking release-stage's documented idempotency —
     the exact failure `sub()`'s SAME branch exists to prevent.
-  · A7 `release-test` cannot reach the Cargo.lock arm (empty fixture workspace) or the spec-bump liveness
+  · ~~A7~~ `release-test` cannot reach the Cargo.lock arm (empty fixture workspace) or the spec-bump liveness
     probe (every row passes `--decls-only`, which returns before it) — which is why A2 and A6 survived a
     green harness. A staged site absent from the fixture is an untested site.
-  · A8 `release.sh`'s step-7 remedy still says "wait for CI before the re-run", which A4 makes false —
+  · ~~A8~~ `release.sh`'s step-7 remedy still says "wait for CI before the re-run", which A4 makes false —
     and `release-test` anchors an awk RANGE on that sentence, so correcting it runs the range to EOF and
     feeds the rest of the script into `eval "cat <<EOF"`. Fix the harness first, then the text.
   · A9 the ts parallel driver: unbounded EAGAIN spin, no `--parallel` validation (`1e9` reaches

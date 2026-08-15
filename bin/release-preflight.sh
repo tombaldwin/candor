@@ -442,6 +442,9 @@ elif ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
   note "— SKIPPED: no authenticated \`gh\`. This check did NOT run; verify CI by hand before publishing."
 else
   ci_bad=0
+  CI_WAIT_BUDGET="${CI_WAIT_BUDGET:-1200}"   # ONE budget for the whole check, not one per repo
+  CI_WAIT_LEFT="$CI_WAIT_BUDGET"
+  waited_any=0
   for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
     [ -d "$ROOT/$r/.git" ] || continue
     head_sha="$(git -C "$ROOT/$r" rev-parse HEAD 2>/dev/null)"
@@ -466,11 +469,18 @@ print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status
     # the same class of defect the ENGINE_PIN guard at step 7 exists to prevent. So the fix is to wait
     # for the answer, never to stop asking the question. Bounded, and CI_NO_WAIT skips waiting for the
     # everyday standalone check where a 20-minute block would be wrong.
-    waited=0
-    while [ -z "${CI_NO_WAIT:-}" ] && [ "$waited" -lt 1200 ] && \
+    # A4 — the budget is SHARED ACROSS REPOS, not per repo. `waited=0` sat inside this 7-repo loop, so the
+    # "bounded at 20 minutes" the comment and CHANGELOG promised was really 7 × 20 = up to 140. One budget,
+    # declared once before the loop (see CI_WAIT_LEFT above), spent by whichever repos need it.
+    #
+    # …and the message goes to fd 2, not stdout. release.sh runs this with `>/tmp/rel-preflight.txt 2>&1`,
+    # so the one line explaining a multi-minute silence was written to a file nobody is watching. stderr is
+    # redirected there too — but an operator running preflight directly (the documented `just preflight`)
+    # now sees it, and that is the case where a silent terminal is alarming.
+    while [ -z "${CI_NO_WAIT:-}" ] && [ "$CI_WAIT_LEFT" -gt 0 ] && \
           printf '%s' "$verdicts" | grep -qE "in_progress|queued|requested|waiting|pending"; do
-      [ "$waited" = 0 ] && info "$r: CI still running — waiting (this is the release's own tag-triggered workflows)"
-      sleep 30; waited=$((waited+30))
+      [ "$waited_any" = 0 ] && { waited_any=1; printf '  \033[33m•\033[0m %s\n' "$r: CI still running — waiting up to $((CI_WAIT_LEFT/60))m total (the release's own tag-triggered workflows)" >&2; }
+      sleep 30; CI_WAIT_LEFT=$((CI_WAIT_LEFT-30))
       verdicts="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status,workflowName 2>/dev/null \
         | python3 -c "
 import json,sys
@@ -483,7 +493,17 @@ bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skip
 print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
 " 2>/dev/null)"
     done
-    [ "$waited" -ge 1200 ] && bad "$r: CI still running after 20 minutes — not waiting further; re-run when it settles"
+    # THE TIMEOUT IS JUDGED ON THE VERDICT, NOT THE CLOCK. This fired on the elapsed counter, so a repo
+    # whose CI went green on the LAST poll was reported failed AND green in the same run — `bad` here plus
+    # `✔ all 7 repos green` below, and release.sh died on a family that was entirely passing. Ask the
+    # question the check is about: is it STILL unfinished?
+    if printf '%s' "$verdicts" | grep -qE "in_progress|queued|requested|waiting|pending"; then
+      bad "$r: CI still unfinished after the shared $((CI_WAIT_BUDGET/60))m wait budget — re-run when it settles"
+      # …and skip the case statement below, which would count the same stuck repo a SECOND time via its
+      # BAD* arm. The ⟨0.24⟩ note on this counter is explicit that the number is load-bearing: a preflight
+      # that miscounts its own findings is the shape of an engine that under-reports.
+      continue
+    fi
     case "$verdicts" in
       OK)   ;;
       NONE)
@@ -545,7 +565,17 @@ else
   # Anything not on this list — any engine source, the suite, SPEC.md, the ledger — forces the full run.
   # So does a DIRTY tree (the recorded SHAs then describe something that is not what is on disk), a
   # missing or unreadable stamp, and any repo whose diff cannot be computed.
-  SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^candor-java/jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
+  # A1 — `(^|/)README\.md$` LICENSED SKIPPING A FILE THE SUITE READS. `must_ledger.py` builds the text a
+  # ledger `part` value must resolve in from every `*.py`, `*.sh` AND `README.md` under conformance/, and
+  # run.sh fails on an unresolvable reference. So a conformance/README.md edit that breaks the ledger was
+  # licensed as "release mechanics" and the whole suite skipped — a FALSE GREEN, in the block that argues
+  # at length that this direction can only ever cost a wasted run. The exclusion comes FIRST and wins:
+  # anything under conformance/ is suite input, whatever its name.
+  # A3 — the jbang entry was `^candor-java/jbang-catalog\.json$`, but `git -C <repo> diff --name-only`
+  # emits REPO-relative paths, so it never matched and the step-6 re-run paid the full suite anyway. Dead
+  # in the fail-safe direction, which is why nothing reported it.
+  SKIP_NEVER='^conformance/'
+  SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
   STAMP="$ROOT/candor-spec/conformance/.last-green-shas"
   reuse=1; why=""
   if [ ! -f "$STAMP" ]; then reuse=0; why="no recorded green run"; fi
@@ -560,7 +590,10 @@ else
     changed="$(git -C "$ROOT/$r" diff --name-only "$was" "$now" 2>/dev/null)" \
       || { reuse=0; why="$r: cannot diff $was..$now"; break; }
     [ -n "$changed" ] || continue
-    unlicensed="$(printf '%s\n' "$changed" | grep -vE "$SKIP_LICENSED" | head -3)"
+    # SKIP_NEVER is applied first and cannot be overridden by a licence: a path under conformance/ forces
+    # the run even when its name also matches the licensed set.
+    unlicensed="$(printf '%s\n' "$changed" | grep -E "$SKIP_NEVER" | head -3)"
+    [ -z "$unlicensed" ] && unlicensed="$(printf '%s\n' "$changed" | grep -vE "$SKIP_LICENSED" | head -3)"
     [ -z "$unlicensed" ] || { reuse=0; why="$r changed $(printf '%s' "$unlicensed" | tr '\n' ' ')"; break; }
   done
 
@@ -570,10 +603,24 @@ else
   elif ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >/tmp/rel-conformance.txt 2>&1; then
     ok "conformance OK ($(grep -c MATCH /tmp/rel-conformance.txt) MATCH) — see /tmp/rel-conformance.txt${why:+  [ran: $why]}"
     # Record what was green, so the NEXT invocation can tell whether anything that matters moved.
+    # A5 — DO NOT STAMP A DIRTY TREE. The read path refuses to reuse when a repo has uncommitted changes;
+    # the write path had no such guard, so a green produced over HEAD+edits was recorded against the bare
+    # HEAD sha. Stash or revert, run preflight again, and every sha matches — reuse then asserts a green
+    # for a state the suite never ran against. The honesty of the stamp cannot live on one side only.
+    stamp_dirty=""
+    for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+      [ -d "$ROOT/$r/.git" ] || continue
+      [ -n "$(git -C "$ROOT/$r" status --porcelain)" ] && stamp_dirty="$stamp_dirty $r"
+    done
+    if [ -n "$stamp_dirty" ]; then
+      rm -f "$STAMP"
+      info "   not recording a reuse stamp — this run covered uncommitted changes in$stamp_dirty"
+    else
     { echo "# $(date -u +%Y-%m-%dT%H:%M:%SZ) conformance green"
       for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
         [ -d "$ROOT/$r/.git" ] && echo "$r $(git -C "$ROOT/$r" rev-parse HEAD)"
       done; } > "$STAMP"
+    fi
   else
     bad "conformance FAILED — see /tmp/rel-conformance.txt. The floor is conformance-pinned; do not publish"
     rm -f "$STAMP"   # never let a failed run leave a stamp a later invocation could reuse

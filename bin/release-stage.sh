@@ -38,6 +38,11 @@ say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ok()  { printf '  \033[32m✔\033[0m %s\n' "$*"; changed=$((changed+1)); }
 same(){ printf '  \033[33m•\033[0m %s\n' "$*"; skipped=$((skipped+1)); }
 die() { printf '  \033[31m✘ %s\033[0m\n' "$*" >&2; exit 1; }
+# ADVISORY, and it counts as neither an edit nor a skip. It was called twice by the Cargo.lock step
+# and defined nowhere, so `set -uo pipefail` (no -e) printed `note: command not found` and carried on:
+# the operator saw a broken script instead of the one sentence that says how to avoid a dirty lock
+# refusing the release at step 0.
+note(){ printf '  \033[33m•\033[0m %s\n' "$*"; }
 
 # Refuse to stage over uncommitted work: this script rewrites ten files across six repos, and an
 # interrupted run on a dirty tree is unreviewable.
@@ -119,14 +124,23 @@ done
 # has already reviewed and committed the staged diff. Order-dependent friction, so: refresh it here,
 # while the tree is being staged. `--workspace` touches only the member versions, never dependency
 # resolution, so this cannot quietly upgrade a third-party crate as part of a release.
-if command -v cargo >/dev/null 2>&1 && [ -f "$ROOT/candor-rust/Cargo.toml" ]; then
-  if ( cd "$ROOT/candor-rust" && cargo update --workspace --offline >/dev/null 2>&1 ); then
-    ok "rust Cargo.lock refreshed to $VER"
-  else
-    note "cargo update --workspace failed (offline?) — run it in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
-  fi
+# JUDGED ON THE FILE, not on cargo's exit code. `cargo update` succeeds on a no-op ("Locking 0 packages")
+# and leaves the lock byte-identical — reporting that as an edit breaks the header's "re-running with the
+# same version is a no-op" promise and erases exactly the distinction `sub()`'s SAME branch was added to
+# draw: "a run that reports 18 edits when nothing moved hides the one release where something did".
+LOCK="$ROOT/candor-rust/Cargo.lock"
+if ! command -v cargo >/dev/null 2>&1; then
+  note "cargo not on PATH — Cargo.lock not refreshed; run \`cargo update --workspace\` in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
+elif [ ! -f "$ROOT/candor-rust/Cargo.toml" ]; then
+  note "no candor-rust/Cargo.toml — Cargo.lock not refreshed"
 else
-  note "cargo not on PATH — Cargo.lock not refreshed; do it before committing"
+  before=""; [ -f "$LOCK" ] && before="$(shasum "$LOCK" 2>/dev/null | awk '{print $1}')"
+  if ( cd "$ROOT/candor-rust" && cargo update --workspace --offline >/dev/null 2>&1 ); then
+    after=""; [ -f "$LOCK" ] && after="$(shasum "$LOCK" 2>/dev/null | awk '{print $1}')"
+    if [ "$before" = "$after" ]; then same "rust Cargo.lock already at $VER"; else ok "rust Cargo.lock → $VER"; fi
+  else
+    note "cargo update --workspace failed (empty workspace? offline?) — run it in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
+  fi
 fi
 
 say "4. CHANGELOGs — rename the bare Unreleased heading to the version being cut"

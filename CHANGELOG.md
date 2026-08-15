@@ -10,6 +10,8 @@ keeps its own.
 
 ## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
 
+- **Engine pins moved to 0.28.2** after the patch published. `PIN_ENFORCED_FROM` stays at 0.27.0.
+
 - **0.28.2 — the patch's own patch.** A max-effort review of 0.28.1 found it had reopened the cardinal
   sin it closed, in two shapes: a `declare function` merged with a namespace read PURE (a
   `ts.ModuleDeclaration` has a `.body`), and a caller through a re-declaring intermediate abstract class

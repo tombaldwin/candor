@@ -153,8 +153,9 @@ if [ "$PINNED" != "$VER" ]; then
      script runs unconditionally — so a pins-only commit makes the re-run die at the gate, AFTER the
      engines are published. Add the line to the section this release is cutting — the existing
      \`## [VERSION]\` heading, or for the umbrella its newest DATED heading, which has no version
-     section; a new \`## Unreleased\` would trip [9] instead. And wait for CI before the re-run:
-     [10] fails on a pending run."
+     section; a new \`## Unreleased\` would trip [9] instead. You do NOT need to wait for CI by hand:
+     [10] WAITS for a pending run (20m across all repos) — it only refuses if one is still unfinished
+     when that budget runs out, which is the case worth stopping for."
 fi
 cd "$ROOT/candor" || die "cannot cd to $ROOT/candor"
 rel candor "v$VER" "candor v$VER"

@@ -45,6 +45,10 @@ is()   { # $1 label ; $2 expected ; $3 actual
 has()  { # $1 label ; $2 file ; $3 fixed string
   grep -qF "$3" "$2" && ok "$1" || bad "$1 — '$3' not in $2"; }
 hasnt(){ grep -qF "$3" "$2" && bad "$1 — '$3' still in $2" || ok "$1"; }
+# A SKIP IS NOT A PASS and must not be counted as one — but it must be SEEN. A row that vanishes when a
+# tool is missing is the shape where "we tested that" and "that could not run" look identical.
+skipped=0
+note_skip(){ printf '  \033[33m•\033[0m SKIPPED: %s\n' "$*"; skipped=$((skipped+1)); }
 
 # ---------------------------------------------------------------------------------------------------
 # The fixture: six stub repos carrying exactly the sites the stager edits, at 0.25.0.
@@ -84,16 +88,33 @@ mk candor-java/build.gradle.kts 'version = "0.25.0"
 # absent file as a moved site and refuses, deliberately.
 mk candor-java/README.md '## Status: beta (v0.25.0, spec 0.24 — the family reference engine)
 '
-mk candor-rust/Cargo.toml '[workspace.dependencies]
+# A REAL CARGO WORKSPACE, not a lookalike. This carried `[workspace.dependencies]` and four
+# name-less `[package]` stanzas, so `cargo update --workspace` errored on every run and the stager's
+# Cargo.lock arm — which is a STAGED SITE — was unreachable from this harness. That is precisely how
+# `note` shipped undefined and how the lock step reported `ok` on a no-op: a staged site absent from
+# the fixture is an untested site, and both defects lived in the one arm the fixture could not enter.
+# `members` + name/edition + a src/lib.rs is all it takes; the deps are path deps, so `--offline` resolves.
+mk candor-rust/Cargo.toml '[workspace]
+members = ["crates/candor-report", "crates/candor-classify", "crates/candor-scan", "crates/candor-query"]
+resolver = "2"
+
+[workspace.dependencies]
 candor-report = { path = "crates/candor-report", version = "0.25.0" }
 candor-classify = { path = "crates/candor-classify", version = "0.25.0" }
 '
 for c in candor-report candor-classify candor-scan candor-query; do
-  mk "candor-rust/crates/$c/Cargo.toml" "[package]
-version = \"0.25.0\"
-
+  # candor-report is the leaf every other crate depends on, so it must not depend on itself.
+  dep=""
+  [ "$c" = candor-report ] || dep="
 [dependencies]
-candor-report = { path = \"../candor-report\", version = \"0.25.0\" }
+candor-report = { path = \"../candor-report\", version = \"0.25.0\" }"
+  mk "candor-rust/crates/$c/Cargo.toml" "[package]
+name = \"$c\"
+version = \"0.25.0\"
+edition = \"2021\"
+$dep
+"
+  mk "candor-rust/crates/$c/src/lib.rs" "pub fn f() {}
 "
 done
 mk candor/bin/candor 'UMBRELLA_VERSION="0.25.0"                    # the umbrella'"'"'s OWN version
@@ -305,6 +326,21 @@ out2="$(CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.26.0 2>&1)"
 # make ZERO edits. Matching the phrase would have passed on the first run too.
 n2="$(echo "$out2" | sed -n 's/^release-stage: \([0-9]*\) edit(s).*/\1/p')"
 is "second run makes zero edits" '0' "${n2:-missing}"
+# THE Cargo.lock ARM, now that the fixture is a real workspace it can enter. `cargo update` SUCCEEDS on a
+# no-op, so judging the arm by its exit code reported an edit every run — which is what shipped, and what
+# the zero-edit row above cannot see unless this arm actually runs. Skipped, loudly, without cargo.
+if command -v cargo >/dev/null 2>&1; then
+  echo "$out" | grep -qi 'Cargo.lock' \
+    && ok "the stager REACHES its Cargo.lock arm (the fixture workspace resolves)" \
+    || bad "the Cargo.lock arm was not reached — the fixture is not a resolvable workspace again"
+  [ -f "$FIX/candor-rust/Cargo.lock" ] \
+    && ok "…and a lock file was produced" || bad "no Cargo.lock was written"
+  echo "$out2" | grep -qi 'Cargo.lock already at' \
+    && ok "…and the second run reports it SAME, not as an edit" \
+    || { bad "the lock arm claimed an edit on a no-op — release-stage is no longer idempotent"; echo "$out2" | grep -i lock | head -2; }
+else
+  note_skip "cargo is not installed — the Cargo.lock arm was NOT exercised by this run"
+fi
 is "second run changed nothing" '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-ts/package.json")"
 printf 'dirt\n' >> "$FIX/candor-java/CHANGELOG.md"
 CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.27.0 >/dev/null 2>&1 \
@@ -507,4 +543,5 @@ rm -rf "$CL"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi
-printf '\033[32mrelease-test: OK — %d assertions\033[0m\n' "$pass"
+printf '\033[32mrelease-test: OK — %d assertions\033[0m%s\n' "$pass" \
+  "$( [ "$skipped" -gt 0 ] && printf ' (%d SKIPPED — a missing tool, not a pass)' "$skipped" )"

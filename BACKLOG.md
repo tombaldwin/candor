@@ -114,6 +114,87 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 
 
+- **[THE PLAN — agreed with Tom 2026-08-15. Phases run in order; D waits for A–C.]**
+
+  **PHASE A — close what is live and wrong. No further release until A1–A6.** All from the max review of
+  this session's work; most are defects the session itself introduced.
+  · A1 `SKIP_LICENSED` licenses `conformance/README.md`, which `must_ledger.py:209` READS — a FALSE
+    GREEN in the conformance-reuse gate, shipped today while arguing that direction could only cost a
+    wasted run. Not user-facing (`release-preflight.sh` is not installed by brew or npm), so no release
+    is needed — but it is our release gate certifying a floor over an unre-run suite.
+  · A2 `note` is undefined in `release-stage.sh` (0 definitions, called twice) — the operator gets a raw
+    shell error in place of the remedy, at the moment the remedy matters.
+  · A3 the `candor-java/jbang-catalog.json` entry in `SKIP_LICENSED` is dead: `git -C <repo> diff` emits
+    repo-relative paths. Fails safe; costs a redundant run every release.
+  · A4 the CI wait: FALSE RED at the timeout boundary (a repo going green on the last poll is reported
+    failed AND green), `fail` double-counted, the 20-minute bound is PER REPO (7 × 20 = 140), and the
+    only line explaining the wait goes into `release.sh`'s redirect — a silent terminal for up to hours.
+  · A5 the stamp records SHAs from a run over a DIRTY tree; the read path refuses dirty, the write path
+    does not, so reuse can assert a green for a state the suite never ran against.
+  · A6 the `Cargo.lock` step calls `ok` on a no-op, breaking release-stage's documented idempotency —
+    the exact failure `sub()`'s SAME branch exists to prevent.
+  · A7 `release-test` cannot reach the Cargo.lock arm (empty fixture workspace) or the spec-bump liveness
+    probe (every row passes `--decls-only`, which returns before it) — which is why A2 and A6 survived a
+    green harness. A staged site absent from the fixture is an untested site.
+  · A8 `release.sh`'s step-7 remedy still says "wait for CI before the re-run", which A4 makes false —
+    and `release-test` anchors an awk RANGE on that sentence, so correcting it runs the range to EOF and
+    feeds the rest of the script into `eval "cat <<EOF"`. Fix the harness first, then the text.
+  · A9 the ts parallel driver: unbounded EAGAIN spin, no `--parallel` validation (`1e9` reaches
+    `Array.from`), and children orphaned on a SIGTERM to the parent.
+
+  **PHASE B — ONE ⟨0.29⟩ rung (Tom's call: single rung), in this order.**
+  · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
+    CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`
+    running `Command::new("curl")` invisible. Measured in three engines; **java unmeasured, which is not
+    clean**. Highest-value soundness item outstanding.
+  · B2 the PERMISSION FORM, `only <A> -> <B>…` — A may depend on A and the listed scopes, nothing else.
+    **The design argument: `forbid` FAILS OPEN (a dependency you forgot to prohibit is silently
+    permitted); `only` FAILS SAFE (one you forgot to permit is a loud violation).** That inverts the
+    usual allowlist hazard and makes `only` the form to RECOMMEND for leaf protection, not merely offer.
+    `A → A` implicitly permitted, else the segment-prefix rule makes it unusable (measured: the natural
+    `forbid a.b.model -> a.b` self-fires at 58). Scan-route only, refused on report routes — EXTENDS
+    PART 47 rather than needing a new part. Zero-match must disclose under ⟨0.27⟩.
+  · B3 #97 — §2 stated over the INSTANCE rather than the CONDITION. Four-way row required; **java and ts
+    are UNMEASURED on `incomplete`, not clean.**
+  One rung because all three are §2/§6.2, they share a floor bump, a conformance cycle and a release —
+  and this session measured that every release cycle spends its own defect budget.
+
+  **PHASE C — adoption, after B2 so we teach the fail-safe form.**
+  · C1 teach the LAYERING gate in the shipped AGENTS.md — today it is taught as a query verb while the
+    effects half is taught as a gate (23 mentions vs 0 worked examples), so every adopting agent inherits
+    the omission we just found in ourselves. With `only` recommended and the enumeration caveat stated.
+  · C2 self-application section in the four engines + candor-spec, with the question attached to ADDING
+    A CAPABILITY rather than to memory — the thing that would have caught the layering half.
+  · C3 layering policies for rust/ts/swift (java landed 2026-08-15).
+
+  **PHASE D — Java design work. WAITS for A–C (Tom's call).** Fable's Stage 0 oracle (one command +
+  report byte-diff) and a LOC/complexity RATCHET first — nothing measures file size today, which is how
+  `Candor.java` reached 5,678 lines and `main()` 857 unremarked. Then PIT (it attacks the vacuous-control
+  class directly, which is this session's demonstrated enemy), PMD+CPD (CPD finds the sibling-route
+  duplication mechanically), ArchUnit, SpotBugs, OpenRewrite — all as ratchets against a recorded
+  baseline, never thresholds, or they become noise people learn to ignore. Then Stages 1–6.
+
+- **[P1 — spec/product, found 2026-08-15 by pointing the architecture gate at candor for the first time]
+  `forbid A -> B` can state a PROHIBITION but not a PERMISSION, so "this package is a leaf" is
+  inexpressible — and the workaround ROTS SILENTLY.** Writing candor-java's own layering policy (the
+  first time the family's architecture gate has been aimed at the family) hit this immediately. The
+  natural spelling of "the typed model must not reach back into the engine" is
+  `forbid io.poly.candor.model -> io.poly.candor` — which SELF-FIRES at 58 violations, because the
+  scope is a prefix and `model` sits under it. The only workaround is to enumerate the classes it must
+  not touch, which is an ALLOWLIST in the unsafe direction: **a new engine class is not covered by the
+  list, and nothing says so.** That is verbatim the hazard [[candor-denylist-over-allowlist]] exists to
+  prevent, present in the POLICY LANGUAGE rather than in a classifier.
+
+  Candidate spellings, none evaluated yet: a `only <A> -> <B>…` permission rule; an exclusion on the
+  scope (`forbid X -> Y except Z`); or making a prefix scope non-self-matching, which would change the
+  meaning of existing rules and needs a rung. **The value of the finding is independent of the fix:**
+  every adopter protecting a leaf package today is writing a list that rots the same way, and nothing
+  tells them. Four engines, so it wants a rung and a conformance PART.
+
+  How it was missed until now: `containment` is exercised in smoke tests as a query VERB, and
+  candor-java's `.candor/policy` was effects-only. The product's two halves were taught and gated
+  asymmetrically — see the AGENTS.md work alongside this entry.
+
 - **[MEASURED AND REJECTED 2026-08-15 — do not re-attempt without reading this] Parallelising the
   conformance suite. It works, it is 4.4×, and it is WRONG.** Built as a two-lane runner: 8 expensive
   parts hoisted into a parallel lane, the other 39 left in one ordered sequential run. **331s → 76s.**

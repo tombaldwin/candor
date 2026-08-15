@@ -118,7 +118,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
   **PHASE A — close what is live and wrong. No further release until A1–A6.** All from the max review of
   this session's work; most are defects the session itself introduced.
-  **A1–A8 DONE 2026-08-15** (umbrella `b927a41`, `e9d53c0`, `479a7c7`; spec `27fb3f0`). A9 in flight.
+  **A1–A8 DONE 2026-08-15** (umbrella `b927a41`, `e9d53c0`, `479a7c7`; spec `27fb3f0`). **A9 DONE** (candor-ts `8a30946`).
   Two defects surfaced only by fixing the harness, both now closed: a dead mentions-scan in `spec-bump.sh`
   printed its green "no remaining mentions" ABOVE the probe's ✘ (probe runs first and returns now), and
   the extractor written to replace the run-to-EOF awk range reintroduced run-to-EOF in its own END block
@@ -144,8 +144,13 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   · ~~A8~~ `release.sh`'s step-7 remedy still says "wait for CI before the re-run", which A4 makes false —
     and `release-test` anchors an awk RANGE on that sentence, so correcting it runs the range to EOF and
     feeds the rest of the script into `eval "cat <<EOF"`. Fix the harness first, then the text.
-  · A9 the ts parallel driver: unbounded EAGAIN spin, no `--parallel` validation (`1e9` reaches
-    `Array.from`), and children orphaned on a SIGTERM to the parent.
+  · ~~A9~~ the ts parallel driver: unbounded EAGAIN spin, no `--parallel` validation (`1e9` reaches
+    `Array.from`), and children orphaned on a SIGTERM to the parent. Measured 4 orphans + 69 leaked
+    fixture trees, 0/0 after. Two things the review had not seen: the driver's relay had NO EAGAIN arm
+    (worse than a spin — the throw killed the parent mid-dump), and the genuine unbounded spin was in
+    `contract.mjs`, the `--agents` path an AGENT reads. **SIGTERM alone does not kill a shard** — a JS
+    listener replaces the die-disposition and cannot dispatch from 175 blocks of synchronous scans, so
+    scratch.mjs's leak-sweeper is what makes the leaking process unkillable, `--parallel` or not.
 
   **PHASE B — ONE ⟨0.29⟩ rung (Tom's call: single rung), in this order.**
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never

@@ -78,6 +78,12 @@ mk candor-ts/package.json '{
 '
 mk candor-java/build.gradle.kts 'version = "0.25.0"
 '
+# The README's `## Status` line is a STAGED SITE, so the fixture has to carry it — otherwise the stage
+# dies on a missing file and every later assertion fails with it, which is how this test went red the
+# first time that site was added. A fixture missing a site does not merely skip it: `bump` treats an
+# absent file as a moved site and refuses, deliberately.
+mk candor-java/README.md '## Status: beta (v0.25.0, spec 0.24 — the family reference engine)
+'
 mk candor-rust/Cargo.toml '[workspace.dependencies]
 candor-report = { path = "crates/candor-report", version = "0.25.0" }
 candor-classify = { path = "crates/candor-classify", version = "0.25.0" }
@@ -122,6 +128,9 @@ is "agents pyproject" '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor
 is "swift engine"     '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-swift/Sources/candor-swift/main.swift")"
 is "ts package.json"  '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-ts/package.json")"
 is "java gradle"      '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-java/build.gradle.kts")"
+# …and the README Status line beside it: only the SPEC number on that line was ever staged, so the
+# version half read v0.19.x for nine releases. The assertion is the version, not the whole line.
+is "java README status" '0.26.0' "$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-java/README.md" | head -1 | tr -d v)"
 # DEFECT 5 (0.26): staged by nothing, checked by nothing, caught only by update-candor.sh refusing.
 is "umbrella UMBRELLA_VERSION" '0.26.0' "$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' "$FIX/candor/bin/candor")"
 # ENGINE_PIN names a PUBLISHED release, so it must NOT move here — different axis, different moment.

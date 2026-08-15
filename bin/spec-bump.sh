@@ -181,25 +181,42 @@ echo
 echo "  NOTE: the floor bump rewords SPEC.md's Contents version line, so conformance's MUST LEDGER will"
 echo "  report it unclassified + the old entry orphaned. Re-anchor must-ledger.json with the line the"
 echo "  checker prints — expected on every bump, not a defect."
+# ONE definition, so the liveness probe below can run the IDENTICAL pipeline rather than a lookalike.
+scan_for_old() {
+  grep -rn "spec.\{0,3\}$OLD\|\"$OLD\"" "$1" \
+    --include='*.rs' --include='*.java' --include='*.mjs' --include='*.swift' --include='*.py' \
+    --include='*.sh' --include='*.md' --include='*.json' 2>/dev/null \
+    | grep -viE "/target/|/\.build/|node_modules|/build/|CHANGELOG|⟨${OLD}⟩|${OLD}\.[0-9]" | head -12
+}
 found=0
 for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
   [ -d "$ROOT/$r" ] || continue
-  hits="$(grep -rn "spec.\{0,3\}$OLD\|\"$OLD\"" "$ROOT/$r" \
-    --include='*.rs' --include='*.java' --include='*.mjs' --include='*.swift' --include='*.py' \
-    --include='*.sh' --include='*.md' --include='*.json' 2>/dev/null \
-    | grep -viE "/target/|/\.build/|node_modules|/build/|CHANGELOG|⟨${OLD}⟩|${OLD}\.[0-9]" | head -12)"
+  hits="$(scan_for_old "$ROOT/$r")"
   [ -n "$hits" ] && { printf '  \033[1m%s\033[0m\n' "$r"; echo "$hits" | sed "s|$ROOT/||" | sed 's/^/    /' | cut -c1-118; found=1; }
 done
 [ "$found" = 0 ] && ok "no remaining mentions"
-# …and PROVE the scan above actually ran. `⟨$OLD⟩` unbraced made bash read the multi-byte `⟩` as part of
-# the variable name, so under `set -u` every iteration died with "unbound variable", `hits` came back
-# empty, and this step printed a green "no remaining mentions" over a scan that never executed. A step
-# whose failure mode is indistinguishable from its success has to assert its own liveness: the OLD
-# version must still appear SOMEWHERE in the family (the CHANGELOGs alone guarantee it), so a scan that
-# can find nothing at all is broken rather than clean.
-if [ "$found" = 0 ] && ! grep -rqF "$OLD" "$ROOT/candor-spec/CHANGELOG.md" 2>/dev/null; then
-  rc=1; bad "the remaining-mentions scan found nothing AND cannot see $OLD in a file known to contain it — the scan is broken, not the tree"
+# …and PROVE the scan above actually ran, by running THE SAME PIPELINE over a KNOWN-POSITIVE fixture.
+#
+# `⟨$OLD⟩` unbraced made bash read the multi-byte `⟩` as part of the variable name, so under `set -u`
+# every iteration died, `hits` came back empty, and this step printed a green "no remaining mentions"
+# over a scan that never executed. A step whose failure mode is indistinguishable from its success has
+# to assert its own liveness.
+#
+# THE FIRST VERSION OF THIS GUARD WAS ITSELF VACUOUS — the same defect, one layer up. It asked whether
+# `$OLD` still appeared in candor-spec's CHANGELOG, which (a) stays TRUE when the loop dies, so it never
+# fired in the failure mode it was written for, (b) targets a file the scan's own filter EXCLUDES, so it
+# exercised a path the scan cannot take, and (c) goes FALSE when bumping a floor whose predecessor was
+# never released, failing a clean tree. Calling `scan_for_old` on a fixture that must match removes all
+# three: it is the real pipeline, on an input whose answer is known.
+probe_dir="$(mktemp -d)"; printf 'spec %s\n' "$OLD" > "$probe_dir/probe.md"
+if [ -z "$(scan_for_old "$probe_dir")" ]; then
+  # NOT via `bad`: that increments `fails`, which the line below reports as "declaration site(s) NOT
+  # bumped — the family is SPLIT". A broken scan is not a split family, and saying so sends the reader
+  # to seven declaration files that are all correct.
+  rc=1
+  printf '  \033[31m✘\033[0m %s\n' "the remaining-mentions scan cannot match a line that is definitionally a match — the SCAN is broken, not the tree (its result above means nothing)"
 fi
+rm -rf "$probe_dir"
 
 echo
 # A skipped DECLARATION is not a suite failure, so it would not otherwise reach this line — which is

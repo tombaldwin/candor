@@ -29,6 +29,15 @@ Tooling and hygiene either side of the ⟨0.28⟩ floor publish.
 - **`bin/bootstrap-dev.sh`** — reproduce this environment on a fresh Mac. The script was wrong four times
   on first contact, each time because it checked the state the author HAD rather than the state a fresh
   box has; `dylint-link` is required by every cargo build in candor-rust and was missing from it.
+- **…and the liveness guard added for that was ITSELF vacuous — the same defect, one layer up.** It
+  asked whether the old version still appeared in candor-spec's CHANGELOG, which stays TRUE when the
+  loop dies, so it never fired in the failure mode it was written for; it targeted a file the scan's own
+  filter EXCLUDES, so it exercised a path the scan cannot take; and it goes FALSE when bumping a floor
+  whose predecessor was never released, failing a clean tree. The scan is now one function and the probe
+  calls THAT function on a fixture line that is definitionally a match — the real pipeline, on an input
+  whose answer is known. Falsified: with the original `⟨$OLD⟩` bug reintroduced, the old guard stays
+  silent and the new one fires. It also no longer reports through `bad`, which counted a broken scan as
+  a missed declaration and told the reader the family was SPLIT.
 - **`bin/spec-bump.sh`: the remaining-mentions scan reported success over a scan that never ran.**
   `⟨$OLD⟩` unbraced made bash read the multi-byte `⟩` as part of the variable name, so under `set -u`
   every iteration died and step 3 printed a green "no remaining mentions" — hiding the 40-line triage list

@@ -153,6 +153,44 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     scratch.mjs's leak-sweeper is what makes the leaking process unkillable, `--parallel` or not.
 
   **PHASE B — ONE ⟨0.29⟩ rung (Tom's call: single rung), in this order.**
+  · **B0 (NEW, jumps the queue — a LIVE false all-clear on the agent channel).** SPEC §3.1's
+    answerability MUST binds every route reading a §2 report, and `candor-ts`'s MCP and LSP servers
+    violate it. `mcp.mjs:408` passes the WHOLE policy to `evaluatePolicy`; the CLI sibling at
+    `query.mjs:2104` strips `forbid`/`allow` with a comment saying handing them to the matcher "would be
+    the very evaluation-on-partial-evidence they are unanswerable FOR". **Measured** driving the real
+    `parsePolicy`/`evaluatePolicy`: with no callgraph sidecar (what `loadCallgraph` returns for a
+    hand-copied `report.json`) → `violations: 0`, `unevaluated: 0` — a silent green; with a sidecar → it
+    EVALUATES the rule and returns an AS-EFF-009 violation. Both outcomes the MUST forbids, no disclosure
+    either way. `lsp.mjs:393` is the same shape and reaches VS Code and JetBrains. `bin/candor:1648`
+    routes `candor mcp` to candor-ts for **any engine's** report, so this is the family's agent gate.
+    Sibling route: the CLI got the ⟨0.24⟩ rule, the two servers did not.
+    Same audit: `fix-gate`/`unverified` drop `forbid` silently in rust (`fix.rs:583`, prints
+    `ok:true` + "no boundary crossings ✓"), swift (`FixCLI.swift:1299`) and ts; java alone discloses and
+    withholds `ok`. Four-way divergence on a report route with no row. **`allow` is `forbid`'s untouched
+    sibling** — same MUST at §3.1, and NO conformance row anywhere writes an `allow` rule into a `.pol`
+    file, which is precisely the state PART 47 was written to fix.
+  · **B0b `--agents` truncation is four-way divergent and java's is the cardinal-sin shape.** Measured
+    into a non-draining FIFO: java `rc=0`, empty stderr — silent truncation (`Candor.java:433` uses
+    `System.out.write`+`flush` with no `checkError()`, and `PrintStream` swallows `IOException`; zero
+    `checkError` calls in `src/main`). swift `rc=141` (SIGPIPE, no diagnostic), rust `rc=101` (panic), ts
+    `rc=0` WITH a diagnostic. The `| head` case measured clean 2026-08-13 is a different question —
+    those payloads fit the 64 KiB buffer. Also `scan.mjs:6098` prints a whole pretty-printed report
+    envelope through `console.log` with reachable `process.exit(1)`, which falsifies this backlog's own
+    claim that the remaining print-then-exit sites "fit the buffer and survive by SIZE".
+  · **B0c the release harness's own gaps**, from the same review: `release-preflight.sh` took four fixes
+    and has ZERO executable coverage (it appears in `release-test.sh` only as two `grep -q` presence
+    checks) — the same "a staged site absent from the fixture is an untested site" argument that
+    justified the Cargo.lock work, applied to nothing else. `release-stage.sh:49` guards five repos and
+    edits seven (`candor/bin/candor`, and both CHANGELOGs via `_stage_changelogs.py`); the stage fixture
+    has no `candor-spec` at all, so that helper's floor-shaped-heading branch — which exists ONLY for
+    candor-spec — is unexecuted. `test.mjs`'s own EAGAIN arm still has no row and is unreachable from any
+    route the suite drives. `integration.sh:531` (rust) and `test-watch.mjs:74` (ts) orphan long-lived
+    children with no trap — the direct siblings of the child-lifetime fix. `scratch.mjs` says it covers
+    "every harness here" and has exactly one importer; 108 bare `mkdtempSync` sites remain.
+  · **B0d PART 47's remaining gap, deliberately not closed today:** the refusal must "name the rule", and
+    rust/java print the rule text while ts/swift print a count. The row asserts only that the word
+    `forbid` appears, and says so. Pinning the stronger form needs two engines changed first.
+
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`
     running `Command::new("curl")` invisible. **NOW MEASURED IN ALL FOUR (java arm done 2026-08-15).**

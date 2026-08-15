@@ -22,6 +22,14 @@ keeps its own.
   lines. Each shipped with a passing demonstration that used the easiest shape rather than the weakest
   one. **A fix aimed at a defect class is the most likely place to reintroduce it.**
 
+- **And `bin/release-test.sh` caught the fix to `release-stage.sh`.** Teaching the stager to bump
+  candor-java's README `## Status` line broke the fixture run — the fixture had no such file, and `bump`
+  treats an absent file as a MOVED SITE and refuses, deliberately, so the stage aborted and every later
+  assertion failed with it. The fixture now carries the file and asserts the new site, which is the
+  difference between a staged site being tested and merely being present. That harness exists because
+  nine defects across 0.25 and 0.26 were found by publishing rather than by testing; this is the first
+  time it caught one before a release rather than after.
+
 - **`bin/release.sh`'s manual step 6 earned itself.** Step 7 refused to cut the umbrella while
   `ENGINE_PIN` still read 0.27.0 — proceeding would have shipped a 0.28.0 front door that fetches
   0.27.0 engines, with brew hashing that tarball. The script's own warning about the pin commit was

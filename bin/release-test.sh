@@ -232,18 +232,67 @@ awk '/^rel candor +"/{u=NR} /^say "6\. cross-repo pins/{p=NR} END{exit !(u>p && 
 # jbang-catalog.json all count as SOURCE", losing exactly the three filenames it exists to name. This
 # die fires on EVERY release's first pass by design, so it is the one message an operator is guaranteed
 # to read. Render it and compare, rather than trusting a parse check.
-STEP7=$(awk '/THE PIN-BUMP COMMIT MUST ALSO TOUCH/,/fails on a pending run/' "$REALREL")
-printf '%s\n' "$STEP7" | grep -q 'bin/candor' \
-  && ok "step 7's remedy names bin/candor in its SOURCE text" \
-  || bad "step 7's remedy lost bin/candor from its source text"
-RENDERED=$(cd /tmp && eval "cat <<CANDOR_EOF
+#
+# EXTRACTION IS THE DANGEROUS PART, and it used to be a BOOBY TRAP FOR THE NEXT EDITOR. The range was
+# `/MUST ALSO TOUCH/,/fails on a pending run/` — prose at BOTH ends. An awk range whose closing pattern
+# never matches runs to END OF FILE, silently, and the whole remainder of release.sh was then fed to
+# `eval "cat <<EOF"` — every `$(…)` and backtick in it live. So correcting one stale sentence in the
+# remedy (which is exactly what this release does: [10] now WAITS for pending CI, so "wait before the
+# re-run" had to go) would have executed the tail of the release script. The test punished the fix it
+# exists to enable.
+#
+# Both anchors are STRUCTURAL now — the `die "` that opens the string and the line that closes it — and
+# the extractor FAILS CLOSED: no start, no end, or an implausible span reports and renders nothing. The
+# eval is bounded by construction rather than by a sentence somebody might reword.
+extract_die() {  # <file> <start-regex> — prints the die string's lines; nonzero if it cannot bound it
+  # `closed` is tracked EXPLICITLY. The first version tested only `n > 40` in END, so a start line
+  # followed by three unterminated ones fell off the bottom of the file and exited 0 with a partial
+  # block — the run-to-EOF failure this rewrite exists to remove, reintroduced inside its replacement.
+  # The probe below caught it on the first run. Running the negative case is not a formality.
+  awk -v re="$2" '
+    !f && $0 ~ re { f=1; n=1; print
+                    if ($0 ~ /"[[:space:]]*$/ && $0 !~ /die[[:space:]]+"[^"]*$/) { closed=1; exit 0 }
+                    next }
+    f { n++; print; if ($0 ~ /"[[:space:]]*$/) { closed=1; exit 0 }; if (n > 40) exit 3 }
+    END { if (!f) exit 2; if (!closed) exit 4 }
+  ' "$1"
+}
+# THE EXTRACTOR IS PROVED ABLE TO FAIL before it is trusted — the same rule this project applies to
+# every oracle. A start line with no closing quote must come back nonzero, not come back with the file.
+_probe="$(mktemp)"; printf 'x\ndie "opened and never closed\n  more prose\n' > "$_probe"
+extract_die "$_probe" 'die "opened' >/dev/null 2>&1 \
+  && bad "extract_die returned success on an UNTERMINATED die string — the run-to-EOF trap is back" \
+  || ok "extract_die fails closed when the die string has no end (probe)"
+extract_die "$_probe" 'no such line' >/dev/null 2>&1 \
+  && bad "extract_die returned success when its start anchor matched nothing" \
+  || ok "…and when the start anchor matches nothing"
+rm -f "$_probe"
+
+if STEP7=$(extract_die "$REALREL" '^[[:space:]]*die "ENGINE_PIN is'); then
+  ok "step 7's remedy is bounded by its own die string (not by a sentence)"
+  printf '%s\n' "$STEP7" | grep -q 'MUST ALSO TOUCH' \
+    && ok "…and still carries the pin-bump-touches-the-CHANGELOG warning" \
+    || bad "step 7's remedy no longer warns that the pin-bump commit must touch the CHANGELOG"
+  printf '%s\n' "$STEP7" | grep -q 'bin/candor' \
+    && ok "step 7's remedy names bin/candor in its SOURCE text" \
+    || bad "step 7's remedy lost bin/candor from its source text"
+  # The block now begins at `die "ENGINE_PIN is ${PINNED:-unset}, not $VER`, which release.sh has bound
+  # and this harness does not — under `set -u` the heredoc died and RENDERED came back EMPTY, which the
+  # case below reports as "backticks are executing". A right verdict for the wrong reason is still a
+  # wrong instrument, so: bind them, and say so separately when nothing rendered at all.
+  # shellcheck disable=SC2034  # both ARE read — by the heredoc that `eval` expands on the next line
+  RENDERED=$(cd /tmp && VER="0.0.0" PINNED="0.0.0"; eval "cat <<CANDOR_EOF
 $STEP7
 CANDOR_EOF" 2>/dev/null)
-case "$RENDERED" in
-  *'bin/candor'*'adopt/*.yml'*'## Unreleased'*)
-    ok "…and all three survive being RENDERED (no live backtick substitution)" ;;
-  *) bad "step 7's remedy is garbled when printed — backticks are executing; escape them as \\\`" ;;
-esac
+  [ -n "$RENDERED" ] || bad "step 7's remedy rendered to NOTHING — the heredoc itself failed, so the substitution check below did not run"
+  case "$RENDERED" in
+    *'bin/candor'*'adopt/*.yml'*'## Unreleased'*)
+      ok "…and all three survive being RENDERED (no live backtick substitution)" ;;
+    *) bad "step 7's remedy is garbled when printed — backticks are executing; escape them as \\\`" ;;
+  esac
+else
+  bad "could not bound step 7's die string in release.sh — the remedy went UNCHECKED (nothing rendered)"
+fi
 
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
@@ -344,6 +393,41 @@ CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1 \
 sbfix
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1 \
   && ok "--check still passes a consistent family (the control)" || bad "--check failed a consistent family"
+
+# STEP 3 AND ITS LIVENESS PROBE — previously unreachable from this harness. Every row above drives
+# `--decls-only`, which used to exit at step 1, so the remaining-mentions scan and the probe guarding it
+# were untested by construction. (The probe exists because that scan once printed a green "no remaining
+# mentions" over a loop that `set -u` had killed on its first iteration — a guard against a silent no-op
+# that no test could reach is the same shape as the defect it guards.) Step 3 is grep, not a suite, so it
+# now runs under --decls-only too.
+# COMMIT EVERY REPO BETWEEN RUNS. A bump leaves all seven dirty and the script refuses a dirty tree, so
+# the second run would test the REFUSAL and report the probe as asleep. (It did.)
+sbcommit() { for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
+    ( cd "$SB/$r" && git add -A && git -c user.email=t@e -c user.name=t commit -qm x ) >/dev/null 2>&1
+  done; }
+sb2() { CANDOR_ROOT="$SB" bash "$1" 0.30 --decls-only 2>&1; }
+SBSH="$UMBRELLA/bin/spec-bump.sh"
+sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
+out3="$(sb2 "$SBSH")"
+printf '%s' "$out3" | grep -q 'lingering.md' \
+  && ok "step 3 REPORTS a mention the bump left behind (reached under --decls-only)" \
+  || bad "step 3 did not report a lingering 0.27 mention — the triage step is still unreachable"
+# THE PROBE'S TEETH, by reintroducing the exact historic defect into a COPY: unbrace `${OLD}` inside the
+# scan's own filter so the multi-byte `⟩` swallows the name and `set -u` kills every call. A green run
+# here would mean the probe cannot see the failure it was written for.
+sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
+BROKE="$SB/broken-spec-bump.sh"; sed 's/⟨${OLD}⟩/⟨$OLD⟩/' "$SBSH" > "$BROKE"
+if grep -q '⟨\$OLD⟩' "$BROKE"; then
+  out4="$(sb2 "$BROKE")"; rc4=$?
+  [ "$rc4" != 0 ] && printf '%s' "$out4" | grep -q 'the SCAN is broken' \
+    && ok "…and the liveness probe FAILS the run when the scan is dead (teeth)" \
+    || bad "a spec-bump whose mentions scan cannot run at all still exited $rc4 — the probe is asleep"
+  printf '%s' "$out4" | grep -q 'no remaining mentions' \
+    && bad "the dead scan still printed a green 'no remaining mentions' ALONGSIDE the probe's ✘" \
+    || ok "…and does not also print the reassuring green line"
+else
+  bad "could not reintroduce the unbraced-\$OLD defect — this teeth test asserted nothing"
+fi
 rm -rf "$SB"
 
 say "6. release.sh gates on preflight in PINS_ADVISORY mode"

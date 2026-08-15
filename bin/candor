@@ -16,7 +16,7 @@
 
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
 UMBRELLA_VERSION="0.28.1"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
-ENGINE_PIN="0.28.0"                          # the engine release line `candor update` fetches — MUST move with every engine release (release-preflight [3] gates it; it lagged at 0.18.0 through 0.23.1 and shipped 0.18 engines under a 0.23 umbrella)
+ENGINE_PIN="0.28.1"                          # the engine release line `candor update` fetches — MUST move with every engine release (release-preflight [3] gates it; it lagged at 0.18.0 through 0.23.1 and shipped 0.18 engines under a 0.23 umbrella)
 # The first engine release that ENFORCES the §3.4 `engine` pin (⟨0.28 PROPOSED⟩, candor-java leads it).
 # `candor init` writes the pin regardless — `.candor/run` reads it to fetch the right engine — but it
 # must not claim enforcement an OLDER pinned engine does not perform. Move this when the rung ships.

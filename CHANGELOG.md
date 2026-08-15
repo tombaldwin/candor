@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
 
+- **Engine pins moved to 0.28.1** after the patch published — `ENGINE_PIN`, `CANDOR_JAVA_VERSION`,
+  the candor-agents ref and the jbang `script-ref`. `PIN_ENFORCED_FROM` stays at 0.27.0: it names the
+  FIRST release that enforces the §3.4 pin, which is history rather than a current-version field.
+
 - **Floor 0.28 published** — crates ×4, npm with provenance, seven GitHub releases, the Homebrew tap,
   every pinned URL resolving (`release-verify: OK`). Ships the F1 body-less-declaration cardinal-sin
   fix and the ⟨0.28⟩ report-sink arming rung. `bin/candor`'s `ENGINE_PIN` moves with it;

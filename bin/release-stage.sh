@@ -38,6 +38,10 @@ say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ok()  { printf '  \033[32m✔\033[0m %s\n' "$*"; changed=$((changed+1)); }
 same(){ printf '  \033[33m•\033[0m %s\n' "$*"; skipped=$((skipped+1)); }
 die() { printf '  \033[31m✘ %s\033[0m\n' "$*" >&2; exit 1; }
+# A scratch dir OUTSIDE the tree — this script refuses to stage over uncommitted work, so it must not
+# create any of its own.
+WSTAGE="$(mktemp -d "${TMPDIR:-/tmp}/candor-release-stage.XXXXXX")"
+trap 'rm -rf "$WSTAGE"' EXIT
 # ADVISORY, and it counts as neither an edit nor a skip. It was called twice by the Cargo.lock step
 # and defined nowhere, so `set -uo pipefail` (no -e) printed `note: command not found` and carried on:
 # the operator saw a broken script instead of the one sentence that says how to avoid a dirty lock
@@ -134,10 +138,17 @@ if ! command -v cargo >/dev/null 2>&1; then
 elif [ ! -f "$ROOT/candor-rust/Cargo.toml" ]; then
   note "no candor-rust/Cargo.toml — Cargo.lock not refreshed"
 else
-  before=""; [ -f "$LOCK" ] && before="$(shasum "$LOCK" 2>/dev/null | awk '{print $1}')"
+  # `cmp` ON A COPY, NOT A HASH. The first version compared `shasum` output, and if shasum were missing
+  # or failing BOTH substitutions came back empty — equal — so every run reported SAME, including one
+  # that created the lock from nothing. That is the A6 under-report inverted, arriving through the tool
+  # meant to fix it, and all three new harness rows passed against it (they read the stager's prose, and
+  # the prose was the SAME line). cmp is POSIX, needs no second tool, and an unreadable copy fails LOUD.
+  before="$WSTAGE/Cargo.lock.before"; rm -f "$before"
+  [ -f "$LOCK" ] && { cp "$LOCK" "$before" || die "cannot snapshot $LOCK — refusing to guess whether it changed"; }
   if ( cd "$ROOT/candor-rust" && cargo update --workspace --offline >/dev/null 2>&1 ); then
-    after=""; [ -f "$LOCK" ] && after="$(shasum "$LOCK" 2>/dev/null | awk '{print $1}')"
-    if [ "$before" = "$after" ]; then same "rust Cargo.lock already at $VER"; else ok "rust Cargo.lock → $VER"; fi
+    if [ -f "$before" ] && [ -f "$LOCK" ] && cmp -s "$before" "$LOCK"; then same "rust Cargo.lock already at $VER"
+    elif [ ! -f "$before" ] && [ ! -f "$LOCK" ]; then same "rust Cargo.lock absent (no workspace lock to refresh)"
+    else ok "rust Cargo.lock → $VER"; fi
   else
     note "cargo update --workspace failed (empty workspace? offline?) — run it in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
   fi

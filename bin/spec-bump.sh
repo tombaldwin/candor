@@ -139,7 +139,14 @@ PY
 # liveness probe that exists because this step once printed green over a scan that never ran, were
 # unreachable from the test suite: the guard against a silent no-op was itself untested. It needs no
 # suite (it is grep over the bumped tree), so nothing was buying that coupling.
-# Sets `rc=1` if the scan cannot prove itself live.
+# Sets `scan_dead=1` — NOT `rc` — if the scan cannot prove itself live. `rc` is step 2's SUITE
+# accumulator on the main path, and the first version of this hoist reused it as the probe flag: any
+# failed engine suite then made the early return below fire and step 3's triage list vanished, under its
+# own "TRIAGE THESE BY HAND" header, with nothing beneath it. A red rehearsal is precisely when that list
+# is wanted, since a red rehearsal is when you are fixing forward. The harness could not see it — every
+# row drives `--decls-only`, which sets `rc=0` immediately before the call, so `rc` is always fresh there
+# and the bug lives only on the path the tests cannot reach. Same shape as the defect the hoist fixed.
+scan_dead=0
 remaining_mentions() {
   say "3. remaining mentions of $OLD — TRIAGE THESE BY HAND"
   echo "  A blanket replace would be wrong: on the 0.27 bump, candor-rust's tests.rs built FIXTURE reports"
@@ -179,7 +186,7 @@ remaining_mentions() {
     # NOT via `bad`: that increments `fails`, which the line below reports as "declaration site(s) NOT
     # bumped — the family is SPLIT". A broken scan is not a split family, and saying so sends the reader
     # to seven declaration files that are all correct.
-    rc=1
+    scan_dead=1
     printf '  \033[31m✘\033[0m %s\n' "the remaining-mentions scan cannot match a line that is definitionally a match — the SCAN is broken, not the tree — NOTHING was scanned, so no verdict follows"
   fi
   rm -rf "$probe_dir"
@@ -187,7 +194,7 @@ remaining_mentions() {
   # anyway: a dead scan found nothing, printed a green "no remaining mentions", and the ✘ landed
   # BELOW it — the operator got the reassurance and the refutation in that order, from one step.
   # Caught by the harness row that asserts the green line is ABSENT, not just that the ✘ is present.
-  [ "$rc" = 0 ] || return 0
+  [ "$scan_dead" = 0 ] || return 0
   found=0
   for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
     [ -d "$ROOT/$r" ] || continue
@@ -207,7 +214,7 @@ if [ "${2:-}" = "--decls-only" ]; then
   [ "$fails" = 0 ] || { bad "$fails declaration site(s) NOT bumped — the family is SPLIT"; exit 1; }
   # Step 3 DOES run here — it is grep, not a suite — so the harness can reach it and its liveness probe.
   rc=0; remaining_mentions
-  [ "$rc" = 0 ] || exit 1
+  [ "$scan_dead" = 0 ] || exit 1
   echo
   ok "declarations bumped + mentions triaged (--decls-only: the SUITES were skipped — not a rehearsal)"
   exit 0
@@ -241,10 +248,19 @@ echo
 # A skipped DECLARATION is not a suite failure, so it would not otherwise reach this line — which is
 # exactly how "GREEN at 0.28" got printed over an engine still emitting 0.27.
 [ "$fails" = 0 ] || { rc=1; bad "$fails declaration site(s) NOT bumped — the family is SPLIT, whatever the suites say"; echo; }
+# NAME THE RIGHT ONE. Three different failures used to arrive under the single label "suites failed": a
+# red engine suite, a moved declaration site, and a mentions scan that could not run. This file already
+# carries a comment saying why a broken scan must not be announced as a split family; the summary was
+# doing exactly that, one line further down. The ✘ lines above were right — the line an operator ACTS on
+# was not.
+why=""
+[ "$rc" = 0 ]        || why="suites failed"
+[ "$fails" = 0 ]     || why="${why:+$why + }$fails declaration site(s) not bumped"
+[ "$scan_dead" = 0 ] || { why="${why:+$why + }the remaining-mentions scan is broken"; rc=1; }
 if [ "$rc" = 0 ]; then
   printf '\033[32mspec-bump: the family is GREEN at %s.\033[0m Review the diff, triage any list above, then commit.\n' "$NEW"
 else
-  printf '\033[31mspec-bump: %s — the tree is left BUMPED on purpose so you can fix forward.\033[0m\n' "suites failed"
+  printf '\033[31mspec-bump: %s — the tree is left BUMPED on purpose so you can fix forward.\033[0m\n' "$why"
   echo "Prefer DERIVING a version-coupled assertion from the engine's own constant over re-editing a literal:"
   echo "  that class was closed as \"a one-off\" once and cost an edit in every repo the next rung."
 fi

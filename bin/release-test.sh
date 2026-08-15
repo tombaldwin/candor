@@ -48,7 +48,13 @@ hasnt(){ grep -qF "$3" "$2" && bad "$1 — '$3' still in $2" || ok "$1"; }
 # A SKIP IS NOT A PASS and must not be counted as one — but it must be SEEN. A row that vanishes when a
 # tool is missing is the shape where "we tested that" and "that could not run" look identical.
 skipped=0
-note_skip(){ printf '  \033[33m•\033[0m SKIPPED: %s\n' "$*"; skipped=$((skipped+1)); }
+# …and under CI a skip is a FAILURE. `note_skip` counted and printed, but the verdict line stayed the
+# green "OK" with a parenthetical — and the CI job's tick, the only signal anyone consumes, was identical
+# whether the arm ran or not. That arm is where BOTH defects this harness was extended for actually
+# lived. Locally a skip is information; in CI it means the runner is missing a tool the gate needs, which
+# is a broken gate, not a passing one.
+note_skip(){ printf '  \033[33m•\033[0m SKIPPED: %s\n' "$*"; skipped=$((skipped+1))
+             [ -n "${CI:-}" ] && bad "…and a SKIP is a FAILURE under CI — the runner is missing a tool this gate needs"; }
 
 # ---------------------------------------------------------------------------------------------------
 # The fixture: six stub repos carrying exactly the sites the stager edits, at 0.25.0.
@@ -270,12 +276,31 @@ extract_die() {  # <file> <start-regex> — prints the die string's lines; nonze
   # followed by three unterminated ones fell off the bottom of the file and exited 0 with a partial
   # block — the run-to-EOF failure this rewrite exists to remove, reintroduced inside its replacement.
   # The probe below caught it on the first run. Running the negative case is not a formality.
+  # QUOTE PARITY, not "the line ends in a quote". The ends-in-a-quote test stops at the first
+  # CONTINUATION line that happens to end in `"` — an escaped \" closing a quoted phrase, or a line
+  # broken after a quoted word — and returns 0 with a PARTIAL block. Latent today (the current remedy has
+  # no such line, all twelve checked) and it fails in the safe direction, but with the wrong diagnosis:
+  # the truncated render trips the "backticks are executing" row, sending the reader after a defect that
+  # is not there. A shell double-quoted string closes when the running count of UNESCAPED double quotes
+  # returns to even, which is the actual rule and not a proxy for it.
   awk -v re="$2" '
-    !f && $0 ~ re { f=1; n=1; print
-                    if ($0 ~ /"[[:space:]]*$/ && $0 !~ /die[[:space:]]+"[^"]*$/) { closed=1; exit 0 }
+    function unescaped_quotes(s,   i, c, n, esc) {
+      n = 0; esc = 0
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (esc) { esc = 0; continue }
+        if (c == "\\") { esc = 1; continue }
+        if (c == "\"") n++
+      }
+      return n
+    }
+    !f && $0 ~ re { f=1; n=1; q = unescaped_quotes($0); print
+                    if (q % 2 == 0) { closed=1; exit 0 }
                     next }
-    f { n++; print; if ($0 ~ /"[[:space:]]*$/) { closed=1; exit 0 }; if (n > 40) exit 3 }
-    END { if (!f) exit 2; if (!closed) exit 4 }
+    f { n++; print; q += unescaped_quotes($0)
+        if (q % 2 == 0) { closed=1; exit 0 }
+        if (n > 40) { toolong=1; exit 3 } }
+    END { if (!f) exit 2; if (toolong) exit 3; if (!closed) exit 4 }
   ' "$1"
 }
 # THE EXTRACTOR IS PROVED ABLE TO FAIL before it is trusted — the same rule this project applies to
@@ -287,6 +312,16 @@ extract_die "$_probe" 'die "opened' >/dev/null 2>&1 \
 extract_die "$_probe" 'no such line' >/dev/null 2>&1 \
   && bad "extract_die returned success when its start anchor matched nothing" \
   || ok "…and when the start anchor matches nothing"
+# THE EARLY-CLOSE CASE, which the two probes above cannot see: both exercise a string that never ends.
+# This one ends in the RIGHT place but has an intermediate line ending in a quote on the way.
+printf 'die "opens here\n  a line ending in a quoted \\"word\\"\n  and the real end is here"\nafter=1\n' > "$_probe"
+_early="$(extract_die "$_probe" 'die "opens')"
+printf '%s' "$_early" | grep -q 'the real end is here' \
+  && ok "…and it does not stop early on a continuation line that ends in a quote" \
+  || bad "extract_die stopped at an intermediate quote — the block is TRUNCATED, and the render row will blame backticks"
+printf '%s' "$_early" | grep -q 'after=1' \
+  && bad "extract_die ran PAST the closing quote into the following script" \
+  || ok "…and it stops at the closing quote, not after it"
 rm -f "$_probe"
 
 if STEP7=$(extract_die "$REALREL" '^[[:space:]]*die "ENGINE_PIN is'); then
@@ -335,9 +370,19 @@ if command -v cargo >/dev/null 2>&1; then
     || bad "the Cargo.lock arm was not reached — the fixture is not a resolvable workspace again"
   [ -f "$FIX/candor-rust/Cargo.lock" ] \
     && ok "…and a lock file was produced" || bad "no Cargo.lock was written"
-  echo "$out2" | grep -qi 'Cargo.lock already at' \
-    && ok "…and the second run reports it SAME, not as an edit" \
-    || { bad "the lock arm claimed an edit on a no-op — release-stage is no longer idempotent"; echo "$out2" | grep -i lock | head -2; }
+  # ASSERT THE BEHAVIOUR, NOT THE STAGER'S WORDING. This grepped for the literal `same()` message, so
+  # (a) rewording that one line failed the row with "no longer idempotent", which would be false, and
+  # (b) it passed against a stager whose SAME/OK discrimination was DEAD, because a dead discriminator
+  # printed the SAME line unconditionally — the row read the prose that the defect produced. The lock's
+  # BYTES before and after the second run are the actual property, and no wording can fake them.
+  cp "$FIX/candor-rust/Cargo.lock" "$FIX/lock.snapshot" 2>/dev/null
+  CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.26.0 >/dev/null 2>&1
+  cmp -s "$FIX/lock.snapshot" "$FIX/candor-rust/Cargo.lock" \
+    && ok "…and a repeat stage leaves Cargo.lock BYTE-IDENTICAL (idempotent in fact, not in wording)" \
+    || bad "a repeat stage rewrote Cargo.lock — release-stage is not idempotent"
+  echo "$out2" | grep -qiE 'Cargo\.lock (already at|absent)' \
+    && ok "…and the second run REPORTS it as unchanged rather than as an edit" \
+    || { bad "the lock arm claimed an edit on a no-op — the SAME/OK discrimination is dead"; echo "$out2" | grep -i lock | head -2; }
 else
   note_skip "cargo is not installed — the Cargo.lock arm was NOT exercised by this run"
 fi
@@ -464,6 +509,23 @@ if grep -q '⟨\$OLD⟩' "$BROKE"; then
 else
   bad "could not reintroduce the unbraced-\$OLD defect — this teeth test asserted nothing"
 fi
+# THE MAIN PATH, which no row reached — and that is where the regression lived. `remaining_mentions()`
+# used the shared `rc` as its probe flag, but on the main path `rc` is step 2's SUITE accumulator, so any
+# failed engine suite made the early return fire and step 3's triage list VANISHED beneath its own
+# "TRIAGE THESE BY HAND" header. A red rehearsal is exactly when that list is wanted. Every row above
+# drives `--decls-only`, which sets `rc=0` immediately before the call — so `rc` is always fresh there
+# and the bug could only exist on the path the tests could not take.
+#
+# This row takes it. The fixture's engine dirs carry no build files, so every suite fails fast (that is
+# the CONDITION being tested, not a defect in the fixture) and the run reaches step 3 with rc=1.
+sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
+mainout="$(CANDOR_ROOT="$SB" bash "$SBSH" 0.30 2>&1)"
+printf '%s' "$mainout" | grep -q 'lingering.md' \
+  && ok "step 3 still lists a mention when the SUITES failed (the main path, rc=1)" \
+  || bad "a red suite silenced step 3's triage list — the probe flag is sharing rc again"
+printf '%s' "$mainout" | grep -q 'suites failed' \
+  && ok "…and the summary names the SUITES as what failed" \
+  || bad "the summary mislabelled a suite failure: $(printf '%s' "$mainout" | grep -c 'spec-bump:') summary line(s)"
 rm -rf "$SB"
 
 say "6. release.sh gates on preflight in PINS_ADVISORY mode"

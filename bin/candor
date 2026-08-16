@@ -580,7 +580,7 @@ route_scan() {
 }
 
 # Per-action usage (F9: `candor <verb> --help` used to reach the engine, which read --help as an effect/fn
-# name). One line per query verb; policy-consuming verbs also name the deny/pure/allow/forbid grammar.
+# name). One line per query verb; policy-consuming verbs also name the deny/pure/allow/forbid/only grammar.
 # THE ARM THIS DIRECTORY'S PROJECT WOULD USE, or empty when it cannot be told without guessing.
 #
 # Prefers a report that actually exists (the same backend token `route_query` dispatches on), and falls
@@ -643,7 +643,7 @@ verb_help() {
               echo "candor privacy-manifest [--verify <Info.plist>] — the Apple usage-description keys the code's"
               echo "  sensor reach requires. Bare: GENERATE them. --verify: check a plist, exit 1 on an"
               echo "  under-declaration, 2 on an unreadable manifest. candor-swift only (the privacy/2 extension).";;
-    parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <Effect> <layer>\`.";;
+    parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid / only rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <A> -> <B>\` · \`only <A> -> <B> [<C>…]\`.";;
     *)        echo "candor $1 — see \`candor --help\`.";;
   esac
   echo ""

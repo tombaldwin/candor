@@ -243,6 +243,11 @@ checkpin "engine pin  " "candor/bin/candor"              'ENGINE_PIN='
 # which is a defect these two are the delivery vehicle for. Nothing failed, because nothing asked.
 checkpin "vscode ts   " "candor/integrations/vscode/package.json"     '"candorTsVersion"'
 checkpin "jetbrains ts" "candor/integrations/jetbrains/gradle.properties" 'candorTsVersion='
+# ⟨0.29⟩ …AND THE JVM ENGINE THE SAME PLUGIN EMBEDS. The commit that registered the TS pins fixed one of
+# the two pins in THIS FILE and left its sibling on the line above at 0.16.0 — a sibling-route miss inside
+# the fix for a sibling-route problem, found by review. The plugin downloads and ships this jar for its
+# post-build hook, so a stale pin here runs a twelve-rung-old ENGINE against the user's build.
+checkpin "jetbrains jvm" "candor/integrations/jetbrains/gradle.properties" 'candorJavaVersion='
 
 # --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
 # The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant

@@ -175,14 +175,22 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     withholds `ok`. Four-way divergence on a report route with no row. **`allow` is `forbid`'s untouched
     sibling** — same MUST at §3.1, and NO conformance row anywhere writes an `allow` rule into a `.pol`
     file, which is precisely the state PART 47 was written to fix.
-  · **B0b `--agents` truncation is four-way divergent and java's is the cardinal-sin shape.** Measured
-    into a non-draining FIFO: java `rc=0`, empty stderr — silent truncation (`Candor.java:433` uses
-    `System.out.write`+`flush` with no `checkError()`, and `PrintStream` swallows `IOException`; zero
-    `checkError` calls in `src/main`). swift `rc=141` (SIGPIPE, no diagnostic), rust `rc=101` (panic), ts
-    `rc=0` WITH a diagnostic. The `| head` case measured clean 2026-08-13 is a different question —
-    those payloads fit the 64 KiB buffer. Also `scan.mjs:6098` prints a whole pretty-printed report
-    envelope through `console.log` with reachable `process.exit(1)`, which falsifies this backlog's own
-    claim that the remaining print-then-exit sites "fit the buffer and survive by SIZE".
+  · ~~**B0b**~~ **PARTLY DONE 2026-08-16, and the review's numbers did NOT reproduce.** What I measured
+    on this machine, and the correction matters more than the fix:
+    · **The `--agents` claim was wrong here.** The review reported java `rc=0` silent truncation, swift
+      141, rust 101, ts 0-with-a-diagnostic. Into a reader that CLOSES, all four exit 0 silently — macOS
+      pipe buffers grow past the 17–24 KiB payloads, so EPIPE never fires and nothing is truncated. Into
+      a reader that STALLS holding the pipe open, **all four HANG with no diagnostic, uniformly.** That
+      is the residual candor-ts's CHANGELOG already states: a BLOCKING write cannot be bounded from user
+      code without going async, and nothing on the `--agents` path makes fd 1 non-blocking. Four-way and
+      unresolved — a real item, but not the one that was filed, and not engine-specific.
+    · **The `scan.mjs` claim was right and worse than stated. FIXED.** `--json --policy` over 400 files:
+      95281 bytes to a file and valid JSON; **65536 through a pipe and a JSONDecodeError**. Now through a
+      shared `writeStdoutSync()`, along with `printAgents` and all twelve `emit` sites in query.mjs.
+      Rows compare a pipe against a real file. **rust (106781) and swift (116222) are byte-identical
+      file-vs-pipe — clean siblings, so this is Node's async stdout, not a family defect.**
+    · Still open: java's `System.out.write` without `checkError()` is a real code smell (PrintStream
+      swallows IOException) even though it did not truncate here — measure it on Linux before acting.
   · **B0c the release harness's own gaps**, from the same review: `release-preflight.sh` took four fixes
     and has ZERO executable coverage (it appears in `release-test.sh` only as two `grep -q` presence
     checks) — the same "a staged site absent from the fixture is an untested site" argument that

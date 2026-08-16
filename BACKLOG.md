@@ -230,19 +230,47 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       not a callable function), placed above the report write because the gate block runs after the
       envelope is serialised. Three bounds verified. A peek that cannot run leaves `[]` and never fails
       the gate.
-    · **candor-java, candor-swift — NOT STARTED.** Follow rust as the template; the shape is settled.
-      java's exclusion is not a scope choice like the others — it reads BYTECODE, so an uncompiled
-      `.java` is closer to an operator error ("you pointed me at 300 sources and 3 classes") and wants
-      its own reason string and probably a nudge, not a scope entry.
-    · **THE FIXTURE TRAP, which cost time in BOTH ports and will cost it again.** To test the
-      policy-bound (`deny Net` must say nothing about an out-of-scope `Exec`) the excluded file must
-      perform Exec and NOTHING ELSE. The obvious fixture — `Command::new("curl")` / `execSync("curl
-      http://…")` — is classified Net AS WELL AS Exec, so the `deny Net` row matches legitimately and
-      reads as a broken bound. An argument-free `ls` isolates it. Twice now the fixture could not test
-      the thing it claimed.
-    · **⟨0.26⟩ MAKES THE PORT ALL-OR-NOTHING**: a partial manifest answers WORSE than an absent one, so
-      none of this is shippable until all four engines emit both halves. Then the spec clause and a
-      conformance PART whose rows are the BOUNDS, not the finding.
+    · **candor-swift — BOTH HALVES DONE.** `excluded` (`manifest`, `harness-target`, `test-source`,
+      `outside-the-target-closure`, `build-output`) plus the peek as a CHILD `candor-swift` over the
+      parent's own excluded list — this engine's scan is top-level code, not a callable function, so the
+      "same classifier" guarantee comes from the same BINARY. The child is handed the LIST rather than
+      re-deriving the rules, because `--target` prunes sources far below the walk. Three bounds pinned +
+      the control + the ⟨0.21⟩ mirror. Two defects caught in the writing, both by this repo's own guards:
+      `waitUntilExit()` (forbidden here — it would have hung every Linux scan with a policy), and a loc
+      match comparing the child's RELATIVE path against the parent's ABSOLUTE one, which missed every
+      time and silently fell back to the class `excluded`. Self-gate spawn inventory 2 → 3, justified.
+    · **candor-java — BOTH HALVES DONE, and its exclusion really is a different kind.** The other three
+      make a SCOPE decision among files they can read; this one reads BYTECODE. So `source-without-class`
+      is `peeked:false` + a NUDGE (how many sources have no class, how many classes there were, what to
+      scan instead), and the peek's real target is `archive-under-the-scan-root` — a jar under the scan
+      root is bytecode it reads perfectly well that a `.class`-filtering walk never opens
+      (`build/libs/app.jar` beside `build/classes` is the ordinary shape). A recursive `runScan` ON A
+      THREAD, because `resetState()` + a thread-local ctx means peeking in-line would destroy the
+      analysis whose report it joins. Three java-only rows the others did not need: a qual the gate
+      ALREADY judged is never an out-of-scope finding (the same code twice in one repo root); a REFUSED
+      policy leaves the key absent, not `[]` (§3.1 answerability binds every producer, not just the
+      gate); and the policy parse rides the peek's thread with stderr silenced, because `parsePolicy`
+      fills a thread-local rule list AND prints.
+    · **`peeked` — THE FIELD THE PORT FORCED, added to all four.** An empty `outOfScope` claims "I read
+      the excluded files and none held a denied effect", and it may claim that only about classes it
+      actually read. rust and ts are `true` throughout (their peek is the exact complement of their
+      scan), which is why the gap was invisible from those two; java cannot read an uncompiled `.java`
+      and swift will not read `.build/`. Without it their `[]` certifies files nobody opened — ⟨0.26⟩'s
+      partial-manifest failure. **Durable: a flag that is constant in the first two engines you build is
+      not thereby a property of the rung.**
+    · **N3 IS STILL NOT COVERED, in any of the four**, and now says so in the code: a shell script running
+      `curl | sh` under the scan root is invisible. Recording it costs the block its bound
+      (FILE-SET-DESIGN §3). Named here so it is a decision rather than a discovery.
+    · **THE FIXTURE TRAP, which cost time in ALL FOUR ports.** To test the policy-bound (`deny Net` must
+      say nothing about an out-of-scope `Exec`) the excluded file must perform Exec and NOTHING ELSE. The
+      obvious fixture — `Command::new("curl")` / `execSync("curl http://…")` / `Runtime.exec("curl …")` —
+      is classified Net AS WELL AS Exec, so the `deny Net` row matches legitimately and reads as a broken
+      bound. An argument-free `ls` isolates it. Four times now the fixture could not test what it claimed.
+    · **REMAINING: the spec clause and the conformance PART.** ⟨0.26⟩ made the port all-or-nothing and all
+      four now emit both halves + `peeked`, so the block is shippable — but the rung is not DONE until
+      §2 carries the clause and a PART pins it four-way, with rows that are the BOUNDS (policy-scoped,
+      policy-bounded, verdict-unmoved, the `[]` control, the ⟨0.21⟩ mirror) rather than the finding. The
+      three engine key-set pins that failed on first build (swift, java ×2) are the model for the rows.
     Original statement of the defect:
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`

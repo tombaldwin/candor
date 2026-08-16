@@ -56,6 +56,22 @@ acquire() {
   # the exact shape that exposed the ts declaration-purity defect. Do not drop it for being "not really
   # TypeScript" — that property is the point.
   clone axios   https://github.com/axios/axios        v1.7.2
+  # ⟨0.29⟩ got + zx — added because the ts arm of THIS HARNESS was structurally blind. MEASURED across the
+  # four projects above: TWO effect-bearing functions in total, against 1523 Fs in java, 72 in rust and 16
+  # in swift. zod and chalk are genuinely near-pure, hono's effects sit behind adapters, and axios is the
+  # deliberate `.d.ts` case — so every ts oracle was reporting on almost nothing, and oracle [2] read
+  # `unmeasured` for exactly the reason java did until it began publishing `incomplete`: not clean, BLIND.
+  #
+  # BOTH MUST BE TYPESCRIPT IMPLEMENTATIONS, and the first attempt was not: `execa` looks ideal (it spawns
+  # processes with computed commands) and is `index.js` + `lib/**/*.js` behind an `index.d.ts` — so
+  # candor-ts analysed ONE unit of it, exactly like axios. A package being written "in TypeScript" on its
+  # README is not the same as shipping `.ts` sources, and the corpus is where that difference shows.
+  #   got — `source/**/*.ts`, an HTTP client: 217 analyzed, 111 effectful, 21 Net. Gives the ts arm of
+  #         oracles [1] and [3] something to be about.
+  #   zx  — `src/*.ts`, a shell wrapper: Fs with COMPUTED paths, so it exercises the `incomplete` marker
+  #         and callers of incomplete functions — the shape oracle [2] could not see for this engine.
+  clone got     https://github.com/sindresorhus/got     v14.4.1
+  clone zx      https://github.com/google/zx            8.1.4
   clone swift-argument-parser https://github.com/apple/swift-argument-parser 1.4.0
   clone alamofire             https://github.com/Alamofire/Alamofire         5.9.1
   local M=https://repo1.maven.org/maven2
@@ -83,7 +99,7 @@ scan() {
   # axios exits 2 with "no TypeScript sources" ONLY if its `.d.ts` is excluded; it currently scans. A
   # JS-only tree (express) legitimately refuses at exit 2 — that is candor-ts being right, not a finding,
   # which is why the set holds no JS-only package.
-  for t in zod chalk hono axios; do [ -d "$SRC/$t" ] && run ts "$t" node "$TS/scan.mjs" "$SRC/$t" --out "$OUT/ts.$t"; done
+  for t in zod chalk hono axios got zx; do [ -d "$SRC/$t" ] && run ts "$t" node "$TS/scan.mjs" "$SRC/$t" --out "$OUT/ts.$t"; done
   for s in swift-argument-parser alamofire; do [ -d "$SRC/$s" ] && run swift "$s" "$SW" "$SRC/$s" --out "$OUT/swift.$s"; done
   # java's file sink is `--json <file>`, NOT `--out <prefix>`. Getting this wrong makes all four java
   # rows exit 2 on an unknown flag — which is §6.2 behaving correctly, and reads as an engine defect.

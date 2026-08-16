@@ -43,6 +43,9 @@ RULES = {
     "AS-EFF-008": ("EffectHostNotAllowlisted", "A function reaches a host/effect outside the allowlist."),
     "AS-EFF-009": ("ForbiddenEffectFlow", "A forbidden layer→effect flow is transitively reachable."),
     "AS-EFF-010": ("ContainmentBreached", "An effect escaped the layer it is contained to."),
+    # ⟨0.29⟩ its OWN rule id, not 009's. GitHub code scanning dedups, links and DISMISSES by rule id, so
+    # sharing `forbid`'s would let one dismissal silently cover both — and they are opposite constructs.
+    "AS-EFF-011": ("PermissionScopeExceeded", "A function reaches a scope an `only` permission rule does not list."),
 }
 
 # SARIF level per code. AS-EFF-007 is the sole heuristic ADVISORY (candor-spec §6 — it never fails CI, so

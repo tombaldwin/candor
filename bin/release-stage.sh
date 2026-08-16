@@ -192,4 +192,8 @@ echo "release-stage: $changed edit(s), $skipped already-current."
 echo "NOTHING is committed, tagged or pushed — review the diffs, then:"
 echo "    bash bin/release-preflight.sh <spec> $VER      # judges what this staged"
 echo '  spec DECLARATIONS are deliberately untouched (a floor bump is a separate, earlier decision).'
-echo "  cross-repo PINS (adopt/, jbang, ENGINE_PIN) are updated AFTER the release exists — preflight [3]."
+# ⟨0.29⟩ the two IDE pins joined preflight [3] and this line did not move with them, so the operator
+# instruction enumerated a SUBSET of what the gate now blocks on — the reader follows this, the gate
+# fails on something it never mentioned.
+echo "  cross-repo PINS (adopt/, jbang, ENGINE_PIN, the vscode + jetbrains candorTs/candorJava pins) are"
+echo "  updated AFTER the release exists — preflight [3] enumerates all of them."

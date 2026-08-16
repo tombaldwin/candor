@@ -80,7 +80,7 @@ and the user — or you, next session — can re-query it without re-scanning.
 - **The trust rule (never skip):** if `unresolved` is true or `Unknown` is in the set, the effect
   list may be incomplete — read the source before relying on it. Never conclude "pure" from an
   unresolved entry. candor deliberately discloses what it cannot see.
-- **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` — same grammar in
+- **Enforcement** is a `CANDOR_POLICY` file (`deny` / `pure` / `allow` / `forbid` / `only` — same grammar in
   every language, spec §6.2) that fails the build deterministically.
 - **Prefer MCP over shelling out, if your harness speaks it:** `candor-mcp`
   (`npx -y -p candor-ts candor-mcp`) serves **any** engine's report — blast radius, `whatif`, the gate

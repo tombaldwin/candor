@@ -218,6 +218,23 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     rust/java print the rule text while ts/swift print a count. The row asserts only that the word
     `forbid` appears, and says so. Pinning the stronger form needs two engines changed first.
 
+  · **B1 — IN PROGRESS 2026-08-16. Decision made (rung 2 of 4: DISCLOSE + PEEK), see
+    candor-spec/FILE-SET-DESIGN.md §5.** State by engine:
+    · **candor-rust — BOTH HALVES DONE.** `excluded` (classes + counts + reasons, always emitted) and
+      the PEEK (`outOfScope`), implemented as a RECURSIVE `scan_one` with the file selection inverted so
+      "same classifier, different file set" is true by construction. Verdict unmoved. Three bounds
+      pinned: `deny Exec` finds it, `deny Net` on the same tree says nothing, no policy says nothing and
+      OMITS the key. 192 tests in candor-scan, integration 150, clippy clean.
+    · **candor-ts — DISCLOSURE DONE, PEEK NOT.** `excluded` ships. The peek needs to run BEFORE the
+      envelope is serialised (this engine's gate block runs after), and the approach is a child
+      `scan.mjs` over a generated tsconfig — the same-binary equivalent of rust's recursion, since this
+      engine is a script rather than a callable function. I built it, broke scan.mjs moving it, and
+      restored rather than shipping a repair of a repair.
+    · **candor-java, candor-swift — NOT STARTED.**
+    · **⟨0.26⟩ MAKES THE PORT ALL-OR-NOTHING**: a partial manifest answers WORSE than an absent one, so
+      none of this is shippable until all four engines emit both halves. Then the spec clause and a
+      conformance PART whose rows are the BOUNDS, not the finding.
+    Original statement of the defect:
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`
     running `Command::new("curl")` invisible. **NOW MEASURED IN ALL FOUR (java arm done 2026-08-15).**

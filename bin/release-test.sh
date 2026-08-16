@@ -652,6 +652,79 @@ printf '%s' "$green" | grep -q "CI still unfinished" \
   || ok "[10] CONTROL: …and no spurious unfinished line"
 rm -rf "$PF"
 
+say "7c. release-preflight.sh [11] — the conformance REUSE stamp cannot outrun the tree"
+# The stamp says "conformance was green at these SHAs", and a later run skips the 330-second suite when
+# nothing that matters moved. Two ways that can lie, both repaired in this release and neither rowed:
+# a stamp written over a DIRTY tree records HEAD for a state that included uncommitted edits, and a
+# licensed-path skip that swallows a change under `conformance/` reuses a green for a suite that moved.
+#
+# `run.sh` is a STUB. The real four-way suite needs four engines and five minutes; what is under test
+# here is the stamp bookkeeping around it, and a check that can only run when all four engines are built
+# is a check this harness cannot have.
+PC="$(mktemp -d)"; mkdir -p "$PC/bin" "$PC/root/candor-spec/conformance" "$PC/root/candor"
+cat > "$PC/bin/gh" <<'GHEOF'
+#!/bin/bash
+case "$1 $2" in "auth status") exit 0 ;; "run list") printf '[]\n' ;; *) exit 0 ;; esac
+GHEOF
+chmod +x "$PC/bin/gh"
+printf '#!/bin/bash\necho "  x -> MATCH"\necho "conformance: OK (stub)"\n' > "$PC/root/candor-spec/conformance/run.sh"
+chmod +x "$PC/root/candor-spec/conformance/run.sh"
+printf 'stub\n' > "$PC/root/candor-spec/conformance/README.md"
+# THE STAMP MUST BE IGNORED, exactly as it is in the real repo (`conformance/.gitignore`). Without this
+# the stamp file itself makes candor-spec dirty, the read path refuses on "uncommitted changes", and the
+# reuse branch is unreachable — every row below would fail for a reason that is purely the fixture's.
+printf '.last-green-shas\n' > "$PC/root/candor-spec/conformance/.gitignore"
+printf 'x\n' > "$PC/root/candor/f.txt"
+for r in candor-spec candor; do
+  ( cd "$PC/root/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
+done
+STAMPF="$PC/root/candor-spec/conformance/.last-green-shas"
+pcrun() { PATH="$PC/bin:$PATH" CANDOR_ROOT="$PC/root" CI_NO_WAIT=1 PINS_ADVISORY=1 \
+            bash "$UMBRELLA/bin/release-preflight.sh" 0.99 0.99.0 2>&1; }
+
+# A CLEAN tree: the suite runs and the stamp is recorded.
+out="$(pcrun)"
+printf '%s' "$out" | grep -q "conformance OK" && [ -f "$STAMPF" ] \
+  && ok "[11] a green run over a CLEAN tree records the reuse stamp" \
+  || bad "[11] no stamp after a green run over a clean tree"
+# …and the next run REUSES it. Without this the dirty-tree row below cannot mean anything: a stamp that
+# is never read is trivially honest.
+printf '%s' "$(pcrun)" | grep -q "conformance REUSED" \
+  && ok "[11] …and an unchanged tree REUSES it (so the stamp is load-bearing)" \
+  || bad "[11] the stamp was written but never reused — the rows below would prove nothing"
+# A DIRTY tree: the suite runs, and the stamp must be REMOVED rather than recorded against a bare HEAD.
+# DIRTY A FILE THAT IS NOT THE STUB. The first version appended to `run.sh` itself, which made the stub
+# a broken script — conformance then FAILED, and the row was measuring a failed suite rather than a
+# dirty tree. Two different red states, one of which is not the subject.
+printf 'uncommitted\n' >> "$PC/root/candor-spec/conformance/README.md"
+dout="$(pcrun)"
+printf '%s' "$dout" | grep -q "not recording a reuse stamp" \
+  && ok "[11] a run covering UNCOMMITTED changes does not record a stamp, and says so" \
+  || bad "[11] silently stamped a dirty tree — reuse would assert a green for a state never tested"
+[ -f "$STAMPF" ] \
+  && bad "[11] the stale stamp survived a dirty run — the next run reuses a green that predates the edits" \
+  || ok "[11] …and the pre-existing stamp is removed, not left for the next run to trust"
+( cd "$PC/root/candor-spec" && git add -A && git -c user.email=t@e -c user.name=t commit -qm dirty )
+pcrun >/dev/null 2>&1   # re-establish a stamp over the now-clean tree
+[ -f "$STAMPF" ] || bad "[11] setup: no stamp after the re-establishing run — the two rows below cannot mean anything"
+# SKIP_NEVER BEFORE SKIP_LICENSED: `conformance/README.md` matches the licensed docs pattern AND lives
+# under conformance/. Licensed-first would swallow it and reuse a green for a suite whose own directory
+# moved; `must_ledger.py` READS that file, so the swallow was not hypothetical.
+printf 'edited\n' >> "$PC/root/candor-spec/conformance/README.md"
+( cd "$PC/root/candor-spec" && git add -A && git -c user.email=t@e -c user.name=t commit -qm readme )
+printf '%s' "$(pcrun)" | grep -q "conformance OK" \
+  && ok "[11] a change under conformance/ FORCES the run even though its name is licensed" \
+  || bad "[11] reused a green across a conformance/ change — SKIP_LICENSED is winning over SKIP_NEVER"
+pcrun >/dev/null 2>&1   # …and re-establish the stamp before the control below
+# THE CONTROL: a genuinely licensed path outside conformance/ must still be skippable, or the row above
+# passes against a check that simply never reuses.
+printf 'note\n' >> "$PC/root/candor/CHANGELOG.md"
+( cd "$PC/root/candor" && git add -A && git -c user.email=t@e -c user.name=t commit -qm chlog )
+printf '%s' "$(pcrun)" | grep -q "conformance REUSED" \
+  && ok "[11] CONTROL: a CHANGELOG-only change still reuses (the licence is not vacuous)" \
+  || bad "[11] CONTROL: refused to reuse across a changelog edit — nothing is licensed, so nothing is tested"
+rm -rf "$PC"
+
 say "7. changelog-lag.sh — preflight [5b]"
 # [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.
 # This asks whether the description stopped moving while the thing it describes kept going. Two shapes

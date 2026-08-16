@@ -153,7 +153,13 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     scratch.mjs's leak-sweeper is what makes the leaking process unkillable, `--parallel` or not.
 
   **PHASE B — ONE ⟨0.29⟩ rung (Tom's call: single rung), in this order.**
-  · **B0 (NEW, jumps the queue — a LIVE false all-clear on the agent channel).** SPEC §3.1's
+  · ~~**B0**~~ **DONE 2026-08-16** — four-way, `candor-ts 3ad0d8e`+, `candor-rust`, `candor-swift`, spec
+    PART 47 extended. The MCP/LSP half and the advisory-verb half both closed; one shared helper per
+    engine (`wholePolicyUnanswerable` / `whole_policy_refusals` / `wholePolicyRefusals`) so the next
+    report route inherits the rule. **A candor-swift TEST was pinning that engine's divergence from
+    the reference** (`ok` present for an `allow`-only policy, where java has always withheld it) —
+    that is how the divergence survived. Original scope, for the record:
+    **B0 (was: jumps the queue — a LIVE false all-clear on the agent channel).** SPEC §3.1's
     answerability MUST binds every route reading a §2 report, and `candor-ts`'s MCP and LSP servers
     violate it. `mcp.mjs:408` passes the WHOLE policy to `evaluatePolicy`; the CLI sibling at
     `query.mjs:2104` strips `forbid`/`allow` with a comment saying handing them to the matcher "would be

@@ -225,11 +225,11 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       "same classifier, different file set" is true by construction. Verdict unmoved. Three bounds
       pinned: `deny Exec` finds it, `deny Net` on the same tree says nothing, no policy says nothing and
       OMITS the key. 192 tests in candor-scan, integration 150, clippy clean.
-    · **candor-ts — DISCLOSURE DONE, PEEK NOT.** `excluded` ships. The peek needs to run BEFORE the
-      envelope is serialised (this engine's gate block runs after), and the approach is a child
-      `scan.mjs` over a generated tsconfig — the same-binary equivalent of rust's recursion, since this
-      engine is a script rather than a callable function. I built it, broke scan.mjs moving it, and
-      restored rather than shipping a repair of a repair.
+    · **candor-ts — BOTH HALVES DONE.** `excluded` plus the peek, the latter as a child `scan.mjs` over
+      a generated tsconfig (the same-binary equivalent of rust's recursion, since this engine is a script
+      not a callable function), placed above the report write because the gate block runs after the
+      envelope is serialised. Three bounds verified. A peek that cannot run leaves `[]` and never fails
+      the gate.
     · **candor-java, candor-swift — NOT STARTED.**
     · **⟨0.26⟩ MAKES THE PORT ALL-OR-NOTHING**: a partial manifest answers WORSE than an absent one, so
       none of this is shippable until all four engines emit both halves. Then the spec clause and a

@@ -214,6 +214,14 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       `test.mjs`'s private write loop is DELETED in favour of the shared one the contract row already
       drives; `scratch.mjs` covers all eight harnesses (59 sites) with `keepOnFailure` wired in three.
       release-test: 82 → 88.
+  · ~~**B0d**~~ **DONE 2026-08-16, and the filing was HALF WRONG.** It said rust/java print the rule while
+    ts/swift print a count. Measured across all four first: rust, java AND ts printed it — **candor-swift
+    was the only engine that did not**, so a two-engine item was a one-engine item. The rule now rides
+    `why` ITSELF rather than a caller's prefix, because candor-ts has SIX printers of those rows and THREE
+    print `why` alone (the advisory disclosure, the LSP fix path, and the MCP error — the agent channel),
+    where a predicate-style message would have read as a fragment and lost the rule entirely. `allow`
+    moved with `forbid`. PART 47's row is strengthened from "the word `forbid` appears" to the RULE TEXT,
+    and falsifies. Original statement:
   · **B0d PART 47's remaining gap, deliberately not closed today:** the refusal must "name the rule", and
     rust/java print the rule text while ts/swift print a count. The row asserts only that the word
     `forbid` appears, and says so. Pinning the stronger form needs two engines changed first.
@@ -290,6 +298,21 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     is answering a narrower question — "of the files I chose to open, how many failed" — so the shape is
     the same in java as in the other three, with no advisory to soften it. Highest-value soundness item
     outstanding.
+  · ~~**B2**~~ **DONE 2026-08-16, four-way + SPEC §6.2 + conformance PART 49.** Three rulings pinned, each
+    of which could have gone the other way: `A -> A` implicit; the walk STOPS at a permitted scope (a
+    permitted callee's own deps answer to the rules about IT — descending would demand the transitive
+    closure of everything you permit, the same enumeration-that-rots one level down); zero-match measured
+    on `from` ALONE, unlike `forbid`'s either-endpoint count. AS-EFF-009 reused rather than a code minted.
+    **THE RUNG REINTRODUCED THE DEFECT IT EXISTS TO REMOVE, TWICE**: candor-java and candor-rust each
+    DISCLOSED an `only` rule as unanswerable from a report and then EVALUATED it anyway, printing a
+    violation beside their own statement that it could not be evaluated. Same shape both times — the
+    removal site sits ~50 lines from where the kind is added, and only the one you are editing gets
+    updated. **PART 49 was VACUOUS TWICE before it caught the rust one**: an `only`-only policy makes every
+    engine refuse before evaluating, and a wholly pure fixture leaves no call graph to walk, so "no
+    AS-EFF-009 was drawn" was true however broken the removal was. It needed an answerable `deny` beside
+    the rule AND an effect in the tree. Its checker records that the **ts arm still cannot fail** (that
+    engine passes an empty call graph on the report route) — four MATCHes are not four equally strong
+    arms. The nightly rust engine REFUSES `only` (exit 2) rather than running green. Original statement:
   · B2 the PERMISSION FORM, `only <A> -> <B>…` — A may depend on A and the listed scopes, nothing else.
     **The design argument: `forbid` FAILS OPEN (a dependency you forgot to prohibit is silently
     permitted); `only` FAILS SAFE (one you forgot to permit is a loud violation).** That inverts the
@@ -297,6 +320,20 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
     `A → A` implicitly permitted, else the segment-prefix rule makes it unusable (measured: the natural
     `forbid a.b.model -> a.b` self-fires at 58). Scan-route only, refused on report routes — EXTENDS
     PART 47 rather than needing a new part. Zero-match must disclose under ⟨0.27⟩.
+  · ~~**B3**~~ **DONE 2026-08-16, four-way + SPEC §2 + conformance PART 50 — and it was a CARDINAL SIN,
+    not a wire gap.** The filing was right that java and ts were unmeasured. Measured: rust and swift
+    publish per-fn `incomplete`; **ts and java computed it internally and published nothing**, so §2's
+    chained-JOIN clause ("a join that drops `incomplete` lets a benign literal in the consumer certify
+    what the dependency declared uncertifiable") described a join that could not happen. THE HARM, across
+    a boundary: a dep whose `Fs` path is a runtime value said nothing; a consumer that ALSO wrote one
+    allowed literal joined `paths:["/tmp/lit"]` with no marker, and **`allow Fs /tmp/lit` answered
+    `policy ✓`** where rust/swift charge AS-EFF-008 on identical code. In ONE package all four already
+    fail closed, which is why nothing local had caught it and why PART 50's row is the CHAINED VERDICT.
+    **`Net` was already safe, and that is the tell** — ⟨0.20⟩ gave it a wire form of its own
+    (`netClass ∋ unknown-host`), so the one effect anyone had thought about at the boundary was covered
+    while Fs/Exec/Db had nothing: the rule was written for the instance that was measured. ts's decision
+    to keep the field internal rested on a comment asserting "java/rust keep it out of the report too",
+    **which was false for rust and had been false since the field existed**. Original statement:
   · B3 #97 — §2 stated over the INSTANCE rather than the CONDITION. Four-way row required; **java and ts
     are UNMEASURED on `incomplete`, not clean.**
   One rung because all three are §2/§6.2, they share a floor bump, a conformance cycle and a release —

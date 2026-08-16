@@ -189,8 +189,14 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       shared `writeStdoutSync()`, along with `printAgents` and all twelve `emit` sites in query.mjs.
       Rows compare a pipe against a real file. **rust (106781) and swift (116222) are byte-identical
       file-vs-pipe — clean siblings, so this is Node's async stdout, not a family defect.**
-    · Still open: java's `System.out.write` without `checkError()` is a real code smell (PrintStream
-      swallows IOException) even though it did not truncate here — measure it on Linux before acting.
+    · **java's silent truncation CONFIRMED AND FIXED 2026-08-16.** Shrinking the PIPE (`F_SETPIPE_SZ`
+      to 4096) rather than growing the payload is what made it measurable: inside Linux, with a reader
+      that closes mid-write, candor-java exited **0 with an EMPTY stderr** while candor-ts on the
+      identical setup reported "cut short at 4096 of 24110 bytes". `PrintStream` swallows `IOException`
+      and there were ZERO `checkError` calls in `src/main`. Fixed with ONE check at exit — the error
+      flag LATCHES, so a shutdown hook covers all ~148 `System.out` sites, and guarding them
+      individually is how 147 would have stayed unguarded. Exit 0 kept (`| head` must not be a failure).
+      Verified to fire on a bulk report into a closing pipe and stay silent on the same scan to a file.
   · ~~**B0c**~~ **MOSTLY DONE 2026-08-16** (umbrella `2a5fdd8`, candor-rust, candor-ts).
     · **The stager guarded FIVE of the SEVEN repos it edits** — candor-spec and the umbrella, the two a
       release author is most likely to have open, were the two uncovered. Widened; the fixture now
@@ -203,9 +209,11 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       without auth or a network. Teeth-verified against reverts of the A3 fix. release-test: 75 → 82.
     · **Both orphaning harnesses closed.** `test-watch.mjs`: 1 orphan measured without a handler, 0
       with. `candor-rust/tests/integration.sh`: zero traps in the whole file, ~180s window.
-    · STILL OPEN: preflight [11]'s dirty-stamp row (the fixture has no conformance dir); `test.mjs`'s own
-      EAGAIN arm still has no row and is unreachable from any route the suite drives; `scratch.mjs` says
-      it covers "every harness here" and has one importer, 108 bare `mkdtempSync` sites remain.
+    · **ALL THREE RESIDUALS CLOSED 2026-08-16.** preflight [11] has six rows behind a stubbed `run.sh`
+      (dirty tree writes no stamp, a `conformance/` change defeats the licence, plus two controls);
+      `test.mjs`'s private write loop is DELETED in favour of the shared one the contract row already
+      drives; `scratch.mjs` covers all eight harnesses (59 sites) with `keepOnFailure` wired in three.
+      release-test: 82 → 88.
   · **B0d PART 47's remaining gap, deliberately not closed today:** the refusal must "name the rule", and
     rust/java print the rule text while ts/swift print a count. The row asserts only that the word
     `forbid` appears, and says so. Pinning the stronger form needs two engines changed first.

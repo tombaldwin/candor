@@ -493,21 +493,46 @@ out3="$(sb2 "$SBSH")"
 printf '%s' "$out3" | grep -q 'lingering.md' \
   && ok "step 3 REPORTS a mention the bump left behind (reached under --decls-only)" \
   || bad "step 3 did not report a lingering 0.27 mention — the triage step is still unreachable"
-# THE PROBE'S TEETH, by reintroducing the exact historic defect into a COPY: unbrace `${OLD}` inside the
-# scan's own filter so the multi-byte `⟩` swallows the name and `set -u` kills every call. A green run
-# here would mean the probe cannot see the failure it was written for.
+# THE PROBE'S TEETH: break the scan in a COPY so it cannot match, and require the run to fail.
+#
+# THE INJECTION IS DETERMINISTIC, and the first version was not. It reintroduced the exact historic defect
+# by unbracing `${OLD}` so the multi-byte `⟩` would swallow the variable name under `set -u` — which works
+# on macOS (bash 3.2: `OLD⟩: unbound variable`) and NOT on Linux (bash 5 parses the name as `OLD`, expands
+# it, and the scan runs fine). So the row asserted a failure that only exists on one platform, was green
+# locally, and turned CI red the moment it was pushed.
+#
+# Worth more than the fix: THE ORIGINAL DEFECT WAS BASH-3.2-ONLY. The green "no remaining mentions" over a
+# scan that never ran could only have happened on a developer's Mac — CI would never have reproduced it,
+# whichever way the test had been written. That is why the probe has to live in the script rather than in
+# a row, and why the row's job is only to prove the probe still fires.
+# The injection is a `return 0` at the top of `scan_for_old`, so the scan matches nothing for ANY input
+# including the probe's known-positive fixture. Editing the grep itself was the obvious move and the wrong
+# one: that line ends in a `\` continuation, so replacing it orphaned the `--include=` lines below and the
+# copy died of a syntax error — a nonzero exit for a reason that has nothing to do with the probe, which
+# the row would have read as success. A broken script and a working script whose scan is dead are exactly
+# what this row has to tell apart.
+# A CLEAN TREE FIRST. The previous run left every fixture repo bumped and dirty, and spec-bump refuses a
+# dirty tree — so without this the broken copy never reaches step 3 at all, and BOTH rows below measure
+# the refusal instead: the first fails with "the probe is asleep" (it is not, it never ran) and the second
+# PASSES, because a run that stopped at the precondition never printed the green line either. That is a
+# vacuous pass sitting directly beneath a misdiagnosed failure.
 sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
-BROKE="$SB/broken-spec-bump.sh"; sed 's/⟨${OLD}⟩/⟨$OLD⟩/' "$SBSH" > "$BROKE"
-if grep -q '⟨\$OLD⟩' "$BROKE"; then
+BROKE="$SB/broken-spec-bump.sh"
+awk '{ print } /^[[:space:]]*scan_for_old\(\) \{[[:space:]]*$/ { print "  return 0" }' "$SBSH" > "$BROKE"
+bash -n "$BROKE" 2>/dev/null || bad "the broken copy does not even parse — the teeth row would pass for the wrong reason"
+if ! cmp -s "$SBSH" "$BROKE"; then
   out4="$(sb2 "$BROKE")"; rc4=$?
-  [ "$rc4" != 0 ] && printf '%s' "$out4" | grep -q 'the SCAN is broken' \
-    && ok "…and the liveness probe FAILS the run when the scan is dead (teeth)" \
-    || bad "a spec-bump whose mentions scan cannot run at all still exited $rc4 — the probe is asleep"
+  # …and prove the run REACHED step 3, so neither row below can be satisfied by an early refusal.
+  printf '%s' "$out4" | grep -q 'remaining mentions of' \
+    || bad "the broken copy never reached step 3 — both teeth rows below are measuring something else"
+  { [ "$rc4" != 0 ] && printf '%s' "$out4" | grep -q 'the SCAN is broken'; } \
+    && ok "…and the liveness probe FAILS the run when the scan cannot match (teeth)" \
+    || bad "a spec-bump whose mentions scan matches nothing still exited $rc4 — the probe is asleep"
   printf '%s' "$out4" | grep -q 'no remaining mentions' \
     && bad "the dead scan still printed a green 'no remaining mentions' ALONGSIDE the probe's ✘" \
     || ok "…and does not also print the reassuring green line"
 else
-  bad "could not reintroduce the unbraced-\$OLD defect — this teeth test asserted nothing"
+  bad "could not break the mentions scan in the copy — this teeth test asserted nothing"
 fi
 # THE MAIN PATH, which no row reached — and that is where the regression lived. `remaining_mentions()`
 # used the shared `rc` as its probe flag, but on the main path `rc` is step 2's SUITE accumulator, so any

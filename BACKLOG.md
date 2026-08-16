@@ -191,16 +191,21 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       file-vs-pipe — clean siblings, so this is Node's async stdout, not a family defect.**
     · Still open: java's `System.out.write` without `checkError()` is a real code smell (PrintStream
       swallows IOException) even though it did not truncate here — measure it on Linux before acting.
-  · **B0c the release harness's own gaps**, from the same review: `release-preflight.sh` took four fixes
-    and has ZERO executable coverage (it appears in `release-test.sh` only as two `grep -q` presence
-    checks) — the same "a staged site absent from the fixture is an untested site" argument that
-    justified the Cargo.lock work, applied to nothing else. `release-stage.sh:49` guards five repos and
-    edits seven (`candor/bin/candor`, and both CHANGELOGs via `_stage_changelogs.py`); the stage fixture
-    has no `candor-spec` at all, so that helper's floor-shaped-heading branch — which exists ONLY for
-    candor-spec — is unexecuted. `test.mjs`'s own EAGAIN arm still has no row and is unreachable from any
-    route the suite drives. `integration.sh:531` (rust) and `test-watch.mjs:74` (ts) orphan long-lived
-    children with no trap — the direct siblings of the child-lifetime fix. `scratch.mjs` says it covers
-    "every harness here" and has exactly one importer; 108 bare `mkdtempSync` sites remain.
+  · ~~**B0c**~~ **MOSTLY DONE 2026-08-16** (umbrella `2a5fdd8`, candor-rust, candor-ts).
+    · **The stager guarded FIVE of the SEVEN repos it edits** — candor-spec and the umbrella, the two a
+      release author is most likely to have open, were the two uncovered. Widened; the fixture now
+      carries candor-spec as a REAL repo (it was a loose directory, so the changelog helper's
+      floor-shaped-heading branch — which exists only for candor-spec — could never be driven through
+      the stager). The dirty-tree row now dirties each of three repos and requires the refusal to NAME
+      the repo: with the old guard the `candor` row PASSED, because the run failed for an unrelated
+      reason and "it refused" was true while "the guard covers it" was not.
+    · **`release-preflight.sh` now has executable rows** — five, with `gh` stubbed so [10] is reachable
+      without auth or a network. Teeth-verified against reverts of the A3 fix. release-test: 75 → 82.
+    · **Both orphaning harnesses closed.** `test-watch.mjs`: 1 orphan measured without a handler, 0
+      with. `candor-rust/tests/integration.sh`: zero traps in the whole file, ~180s window.
+    · STILL OPEN: preflight [11]'s dirty-stamp row (the fixture has no conformance dir); `test.mjs`'s own
+      EAGAIN arm still has no row and is unreachable from any route the suite drives; `scratch.mjs` says
+      it covers "every harness here" and has one importer, 108 bare `mkdtempSync` sites remain.
   · **B0d PART 47's remaining gap, deliberately not closed today:** the refusal must "name the rule", and
     rust/java print the rule text while ts/swift print a count. The row asserts only that the word
     `forbid` appears, and says so. Pinning the stronger form needs two engines changed first.

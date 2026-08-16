@@ -266,11 +266,18 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       obvious fixture — `Command::new("curl")` / `execSync("curl http://…")` / `Runtime.exec("curl …")` —
       is classified Net AS WELL AS Exec, so the `deny Net` row matches legitimately and reads as a broken
       bound. An argument-free `ls` isolates it. Four times now the fixture could not test what it claimed.
-    · **REMAINING: the spec clause and the conformance PART.** ⟨0.26⟩ made the port all-or-nothing and all
-      four now emit both halves + `peeked`, so the block is shippable — but the rung is not DONE until
-      §2 carries the clause and a PART pins it four-way, with rows that are the BOUNDS (policy-scoped,
-      policy-bounded, verdict-unmoved, the `[]` control, the ⟨0.21⟩ mirror) rather than the finding. The
-      three engine key-set pins that failed on first build (swift, java ×2) are the model for the rows.
+    · **THE CLAUSE AND THE PART ARE IN** (candor-spec `c12c349`): SPEC §2 carries `excluded`/`outOfScope`
+      + the never-a-second-path rule, and **PART 48** pins all four. Its rows are the BOUNDS, not the
+      finding — policy-scoped, policy-bounded, verdict-unmoved, and the `[]` CONTROL — because a part
+      asserting only "the warning fires" passes against an engine that reports every file it ever skipped.
+      **Falsified five ways on the real harness**, each with its own diagnosis. Two rulings worth carrying
+      forward: `class` tokens are ENGINE-CHOSEN (a shared enumeration would force one engine to file its
+      exclusion under another's name), and the TWIN arm is how "never a second analysis path" became
+      observable at all — no row can read which code path ran, so each engine is asked the same question
+      twice (peek vs. ordinary scan of the same code) and the two must agree. That turned a third
+      `unenforced` ledger entry into an exercised one.
+    · **REMAINING FOR B1: nothing but the RELEASE.** The floor moves at release, not here — every engine
+      declaring 0.29, `bin/release.sh`, then `release-verify`. Ship it with whatever else rides 0.29.
     Original statement of the defect:
   · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`

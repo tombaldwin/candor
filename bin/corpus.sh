@@ -127,15 +127,21 @@ oracles() {
 import json,glob,os,sys,collections
 OUT=sys.argv[1]
 tot=collections.Counter(); callers=collections.Counter(); prop=collections.Counter()
+seen=collections.Counter(); dropped=collections.Counter()
 for f in sorted(glob.glob(OUT+"/*.json")):
     b=os.path.basename(f)
     if any(x in b for x in (".callgraph.",".locs.",".hierarchy.")): continue
     eng=b.split(".")[0]
     if eng not in ("rust","ts","swift","java"): continue   # a stray file must not invent an engine
     cg=f.rsplit(".json",1)[0]+".callgraph.json"
-    if not os.path.exists(cg): continue
+    # DROPS ARE COUNTED, NOT SWALLOWED. Both `continue`s below used to be silent, so an engine whose
+    # sidecars were all missing or unparseable contributed nothing and printed as though it had been
+    # asked — the same shape as the skip this file already refuses one oracle down. An engine that
+    # produced reports and lost every one of them is UNMEASURED, and the table has to say so.
+    if not os.path.exists(cg): dropped[eng]+=1; seen[eng]+=1; continue
     try: d=json.load(open(f)); g=json.load(open(cg))
-    except Exception: continue
+    except Exception: dropped[eng]+=1; seen[eng]+=1; continue
+    seen[eng]+=1
     fns={x.get("fn") or x.get("name"):x for x in d.get("functions",[])}
     inc={k for k,v in fns.items() if v.get("incomplete")}
     tot[eng]+=len(inc)
@@ -144,9 +150,14 @@ for f in sorted(glob.glob(OUT+"/*.json")):
             callers[eng]+=1
             if (fns.get(k) or {}).get("incomplete"): prop[eng]+=1
 bad=0
-for e in sorted(set(tot)|set(callers)):
+for e in sorted(set(tot)|set(callers)|set(seen)):
     note = "" if callers[e]==prop[e] else "  <-- FINDING"
     if callers[e]!=prop[e]: bad=1
+    if dropped[e]:
+        note += "  [%d/%d report(s) unusable: no or unparseable callgraph sidecar]" % (dropped[e], seen[e])
+    # Every report an engine produced was dropped: it is UNMEASURED here, which must not read as a pass.
+    if seen[e] and dropped[e] == seen[e]:
+        bad=1; note += "  <-- FINDING: this engine was not measured at all"
     # 0 callers is NOT a pass, it is an UNASKED question — say so rather than printing a flattering 0/0.
     state = "unmeasured (no caller of an incomplete fn in this corpus)" if callers[e]==0 else \
             "%d/%d propagated" % (prop[e], callers[e])
@@ -165,6 +176,13 @@ PY
   printf 'pub trait Store { fn put(&self, k: &str); }\npub fn caller<S: Store>(s: &S) { s.put("k"); }\n' > "$P/rust/src/lib.rs"
   printf '[package]\nname="c"\nversion="0.1.0"\nedition="2021"\n' > "$P/rust/Cargo.toml"
   printf 'public protocol Store { func put(_ k: String) }\npublic func caller(_ s: Store) { s.put("k") }\n' > "$P/swift/a.swift"
+  # java was NOT in this oracle — three engines asked, the fourth, the REFERENCE engine, never. The
+  # sibling-route shape this project keeps finding: a rule applied where the work happened and not to the
+  # arm beside it. Its body-less declaration is an interface method, the same shape as the Store protocol.
+  mkdir -p "$P/java"
+  printf 'public interface Store { void put(String k); }\n' > "$P/java/Store.java"
+  printf 'public class Caller { public static void caller(Store s) { s.put("k"); } }\n' > "$P/java/Caller.java"
+  javac -d "$P/java/classes" "$P/java/Store.java" "$P/java/Caller.java" >/dev/null 2>&1
   printf 'deny Unknown\n' > "$P/pol"
   node "$TS/scan.mjs" "$P/ts" --out "$P/t" >/dev/null 2>&1
   "$RS/candor-scan" "$P/rust" --out "$P/r" >/dev/null 2>&1
@@ -177,14 +195,22 @@ PY
   pick() { local f; for f in "$@"; do case "$f" in *callgraph*) continue;; esac
            [ -e "$f" ] && { printf '%s' "$f"; return 0; }; done; return 0; }
   gate() { local eng=$1 rep=$2; shift 2
-    [ -s "$rep" ] || { echo "      $eng  (no report — skipped)"; return; }
+    # A MISSING REPORT IS NOT A PASS. This printed "(no report — skipped)" and returned, so an engine
+    # whose scan failed — a crash, a flag rename, an empty tree — sailed through the one oracle built to
+    # catch its cardinal sin, and the run stayed green. The check that cannot fail is the check that is
+    # not there. `[ -x "$SW" ]` above is the legitimate engine-absent skip; this is a present engine that
+    # produced nothing.
+    [ -s "$rep" ] || { finding "$eng: produced NO report for the body-less-declaration oracle — the check
+      could not run, and an unrun check is not a green one"; return; }
     "$@" gate --report "$rep" --policy "$P/pol" >/dev/null 2>&1
     local rc=$?
     if [ "$rc" = 0 ]; then finding "$eng: \`deny Unknown\` is GREEN over a caller of a body-less declaration — it read PURE (cardinal sin; the other engines exit 1)"
     else echo "      $eng  exit=$rc (discloses)"; fi; }
+  [ -f "$JAR" ] && java -jar "$JAR" "$P/java/classes" --json "$P/j.json" >/dev/null 2>&1
   gate "ts   " "$P/t.json" node "$TS/query.mjs"
   gate "rust " "$(pick "$P"/r.*.scan.json)" "$RS/candor-query"
   [ -x "$SW" ] && gate "swift" "$(pick "$P"/s.*.Swift.json)" "$SW"
+  [ -f "$JAR" ] && gate "java " "$P/j.json" java -jar "$JAR"
 }
 
 echo "corpus: $HOME_DIR"

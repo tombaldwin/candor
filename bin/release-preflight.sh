@@ -235,6 +235,14 @@ checkpin "jbang       " "candor-java/jbang-catalog.json" 'releases/download'
 # It lagged at 0.18.0 through the 0.23.1 ship (brew updated the umbrella, engines stayed 0.18) → gate it:
 # on an engine release it MUST equal the release version. (Umbrella-only CLI patches don't run this arg.)
 checkpin "engine pin  " "candor/bin/candor"              'ENGINE_PIN='
+# ⟨0.29⟩ THE TWO IDE INTEGRATIONS PIN THE ENGINE THEY BUNDLE, and neither was ever registered here.
+# `candorTsVersion` is not documentation: it is the version `stage-server.mjs` installs from npm and
+# esbuild bundles into the shipped extension (JetBrains does the same in gradle), so a stale pin ships a
+# stale ENGINE to every IDE user. MEASURED 2026-08-16: both sat at 0.16.0 while candor-ts was 0.28.2 —
+# twelve rungs, including the ⟨0.29⟩ fix for `forbid` being ANSWERED FROM A REPORT on the LSP channel,
+# which is a defect these two are the delivery vehicle for. Nothing failed, because nothing asked.
+checkpin "vscode ts   " "candor/integrations/vscode/package.json"     '"candorTsVersion"'
+checkpin "jetbrains ts" "candor/integrations/jetbrains/gradle.properties" 'candorTsVersion='
 
 # --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
 # The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant

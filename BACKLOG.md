@@ -230,7 +230,16 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
       not a callable function), placed above the report write because the gate block runs after the
       envelope is serialised. Three bounds verified. A peek that cannot run leaves `[]` and never fails
       the gate.
-    · **candor-java, candor-swift — NOT STARTED.**
+    · **candor-java, candor-swift — NOT STARTED.** Follow rust as the template; the shape is settled.
+      java's exclusion is not a scope choice like the others — it reads BYTECODE, so an uncompiled
+      `.java` is closer to an operator error ("you pointed me at 300 sources and 3 classes") and wants
+      its own reason string and probably a nudge, not a scope entry.
+    · **THE FIXTURE TRAP, which cost time in BOTH ports and will cost it again.** To test the
+      policy-bound (`deny Net` must say nothing about an out-of-scope `Exec`) the excluded file must
+      perform Exec and NOTHING ELSE. The obvious fixture — `Command::new("curl")` / `execSync("curl
+      http://…")` — is classified Net AS WELL AS Exec, so the `deny Net` row matches legitimately and
+      reads as a broken bound. An argument-free `ls` isolates it. Twice now the fixture could not test
+      the thing it claimed.
     · **⟨0.26⟩ MAKES THE PORT ALL-OR-NOTHING**: a partial manifest answers WORSE than an absent one, so
       none of this is shippable until all four engines emit both halves. Then the spec clause and a
       conformance PART whose rows are the BOUNDS, not the finding.

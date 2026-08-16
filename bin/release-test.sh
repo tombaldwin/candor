@@ -140,7 +140,20 @@ for r in candor-rust candor-java candor-ts candor-swift candor-agents; do
   printf '%s' "$CHLOG" > "$FIX/$r/CHANGELOG.md"
 done
 cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$FIX/candor/bin/"
-for r in candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+# candor-spec IS A REPO IN THE FIXTURE, not a bare directory conjured mid-test. `_stage_changelogs.py`
+# edits it, and `release-stage.sh` now refuses a dirty tree across all SEVEN repos it touches — so a
+# fixture that carried candor-spec as a loose folder was missing the one repo whose CHANGELOG has the
+# floor-shaped heading the helper has a dedicated branch for. The stager could not be exercised against
+# the repo the rung is authored in.
+mk candor-spec/CHANGELOG.md '# Changelog
+
+## Unreleased
+
+## 0.26 — current floor
+
+⟨spec 0.26⟩ the previous rung.
+'
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
   ( cd "$FIX/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
 done
 
@@ -227,7 +240,7 @@ awk '/^## 0\.27 —/{f=1;next} /^## /{f=0} f' "$FIX/candor-spec/CHANGELOG.md" | 
 # own small lesson about tests that mutate what comes after them.
 say "1b2. release-stage.sh (the WRAPPER) survives a fold-shaped tree"
 WFIX="$(mktemp -d)"; cp -R "$FIX/." "$WFIX/"
-for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
   [ -d "$WFIX/$r" ] || mkdir -p "$WFIX/$r"
   printf '# Changelog\n\n## Unreleased\n\n- stranded.\n\n## [0.28.0] — 2026-08-07\n\n- already here.\n' > "$WFIX/$r/CHANGELOG.md"
   # Identity flags AND a hard check: a silent commit failure here leaves the copy dirty, `release-stage.sh`
@@ -353,7 +366,7 @@ fi
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
 # so an un-committed second run tests the refusal, not idempotence. (It did, and reported "not idempotent".)
-for r in candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
   ( cd "$FIX/$r" && git add -A && git -c user.email=t@e -c user.name=t commit -qm staged )
 done
 out2="$(CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.26.0 2>&1)"
@@ -387,9 +400,29 @@ else
   note_skip "cargo is not installed — the Cargo.lock arm was NOT exercised by this run"
 fi
 is "second run changed nothing" '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-ts/package.json")"
-printf 'dirt\n' >> "$FIX/candor-java/CHANGELOG.md"
-CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.27.0 >/dev/null 2>&1 \
-  && bad "staged over a dirty tree" || ok "refuses a dirty tree"
+# EVERY REPO IT EDITS, not just the engine it happened to dirty. The guard looped the five ENGINE repos
+# while the script also edits `candor/bin/candor` and, via `_stage_changelogs.py`, candor-spec's and the
+# umbrella's CHANGELOG — so the two repos a release author is most likely to have open (the spec they just
+# amended, the umbrella they are running this FROM) were the two it did not cover. This row dirties each
+# in turn, because one witness standing for the rest is how the gap survived: the old row dirtied
+# candor-java, which was inside the guarded five.
+for r in candor-java candor-spec candor; do
+  printf 'dirt\n' >> "$FIX/$r/CHANGELOG.md"
+  # ASSERT WHY IT REFUSED, not just that it did. With the old five-repo guard the `candor` row PASSED —
+  # the run exited non-zero for an unrelated reason (a dirty umbrella CHANGELOG derails
+  # `_stage_changelogs.py`), so "it refused" was true and "the guard covers this repo" was not. A row that
+  # cannot tell the intended refusal from an incidental failure is the could-not-evaluate collapse in
+  # miniature, and it is the exact shape this harness keeps finding elsewhere.
+  dout="$(CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.27.0 2>&1)"; drc=$?
+  if [ "$drc" = 0 ]; then
+    bad "staged over a dirty $r — that repo is edited by this script and unguarded"
+  elif printf '%s' "$dout" | grep -q "$r has uncommitted changes"; then
+    ok "refuses a dirty tree in $r, BY NAME (the guard covers it)"
+  else
+    bad "the run failed on a dirty $r but not via the guard — '$(printf '%s' "$dout" | grep -m1 '✘' | cut -c1-70)'"
+  fi
+  ( cd "$FIX/$r" && git checkout -- CHANGELOG.md 2>/dev/null ) || sed -i.bak '$ d' "$FIX/$r/CHANGELOG.md"
+done
 ( cd "$FIX/candor-java" && git checkout -q . )
 
 say "3. the notes release.sh would publish"
@@ -560,6 +593,64 @@ grep -q 'PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh"' "$UMBRELL
   && ok "step 0 runs preflight with pins advisory" || bad "step 0 would deadlock on check [3]"
 grep -q 'PINS_ADVISORY' "$UMBRELLA/bin/release-preflight.sh" \
   && ok "preflight honours PINS_ADVISORY" || bad "preflight has no advisory mode"
+
+say "7b. release-preflight.sh [10] — the CI verdict cannot be self-contradictory"
+# WHY THIS SECTION EXISTS. `release-preflight.sh` carries eleven checks and took FOUR fixes in this
+# release, and until now the harness touched it only through two `grep -q` string-presence checks — the
+# same "a staged site absent from the fixture is an untested site" argument that justified the Cargo.lock
+# work, applied to nothing else. Both regressions repaired in that file were of a kind a row can catch.
+#
+# `gh` IS STUBBED, which is what makes [10] reachable at all: the real one needs auth and a network, and a
+# check that can only run on a release day is a check nobody runs. The stub answers `run list --json` with
+# whatever run state the row wants, so the branch under test is chosen rather than waited for.
+PF="$(mktemp -d)"; mkdir -p "$PF/bin" "$PF/root/candor"
+cat > "$PF/bin/gh" <<'GHEOF'
+#!/bin/bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "run list")    printf '%s\n' "$GH_RUNS" ;;
+  *)             exit 0 ;;
+esac
+GHEOF
+chmod +x "$PF/bin/gh"
+# One real repo, one commit, pushed-looking: [10] asks for HEAD and its upstream.
+git -C "$PF/root/candor" init -q 2>/dev/null || { mkdir -p "$PF/root/candor"; git -C "$PF/root/candor" init -q; }
+printf 'x\n' > "$PF/root/candor/f.txt"
+git -C "$PF/root/candor" add -A
+git -C "$PF/root/candor" -c user.email=t@e -c user.name=t commit -qm init
+PFSHA="$(git -C "$PF/root/candor" rev-parse HEAD)"
+pfrun() { # $1 = the runs JSON
+  GH_RUNS="$1" PATH="$PF/bin:$PATH" CANDOR_ROOT="$PF/root" CI_NO_WAIT=1 PINS_ADVISORY=1 \
+    bash "$UMBRELLA/bin/release-preflight.sh" 0.99 0.99.0 2>&1
+}
+# A repo whose CI is STILL RUNNING. The A3 regression made this print ✘ for the repo and then
+# "✔ all N repos green on HEAD" underneath it — the failed-AND-green contradiction the same hunk's
+# comment claims to have removed, reintroduced from the other side by the fix for it.
+pending="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":null,\"status\":\"in_progress\",\"workflowName\":\"ci\"}]")"
+printf '%s' "$pending" | grep -q "CI still unfinished" \
+  && ok "[10] reports a repo whose CI is still running" \
+  || bad "[10] did not report an in_progress run: $(printf '%s' "$pending" | grep -c '')-line output"
+printf '%s' "$pending" | grep -q "repos green on HEAD" \
+  && bad "[10] printed the all-green summary BESIDE a ✘ — failed AND green in one run" \
+  || ok "…and does NOT also print the all-green summary (the verdict is not self-contradictory)"
+# …and a real failure standing beside a pending one must still reach the operator. It used to be
+# swallowed: the pending regex matched first and only "still waiting" was printed.
+both="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"build\"},{\"headSha\":\"$PFSHA\",\"conclusion\":null,\"status\":\"in_progress\",\"workflowName\":\"publish\"}]")"
+# `build:failure`, not `build` — the bare word appears elsewhere in preflight's output (workflow names,
+# prose), so the loose pattern passed against a version that printed only "CI still unfinished". A row
+# whose pattern is satisfied by unrelated text is not asserting the thing its label claims.
+printf '%s' "$both" | grep -q "build:failure" \
+  && ok "[10] names a REAL failure standing beside a still-running job" \
+  || bad "[10] reported only the pending run; the 'build:failure' never reached the operator"
+# THE CONTROL: an all-green repo must produce the green summary and no ✘ from [10].
+green="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\"}]")"
+printf '%s' "$green" | grep -q "repos green on HEAD" \
+  && ok "[10] CONTROL: a green repo still gets the all-green summary" \
+  || bad "[10] refuses even a passing repo — the rows above would pass against a check that always fails"
+printf '%s' "$green" | grep -q "CI still unfinished" \
+  && bad "[10] CONTROL: reported a completed success as unfinished" \
+  || ok "[10] CONTROL: …and no spurious unfinished line"
+rm -rf "$PF"
 
 say "7. changelog-lag.sh — preflight [5b]"
 # [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.

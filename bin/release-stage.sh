@@ -48,9 +48,17 @@ trap 'rm -rf "$WSTAGE"' EXIT
 # refusing the release at step 0.
 note(){ printf '  \033[33m•\033[0m %s\n' "$*"; }
 
-# Refuse to stage over uncommitted work: this script rewrites ten files across six repos, and an
+# Refuse to stage over uncommitted work: this script rewrites ten files across SEVEN repos, and an
 # interrupted run on a dirty tree is unreviewable.
-for r in candor-rust candor-java candor-ts candor-swift candor-agents; do
+#
+# ALL SEVEN, and it used to be five. The loop listed the five ENGINE repos while the script also edits
+# `candor/bin/candor` (UMBRELLA_VERSION) and, through `_stage_changelogs.py`, both `candor-spec`'s and the
+# umbrella's CHANGELOG. So the two repos a release author is most likely to have open — the spec they just
+# amended and the umbrella they are running this FROM — were the two the guard did not cover, and an
+# interrupted run there left exactly the unreviewable mixture this refusal exists to prevent. The sibling
+# check four lines away in `release-preflight.sh` has always looped all seven. `_stage_changelogs.py`'s own
+# header says it: "the one repo the run is being made FROM is the one you forget to treat as a repo".
+for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
   [ -d "$ROOT/$r" ] || continue
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit or stash first"
 done

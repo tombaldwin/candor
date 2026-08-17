@@ -4,6 +4,27 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.29⟩ hardening round, 2026-08-17 — engine-precision items, MEASURED and filed
 
+- **`[P1]` `only` / `forbid` CANNOT SEE A CROSSING INTO A CHAINED DEPENDENCY, and nothing says so.**
+  MEASURED identically in candor-ts and candor-rust: with a dep chained via `CANDOR_DEPS`, a function that
+  calls into the dependency has an EMPTY adjacency (`model::via_dep -> []`) — the dep join contributes
+  EFFECTS, not call-graph EDGES — so `only model -> util` answers `policy ✓` over a call into a third-party
+  package. The rule was armed in the same run: a local unpermitted scope fired AS-EFF-011 (the vacuity
+  control), so this is the boundary, not a dead rule.
+
+  **Why it matters more for `only` than for `forbid`.** `forbid A -> B` asks whether ONE named crossing is
+  present; missing a dep crossing under-reports one prohibition. `only A -> B …` asserts A reaches A and
+  the listed scopes **and NOTHING ELSE** — a completeness claim — and the form exists precisely because
+  `forbid` fails open (§6.2 ⟨0.29⟩: *"the dependency you forgot to prohibit is silently permitted"*). A
+  package that calls a third-party library is not a leaf, and today `only` calls it one.
+
+  **This is the ⟨0.29⟩ disclosure class one level over.** `excluded`/`outOfScope` exist because a report
+  must say what it did NOT judge; the analogue here is a name-rule that cannot see past the scan boundary
+  and does not disclose the bound. Cheapest sound rung: when a policy carries a `forbid`/`only` rule AND
+  the run chained a dep, DISCLOSE that name-matching stopped at the boundary (the ⟨0.27⟩ zero-match
+  posture — a note, not a verdict change). Making the rules actually cross would need dep-report EDGES,
+  which is a much larger change and a separate decision.
+
+
 - **`[P1]` `net-partner` FLIPS A VERDICT AND IS DISCLOSED NOWHERE.** MEASURED in candor-ts and
   candor-rust, same shape: `deny Net[unknown-host]` over a call to `partner.example` exits **1**; adding
   `net-partner partner.example` to `.candor/config` exits **0** with `ok: true` — and the verdict document

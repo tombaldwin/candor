@@ -10,6 +10,17 @@ keeps its own.
 
 ## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
 
+- **`corpus.sh` gains oracle [4]: §3.1 ROUTE EQUALITY on code we did not write.** `ci/gate-equivalence.sh`
+  asserts this already — over candor's OWN four crates, which is as far as its fixtures reach, and which
+  is exactly where the ⟨0.29⟩ peek defect lived. Third-party trees have the shape candor's crates mostly
+  lack: real exclusions, and MULTIPLE PACKAGES each writing their own report (rusqlite ships a `-sys`
+  crate, walkdir a bin beside the lib). Cheap, because the projects are already cloned. CALIBRATED
+  against the real defect by reverting the peek guard and re-running: all four projects diverge, and far
+  louder than the in-repo fixture did — clap reports `count 3093` against its own report's `1519`, a 2×
+  over-claim, where candor-query showed 276 against 129. Its vacuity guard keys on ATTEMPTS, not
+  successes: keyed on successes it fired a fifth, FALSE "nothing was compared" finding beside four real
+  ones, because every comparison failing looked identical to no comparison happening.
+
 - **Post-release corpus rounds against the PUBLISHED artifacts, and one ⟨0.30⟩ candidate filed.** The
   engines were rebuilt from what a user actually gets — `cargo install` from crates.io, `npm install
   candor-ts@0.29.0`, the released jar, the released swift binary — and the standing corpus reproduced the

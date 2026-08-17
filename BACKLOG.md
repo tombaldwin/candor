@@ -107,7 +107,7 @@ direction that has produced a defect every time this project has rushed it
   classify as `known-telemetry`. **Any fix converts a fail-closed case into a CERTIFYING one, so it needs
   its over-charge control written first.**
 
-- **`[P3]` candor-java publishes a fabricated table when a SQL-shaped literal sits in a parameter slot.**
+- ~~**`[P3]` candor-java publishes a fabricated table when a SQL-shaped literal sits in a parameter slot.**~~ **CLOSED 2026-08-17** — JDBC parameter binders (`set…`, the API's own closed prefix) are excluded from the table-literal window; `paramsLit` now reports no tables and keeps its `incomplete` hedge, `okLit` still yields its table. Original filing:
   `p.setString(1, "SELECT * FROM audit_log")` on a `PreparedStatement` whose SQL is a runtime value put
   `audit_log` in `tables` — but java ALSO marks `incomplete: ["Db"]`, so the verdict fails closed and no
   `allow Db` rule can certify it. Worth separating from the candor-ts defect fixed in this rung, which

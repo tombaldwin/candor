@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
 
+- **Post-release corpus rounds against the PUBLISHED artifacts, and one ⟨0.30⟩ candidate filed.** The
+  engines were rebuilt from what a user actually gets — `cargo install` from crates.io, `npm install
+  candor-ts@0.29.0`, the released jar, the released swift binary — and the standing corpus reproduced the
+  local numbers exactly (java 1479/1479, rust 34/34, swift 55/55, ts 2/2). A fresh draw the corpus has
+  never seen (reqwest, rusqlite, walkdir, execa, swift-nio, okhttp, commons-io) is clean on the purpose
+  oracle: a library must not report zero of the effect it exists to perform. FILED from execa: `deny
+  Exec` exits 0 while the ⟨0.29⟩ peek names 17 Exec functions it did not judge, 16 of them the library's
+  own implementation — the axios residual, moved by ⟨0.29⟩ from silent to disclosed and still green.
+
 - **`corpus.sh` oracle [3]: an exit code that could not fail, four lines below the fix for the report
   that could not fail.** The block refuses a MISSING REPORT — "an unrun check is not a green one" — and
   then treated ANY nonzero exit as `(discloses)`, so a missing BINARY passed the same check. FOUND by

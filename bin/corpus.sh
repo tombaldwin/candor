@@ -204,8 +204,27 @@ PY
       could not run, and an unrun check is not a green one"; return; }
     "$@" gate --report "$rep" --policy "$P/pol" >/dev/null 2>&1
     local rc=$?
-    if [ "$rc" = 0 ]; then finding "$eng: \`deny Unknown\` is GREEN over a caller of a body-less declaration — it read PURE (cardinal sin; the other engines exit 1)"
-    else echo "      $eng  exit=$rc (discloses)"; fi; }
+    # …AND THE SAME RULE ON THE EXIT CODE, which is where this check was still open. The clause above
+    # refuses a missing REPORT; four lines later ANY nonzero rc counted as "discloses", so a missing
+    # BINARY passed. MEASURED 2026-08-17 running the round against the PUBLISHED artifacts: the tree had
+    # candor-scan and not candor-query, the verb never executed, and `rust exit=127 (discloses)` printed
+    # beside three engines that had genuinely answered. 127 is `command not found` — the check that could
+    # not run, reported as the check that passed, which is the sibling of the defect this block fixes.
+    #
+    # So the EXPECTATION is now stated positively: exit 1, the gate firing. Every other answer says
+    # something different and none of them is this oracle passing — 0 is the cardinal sin, 127 is an
+    # engine that never ran, and 2 is "could not evaluate", which is not a false all-clear but is not a
+    # disclosure either. All four engines answer 1 on this corpus today, so this tightens onto observed
+    # behaviour rather than onto a hope.
+    case "$rc" in
+      0)   finding "$eng: \`deny Unknown\` is GREEN over a caller of a body-less declaration — it read PURE (cardinal sin; the other engines exit 1)" ;;
+      1)   echo "      $eng  exit=1 (discloses)" ;;
+      127) finding "$eng: the gate verb could not be RUN (exit 127, command not found) — the check did not
+      execute, and an unrun check is not a green one. Check the engine path/build for this arm." ;;
+      *)   finding "$eng: the gate answered exit $rc over a caller of a body-less declaration, not the
+      expected 1. That is not the cardinal sin, but it is not the disclosure this oracle asserts either —
+      read the run before treating it as covered." ;;
+    esac; }
   [ -f "$JAR" ] && java -jar "$JAR" "$P/java/classes" --json "$P/j.json" >/dev/null 2>&1
   gate "ts   " "$P/t.json" node "$TS/query.mjs"
   gate "rust " "$(pick "$P"/r.*.scan.json)" "$RS/candor-query"

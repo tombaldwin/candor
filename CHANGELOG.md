@@ -8,6 +8,34 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-17 — the ⟨0.29⟩ pre-release panel: three oracle holes and a fourth engine nobody asked
+
+- **`bin/corpus.sh` oracle [3] could not fail.** A scan that produced no report printed
+  `(no report — skipped)` and returned, so an engine whose scan crashed — a rename, an empty tree, a
+  hang — sailed straight through the one oracle built to catch its cardinal sin, and the run stayed
+  green. A missing report is a finding now: **an unrun check is not a green one.** The `[ -x "$SW" ]`
+  engine-absent skip stays, because "this machine has no swift toolchain" is a different sentence.
+
+- **…and it asked three engines, never java.** The REFERENCE engine was absent from the cross-engine
+  body-less-declaration oracle entirely — the sibling-route shape this family keeps finding, where a rule
+  is applied where the work happened and not to the arm beside it. Its body-less declaration is an
+  interface method, the same shape as the swift protocol already there. It now answers `exit=1
+  (discloses)` on the real corpus rather than not being asked.
+
+- **Oracle [2] dropped reports silently.** A report whose `.callgraph.json` sidecar was missing or
+  unparseable was skipped with a bare `continue`, so an engine that lost every one of its reports printed
+  as though it had been measured. Drops are counted and shown per engine, and an engine with reports and
+  zero usable ones is a finding — **unmeasured must not read as passed.**
+
+- **`AS-EFF-011` reaches SARIF.** `integrations/github/candor-sarif` learned the ⟨0.29⟩ `only` violation
+  code, so a permission-form violation arrives in a PR as `PermissionScopeExceeded` rather than an
+  unmapped rule id.
+
+- **`release-preflight` gained `checkpin` rows for the IDE integrations** (`vscode ts`, `jetbrains ts`,
+  `jetbrains jvm`), which had shipped a twelve-rung-old engine with nothing gating it.
+
+- **Corpus round after the panel: 16 projects × 4 engines × 3 oracles, no findings.**
+
 ## 2026-08-15 — spec floor 0.28 published, then reviewed and patched to 0.28.1
 
 - **Engine pins moved to 0.28.2** after the patch published. `PIN_ENFORCED_FROM` stays at 0.27.0.

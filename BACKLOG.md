@@ -2,6 +2,38 @@
 
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
+## ⟨0.29⟩ hardening round, 2026-08-17 — engine-precision items, MEASURED and filed
+
+Found by sweeping the locator surfaces engine-by-engine. Both FAIL CLOSED, so neither is a soundness
+item; both are filed rather than patched because the fix WIDENS what gets certified, which is the
+direction that has produced a defect every time this project has rushed it
+(`feedback-fabrication-fixes-cause-misses`).
+
+- **`[P3]` candor-swift does not capture the host from `String(contentsOf: URL(string: "…")!)`** — the
+  idiomatic simple GET in Foundation. Measured: `URLSession.shared.dataTask(with: URL(string:
+  "https://sentry.io/api")!)` yields `hosts: ["sentry.io"]`, `netClass: ["known-telemetry"]`, and
+  certifies under `allow Net sentry.io`; the `String(contentsOf:)` form on the SAME url yields
+  `hosts: None`, `netClass: ["unknown-host"]`, and AS-EFF-008 *"performs Net with no visible literal"*.
+  So the destination-class table is fine — it is host EXTRACTION that misses this call shape. The
+  fail-closed direction, but it makes `allow Net` unusable for the most common Swift HTTP one-liner, and
+  it is why a four-way telemetry-classification probe showed swift firing on hosts the other three
+  classify as `known-telemetry`. **Any fix converts a fail-closed case into a CERTIFYING one, so it needs
+  its over-charge control written first.**
+
+- **`[P3]` candor-java publishes a fabricated table when a SQL-shaped literal sits in a parameter slot.**
+  `p.setString(1, "SELECT * FROM audit_log")` on a `PreparedStatement` whose SQL is a runtime value put
+  `audit_log` in `tables` — but java ALSO marks `incomplete: ["Db"]`, so the verdict fails closed and no
+  `allow Db` rule can certify it. Worth separating from the candor-ts defect fixed in this rung, which
+  had the same fabricated surface WITHOUT the `incomplete` and therefore certified: *fabricated surface +
+  safe verdict* is a report-quality bug, *fabricated surface + certification* is the cardinal sin.
+
+**Host/telemetry matching was probed four-way and is CORRECT everywhere** — `evilsentry.io` (label
+lookalike) and `sentry.io.evil.example` (suffix lookalike) are both `unknown-host` in all four engines,
+while `sentry.io` and `o123.sentry.io` classify as `known-telemetry`; the matchers compare LABELS
+(`endsWith("." + entry)`), not string suffixes. `allow Net <host>` matching is EXACT in every engine — a
+genuine subdomain is rejected too. Recorded because "we checked and it was fine" is worth as much as a
+finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has already gone wrong once here.
+
 ## Direction — next strategic bets (family-level)
 
 > **AUDITED 2026-08-03.** Every entry was checked against the repos, not against its own prose. **8 of 13

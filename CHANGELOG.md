@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
+
+- **`release-stage.sh 0.29.0`** — build versions, rust inter-crate deps, `Cargo.lock`, the gradle
+  version, `UMBRELLA_VERSION` → 0.29.0, and each engine's `## Unreleased` renamed to the cut. The spec
+  DECLARATIONS moved separately, in their own commit, on their own axis; the cross-repo pins (`adopt/`,
+  jbang, `ENGINE_PIN`, the vscode/jetbrains pins) stay at 0.28.2 until the release they name exists.
+
+- **`release-preflight.sh` derives its conformance evidence path from `$ROOT`.** It read a fixed
+  `/tmp/rel-conformance.txt`, which `release-test.sh` also writes — as a 36-byte stub, over the path the
+  production run reads. A preflight could therefore report a conformance result it had not produced.
+  The path is now keyed to the tree it judges, so a fixture run and a real one cannot collide.
+
+- **Known, and deliberately not fixed here: the VS Code extension's manifest gate is red.** The
+  extension is at `0.16.0` while pinning server `0.28.2`, and gate 4 requires it to track the pin's
+  major.minor. It last passed on 2026-07-16 when the pin *was* 0.16.x; the workflow is path-filtered and
+  had not run since. Bumping it now would pin a version that is not on npm — the propagation race this
+  file already records — so the extension version moves with the pins, AFTER the release exists.
+
 ## 2026-08-17 — the ⟨0.29⟩ pre-release panel: three oracle holes and a fourth engine nobody asked
 
 - **`bin/corpus.sh` oracle [3] could not fail.** A scan that produced no report printed

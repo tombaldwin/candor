@@ -68,7 +68,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   shape BEFORE any engine implements it — this section's own recorded lesson is that a MUST with no shape
   produced three different answers within the hour.
 
-- **`[P3]` a malformed config line is dropped in silence.** `net-partner = partner.example` (the `=` form,
+- ~~**`[P3]` a malformed config line is dropped in silence.**~~ **CLOSED 2026-08-17, four-way** — all four engines now warn and skip; a well-formed line stays silent. Original filing: `net-partner = partner.example` (the `=` form,
   which the parser does not accept — it wants `net-partner <host>`) produces no note on stderr and no key
   in the verdict; the operator's line simply does not exist. The direction is SAFE (the gate still fires,
   so nothing is certified that should not be), which is why it can sit unnoticed. ⟨0.28⟩ gave POLICY files

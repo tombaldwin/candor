@@ -42,6 +42,13 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   the DOCUMENT carry it, so a consumer reading `ok:true` alongside a populated `outOfScope` can decide —
   which is where §3.1 pushes, and which needs the field on both routes.
 
+  **SECOND INSTANCE, so this is not one package's tsconfig.** `node-fetch@v3.3.2`, same published engine:
+  `analyzed.count` **2**, and both units come from `@types/index.test-d.ts` — a TYPE TEST. The library's
+  own 14 source files are classed `not-a-parsed-source` ("not in this run's parse set") because they are
+  plain `.js`. A scan whose entire analyzed universe is a type-test file is not a clean library, and the
+  only thing standing between that and a green gate is whether the operator reads stderr. Both instances
+  are npm packages a real consumer would gate on.
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

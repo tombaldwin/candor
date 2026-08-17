@@ -230,6 +230,47 @@ PY
   gate "rust " "$(pick "$P"/r.*.scan.json)" "$RS/candor-query"
   [ -x "$SW" ] && gate "swift" "$(pick "$P"/s.*.Swift.json)" "$SW"
   [ -f "$JAR" ] && gate "java " "$P/j.json" java -jar "$JAR"
+
+  # ── [4] §3.1 ROUTE EQUALITY, ON CODE WE DID NOT WRITE ───────────────────────────────────────────
+  # `ci/gate-equivalence.sh` asserts this already — over candor's OWN four crates, which is where its
+  # fixtures could reach. That is exactly where the ⟨0.29⟩ peek defect lived (the nested scan of the
+  # excluded set fed the gate's analyzed counter, so `scan --policy` said 276 and its own report said
+  # 129), and it is a shape that only appears in trees with real exclusions and multiple packages.
+  # Third-party corpus code has both and candor's crates mostly do not: rusqlite ships a `-sys` crate
+  # beside the binding, walkdir a bin beside the lib, and each writes ONE REPORT PER PACKAGE.
+  #
+  # Cheap because the projects are already cloned above. rust only, because it is the engine that has
+  # both routes as separate binaries; the same property on the other engines is pinned by conformance.
+  echo "  [4] §3.1 route equality on THIRD-PARTY trees (scan --policy ≡ gate --report, byte-level)"
+  # TWO counters, not one. `re_ok` alone made "every comparison FAILED" indistinguishable from "no
+  # comparison happened": the vacuity guard below fired a fifth, false finding beside four real ones on
+  # the calibration run. A guard against measuring nothing must not also fire when the measurement worked
+  # and the answer was bad.
+  local re_ok=0 re_tried=0
+  for pair in ripgrep:Fs clap:Env serde:Unknown regex:Unknown; do
+    local proj="${pair%%:*}" eff="${pair##*:}"
+    [ -d "$SRC/$proj" ] || continue
+    re_tried=$((re_tried+1))
+    printf 'deny %s\n' "$eff" > "$OUT/re.pol"
+    rm -f "$OUT/re.a" "$OUT/re.b" "$OUT"/re.rep.*
+    "$RS/candor-scan" "$SRC/$proj" --out "$OUT/re.rep" --policy "$OUT/re.pol" --gate-json "$OUT/re.a" >/dev/null 2>&1
+    local ra=$?
+    "$RS/candor-query" gate --report "$OUT/re.rep" --policy "$OUT/re.pol" --gate-json "$OUT/re.b" >/dev/null 2>&1
+    local rb=$?
+    if [ ! -s "$OUT/re.a" ] || [ ! -s "$OUT/re.b" ]; then
+      finding "route-equality $proj: a --gate-json document was not written (scan $ra, gate $rb) — the
+      comparison did not happen, and a comparison that did not happen is not an agreement"
+    elif [ "$ra" != "$rb" ]; then
+      finding "route-equality $proj: scan --policy exited $ra and gate --report exited $rb over the SAME
+      report — two routes into one gate have become two gates (SPEC §3.1)"
+    elif ! cmp -s "$OUT/re.a" "$OUT/re.b"; then
+      finding "route-equality $proj: verdict documents DIFFER: $(diff "$OUT/re.a" "$OUT/re.b" | head -4 | tr '\n' ' ')"
+    else
+      re_ok=$((re_ok+1)); echo "      $proj  deny $eff → both routes exit $ra, verdicts byte-equal"
+    fi
+  done
+  [ "$re_tried" = 0 ] && finding "route-equality: NO project was compared — the corpus did not clone, so
+      this oracle measured nothing, and printing nothing here would read as agreement"
 }
 
 echo "corpus: $HOME_DIR"

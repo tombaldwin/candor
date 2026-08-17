@@ -15,6 +15,13 @@ set -u
 # Without it neither script can be exercised without editing six live repos, which is why nine
 # defects across 0.25 and 0.26 were found by publishing rather than by testing.
 ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # the dir holding candor-* siblings
+# ⟨0.29⟩ THE CONFORMANCE EVIDENCE PATH IS DERIVED FROM $ROOT, not a fixed global. `release-test.sh` runs
+# THIS script against a sandbox tree whose `conformance/run.sh` is a stub printing `conformance: OK (stub)`
+# — and with a fixed `/tmp/rel-conformance.txt` that stub's output landed on the REAL evidence file. Found
+# by a release panel that went looking for the green run behind item [11] and found a 36-byte stub sitting
+# where the proof should be. A test overwriting the artifact production cites is the evidence-contamination
+# class this project already has a rule about; deriving the name from the root keeps a sandbox in its lane.
+CONF_LOG="${TMPDIR:-/tmp}/rel-conformance-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1).txt"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"                        # this script's own bin/
 WANT_SPEC="${1:-}"     # optional: assert the floor is exactly this (e.g. 0.10)
 WANT_VER="${2:-}"      # optional: assert the release version is this (e.g. 0.10.0) for the cross-repo pins
@@ -623,8 +630,8 @@ else
   if [ "$reuse" = 1 ]; then
     ok "conformance REUSED — every change since the last green run is release mechanics (changelogs, pins, docs)"
     info "   the recorded run: $(head -1 "$STAMP" 2>/dev/null | sed 's/^# //')"
-  elif ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >/tmp/rel-conformance.txt 2>&1; then
-    ok "conformance OK ($(grep -c MATCH /tmp/rel-conformance.txt) MATCH) — see /tmp/rel-conformance.txt${why:+  [ran: $why]}"
+  elif ( cd "$ROOT/candor-spec/conformance" && ./run.sh ) >"$CONF_LOG" 2>&1; then
+    ok "conformance OK ($(grep -c MATCH "$CONF_LOG") MATCH) — see $CONF_LOG${why:+  [ran: $why]}"
     # Record what was green, so the NEXT invocation can tell whether anything that matters moved.
     # A5 — DO NOT STAMP A DIRTY TREE. The read path refuses to reuse when a repo has uncommitted changes;
     # the write path had no such guard, so a green produced over HEAD+edits was recorded against the bare
@@ -645,7 +652,7 @@ else
       done; } > "$STAMP"
     fi
   else
-    bad "conformance FAILED — see /tmp/rel-conformance.txt. The floor is conformance-pinned; do not publish"
+    bad "conformance FAILED — see $CONF_LOG. The floor is conformance-pinned; do not publish"
     rm -f "$STAMP"   # never let a failed run leave a stamp a later invocation could reuse
   fi
 fi

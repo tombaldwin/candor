@@ -2,6 +2,50 @@
 
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
+## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
+
+- **`[P1]` A GATE GOES GREEN OVER A LIBRARY WHOSE IMPLEMENTATION THE SCAN NEVER READ — disclosed on
+  stderr, exit 0.** This is the axios residual from the 2026-08-13 round, re-measured on a fresh draw and
+  now instrumented by ⟨0.29⟩, which moved it from SILENT to DISCLOSED. It is still exit 0.
+
+  MEASURED on `sindresorhus/execa@v9.3.0` with the PUBLISHED candor-ts 0.29.0 (npm), `deny Exec`:
+
+      candor-ts: ⚠ checkEncoding performs Exec — OUTSIDE this scan's scope (test-file), so the gate
+                 did NOT judge it.  … The verdict does not account for these 17.
+      candor-ts: wrote 0 effectful functions (1 analyzed, 1 files)
+      candor-ts: policy ✓                                                              exit 0
+
+  17 Exec-performing functions named by the ⟨0.29⟩ peek; **16 of them `outside-the-tsconfig-program`,
+  i.e. the library's own implementation, not tests.** `analyzed.count` is 1. The report discloses
+  `excluded: [{declaration-only, 32}, {outside-the-tsconfig-program, 215}]` and the run warns that
+  `node_modules` is absent. Nothing here is silent — and `deny Exec` still answered ✓ over execa.
+
+  **Why this is a QUESTION and not simply a bug.** The rung's contract is *read the excluded files,
+  change no verdict*, and by that contract this run is correct. But a CI gate keys on the exit code, so
+  the build is green over code nobody judged. The family already accepts that some unjudged code must
+  block green: candor-swift refuses with *"a gate cannot be green over unanalyzed code"* (exit 2) when a
+  file lands in `unanalyzed`. So the line already exists — the question is which side
+  `outside-the-tsconfig-program` belongs on. A `test-file` exclusion is a choice the OPERATOR would
+  recognise; "the tsconfig's include/exclude did not name it" is a choice their BUILD made, and the
+  engine's own reason string says as much: *"a file your build excludes may still run in CI or at
+  install time."*
+
+  **Do NOT reach for the exit code first.** The `net-partner` attempt (below) established that a
+  disclosure feature is constrained by §3.1 ROUTE EQUALITY — `scan --policy` and `gate --report` must
+  produce byte-equal verdict documents, and `gate --report` has no target to re-derive an exclusion set
+  from. Whatever this becomes must be reachable identically on both routes or it breaks the same suite.
+
+  Options, cheapest first: (a) a `--strict-scope` / config opt-in that promotes a NON-EMPTY `outOfScope`
+  to exit 2, leaving the default contract untouched; (b) split the exclusion classes so
+  operator-recognisable ones (test-file, build-output) disclose while build-derived ones
+  (outside-the-tsconfig-program, non-library-target) fail closed; (c) leave the verdict alone and make
+  the DOCUMENT carry it, so a consumer reading `ok:true` alongside a populated `outOfScope` can decide —
+  which is where §3.1 pushes, and which needs the field on both routes.
+
+  Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
+  — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
+  the scan DID read in full must still fire on the real violation.
+
 ## ⟨0.29⟩ hardening round, 2026-08-17 — engine-precision items, MEASURED and filed
 
 - ~~**`[P1]` `only` / `forbid` CANNOT SEE A CROSSING INTO A CHAINED DEPENDENCY, and nothing says so.**~~ **CLOSED 2026-08-17, four-way** — all four engines now disclose the bound on the advisory channel when a name rule is present AND a dep was chained; silent otherwise, exit codes untouched. Original filing:

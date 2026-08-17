@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
 
+- **`corpus.sh` oracle [3]: an exit code that could not fail, four lines below the fix for the report
+  that could not fail.** The block refuses a MISSING REPORT — "an unrun check is not a green one" — and
+  then treated ANY nonzero exit as `(discloses)`, so a missing BINARY passed the same check. FOUND by
+  running the round against the PUBLISHED 0.29.0 artifacts: that tree had `candor-scan` and not
+  `candor-query`, so the verb never executed and `rust exit=127 (discloses)` printed beside three engines
+  that had actually answered — and the round said `corpus: OK`. The expectation is now stated positively
+  (exit 1 = the gate fires); 0 is the cardinal sin, 127 is an engine that never ran, and anything else is
+  reported rather than absorbed. Calibrated: the identical tree that printed OK now reports a finding.
+  **The sibling route again — a rule applied where the work happened and not to the line beside it.**
+
 - **`release.sh` step 6 WAITS for npm before it tells you to move the pins.** The pin-bump push is what
   starts the vscode + jetbrains jobs, and those `npm install` the exact `candorTsVersion` they pin —
   while step 2 only pushed the TAG, whose OIDC publish takes minutes. MEASURED TWICE: 0.16.0, and again

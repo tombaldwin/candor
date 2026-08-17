@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
 
+- **`release.sh` step 6 WAITS for npm before it tells you to move the pins.** The pin-bump push is what
+  starts the vscode + jetbrains jobs, and those `npm install` the exact `candorTsVersion` they pin —
+  while step 2 only pushed the TAG, whose OIDC publish takes minutes. MEASURED TWICE: 0.16.0, and again
+  on 0.29.0, where both IDE jobs died at 22:16:42Z on `npm error notarget No matching version found for
+  candor-ts@0.29.0` and both went green on a re-run 19 minutes later with nothing changed. The remedy was
+  already written down after 0.16 — *let the registries settle first* — but a note only a human can act
+  on is a note that gets skipped at the end of a release, so the script waits (10 min, then DIES: the
+  next thing it tells you to do is the push that starts those jobs). Skipped on a fixture tree.
+
 - **⟨0.29⟩ / 0.29.0 PUBLISHED, and the cross-repo pins now name it.** `ENGINE_PIN`, `adopt/candor.yml`'s
   `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml`'s agents pin, and the vscode/jetbrains
   `candorTsVersion`/`candorJavaVersion` all move to 0.29.0 — after the releases existed, never before.

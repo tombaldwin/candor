@@ -123,6 +123,40 @@ printf '  cargo query %s   : ' "$VER"; (cargo search candor-query 2>/dev/null | 
 echo "  jbang / brew: run \`jbang candor@tombaldwin/candor-java --version\` and \`brew upgrade candor && candor doctor\` once the java release build finishes."
 # --- 6. cross-repo pins, now that the releases they name EXIST ------------------------------------------
 say "6. cross-repo pins → $VER"
+# NPM_SETTLED: WAIT FOR npm BEFORE THE PINS MOVE, BECAUSE THE PIN-BUMP PUSH IS WHAT STARTS THE CONSUMERS.
+#
+# `integrations/vscode` and `integrations/jetbrains` pin `candorTsVersion`, and their CI runs
+# `stage-server.mjs`, which `npm install`s exactly that version. Bumping the pins and pushing is
+# therefore a trigger for two jobs that need candor-ts@$VER to be RESOLVABLE on the registry — and step 2
+# only pushed the TAG, which starts an OIDC publish that takes minutes.
+#
+# MEASURED TWICE. 0.16.0: "candor-ts@0.16.0 wasn't yet on npm when the umbrella push triggered vscode
+# extension, so it failed". 0.29.0, the same minute the pins went out: both IDE jobs died on
+# `npm error notarget No matching version found for candor-ts@0.29.0`, 22:16:42Z, and both went green on
+# a re-run 19 minutes later with nothing changed. The remedy was already written down after 0.16 — "let
+# the registries settle FIRST, then push the pin-bump consumers" — and a note that only a human can act
+# on is a note that gets skipped at the end of a release. So the script waits instead.
+#
+# It DIES rather than warns on timeout: the next action this step tells you to take is the push that
+# starts those jobs, and doing it against an unpublished version is the failure this exists to stop. A
+# genuine publish failure must stop the release, not decorate it.
+if [ "${NPM_NO_WAIT:-}" = "1" ] || [ -n "${CANDOR_ROOT:-}" ]; then
+  # CANDOR_ROOT means a FIXTURE tree (see the header): its "candor-ts" was never published and never
+  # will be, so waiting on the real registry for it would hang every harness run for ten minutes.
+  skip "npm propagation wait skipped (fixture tree, or NPM_NO_WAIT=1)"
+else
+  printf '  waiting for candor-ts@%s on npm (the pin bump triggers the IDE consumers) ' "$VER"
+  npm_ok=0
+  for _ in $(seq 1 60); do                      # 60 × 10s = 10 minutes
+    if npm view "candor-ts@$VER" version >/dev/null 2>&1; then npm_ok=1; break; fi
+    printf '.'; sleep 10
+  done
+  echo
+  if [ "$npm_ok" = "1" ]; then ok "candor-ts@$VER is resolvable on npm — the consumers will install it"
+  else die "candor-ts@$VER is STILL not on npm after 10 minutes. Do NOT push the pin bump yet: it starts
+     the vscode + jetbrains jobs, which npm-install this exact version and will fail on it. Check
+     candor-ts's \`publish\` workflow (OIDC), then re-run this script — steps 1-3 skip what exists."; fi
+fi
 echo "  The pins are deliberately NOT moved automatically: each names a published artifact, and 0.24 shipped"
 echo "  a jbang pin to a release that did not exist. Update these, commit, push, then run release-verify.sh"
 echo "  — which RESOLVES each pinned URL rather than matching the string:"

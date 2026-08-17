@@ -4,6 +4,22 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.29⟩ hardening round, 2026-08-17 — engine-precision items, MEASURED and filed
 
+- **`[P2]` `gate --report` could now evaluate `allow` rules, and refuses out of date reasoning.** The
+  refusal's stated premise — *"the AS-EFF-008 surface-completeness marker does not ride the report wire"* —
+  was true when written and **⟨0.29⟩ made it false**: `incomplete` is published per function and declared
+  in `resolves`, which is exactly the ⟨0.26⟩/⟨0.27⟩ machinery for "this producer computes it". Measured:
+  both a candor-ts and a candor-rust report carry `resolves: ["fs","incomplete"]` and
+  `incomplete: ["Fs"]` on the masked unit, and all four engines still refuse at exit 2.
+
+  **Refusing stays CORRECT** — a report whose producer does not declare `incomplete` still cannot be
+  gated on, and answering per-report would make one engine evaluate where its siblings refuse, splitting
+  the verb (candor-ts's own message says so). The messages have been corrected to state that reason
+  instead of the stale premise. What is OPEN is the capability: `gate --report` MAY evaluate `allow` when
+  the report declares `incomplete` in `resolves`, and MUST refuse otherwise. That is a rung — it widens
+  what gets certified, so it needs a four-way conformance row with the two shapes (declared ⇒ evaluated,
+  undeclared ⇒ refused) and an over-charge control, in that order.
+
+
 Found by sweeping the locator surfaces engine-by-engine. Both FAIL CLOSED, so neither is a soundness
 item; both are filed rather than patched because the fix WIDENS what gets certified, which is the
 direction that has produced a defect every time this project has rushed it

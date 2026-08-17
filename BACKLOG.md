@@ -4,7 +4,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.29⟩ hardening round, 2026-08-17 — engine-precision items, MEASURED and filed
 
-- **`[P1]` `only` / `forbid` CANNOT SEE A CROSSING INTO A CHAINED DEPENDENCY, and nothing says so.**
+- ~~**`[P1]` `only` / `forbid` CANNOT SEE A CROSSING INTO A CHAINED DEPENDENCY, and nothing says so.**~~ **CLOSED 2026-08-17, four-way** — all four engines now disclose the bound on the advisory channel when a name rule is present AND a dep was chained; silent otherwise, exit codes untouched. Original filing:
   MEASURED identically in candor-ts and candor-rust: with a dep chained via `CANDOR_DEPS`, a function that
   calls into the dependency has an EMPTY adjacency (`model::via_dep -> []`) — the dep join contributes
   EFFECTS, not call-graph EDGES — so `only model -> util` answers `policy ✓` over a call into a third-party

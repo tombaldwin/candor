@@ -63,6 +63,13 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   `net-partner` is an ambient definition that changes verdicts, and it is outside that clause — a SPEC
   gap, not four engines disobeying.
 
+  **THE THREAT SHAPE, sharpened by a release panel:** a PR-authored or third-party tree can ship its own
+  `.candor/config`, and a `net-partner` line in it flips a CI `deny Net[unknown-host]` to green with
+  NOTHING on the verdict channel naming the file, the path or the host. The config lives in the same
+  reviewable plane as the policy, and the report still carries `netClass: known-partner` as a
+  breadcrumb — but a reviewer reading the VERDICT cannot see it. That is the argument for prioritising
+  this over the other open items.
+
   Not a false all-clear: the verdict is correct, the operator did declare the partner. It is the
   §3.1 ambience disclosure missing on the other verdict-affecting config key. Needs a clause naming the
   shape BEFORE any engine implements it — this section's own recorded lesson is that a MUST with no shape
@@ -96,7 +103,7 @@ item; both are filed rather than patched because the fix WIDENS what gets certif
 direction that has produced a defect every time this project has rushed it
 (`feedback-fabrication-fixes-cause-misses`).
 
-- **`[P3]` candor-swift does not capture the host from `String(contentsOf: URL(string: "…")!)`** — the
+- ~~**`[P3]` candor-swift does not capture the host from `String(contentsOf: URL(string: "…")!)`~~ **CLOSED 2026-08-17**, with the over-charge controls the entry itself demanded. Original filing:** — the
   idiomatic simple GET in Foundation. Measured: `URLSession.shared.dataTask(with: URL(string:
   "https://sentry.io/api")!)` yields `hosts: ["sentry.io"]`, `netClass: ["known-telemetry"]`, and
   certifies under `allow Net sentry.io`; the `String(contentsOf:)` form on the SAME url yields

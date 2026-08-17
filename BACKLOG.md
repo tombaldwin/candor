@@ -25,7 +25,31 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   which is a much larger change and a separate decision.
 
 
-- **`[P1]` `net-partner` FLIPS A VERDICT AND IS DISCLOSED NOWHERE.** MEASURED in candor-ts and
+- **`[P1]` `net-partner` FLIPS A VERDICT AND IS DISCLOSED NOWHERE.** **ATTEMPTED 2026-08-17 AND REVERTED —
+  read the three constraints below before trying again; they cost a full implementation to find.**
+
+  **(1) THE TWO CONFIG KEYS ANCHOR DIFFERENTLY, so one `config` cannot name both.** `unknown-alias`
+  resolves against the POLICY file's directory (*vocabulary travels with the policy*); `net-partner` is
+  TARGET-scoped. In one run they can be different files, so the naive
+  `policyVocabulary: { config, aliases, netPartners: [...] }` names one source for a disclosure about two.
+  A self-contained `netPartners: { config, hosts }` fixes that half.
+
+  **(2) THE MATCH MUST USE THE CLASSIFIER'S HOST NORMALISATION.** candor-scan's `gate::host_part` strips
+  scheme/path/userinfo but KEEPS the port, so `partner.example:443` never equalled the declared
+  `partner.example` and the disclosure came back silently empty on every real run. Use
+  `candor_classify::policy::host_part`. A disclosure normalised differently from the decision it reports
+  can only be wrong.
+
+  **(3) THE BLOCKER, and it is why this was reverted: §3.1's BYTE-EQUALITY MUST.** The scan route can
+  compute the participating partners; `gate --report` CANNOT — `net-partner` anchors at the target and a
+  report route has no target, so it reads the producer's already-computed `netClass` instead of any
+  config. Emitting on one route breaks the scan-vs-`gate --report` byte-equality that §3.1 makes the
+  acceptance test, and candor-ts's own suite caught it immediately (*"pure: NOT byte-equal"*). **Any
+  design must answer what the REPORT route discloses**: the ambient input there was the PRODUCER's
+  config, which this run never read — arguably a different disclosure (naming the producer, not a path
+  this run can resolve), and that is a shape question for the clause, not an implementation detail.
+
+  The measurement that motivates it is unchanged: MEASURED in candor-ts and
   candor-rust, same shape: `deny Net[unknown-host]` over a call to `partner.example` exits **1**; adding
   `net-partner partner.example` to `.candor/config` exits **0** with `ok: true` — and the verdict document
   carries no key naming the config, its path, or the host it declared. An operator reading that green

@@ -4,6 +4,24 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
+- **`[P2]` A DEPENDENCY'S `incomplete`-ONLY FUNCTION IS DROPPED BEFORE ITS MARKER CAN PROPAGATE.** Found
+  while building the regression row for the java report-writer fix — it is that same defect one layer
+  over. `Loader` records a dep entry only `if (!de.effects.isEmpty())`, and the comment there gives a
+  real reason: admitting empty entries would make a key that is currently ABSENT resolve as
+  present-and-pure, a new purity claim. But an entry carrying `incomplete: ["Db"]` and no effects is not
+  a purity claim — it is an UNCERTAINTY claim, and dropping it loses exactly what ⟨0.29⟩ added the
+  `for (String eff : d.incomplete)` propagation to carry.
+
+  MEASURED: a real dep report mutated in place so `Dep.f` has `inferred: []` and `incomplete: ["Db"]`,
+  chained into a consumer that calls it — the consumer comes back with `incomplete: None`. The
+  uncertainty never arrives.
+
+  The fix is probably one clause (`!de.effects.isEmpty() || !de.incomplete.isEmpty()`), but it touches
+  the trust/merge path the ⟨0.24⟩ last-non-empty-wins work is threaded through, so it wants its own
+  measurement rather than a release-day patch. Controls it must keep: a dep entry with NEITHER effects
+  nor incomplete stays absent (no purity claim), and a stale/untrusted dep still cannot upgrade a
+  consumer's certainty.
+
 - **`[P2]` THE JAVA `incomplete`-ONLY REPORT FIX HAS NO CI COVERAGE.** Found by a pre-release reviewer,
   CONFIRMED by reverting: `ReportWriter`'s `incompleteAcc` inclusion arm can be removed and candor-java's
   entire suite stays green (527 passed; the two failures on a full revert belong to the OTHER java fix,

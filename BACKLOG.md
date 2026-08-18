@@ -224,6 +224,28 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   set that is a negligible fraction of the tree, or one containing no implementation unit, should refuse
   like the zero case rather than certify. That is fixing a false all-clear, which is "always fix".
 
+  **HOW OFTEN — RE-MEASURED ON THE POPULATION, not on the draws (2026-08-18).** Of **85 distinct
+  packages** pulled this session, 38 contain code: 18 are TS-native (really analyzed), 13 are JS-only
+  and REFUSE (exit 2, safe), and **7 sit in the axios shape** — a sliver of `.ts` over a `.js`
+  implementation: `axios` (5/160), `execa` (1/46), `node-fetch` (1/23), `globby` (1/13), `dotenv`
+  (1/13), `chalk` (1/14), `chokidar` (1/6). **Every one of them is a package whose PURPOSE is an
+  effect**, which is precisely the population a consumer writes a `deny` for.
+
+  Gate verdicts over those, published 0.29.1:
+
+      globby      deny Fs   GREEN   ← peek named 19 unjudged fn(s)
+      node-fetch  deny Net  GREEN   ← peek named 15 unjudged fn(s)
+      axios       deny Net  GREEN   ← peek named 37 unjudged fn(s)
+      chokidar    deny Fs   exit 1  (caught it)
+      dotenv      deny Fs   exit 2  (refused)
+
+  **The information needed to fail closed is already computed and already printed.** In all three green
+  cases the peek emits, per function, `⚠ NAME performs Unknown — OUTSIDE this scan's scope, so the gate
+  did NOT judge it`. Only the exit code declines to use it. That also gives the rule its shape without a
+  fraction heuristic: **a peeked function performing a DENIED effect ⇒ not green.** `chokidar` and
+  `dotenv` show both safe behaviours (catch, refuse) already exist in the engine, and a project whose
+  peeked functions perform nothing denied stays green — the over-charge control comes free.
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

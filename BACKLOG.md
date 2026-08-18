@@ -40,7 +40,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   claim — that is what the existing comment's argument is actually about), and a stale/untrusted dep
   still cannot upgrade a consumer's certainty.
 
-- **`[P2]` THE JAVA `incomplete`-ONLY REPORT FIX HAS NO CI COVERAGE.** Found by a pre-release reviewer,
+- ~~**`[P2]` THE JAVA `incomplete`-ONLY REPORT FIX HAS NO CI COVERAGE.**~~ **CLOSED 2026-08-18 — `IncompleteOnlyReachesTheReportTest` pins it in gradle, calibrated (fails with the arm removed). The fixture injects the marker; the test header records why every natural producer is unusable.** Original filing: Found by a pre-release reviewer,
   CONFIRMED by reverting: `ReportWriter`'s `incompleteAcc` inclusion arm can be removed and candor-java's
   entire suite stays green (527 passed; the two failures on a full revert belong to the OTHER java fix,
   the default-package stand-in). Its only evidence is a corpus measurement — sqlite-jdbc 3.46.0.0 +
@@ -98,7 +98,7 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   Worth measuring first on the same corpus: what fraction of the 3.30s is bytecode parsing versus the
   closure, because if the closure dominates, per-class caching buys little and the answer is elsewhere.
 
-- **`[P2]` COMMAND-LINE ARGUMENTS: the engines DISAGREE, and conformance cannot see it.** MEASURED
+- ~~**`[P2]` COMMAND-LINE ARGUMENTS: the engines DISAGREE, and conformance cannot see it.**~~ **CLOSED 2026-08-18 — ruled Env, implemented four-way, and the missing row added to the generative differential (calibrated: removing ts's arm prints `(pure)!D` on four generated shapes). SPEC.md untouched — this is conformance to §1's existing wording.** Original filing: MEASURED
   2026-08-18 on identical shapes:
 
       rust   std::env::args()            → Env          rust   std::env::var("SECRET")        → Env

@@ -4,6 +4,31 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
+- **`[P2]` THE JAVA `incomplete`-ONLY REPORT FIX HAS NO CI COVERAGE.** Found by a pre-release reviewer,
+  CONFIRMED by reverting: `ReportWriter`'s `incompleteAcc` inclusion arm can be removed and candor-java's
+  entire suite stays green (527 passed; the two failures on a full revert belong to the OTHER java fix,
+  the default-package stand-in). Its only evidence is a corpus measurement — sqlite-jdbc 3.46.0.0 +
+  `check_honesty.py`, calibrated both ways — and `candor/bin/corpus.sh` is not run by any CI workflow.
+  (candor-java's CI runs `soundness/dynamic/corpus.sh`, its own RUNTIME oracle, which is a different
+  instrument.)
+
+  This is the shape the project has been bitten by repeatedly: an unguarded fix regresses silently, and
+  java has already once reintroduced a defect its own file documents. The fix itself is sound and
+  disclosure-only (a reviewer confirmed `checkAllowlist` skips fns whose `inferred` lacks the effect, so
+  an incomplete-only row cannot flip a `deny`/`allow` verdict).
+
+  WHY NOT SIMPLY WRITE A ROW: the shape needs a method whose ONLY signal is `incomplete` — no effects, no
+  entry point, no blindness, no declaring class. Two attempts failed to synthesise it: a runtime-SQL call
+  yields Db AND incomplete together, and a hand-written dep report carrying `incomplete: [Db]` with no
+  effects did not propagate the marker caller-ward at all (worth investigating separately — a chained
+  dep's per-function `incomplete` arguably SHOULD propagate). The real instances came from sqlite-jdbc's
+  `declared`/`overdeclared` machinery, which is what needs reverse-engineering to build the fixture.
+
+  Cheapest sound options, in order: (a) wire a targeted step into candor-java CI that fetches sqlite-jdbc
+  from Maven Central, scans it, and asserts the two known callers carry `incomplete: [Db]`; (b) make
+  `bin/corpus.sh` a release-ladder gate rather than a habit; (c) build the fixture properly once the
+  `declared` mechanism is understood.
+
 - **`[P1]` A CHEAP REPORT REFRESH — the edit-time loop re-analyses everything on every turn.** Field
   report from uflexi (candor-java 0.26.0, 2,259 class files / 15MB of bytecode, a 4.9MB baseline),
   measured per Stop-hook invocation:

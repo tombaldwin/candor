@@ -16,11 +16,29 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   chained into a consumer that calls it — the consumer comes back with `incomplete: None`. The
   uncertainty never arrives.
 
-  The fix is probably one clause (`!de.effects.isEmpty() || !de.incomplete.isEmpty()`), but it touches
-  the trust/merge path the ⟨0.24⟩ last-non-empty-wins work is threaded through, so it wants its own
-  measurement rather than a release-day patch. Controls it must keep: a dep entry with NEITHER effects
-  nor incomplete stays absent (no purity claim), and a stale/untrusted dep still cannot upgrade a
-  consumer's certainty.
+  **ATTEMPTED 2026-08-18 AND REVERTED — the one-clause fix is not the fix.** Widening the gate to
+  `!de.effects.isEmpty() || !de.incomplete.isEmpty()` admits the entry and does NOT achieve the goal:
+  the consumer still comes back with `incomplete: None`, and an unexplained `Unknown` appears on it that
+  was not there before. So there are two separate problems, and the gate is only the first:
+
+    · the ENTRY is dropped (the gate), and
+    · something downstream of the join does not carry `d.incomplete` to the caller when the entry has NO
+      EFFECTS — the join site itself looks right (`for (String eff : d.incomplete)` at Candor.java:4393),
+      and the same marker DOES propagate when an effect accompanies it (measured: a dep entry with
+      `inferred:["Fs"]` + `incomplete:["Fs"]` gives the consumer `['Fs']` / `incomplete:['Fs']`).
+
+  So the next attempt starts by answering: where does an effect-less-but-incomplete entry lose its marker
+  between `crossDeps` and `surfaceIncomplete`, and where does the new `Unknown` come from? The parser is
+  not the problem — `incomplete` is read at Loader.java:781, and `inferred: []` is a clean array that
+  correctly yields zero effects.
+
+  **This matters more now than when it was filed:** candor-java's report writer now EMITS exactly this
+  shape (a method with `inferred: []` and `incomplete: [Db]`), so the reports this engine produces
+  contain entries the chaining path cannot currently carry.
+
+  Controls any fix must keep: a dep entry with NEITHER effects nor incomplete stays absent (no purity
+  claim — that is what the existing comment's argument is actually about), and a stale/untrusted dep
+  still cannot upgrade a consumer's certainty.
 
 - **`[P2]` THE JAVA `incomplete`-ONLY REPORT FIX HAS NO CI COVERAGE.** Found by a pre-release reviewer,
   CONFIRMED by reverting: `ReportWriter`'s `incompleteAcc` inclusion arm can be removed and candor-java's

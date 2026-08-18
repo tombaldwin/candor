@@ -8,6 +8,17 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-18 — 0.29.1 staged (a WITHIN-SPEC patch)
+
+- **Build versions → 0.29.1 across the family; the FLOOR stays 0.29.** `SPEC.md` is byte-identical since
+  `v0.29`, so nothing in this cut moves a contract — every fix restores conformance to a clause that
+  already existed (§3.1 route equality, the propagation invariant, §1's `Env`, the could-not-form-a-key
+  rule). `release-stage.sh` deliberately leaves the spec DECLARATIONS alone.
+- **candor-swift and candor-agents ship hand-written 0.29.1 sections.** An EMPTY `## Unreleased` is left
+  alone by the stager, and `release.sh` then falls through to "the newest non-empty section" — which
+  would have published two v0.29.1 releases whose notes describe 0.29.0. Caught by a pre-release
+  reviewer; no gate in the ladder catches it today, which is worth fixing in the machinery.
+
 ## 2026-08-18 — the Stop hook stops paying for turns that changed nothing
 
 **REVIEWED, and the guard was not safe as first shipped.** A Fable reviewer constructed six wrong-skip

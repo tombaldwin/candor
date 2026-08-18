@@ -4,6 +4,29 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
+- **`[P2]` COMMAND-LINE ARGUMENTS: the engines DISAGREE, and conformance cannot see it.** MEASURED
+  2026-08-18 on identical shapes:
+
+      rust   std::env::args()            → Env          rust   std::env::var("SECRET")        → Env
+      swift  CommandLine.arguments       → PURE         swift  ProcessInfo…environment[…]     → Env
+      ts     process.argv[2]             → PURE         ts     process.env.SECRET             → Env
+
+  Every engine agrees on environment VARIABLES and two of three read argv as nothing. §1's table says
+  `Env` is "reading environment variables / **the process environment**" — and that second clause is
+  what makes this a real question rather than a typo: argv is process-startup state delivered by the
+  same `exec`, so a reading of "the process environment" that includes it is defensible, and so is the
+  narrow one. **The engines have quietly answered it three different ways.**
+
+  **THE CONFORMANCE SUITE HAS NO ROW FOR ARGV**, which is why a two-way divergence survived a green
+  four-way run. That is the finding underneath the finding: the differential only compares what someone
+  thought to ask about.
+
+  Decide the CONTRACT first, then add the row, then move whichever engines disagree — in that order. If
+  argv is `Env`, swift and ts are under-reporting a real input channel (a program that reads a secret
+  from argv passes `deny Env` today). If it is not, candor-rust is over-charging and every `deny Env`
+  gate over a CLI tool is firing on argument parsing. Both directions have a user-visible cost, which is
+  why this is a ruling and not a patch.
+
 - **`[P1]` A GATE GOES GREEN OVER A LIBRARY WHOSE IMPLEMENTATION THE SCAN NEVER READ — disclosed on
   stderr, exit 0.** This is the axios residual from the 2026-08-13 round, re-measured on a fresh draw and
   now instrumented by ⟨0.29⟩, which moved it from SILENT to DISCLOSED. It is still exit 0.

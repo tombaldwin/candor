@@ -10,6 +10,35 @@ keeps its own.
 
 ## 2026-08-18 — the Stop hook stops paying for turns that changed nothing
 
+**REVIEWED, and the guard was not safe as first shipped.** A Fable reviewer constructed six wrong-skip
+scenarios and reproduced five — two of them categorical, needing no exotic filesystem, just a documented
+configuration. All five are closed and pinned by rows; none was covered by the guard's original rows,
+which only ever tested an mtime-advancing edit with the tree env var set.
+
+- **The analysed tree was not watched when it was not NAMED.** `candor-review-source.sh` defaults its
+  scan root to `.` and the README documents that, so a legal wiring left the guard watching nothing the
+  engine reads — and it never self-corrected, because no watched input ever moved again: a PERMANENT
+  silent miss, not a one-turn one. The guard now refuses to skip unless `CANDOR_CLASSES`/`CANDOR_SRC`
+  names the tree. (The JVM path was protected only by accident: `candor-review.sh` hard-requires
+  `CANDOR_CLASSES` and exits 2, which never stamps.)
+- **A policy reached through `.candor/config` was invisible** — the checked-in wiring SPEC §3.4
+  recommends, in which `CANDOR_POLICY` is never set. Both the config and the policy it names are inputs now.
+- **A same-size, same-mtime content change was invisible**: the signature was file-count + `du -sk`, and
+  KB rounding hid a rewrite. Not exotic — Gradle's build cache restores outputs with NORMALIZED CONSTANT
+  timestamps by design, and `rsync -a` preserves them. Now a CRC over the bytes (tens of ms against a
+  3.3s scan).
+- **A future-dated stamp disabled the `-newer` test permanently**, so a clock stepping back (NTP, a VM
+  resume, an NFS server whose clock leads) silently switched the guard off. A stamp dated after now is refused.
+- **`candor update` swapping the jar under an unchanged `CANDOR_CMD` string** changed nothing watched.
+  Engine files named in the command are inputs now.
+
+- **The turn boundary was wrong for a human message with ARRAY content** (a pasted image), which is not
+  a tool_result and IS a turn boundary. The boundary fell back to the previous turn and reported its
+  edits as this turn's — confidently, because an older string message kept `found=true` and suppressed
+  the full-file fallback. The test is now "a user entry carrying no tool_result block". And with no
+  boundary anywhere the answer is `null` ("couldn't determine"), not every edit in the session.
+
+
 From a uflexi field report (2,259 classes / 15MB of bytecode, a 4.9MB baseline): the Stop hook fires at
 the END OF EVERY TURN, including turns that only write a reply, and cost ~3.5s each — of which **3.30s is
 the scan**. Not JVM startup (0.10s), not jq (0.10s). Over a long session that is the difference between a

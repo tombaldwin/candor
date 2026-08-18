@@ -81,7 +81,16 @@ log_activity() {
     # `found` reports whether the window actually contained the turn boundary — if it did not, the answer
     # over the window would be a GUESS about which edits belong to this turn, so the full file is read.
     local q win doc
-    q='(map(.type=="user" and ((.message.content|type)=="string"))|rindex(true)) as $h
+    # THE BOUNDARY IS "a human spoke", and `content|type=="string"` is not that test. It was chosen to
+    # exclude tool_result entries (which arrive as `user` with ARRAY content) — but a human message with
+    # a pasted image or content blocks is ALSO an array, so a real turn boundary was skipped, the
+    # boundary fell back to the PREVIOUS turn, and its edits were reported as this turn's. Worse, an
+    # older string message kept `found=true`, so the full-file fallback did not fire and the wrong answer
+    # came back confident. Test the thing that actually distinguishes them: a human entry carries NO
+    # tool_result block.
+    q='(map(.type=="user" and ((.message.content|type)=="string"
+           or ((.message.content|type)=="array"
+               and ([.message.content[]? | select(.type=="tool_result")]|length)==0)))|rindex(true)) as $h
        | { found: ($h != null),
            files: ((if $h==null then . else .[$h+1:] end)
              | [ .[] | select(.type=="assistant") | .message.content[]?
@@ -92,7 +101,15 @@ log_activity() {
     if [ "$(printf '%s' "$doc" | jq -r '.found // false' 2>/dev/null)" != "true" ]; then
       doc=$(jq -cs "$q" "$tx" 2>/dev/null)      # boundary older than the window — read it all
     fi
-    edited=$(printf '%s' "$doc" | jq -c '.files' 2>/dev/null)
+    # NO BOUNDARY ANYWHERE ⇒ "couldn't determine", not "everything". With no human message in the whole
+    # transcript the full-file pass still returns found=false, and reporting its file list would attribute
+    # EVERY edit of the session to this turn. `null` is the documented value for undetermined, and the
+    # record shape already distinguishes it from `[]` (genuinely no edits).
+    if [ "$(printf '%s' "$doc" | jq -r '.found // false' 2>/dev/null)" = "true" ]; then
+      edited=$(printf '%s' "$doc" | jq -c '.files' 2>/dev/null)
+    else
+      edited=null
+    fi
   fi
   [ -z "$edited" ] && edited=null
   candor_log_activity "$rc" "$review" "$edited" "$sid"
@@ -125,25 +142,55 @@ log_activity() {
 # Off with CANDOR_HOOK_SKIP=0.
 stamp=${CANDOR_HOOK_STAMP:-.candor/hook-stamp}
 skip_inputs() {   # every path whose content can change the verdict
-  printf '%s\n' "${CANDOR_CLASSES:-}" "${CANDOR_SRC:-}" "${CANDOR_POLICY:-}" \
+  # `.candor/config` and the policy it NAMES (SPEC §3.4) are inputs too. A project that checks its policy
+  # in via the config — the wiring the spec recommends — sets no CANDOR_POLICY at all, so keying only on
+  # the env var watched nothing: tightening `deny Fs` to `deny Fs Net Db` in the config-named policy was
+  # skipped, as was editing the config itself.
+  local cfgpol=""
+  [ -f .candor/config ] && cfgpol=$(sed -n 's/^[[:space:]]*policy[[:space:]]\{1,\}//p' .candor/config | head -1)
+  printf '%s\n' "${CANDOR_CLASSES:-}" "${CANDOR_SRC:-}" "${CANDOR_POLICY:-}" "$cfgpol" \
+                "$([ -f .candor/config ] && echo .candor/config)" \
                 "${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}" \
-                "${CANDOR_REVIEW:-$HERE/candor-review.sh}" | grep -v '^$'
+                "${CANDOR_REVIEW:-$HERE/candor-review.sh}" \
+                "$(engine_files)" | grep -v '^$'
+}
+# The ENGINE is an input: `candor update` replaces the jar under an unchanged CANDOR_CMD string, and a
+# new engine version detects new things — a verdict change with zero movement in the tree. The command is
+# a shell string, so take every token that is an existing FILE (the jar, a wrapper script) and watch it.
+engine_files() {
+  printf '%s %s\n' "${CANDOR_CMD:-}" "${CANDOR_SCAN:-}" | tr ' ' '\n' \
+    | while IFS= read -r t; do [ -n "$t" ] && [ -f "$t" ] && printf '%s\n' "$t"; done
 }
 skip_signature() {   # identity, not mtime: an engine swap or a re-pointed path must re-run
   printf 'cmd=%s scan=%s review=%s policy=%s classes=%s src=%s\n' \
     "${CANDOR_CMD:-}" "${CANDOR_SCAN:-}" "${CANDOR_REVIEW:-}" "${CANDOR_POLICY:-}" \
     "${CANDOR_CLASSES:-}" "${CANDOR_SRC:-}"
-  # Size + file count of each input: catches an edit that preserved mtimes (rsync -a, a restoring build
-  # cache) but changed the bytes. Cheap — no hashing of a 4.9MB baseline.
+  # CONTENT, not size. This was file-count + `du -sk`, and KB rounding made a same-length rewrite with a
+  # restored mtime invisible — which is not exotic: Gradle's build cache restores outputs with NORMALIZED
+  # CONSTANT timestamps by design, and `rsync -a` deploys preserve them. A CRC over the bytes costs tens
+  # of ms against a 3.3s scan, which is the trade this guard exists to make.
   skip_inputs | while IFS= read -r p; do
     [ -e "$p" ] || { printf '%s=absent\n' "$p"; continue; }
-    printf '%s=%s/%s\n' "$p" "$(find "$p" -type f 2>/dev/null | wc -l | tr -d ' ')" \
-                        "$(du -sk "$p" 2>/dev/null | awk '{print $1}')"
+    printf '%s=%s\n' "$p" "$(find "$p" -type f -exec cksum {} + 2>/dev/null | cksum | awk '{print $1}')"
   done
 }
 should_skip() {
   [ "${CANDOR_HOOK_SKIP:-1}" = "0" ] && return 1
   [ -f "$stamp" ] || return 1
+  # REFUSE TO SKIP WHEN THE ANALYSED TREE IS NOT NAMED. `candor-review-source.sh` defaults its scan root
+  # to `.` when CANDOR_SRC is unset, and the README documents that default — so a legal, documented
+  # wiring left the guard watching NOTHING that the engine reads. That was not a one-turn miss: no
+  # watched input ever moved again, so a violation stayed skipped FOREVER. The JVM path was protected
+  # only by accident (candor-review.sh hard-requires CANDOR_CLASSES and exits 2, which never stamps).
+  # Watching `.` implicitly would be worse — a whole-repo CRC every turn — so the guard steps aside and
+  # the scan runs, which is the correct direction for a doubt.
+  [ -n "${CANDOR_CLASSES:-}${CANDOR_SRC:-}" ] || return 1
+  # A STAMP DATED IN THE FUTURE disables the `-newer` test for every ordinary edit that follows, and it
+  # self-corrects only via a signature change — so a clock stepping back (NTP correction, a VM resume, an
+  # NFS server whose clock leads) would silently switch the guard off. Compare against a marker made NOW.
+  local nowmark; nowmark=$(mktemp 2>/dev/null) || return 1
+  if [ -n "$(find "$stamp" -newer "$nowmark" 2>/dev/null)" ]; then rm -f "$nowmark"; return 1; fi
+  rm -f "$nowmark"
   # An input NEWER than the stamp ⇒ something moved since the last passing run.
   local p newer
   while IFS= read -r p; do

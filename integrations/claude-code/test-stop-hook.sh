@@ -202,5 +202,59 @@ OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
     CANDOR_HOOK_SKIP=0 CANDOR_HOOK_STAMP="$SG_STAMP" CANDOR_CLASSES="$SG_TREE" "$HOOK" 2>/dev/null)
 ok "CANDOR_HOOK_SKIP=0 disables the guard entirely"               'ran'
 
+# ── the guard's WRONG-SKIP holes, all five found by review and all reproduced before they were closed ──
+# Every row here is a case where the guard SKIPPED while a violation sat in the tree. None was covered by
+# the rows above, which only ever tested an mtime-advancing edit with the tree env var set.
+echo
+echo "skip guard — wrong-skip holes:"
+# (1) The tree not named at all. candor-review-source.sh defaults its root to `.`, and the README
+#     documents that, so this was a legal wiring in which the guard watched NOTHING the engine reads —
+#     and it never self-corrected, because no watched input ever moved again.
+rm -f "$SENTINEL"; rm -f "$SG_STAMP"
+OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=summary CANDOR_ACTIVITY_LOG=off \
+    CANDOR_HOOK_SKIP=1 CANDOR_HOOK_STAMP="$SG_STAMP" "$HOOK" 2>/dev/null)
+ok "with NO tree named (no CANDOR_CLASSES/CANDOR_SRC) the guard REFUSES to skip" 'ran'
+# (2) A future-dated stamp switches `find -newer` off for every later edit, and a clock stepping back is
+#     enough to cause it (NTP correction, a VM resume, an NFS server whose clock leads).
+sg_run clean; touch -A '9999' "$SG_STAMP" 2>/dev/null || touch -d '+1 day' "$SG_STAMP" 2>/dev/null
+sg_run clean
+ok "a stamp dated in the FUTURE is refused (the -newer test would be dead)"      'ran'
+# (3) The policy reached through `.candor/config` (SPEC §3.4) — the checked-in wiring the spec
+#     recommends, in which CANDOR_POLICY is never set.
+rm -rf "$WORK/cfgproj"; mkdir -p "$WORK/cfgproj/.candor" "$WORK/cfgproj/tree"
+echo 'x' > "$WORK/cfgproj/tree/a.class"; echo 'deny Net' > "$WORK/cfgproj/.candor/gate.pol"
+printf 'policy .candor/gate.pol\n' > "$WORK/cfgproj/.candor/config"
+cfg_run() { rm -f "$SENTINEL"; ( cd "$WORK/cfgproj" && printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=quiet CANDOR_ACTIVITY_LOG=off \
+    CANDOR_HOOK_SKIP=1 CANDOR_HOOK_STAMP=.candor/st CANDOR_CLASSES=tree "$HOOK" >/dev/null 2>&1 ); }
+cfg_run; cfg_run
+ok "…an unchanged config-wired project still skips (the guard is not just disabled)" '! ran'
+sleep 1; echo 'deny Net Fs Db' > "$WORK/cfgproj/.candor/gate.pol"; cfg_run
+ok "editing the policy NAMED BY .candor/config re-runs (CANDOR_POLICY unset)"    'ran'
+sleep 1; printf 'policy .candor/gate.pol\nignore x\n' > "$WORK/cfgproj/.candor/config"; cfg_run
+ok "…and editing .candor/config itself re-runs"                                  'ran'
+# (4) Content that changes without changing size or mtime. Gradle's build cache restores outputs with
+#     NORMALIZED CONSTANT timestamps by design, so this is a routine build, not a hostile one.
+sg_run clean
+sz_before=$(wc -c < "$SG_TREE/a.class")
+ref=$(mktemp); touch -r "$SG_TREE/a.class" "$ref"
+printf 'q' | dd of="$SG_TREE/a.class" bs=1 seek=0 conv=notrunc 2>/dev/null
+touch -r "$ref" "$SG_TREE/a.class"; rm -f "$ref"
+ok "the fixture really did keep its size"  "[ \"$sz_before\" = \"$(wc -c < "$SG_TREE/a.class")\" ]"
+sg_run clean
+ok "a same-SIZE, same-MTIME content change re-runs (a CRC, not du -sk)"          'ran'
+# (5) `candor update` swaps the jar under an unchanged CANDOR_CMD string — a new engine detects new
+#     things, which is a verdict change with nothing in the tree moving.
+JARF="$WORK/engine.jar"; echo 'v1' > "$JARF"
+je_run() { rm -f "$SENTINEL"; OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=quiet CANDOR_ACTIVITY_LOG=off \
+    CANDOR_HOOK_SKIP=1 CANDOR_HOOK_STAMP="$WORK/je-stamp" CANDOR_CLASSES="$SG_TREE" \
+    CANDOR_CMD="java -jar $JARF" "$HOOK" 2>/dev/null); }
+je_run; je_run
+ok "…an unchanged engine still skips"                                            '! ran'
+sleep 1; echo 'v2-with-new-detections' > "$JARF"; je_run
+ok "replacing the ENGINE JAR re-runs, though CANDOR_CMD is unchanged"            'ran' 
+
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

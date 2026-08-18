@@ -4,6 +4,39 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
+- **`[P1]` A CHEAP REPORT REFRESH — the edit-time loop re-analyses everything on every turn.** Field
+  report from uflexi (candor-java 0.26.0, 2,259 class files / 15MB of bytecode, a 4.9MB baseline),
+  measured per Stop-hook invocation:
+
+      candor-review.sh (the full bytecode scan)   3.30s      ← the cost
+      whole stop-hook.sh                          3.51s
+      JVM startup (java -jar … --help)            0.10s      ← NOT the cost
+      jq -cs transcript slurp                     0.10s      ← NOT the cost
+
+  On a typical turn one or two classes change out of thousands, and all of them are re-read. **The
+  frequency half of this is now fixed** (the hook skips turns where nothing the verdict depends on moved,
+  3.5s → 0.1s on most turns), but the first turn after any edit still pays 3.3s, and that is the turn the
+  agent is waiting on.
+
+  **The split already exists**: `gate --report` applies a policy to an existing report without rescanning,
+  and `diff`/`gains` consume reports. What is missing is a way to REFRESH a report — re-analyse only the
+  classes whose bytecode changed, then recompute the transitive closure over the merged set.
+
+  **The safety constraint is the whole design, not a detail.** A cache is a new way to produce a SILENT
+  UNDER-REPORT: a stale entry read as current is exactly the cardinal sin, and it would be invisible
+  because the report would look normal. The family already has the right instinct one layer over — §2.1
+  refuses a dep report or baseline produced by a DIFFERENT engine build (exit 2), on the grounds that a
+  classifier fix must not be silently skipped. A per-class cache needs the same rule and one more:
+    · key every entry on (engine build id, class CONTENT hash) — never mtime, which the hook's skip guard
+      can use safely because a wrong skip there self-corrects next turn, and a cache cannot;
+    · a changed engine build invalidates the WHOLE cache, because a classifier change can alter any entry;
+    · the transitive closure must be recomputed, not cached — a callee's new effect changes callers that
+      did not themselves change, which is the entire point of the tool;
+    · anything unreadable, unparseable or ambiguous falls back to a full scan rather than to a guess.
+
+  Worth measuring first on the same corpus: what fraction of the 3.30s is bytecode parsing versus the
+  closure, because if the closure dominates, per-class caching buys little and the answer is elsewhere.
+
 - **`[P2]` COMMAND-LINE ARGUMENTS: the engines DISAGREE, and conformance cannot see it.** MEASURED
   2026-08-18 on identical shapes:
 

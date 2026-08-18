@@ -10,6 +10,21 @@ keeps its own.
 
 ## 2026-08-18 — the corpus round that found a cardinal-sin-class defect in the REFERENCE engine
 
+- **`bin/monotone.sh` — the MONOTONICITY oracle: resolving more must never certify more.** Scan a TS
+  package with `node_modules` absent, install its dependencies, scan again, and compare FUNCTION BY
+  FUNCTION. `Unknown → a concrete effect` is refinement; `Unknown → nothing`, or a function vanishing
+  from the report, is a candidate silent certification. It exists because candor-ts's shadow guard
+  treated `import { fetch } from "node-fetch-native/proxy"` as the project's own `fetch` and withheld
+  Net — but ONLY in the better-informed run: with the package absent the same call honestly read
+  `Unknown`. A per-package effect count cannot see that; the comparison is what makes it visible.
+
+  **Its header carries the one thing that must not be optimised away.** Most false positives carry
+  `unknownWhy: no-node_modules:<pkg>` (globby resolving tsd's `expectType`, consola resolving
+  `string-width` — both genuinely pure), so skipping that marker is the obvious noise reduction. The
+  `fetch` cardinal sin carried THE SAME MARKER. Signal and noise are indistinguishable by that field:
+  the instrument narrows thousands of functions to a handful, and a person traces each. Three of its
+  first four hits were true negatives; the fourth was `require.resolve` reading the filesystem.
+
 - **sqlite-jdbc is pinned into the standing corpus, and it is the only jar there that reaches the
   filter.** candor-java's report writer admitted a method for effects / entry-point / blindness / a
   declaring class, and NOT for being disclosed-incomplete — so a method whose only signal was

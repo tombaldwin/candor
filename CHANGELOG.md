@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-18 — ⟨0.29⟩ / 0.29.1 PUBLISHED, and the npm wait earned itself on its first run
+
+- **Pins → 0.29.1**, after the artifacts they name existed: `ENGINE_PIN`, `adopt/`'s java and agents
+  pins, the vscode/jetbrains `candorTsVersion`/`candorJavaVersion`, and candor-java's jbang
+  `script-ref`. The jar URL was RESOLVED first (HTTP 200, 1142085 bytes, byte-matching the release
+  asset) — a pin naming a URL is not the URL existing.
+- **The step-6 npm wait STOPPED the release, correctly.** Added this morning after 0.29.0's pin bump
+  raced npm propagation and produced two CI failure emails, it refused to hand over the pin-bump step
+  until `candor-ts@0.29.1` was resolvable — and it fired, because `publish.yml` runs the full test
+  battery ("a broken build must not reach npm") before publishing, which outlasts the 10-minute budget.
+  **The guard was right and its timeout is wrong**: it treated a slow-but-healthy publish as a failure.
+  Worth raising to ~20 minutes, or better, keying the wait on the `publish` workflow's own completion
+  rather than a fixed clock.
+
 ## 2026-08-18 — 0.29.1 staged (a WITHIN-SPEC patch)
 
 - **Build versions → 0.29.1 across the family; the FLOOR stays 0.29.** `SPEC.md` is byte-identical since

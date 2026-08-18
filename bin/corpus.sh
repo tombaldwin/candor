@@ -80,6 +80,14 @@ acquire() {
   jar commons-lang3.jar $M/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar
   jar jackson-core.jar  $M/com/fasterxml/jackson/core/jackson-core/2.17.1/jackson-core-2.17.1.jar
   jar joda-time.jar     $M/joda-time/joda-time/2.12.7/joda-time-2.12.7.jar
+  # sqlite-jdbc is DELIBERATELY in the set, and it is the only jar here that produces the shape:
+  # a method that is DISCLOSED-INCOMPLETE while carrying NO EFFECT. candor-java computed that
+  # uncertainty (the `incompleteAcc` fixpoint) and then DISCARDED it at the report boundary, because the
+  # serialization filter admitted a method only for effects / entry-point / blindness / a declaring
+  # class. Absence from `functions` means PURE, so two callers read CERTAIN off an uncertain callee and
+  # oracle [1] said DISHONEST — the shape that was a cardinal sin in candor-swift on Alamofire. Do not
+  # drop this jar for being "another database driver": no other jar in the corpus reaches that filter.
+  jar sqlite-jdbc.jar   $M/org/xerial/sqlite-jdbc/3.46.0.0/sqlite-jdbc-3.46.0.0.jar
 }
 
 # ── scan ───────────────────────────────────────────────────────────────────────────────────────────

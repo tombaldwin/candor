@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-18 — the corpus round that found a cardinal-sin-class defect in the REFERENCE engine
+
+- **sqlite-jdbc is pinned into the standing corpus, and it is the only jar there that reaches the
+  filter.** candor-java's report writer admitted a method for effects / entry-point / blindness / a
+  declaring class, and NOT for being disclosed-incomplete — so a method whose only signal was
+  uncertainty was omitted, and omission means PURE. Two callers in sqlite-jdbc read CERTAIN off callees
+  disclosed `incomplete: [Db]`. Fixed in candor-java; gated here, where TWO oracles catch it
+  independently: the honesty invariant, and oracle [2] (java 1708/1710 propagated against the published
+  jar, 1713/1713 with the fix). Calibrated both ways before being trusted.
+
+- **Rounds that found nothing, recorded because a negative result is only useful if it is written
+  down.** Re-scan determinism: 28 reports byte-identical across all four engines. Purpose oracle over
+  two fresh draws (reqwest, rusqlite, walkdir, sled, tempfile, notify, ureq, csv, tar-rs, swift-nio,
+  swift-crypto, unstorage, okhttp, commons-io, hikaricp, httpclient, jsoup, commons-compress): every
+  library reports the effect it exists to perform. §3.1 route equality byte-equal on ten third-party
+  trees. `hyper` reporting zero `Net` is CORRECT — hyper 1.x contains no socket calls, the transport is
+  the caller's, and the engine described the code rather than the package name.
+
 ## 2026-08-17 — staging ⟨0.29⟩ / 0.29.0, and the evidence path a test wrote over
 
 - **`corpus.sh` gains oracle [4]: §3.1 ROUTE EQUALITY on code we did not write.** `ci/gate-equivalence.sh`

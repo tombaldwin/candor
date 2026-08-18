@@ -8,6 +8,38 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-18 — the Stop hook stops paying for turns that changed nothing
+
+From a uflexi field report (2,259 classes / 15MB of bytecode, a 4.9MB baseline): the Stop hook fires at
+the END OF EVERY TURN, including turns that only write a reply, and cost ~3.5s each — of which **3.30s is
+the scan**. Not JVM startup (0.10s), not jq (0.10s). Over a long session that is the difference between a
+feedback loop you keep and one you turn off.
+
+- **`stop-hook.sh` skips the scan when nothing the verdict depends on has moved** — the analysed tree, the
+  policy, the baseline, the engine command, the review script. If none changed since the last run that
+  PASSED, the verdict cannot have changed either. The stamp is written ONLY on rc=0, so a failing gate
+  keeps failing every turn until it is dealt with; that is the property that makes the guard safe to leave
+  on. Any uncertainty — no stamp, a changed signature, an input that moved — RUNS, because a wrong skip is
+  a silent miss. `CANDOR_HOOK_SKIP=0` turns it off. **Both traps the reporter hit are avoided and written
+  into the header**: it does not key on `git status --porcelain` (which prints status letters and paths,
+  never CONTENT, so re-editing an already-dirty file leaves the signature identical and the gate silently
+  never re-runs), and it compares against the STAMP FILE rather than the classes DIRECTORY (whose mtime
+  only moves when an entry is added or removed, making `find -newer <dir>` true essentially always).
+  Nine rows in `test-stop-hook.sh` lock the safety chain: block → no stamp → keeps re-running → stamps
+  only after a turn actually passes.
+
+- **The transcript scan is bounded.** `log_activity` slurped the WHOLE transcript to find the last human
+  message — O(session), growing all day, on a hook that runs every turn. It now reads a tail window
+  (`CANDOR_HOOK_TRANSCRIPT_TAIL`, default 2000 lines) and falls back to the full file when the window did
+  not contain the turn boundary. The fallback is not optional: measured on a 3,000-edit turn the window
+  alone reported 2,000 files instead of 3,000 — a wrong boundary, silently. On a 15MB transcript:
+  **170ms → 26ms**, and now constant with session length.
+
+- **The stdin contract is documented.** The script already read stdin once, first, into `$input` — that
+  part was confirmed rather than changed. What was missing is the warning for WRAPPER authors: stdin is a
+  stream, so anything a wrapper runs before the hook (a `./gradlew` call, in the report) drains it, and
+  the hook then sees no session id and no transcript. The header now says so and gives the fix.
+
 ## 2026-08-18 — the corpus round that found a cardinal-sin-class defect in the REFERENCE engine
 
 - **`bin/monotone.sh` — the MONOTONICITY oracle: resolving more must never certify more.** Scan a TS

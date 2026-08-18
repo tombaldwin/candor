@@ -39,7 +39,12 @@ run() { # run <MOCK_CASE> <NOTICE> [extra stdin json fields] -> stdout of hook, 
   local mc=$1 notice=$2 extra=${3:-'{}'}
   rm -f "$SENTINEL"
   local stdin; stdin=$(jq -nc --argjson e "$extra" '{session_id:"s1",hook_event_name:"Stop"} + $e')
+  # CANDOR_HOOK_SKIP=0 by default here: every existing row asserts what the hook does when it RUNS the
+  # review, and the skip guard would otherwise make the second clean row a no-op. The guard has its own
+  # rows below, which turn it back on explicitly. CANDOR_HOOK_STAMP keeps the stamp inside $WORK — without
+  # it the suite wrote `.candor/hook-stamp` into whatever directory it was run from.
   OUT=$(printf '%s' "$stdin" | MOCK_CASE="$mc" CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE="$notice" \
+        CANDOR_HOOK_SKIP="${SKIP_GUARD:-0}" CANDOR_HOOK_STAMP="$WORK/stamp" \
         CANDOR_ACTIVITY_LOG=off "$HOOK" 2>/dev/null)
 }
 ok()  { if eval "$2"; then pass=$((pass+1)); echo "  ok   $1"; else fail=$((fail+1)); echo "  FAIL $1"; echo "       out: $OUT"; fi; }
@@ -86,7 +91,8 @@ ok "active guard: does NOT run the review"          '[ ! -f "$SENTINEL" ]'
 # Activity log: a clean turn appends one record with verdict=clean to an EXISTING dir.
 LOGDIR="$WORK/.candor"; mkdir -p "$LOGDIR"; LOG="$LOGDIR/activity.jsonl"
 printf '%s' "$(jq -nc '{session_id:"s2",hook_event_name:"Stop"}')" \
-  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=quiet CANDOR_ACTIVITY_LOG="$LOG" "$HOOK" >/dev/null 2>&1
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=quiet CANDOR_ACTIVITY_LOG="$LOG" \
+    CANDOR_HOOK_SKIP=0 CANDOR_HOOK_STAMP="$WORK/stamp" "$HOOK" >/dev/null 2>&1
 ok "activity log appends one clean record"          '[ "$(jq -r .verdict "$LOG" 2>/dev/null)" = clean ]'
 ok "activity log record is valid JSON"              'jq -e . "$LOG" >/dev/null 2>&1'
 
@@ -140,5 +146,61 @@ else
 fi
 
 echo
+# ── the SKIP GUARD (CANDOR_HOOK_SKIP) ──────────────────────────────────────────────────────────────
+# The hook fires every turn and the scan dominates it (3.30s of 3.51s on a 2,259-class project), so a
+# turn that changed nothing the verdict depends on must not pay for a rescan. What these rows lock is
+# the SAFETY of that, not the speed: the guard may only skip after a run that PASSED, and any movement
+# in an input must bring the review back. $SENTINEL records whether the review actually ran.
+echo
+echo "skip guard:"
+SG_STAMP="$WORK/sg-stamp"; SG_TREE="$WORK/sg-tree"; SG_POL="$WORK/sg.policy"
+mkdir -p "$SG_TREE"; echo 'x' > "$SG_TREE/a.class"; echo 'deny Net' > "$SG_POL"
+sg_run() { # sg_run <MOCK_CASE> -> $OUT, sentinel reset first
+  rm -f "$SENTINEL"
+  OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+    | MOCK_CASE="$1" CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=summary CANDOR_ACTIVITY_LOG=off \
+      CANDOR_HOOK_SKIP=1 CANDOR_HOOK_STAMP="$SG_STAMP" CANDOR_CLASSES="$SG_TREE" CANDOR_POLICY="$SG_POL" \
+      "$HOOK" 2>/dev/null)
+}
+ran()     { [ -f "$SENTINEL" ]; }
+sg_run clean
+ok "first turn RUNS the review (no stamp yet)"                    'ran'
+ok "…and a passing run writes the stamp"                          '[ -f "$SG_STAMP" ]'
+sg_run clean
+ok "an unchanged turn SKIPS the review entirely"                  '! ran'
+ok "…and still emits valid JSON"                                  'valid_json'
+ok "…and says so in summary mode"                                 'printf "%s" "$OUT" | jq -r .systemMessage | grep -q "skipped"'
+sleep 1; echo 'y' >> "$SG_TREE/a.class"
+sg_run clean
+ok "a CHANGED input brings the review back"                       'ran'
+sleep 1; echo 'deny Net Fs' > "$SG_POL"
+sg_run clean
+ok "…a changed POLICY does too (not just the analysed tree)"      'ran'
+# THE SAFETY ROW: a failing gate must never stamp, or one violation would be skipped past forever.
+# The tree is touched first because that is what a blocking turn looks like — the verdict changed
+# BECAUSE something changed. (Without a change the guard skips, which is correct: nothing the verdict
+# depends on moved, so the verdict cannot have moved either.)
+sleep 1; echo 'z' >> "$SG_TREE/a.class"
+sg_run policy
+ok "a BLOCKING turn still blocks"                                 'printf "%s" "$OUT" | jq -e ".decision==\"block\"" >/dev/null'
+sg_run policy
+ok "…and a failing gate NEVER stamps, so the next turn re-runs it" 'ran'
+sg_run clean
+ok "…still re-running until a turn actually passes"               'ran'
+ok "…and only THEN is the stamp refreshed (the next turn skips)"  'sg_run clean; ! ran'
+# The engine identity is part of the signature: swapping the command must re-run even if no file moved.
+sg_run clean
+rm -f "$SENTINEL"
+OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=summary CANDOR_ACTIVITY_LOG=off \
+    CANDOR_HOOK_SKIP=1 CANDOR_HOOK_STAMP="$SG_STAMP" CANDOR_CLASSES="$SG_TREE" CANDOR_POLICY="$SG_POL" \
+    CANDOR_CMD='java -jar other.jar' "$HOOK" 2>/dev/null)
+ok "a changed ENGINE command re-runs even when no file moved"     'ran'
+sg_run clean; rm -f "$SENTINEL"
+OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | MOCK_CASE=clean CANDOR_REVIEW="$MOCK" CANDOR_HOOK_NOTICE=summary CANDOR_ACTIVITY_LOG=off \
+    CANDOR_HOOK_SKIP=0 CANDOR_HOOK_STAMP="$SG_STAMP" CANDOR_CLASSES="$SG_TREE" "$HOOK" 2>/dev/null)
+ok "CANDOR_HOOK_SKIP=0 disables the guard entirely"               'ran'
+
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

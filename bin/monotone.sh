@@ -66,7 +66,12 @@ bad = []
 for fn, before in b.items():
     after = a.get(fn)
     if after is None:
-        bad.append(f"{fn}: {sorted(before)} -> ABSENT (absence means PURE)")
+        # PRESENT-WITH-NO-EFFECTS and ABSENT both mean pure, so that transition is not a weakening.
+        # The unchained run lists such a function precisely BECAUSE its package was uncovered (the
+        # coverage ledger discloses it); once the dep resolves and it is genuinely pure, it is omitted.
+        # Flagging it cost this oracle a false positive on its first dep-chaining run.
+        if before:
+            bad.append(f"{fn}: {sorted(before)} -> ABSENT (absence means PURE)")
     elif before and not after:
         bad.append(f"{fn}: {sorted(before)} -> {{}} (all effects dropped)")
     elif "Unknown" in before and not after:

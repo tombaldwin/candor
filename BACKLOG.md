@@ -246,6 +246,33 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   `dotenv` show both safe behaviours (catch, refuse) already exist in the engine, and a project whose
   peeked functions perform nothing denied stays green — the over-charge control comes free.
 
+  **THE PEEK DOES NOT SAY "UNKNOWN" — IT SAYS "Net" (2026-08-18, published 0.29.1).** The peeked
+  functions in every green case resolve to a CONCRETE denied effect, not to uncertainty:
+
+      axios       37 peeked functions  `performs Net`   deny Net → exit 0
+      node-fetch  15                   `performs Net`   deny Net → exit 0
+      ky / ky2     9                   `performs Net`   deny Net → exit 0
+      execa        9                   `performs Net`   deny Net → exit 0
+      zx           3                   `performs Net`   deny Net → exit 0
+      ofetch       1                   `performs Net`   deny Net → exit 0
+
+  So the engine **concludes** these functions perform Net, **prints** that conclusion per function, and
+  then exits 0 against `deny Net`. This is not an uncertainty-propagation question and needs no
+  Unknown-widening and no fraction heuristic. **THE RULE IS EXACT: a peeked function performing an effect
+  the policy DENIES cannot be green.**
+
+  **Precision and the over-charge control, measured across all 27 packages on disk with real TypeScript.**
+  The rule flips exactly the 7 above from green to red. It leaves **14 packages green and untouched** —
+  `zod`, `consola`, `citty`, `pathe`, `p-queue`, `unstorage`, `nypm`, `chalk`, `globby`, `chokidar`,
+  `open`, `execa2` and two fixtures — every one with **0 peeked functions**, i.e. the scan read them in
+  full. `undici`/`dotenv` (exit 2) and `got`/`giget`/`hono`/`h3` (exit 1) are unaffected. Zero
+  over-charge on the fully-read population; no green survives over a resolved denied effect.
+
+  **Why it is still a contract change and still Tom's call:** ⟨0.29⟩'s stated contract for the peek is
+  "read the excluded files, CHANGE NO VERDICT". That clause was written before anyone measured that the
+  peek would resolve *concrete denied effects* rather than uncertainty. The measurement is the argument
+  for revising it in ⟨0.30⟩ — the peek turned out to be a better instrument than the clause assumed.
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

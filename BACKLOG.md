@@ -273,6 +273,33 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   peek would resolve *concrete denied effects* rather than uncertainty. The measurement is the argument
   for revising it in ⟨0.30⟩ — the peek turned out to be a better instrument than the clause assumed.
 
+  **THE SAME HOLE EXISTS IN JAVA, MEASURED — `multi-release-override` (2026-08-18).** candor-java's one
+  exclusion class on a real jar is `multi-release-override`, and its own reason states the risk exactly:
+  *"an effect present ONLY in a versioned copy is outside this verdict"* — with `peeked: false`, so the
+  engine cannot say what is in there.
+
+  On `log4j-api:2.23.1` (4 real class overrides, not just `module-info`), scanning the BASE copies —
+  which is what candor does — against the base-with-overrides-applied, which is what the JVM actually
+  runs on any Java 9+:
+
+      21 functions get a MATERIALLY DIFFERENT verdict
+         LogManager.callerClass       scans [Clock,Env,Fs,Log,Net,Unknown]  runs []
+         Base64Util.encode            scans [Clock,Env,Fs,Log,Net,Unknown]  runs []
+         ProcessIdUtil.getProcessId   scans [Fs,Unknown]                    runs []
+       5 functions exist ONLY in the versioned copy, so the verdict says nothing about them
+         DefaultObjectInputFilter.checkInput / isAllowedByDefault / isRequiredPackage
+
+  The cause is a single routing point: everything above reaches the Java-8 `StackLocator`
+  (reflection/`LoaderUtil`, which legitimately pulls Fs and Net), and the Java-9 override replaces it
+  with `StackWalker`, which is clean.
+
+  **On THIS jar the divergence is OVER-statement — a false-positive risk, not a cardinal sin** (nothing
+  concrete is under-reported; the 5 override-only functions read `Unknown`, i.e. disclosed uncertainty).
+  But the mechanism is symmetric: an override may ADD a concrete effect, and the base copy would be
+  certified without it. Unlike the ts case this is not a threshold question — it is `peeked: false` on a
+  class the runtime genuinely prefers. Cheapest honest step is to PEEK the versioned copies and report
+  the delta, which needs no verdict change and would have surfaced all 26 functions above.
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

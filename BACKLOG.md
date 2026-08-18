@@ -184,6 +184,46 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   asked-and-clear answer ⟨0.27⟩ makes positive). So the populated case is not exotic and the empty case
   still distinguishes itself: whatever this becomes, it has a real signal to key on and a real control.
 
+  **THIRD INSTANCE, and the one that names the mechanism (2026-08-18, published 0.29.1).** `axios` —
+  the most-depended-on HTTP client on npm — ships **5 real `.ts` files, every one of them under
+  `test/module/` (type-compatibility tests), and 160 `.js` implementation files**. `deny Net` exits **0**,
+  `policy ✓`, over an HTTP client. Its report: `analyzed.count` 54, 2 files, 52 functions, all `Unknown`.
+
+  **THE ADVISED REMEDY HAS A HOLE EXACTLY WHERE THE RISK IS WORST.** The gate helpfully prints
+  `→ add deny Net Unknown`, and on axios that remedy WORKS (exit 1, 52 violations); on `node-fetch` it
+  works too (exit 1). On **`execa` it does NOT** — `deny Exec Unknown` still exits **0, `policy ✓`**.
+  The cause is not the effect set: execa's report has `analyzed.count` 1 and **`functions` = 0**, with
+  `outOfScope` naming **1293** — among them `handleCommand`, `mapCommandAsync`, `mapCommandSync`, which
+  ARE the Exec surface. **A policy ranges over the analyzed function set, so an EMPTY set satisfies every
+  policy vacuously.** Adding `Unknown` to the deny list cannot help when there is no function to carry it.
+  So the worse the scan's coverage, the more certainly the gate is green — and the documented workaround
+  silently stops working at exactly the point coverage reaches zero.
+
+  **This is why the fix is a coverage predicate, not another effect in the deny list** — and the ⟨0.30⟩
+  clause has to range over the SCAN, not over the effects.
+
+  **§3.1 ROUTE EQUALITY IS SATISFIABLE HERE, which is what killed `net-partner`.** That attempt failed
+  because `gate --report` had no target to anchor the disclosure at. This one has no such problem:
+  `outOfScope` and `excluded` are **fields of the report document itself** (read straight out of
+  `.candor/report.json` above), so both `scan --policy` and `gate --report` see identical inputs and can
+  derive a byte-equal verdict. Options (a) and (c) are therefore route-equality-compatible by
+  construction; that constraint is discharged, not merely deferred.
+
+  **IS IT FAMILY-WIDE? NO — MEASURED, and that shrinks the fix.** Parallel fixture (`vacuous/rs`): a
+  crate whose `lib.rs` does not declare `orphan`, so `orphan.rs` — which calls `fs::read` — is outside
+  the crate graph exactly as axios's `.js` is outside the tsconfig program. **candor-scan 0.29.1
+  (published, re-checked against the 0.28.2 local build to rule out staleness) exits 1** and names
+  `orphan::reads`. Rust's scope is the FILE TREE; ts's scope is a BUILD-DERIVED PROGRAM. A file tree
+  cannot silently omit the implementation; a build config can, and on axios it omits 160 of 165 files.
+
+  **So the likely fix is smaller than a ⟨0.30⟩ clause.** candor-ts ALREADY fails closed at zero — every
+  JS-only tree above (`simple-git`, `nodemailer`, `chokidar`, `fast-glob`, incl. `.d.ts`-only) exits 2,
+  "no TypeScript sources". The hole is the THRESHOLD, not the contract: 5 type-test files count as
+  "sources" and buy a green gate over 160 unread implementation files. Widening ts to the file tree is
+  NOT the answer (it cannot analyze `.js` at all) — extending the refusal it already has is: an analyzed
+  set that is a negligible fraction of the tree, or one containing no implementation unit, should refuse
+  like the zero case rather than certify. That is fixing a false all-clear, which is "always fix".
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

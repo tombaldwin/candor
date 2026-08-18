@@ -21,6 +21,19 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   four-way run. That is the finding underneath the finding: the differential only compares what someone
   thought to ask about.
 
+  **STDIN, by contrast, is CONSISTENT and probably deliberate:** `System.in.read` / `std::io::stdin` /
+  `process.stdin.read` / `readLine()` are pure in ALL FOUR. candor-java's classifier states the adjacent
+  ruling in as many words — console writes are "left unclassified (§1)" as low-signal — so the input
+  side is presumably the same call. Worth a sentence in §1 either way: data can arrive through stdin,
+  and today nothing says whether that silence is a decision or an omission. NOT a divergence, so it does
+  not block anything; noted here because the argv sweep is what surfaced it.
+
+  (A third candidate was traced and DISMISSED: `System.getProperty("user.home")` reads pure in java,
+  which looks like the `os.homedir()` gap ts had. It is not — java's classifier documents the measured
+  reason, that charging JVM system properties "flooded a scala-library scan with a spurious 14k Env",
+  and `-D` config is not the OS environment. node's `homedir()` genuinely resolves `$HOME`; the JVM
+  property does not. Recorded so the next sweep does not re-open it.)
+
   Decide the CONTRACT first, then add the row, then move whichever engines disagree — in that order. If
   argv is `Env`, swift and ts are under-reporting a real input channel (a program that reads a secret
   from argv passes `deny Env` today). If it is not, candor-rust is over-charging and every `deny Env`

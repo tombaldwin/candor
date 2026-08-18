@@ -49,6 +49,11 @@ _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, ev
   only thing standing between that and a green gate is whether the operator reads stderr. Both instances
   are npm packages a real consumer would gate on.
 
+  **HOW OFTEN, measured across the draws (2026-08-18):** with `deny Net` configured, the peek reports
+  `outOfScope` findings on `ky` (9) and `execa` (9), and present-and-empty on `consola` (0 — the
+  asked-and-clear answer ⟨0.27⟩ makes positive). So the populated case is not exotic and the empty case
+  still distinguishes itself: whatever this becomes, it has a real signal to key on and a real control.
+
   Controls any attempt must keep: a project with NO exclusions must stay exit 0 (the over-charge control
   — promoting every scope note to a failure deletes the gate's usefulness), and a `deny Exec` over a tree
   the scan DID read in full must still fire on the real violation.

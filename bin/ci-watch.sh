@@ -35,6 +35,19 @@ OWNER="tombaldwin"
 rc=0
 now=$(date -u +%s)
 
+# THE WIRE FORMAT between `gh` and the loop below. Fields are separated by a UNIT SEPARATOR, not a tab.
+#
+#   WHY, measured 2026-08-19 minutes after this script was written: `read` collapses consecutive IFS
+#   *whitespace* delimiters, and tab is whitespace. A run that is in_progress carries conclusion "" — jq's
+#   `//` does not replace an empty string, only null — so the row arrived as `ci<TAB>in_progress<TAB><TAB>
+#   2026-…Z`, the two tabs collapsed into one, and `created` came out EMPTY. An empty date fails to parse,
+#   the fallback set `started` to now, elapsed was ALWAYS 0, and the stall arm could not fire on any real
+#   run. The `--selftest` passed throughout, because it exercised is_stalled() directly: a copy of the
+#   instrument, not the instrument. Both halves are fixed here — a separator that cannot collapse AND a
+#   conclusion that is never empty — and the selftest now drives the parse itself.
+US=$'\037'
+JQ_ROW='.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .createdAt'
+
 # THE STALL DECISION, as a function so it can be exercised without waiting for a real hang. A check whose
 # alarm has never been seen to fire is a check nobody should trust — this is the arm that was missing on
 # 2026-08-19, and a version of it that silently never fired would have left the same gap wearing a green.
@@ -55,7 +68,34 @@ if [ "${1:-}" = "--selftest" ]; then
   done
   echo "  (row 1 is the real 3h45m hang against a 10m median; the last row is a workflow with no"
   echo "   successful history, which must never be called stalled on no evidence)"
-  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires and is bounded" \
+
+  # THE ARM THAT WAS MISSING. The rows above exercise the decision; these exercise the PARSE that feeds
+  # it, over the exact shape `gh` emits for a run that has not concluded. The first is what the query
+  # used to produce (an empty conclusion field) and it is asserted to be UNREACHABLE now; the second is
+  # what it produces today. An `elapsed` of 0 on a run started an hour ago is the failure, and it is a
+  # SILENT one — every row still printed, the verdict was still red for the right reason, and the stall
+  # line simply never appeared.
+  echo
+  for probe in "empty-conclusion in_progress" "dash-conclusion completed"; do
+    set -- $probe
+    case "$1" in
+      empty-conclusion) row="wf${US}in_progress${US}${US}2026-08-19T19:00:00Z" ;;
+      dash-conclusion)  row="wf${US}in_progress${US}-${US}2026-08-19T19:00:00Z" ;;
+    esac
+    IFS="$US" read -r p_wf p_status p_concl p_created <<< "$row"
+    if [ "$p_created" = "2026-08-19T19:00:00Z" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
+    printf "  %s %-18s -> wf=%s status=%s concl=%q created=%q\n" \
+           "$mark" "$1" "$p_wf" "$p_status" "$p_concl" "$p_created"
+  done
+  # And the query itself must never emit an empty conclusion field, whatever `read` would do with it.
+  emitted=$(printf '%s' '[{"workflowName":"wf","status":"in_progress","conclusion":"","createdAt":"2026-08-19T19:00:00Z"}]' \
+            | jq -r "$JQ_ROW" 2>/dev/null | tr "$US" "|")
+  if [ "$emitted" = "wf|in_progress|-|2026-08-19T19:00:00Z" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
+  printf "  %s %-18s -> %s\n" "$mark" "jq empty concl" "$emitted"
+  echo "  (an in_progress run has conclusion \"\", not null; jq's // leaves it, and tab-separated it"
+  echo "   collapsed and shifted createdAt out of the row — elapsed was 0 for every run, always)"
+  echo
+  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, and its input parses" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
@@ -75,9 +115,7 @@ for repo in "${REPOS[@]}"; do
   [ -d "$d" ] || { printf "  %-14s SKIP  (not checked out)\n" "$repo"; continue; }
   sha="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
   rows="$(gh run list -R "$OWNER/$repo" --commit "$sha" \
-          --json workflowName,status,conclusion,createdAt \
-          -q '.[] | .workflowName + "\t" + .status + "\t" + (.conclusion // "-") + "\t" + .createdAt' \
-          2>/dev/null | sort -u)"
+          --json workflowName,status,conclusion,createdAt -q "$JQ_ROW" 2>/dev/null | sort -u)"
 
   if [ -z "$rows" ]; then
     # No run is legitimate ONLY when nothing in the commit matched a workflow's path filter. Say which
@@ -87,7 +125,7 @@ for repo in "${REPOS[@]}"; do
     continue
   fi
 
-  while IFS=$'\t' read -r wf status concl created; do
+  while IFS="$US" read -r wf status concl created; do
     [ -z "$wf" ] && continue
     case "$status/$concl" in
       completed/success)
@@ -95,8 +133,15 @@ for repo in "${REPOS[@]}"; do
       completed/*)
         printf "  %-14s %-26s ✘ %s\n" "$repo" "$wf" "$concl"; rc=1 ;;
       *)
+        # NOT `|| echo "$now"`. That fallback is what hid the bug above: it turned "I could not read the
+        # start time" into "it started this instant", which reads as healthy and disarms the stall check.
         started=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$created" +%s 2>/dev/null \
-                  || date -u -d "$created" +%s 2>/dev/null || echo "$now")
+                  || date -u -d "$created" +%s 2>/dev/null || echo "")
+        if [ -z "$started" ]; then
+          printf "  %-14s %-26s ✘ %s, start time UNREADABLE (%s) — the stall check cannot answer here\n" \
+                 "$repo" "$wf" "$status" "${created:-empty}"
+          rc=1; continue
+        fi
         elapsed=$(( now - started ))
         med=$(median_secs "$repo" "${wf}.yml")
         [ "$med" -eq 0 ] && med=$(median_secs "$repo" "$wf")

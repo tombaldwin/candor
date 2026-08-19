@@ -2,6 +2,57 @@
 
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
+
+## An fd/stream write reached through a helper is charged `Net` (over-charge, PRE-EXISTING, now verdict-bearing)
+
+**MEASURED 2026-08-19** on `execa` under `deny Net`, in the ⟨0.30⟩ blast-radius sweep: every finding in
+that project's fixture set is a write to stdout or a file descriptor, charged as **Net**. `fail.js` (whose
+whole body is `process.exitCode = 2`) and `delay.js` (`setTimeout`) were named for effects that live in
+`noop-*.js`. Cause: `tty.WriteStream` extends `net.Socket`, and the std-stream carve-out fails through one
+level of indirection.
+
+**It is 2 of the 31 measured ⟨0.30⟩ flips** — i.e. the only two of that sweep that are NOT justified. The
+other 29 are genuine denied effects in unjudged files.
+
+**PRE-EXISTING — ⟨0.30⟩ only made it verdict-bearing.** Under ⟨0.29⟩ this was a wrong line in an advisory
+block; now it can turn a gate red over a stream write.
+
+**WHY IT WAS NOT FIXED UNDER THE RELEASE, deliberately.** Narrowing an over-charge is the single move this
+family has measured producing silent under-reports — 4 defects in 5 such fixes, and the ⟨0.30⟩ work
+reproduced that pattern twice in one day (a false all-clear introduced while fixing a false all-clear).
+A classifier narrowing wants its own change, its own fixture pair, and its own review, not a fold-in.
+
+**What the next attempt should do FIRST:** write the UNDER-REPORT control before the fix — a genuine
+`net.Socket` write reached through the same indirection, which must still charge Net. The carve-out is a
+denylist question (`candor-denylist-over-allowlist`): say which direction it fails in before choosing it.
+It is named in the 0.30.0 release notes as a known over-charge, so consumers meeting it are not surprised.
+
+## The ⟨0.30⟩ exit code and per-RUN gate state (candor-rust)
+
+`GATE_VIOLATIONS` is now thread-local rather than a process global, which fixed both the `--gate-json`
+sink-dependence and a race that only appeared because `cargo test` runs in parallel threads. Member
+aggregation now uses §3.3's precedence instead of `rc.max(code)`, which had let one member's "could not
+evaluate" displace another's certain violation (`regex` under `pure`: 198 violations, exit 2).
+
+**Residual:** the state is still ambient rather than threaded through `scan_one`'s signature. Thread-local
+is correct only while members are scanned SEQUENTIALLY on one thread (`for d in &dirs`) — the moment
+anyone parallelises that loop, cross-member accumulation silently breaks and the symptom will be a wrong
+exit code, not a crash. Either thread the state explicitly or pin the sequential assumption with a row.
+
+## A cheap report REFRESH (the uflexi Stop-hook cost)
+
+Field-measured: 3.30s of a 3.51s hook is the scan, re-analysing 2,259 classes when one changed. The
+FREQUENCY half is fixed (the hook skips turns where nothing the verdict depends on moved); the first turn
+after any edit still pays, and that is the turn the agent waits on.
+
+**Its acceptance test is what keeps it a patch:** a refreshed report must be BYTE-IDENTICAL to a full
+scan, `analyzed.digest` included. Key on (engine build id, class CONTENT hash) never mtime; invalidate the
+whole cache on an engine change; recompute the closure rather than caching it; full-scan fallback on
+anything ambiguous. **Measure parsing-vs-closure FIRST** — if the closure dominates, per-class caching
+buys little and the answer is elsewhere. A stale cache entry read as current is the cardinal sin and would
+look like a normal report.
+
+
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
 - **`[P2]` A DEPENDENCY'S `incomplete`-ONLY FUNCTION IS DROPPED BEFORE ITS MARKER CAN PROPAGATE.** Found

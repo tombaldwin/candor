@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-08-19 — ⟨0.30⟩ built four-way, and a review panel found seven blockers in it
 
+- **UMBRELLA_VERSION → 0.30.0** (the brew formula / `--version` row). `ENGINE_PIN` deliberately stays at
+  0.29.1: it names a PUBLISHED release line and moves only once 0.30.0 artifacts exist — preflight [3]
+  gates that ordering, and it is the check that caught the pin lagging at 0.18.0 through 0.23.1.
+
 - **A standing internal-consistency oracle, `bin/selfconsistent.py`.** Every other oracle compares a
   report against something else — another engine, another run, the runtime. This one needs no ground
   truth, so it runs over every report on disk: a `hosts`/`cmds`/`paths`/`tables` literal without its

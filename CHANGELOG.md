@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-19 — ⟨0.30⟩ built four-way, and a review panel found seven blockers in it
+
+- **A standing internal-consistency oracle, `bin/selfconsistent.py`.** Every other oracle compares a
+  report against something else — another engine, another run, the runtime. This one needs no ground
+  truth, so it runs over every report on disk: a `hosts`/`cmds`/`paths`/`tables` literal without its
+  effect, `unknownWhy` without Unknown, `direct` ⊄ `inferred`, `analyzed.count` smaller than the
+  functions reported from it. `--selftest` builds a report violating each rule and asserts it fires
+  (7/7), because a clean sweep from an uncalibrated instrument is the cardinal sin wearing an oracle's
+  hat. Swept 2,142 reports across all four engines: zero engine-produced violations.
+
+- **BACKLOG: the green-gate-over-unread-code item is now measured rather than filed.** `deny Net` over
+  `axios` exits 0 while the peek names 37 functions it has concluded perform Net; the advised remedy
+  (`add deny Net Unknown`) works on axios and node-fetch and FAILS on execa, whose report has zero
+  functions — a policy ranges over the analyzed set, so an empty set satisfies every policy vacuously.
+  Of 85 packages drawn, 38 have code and 7 sit in that shape, every one effect-purposed. Rust is clean
+  here (it scopes to the file tree, not a build-derived program), which is what narrowed the fix.
+
+- **⟨0.30⟩ is built in all four engines and conformance-pinned, and NOT released.** See candor-spec's
+  changelog for the rung. A four-lens adversarial review then found seven blockers in it — including a
+  `pure` policy silently disarming the rung four-way, an unreadable multi-release override claiming to
+  have been read, and the advisory verbs still certifying what the gate now refuses — all fixed, each
+  pinned by a conformance arm that was falsified before it was trusted.
+
 ## 2026-08-18 — ⟨0.29⟩ / 0.29.1 PUBLISHED, and the npm wait earned itself on its first run
 
 - **Pins → 0.29.1**, after the artifacts they name existed: `ENGINE_PIN`, `adopt/`'s java and agents

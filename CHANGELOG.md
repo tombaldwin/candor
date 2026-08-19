@@ -24,6 +24,21 @@ keeps its own.
   `--selftest`. Sub-minute durations now print as seconds — `0m elapsed against a 0m median` is what made
   the false alarm read as nonsense rather than as the short-job case it was.
 
+- **`bin/wf-expected.py` — and the third thing wrong with `ci-watch.sh`: it printed OK over a row that
+  said "verify before trusting".** For a docs-only commit the umbrella repo has no run at HEAD, and the
+  script said so and then declared the fleet green. The row was honest about not knowing; the verdict was
+  not — a fail-open in the one script whose thesis is that a summary must never be greener than its rows.
+  The two readings behind those words are "this commit matched no path filter", which is fine, and "a
+  workflow that should have run did not", which blocks a release. Neither needs GitHub to answer: the
+  workflow files declare their own triggers. This reads them against the commit's changed files and says
+  which runs are REQUIRED; `ci-watch.sh` now reds on a required-and-absent run — including the subtler
+  case where *other* rows are present, which is the shape that once let a green `realworld-oracle` stand
+  in for a red `ci`. Its first two answers were false reds (`publish.yml` and `release.yml`, both
+  `on: push: tags`, read as "every push"), so tag and branch filters are handled and both shapes are
+  selftest rows. 11 rows, one shared classifier — the selftest had started out re-implementing the
+  cascade it was meant to check, which is the mistake being fixed one entry above. `CI_WATCH_FAULT=drop-row`
+  drops a real row and the arm goes red, so the alarm has been seen to fire.
+
 - **`ci-watch.sh`'s stall alarm was dead on arrival, and its own selftest could not see it.** Minutes
   after the script landed, a live run showed `0m elapsed` against a run that had started eight minutes
   earlier. `read` collapses consecutive IFS *whitespace* delimiters and tab is whitespace; an

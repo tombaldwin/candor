@@ -62,8 +62,22 @@ if want candor-ts && [ -d "$ROOT/candor-ts" ]; then
       tar xzf "$T"/*.tgz -C "$T"; (cd "$T/package" && npm install --omit=dev --silent >/dev/null 2>&1)
       # Executing every declared bin from the PACKED tarball is the only thing that sees what a consumer
       # receives: 0.29.0 and 0.29.1 both shipped two bins that died on a file `files` omitted.
+      #
+      # THE ASSERTION IS "IT LOADS", NOT "IT ANSWERS --version". The first version of this demanded a
+      # zero exit from `--version` and reported `bin failed: ./verify.mjs` — but that bin is present,
+      # loads, and prints a usage error because it takes verbs rather than that flag. A check that
+      # invents a contract the code never made produces a red nobody can act on, which is how a real
+      # red later gets waved through. The defect this exists for is ERR_MODULE_NOT_FOUND at startup,
+      # so that is what it looks for, on any exit code.
       for b in $(node -e "console.log(Object.values(require(\"$T/package/package.json\").bin).join(\" \"))"); do
-        node "$T/package/${b#./}" --version </dev/null >/dev/null 2>&1 || { echo "bin failed: $b"; exit 1; }
+        # `|| true`: the block runs under `set -e`, and a bin that prints a usage error exits non-zero
+        # by design. Without it the assignment itself killed the step — a non-zero exit is DATA here,
+        # not a failure.
+        out=$(node "$T/package/${b#./}" --version </dev/null 2>&1) || true
+        case "$out" in
+          *ERR_MODULE_NOT_FOUND*|*"Cannot find module"*|*ERR_REQUIRE_ESM*)
+            echo "bin does not load: $b"; echo "$out" | head -3; exit 1 ;;
+        esac
       done; rm -rf "$T"'
   else skipped="$skipped candor-ts(no-node)"; fi
 fi

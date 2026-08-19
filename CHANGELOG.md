@@ -59,6 +59,15 @@ keeps its own.
   reports an unreadable start time instead of implying health, and the selftest drives the parse and the
   jq emission. The new arm was run against the old format and fails there.
 
+- **…and its ts arm invented a contract, then died on it.** Its first real run reported
+  `bin failed: ./verify.mjs`. That bin is present, loads, and works — it takes verbs, so `--version`
+  prints a usage error and exits 2. The check had demanded a flag the code never promised, and a red
+  nobody can act on is how a real red later gets waved through. The defect this arm exists for is a file
+  omitted from `files`, which surfaces as `ERR_MODULE_NOT_FOUND` at startup, so that is what it looks
+  for now, on any exit code — verified by hiding `scratch.mjs` in the packed tarball and watching it
+  fire. Second bug in the same six lines: `out=$(node …)` under `set -e` killed the step outright,
+  because a non-zero exit is data here rather than a failure.
+
 - **`bin/verify-local.sh` — run what CI runs, before pushing.** `cargo test --workspace` passed twice on
   candor-rust while `cargo clippy --all-targets -- -D warnings` — which is what CI actually runs — failed,
   once on a duplicated `#[allow]` and once on a doc comment left on a `thread_local!`. Both times "the

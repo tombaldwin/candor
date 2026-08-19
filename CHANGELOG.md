@@ -14,6 +14,16 @@ keeps its own.
   0.29.1: it names a PUBLISHED release line and moves only once 0.30.0 artifacts exist — preflight [3]
   gates that ordering, and it is the check that caught the pin lagging at 0.18.0 through 0.23.1.
 
+- **…and its first real firing was wrong in the other direction.** With the parse repaired, the alarm
+  immediately called candor's `shell-lint` STALLED at 55s. Its median is 18s (measured: 16 16 16 17 17 17
+  18 18 22 62 77 100), so `3x median` is 54s — a normal run trips it before the runner has finished
+  installing shellcheck. A multiplier alone cannot express *stuck* for a job whose whole life is shorter
+  than its own startup variance, so the threshold is now `factor x median` **or** `STALL_FLOOR` (300s),
+  whichever is larger. The cases this exists for are untouched: the real 3h45m hang against a 10m median
+  clears 30m by 7×, and the same short job genuinely stuck at 400s is still caught. Both rows are in
+  `--selftest`. Sub-minute durations now print as seconds — `0m elapsed against a 0m median` is what made
+  the false alarm read as nonsense rather than as the short-job case it was.
+
 - **`ci-watch.sh`'s stall alarm was dead on arrival, and its own selftest could not see it.** Minutes
   after the script landed, a live run showed `0m elapsed` against a run that had started eight minutes
   earlier. `read` collapses consecutive IFS *whitespace* delimiters and tab is whitespace; an

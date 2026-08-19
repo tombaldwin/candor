@@ -136,11 +136,34 @@ for repo in "${REPOS[@]}"; do
   rows="$(gh run list -R "$OWNER/$repo" --commit "$sha" \
           --json workflowName,status,conclusion,createdAt -q "$JQ_ROW" 2>/dev/null | sort -u)"
 
+  # WHICH WORKFLOWS MUST HAVE RUN, asked of the workflow files rather than of GitHub. Until this existed
+  # the script printed "no run at HEAD (path-filtered, or never triggered — verify before trusting)" and
+  # then printed OK: honest in the row, fail-OPEN in the verdict, in the one script whose entire thesis is
+  # that a summary must never be greener than its rows. The two readings it could not separate are "this
+  # commit matched no path filter", which is fine, and "a workflow that should have run did not", which
+  # blocks a release. wf-expected.py separates them from the declared triggers.
+  required="$(python3 "$(dirname "${BASH_SOURCE[0]}")/wf-expected.py" "$d" HEAD 2>/dev/null \
+              | awk -F'\t' '$2=="required"')"
+
+  # FAULT HOOK, the pattern candor-spec's probe_check.py uses on the conformance generators: drop a row
+  # that GitHub really returned and the REQUIRED-BUT-ABSENT arm below must go red. Without this the arm
+  # is only ever exercised by the reader's selftest, which classifies triggers and never touches the
+  # comparison — and an arm whose alarm has not been seen to fire is the defect this script was written
+  # about, twice in one evening.
+  if [ "${CI_WATCH_FAULT:-}" = "drop-row" ] && [ -n "$rows" ]; then
+    echo "  (fault injected: dropping ${repo}'s first row — a REQUIRED BUT ABSENT line must follow)"
+    rows="$(printf "%s\n" "$rows" | tail -n +2)"
+  fi
+
   if [ -z "$rows" ]; then
-    # No run is legitimate ONLY when nothing in the commit matched a workflow's path filter. Say which
-    # it is rather than treating silence as green — preflight [10] makes the same distinction.
-    printf "  %-14s %-26s no run at HEAD (path-filtered, or never triggered — verify before trusting)\n" \
-           "$repo" "(none)"
+    if [ -z "$required" ]; then
+      printf "  %-14s %-26s ✔ no run expected (no changed file matches any workflow's push trigger)\n" \
+             "$repo" "(none)"
+    else
+      printf "  %-14s %-26s ✘ NO RUN AT HEAD, and these were required:\n" "$repo" "(none)"
+      printf "%s\n" "$required" | awk -F'\t' '{printf "      · %s — %s\n", $1, $3}'
+      rc=1
+    fi
     continue
   fi
 
@@ -175,6 +198,16 @@ for repo in "${REPOS[@]}"; do
         fi ;;
     esac
   done <<< "$rows"
+
+  # And the subtler half: rows exist, but not for every workflow that had to produce one. This is the
+  # shape that let a green `realworld-oracle` stand in for a red `ci` — one row present is not the set.
+  while IFS=$'\t' read -r req_wf _ req_why; do
+    [ -z "$req_wf" ] && continue
+    if ! printf "%s" "$rows" | grep -qF "$req_wf$US"; then
+      printf "  %-14s %-26s ✘ REQUIRED BUT ABSENT — %s\n" "$repo" "$req_wf" "$req_why"
+      rc=1
+    fi
+  done <<< "$required"
 done
 
 echo

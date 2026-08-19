@@ -386,6 +386,42 @@ fi
 # tagged and never released and the verifier failed on repos the publisher was never asked to cut. Neither
 # script is wrong on its own terms — only the PAIR is, which is why no test inside either could see it.
 # Comparing them is the whole check.
+# The repo list for [7b]/[7c], derived from release.sh itself — the same derivation [8] uses — so it can
+# never become a hand-kept allowlist whose omissions are silent.
+WFREPOS="$(grep -oE '^rel candor[a-z-]*' "$ROOT/candor/bin/release.sh" 2>/dev/null | awk '{print $2}' | sort -u)"
+[ -n "$WFREPOS" ] || WFREPOS="candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor"
+echo "[7c] no commit message shows shell-substitution damage"
+# WHAT IT MATCHES, and what it deliberately does NOT. Spliced BUILD OR TEST OUTPUT is the signature —
+# `test result: ok. 38 passed`, a `Compiling foo v0.1.0` line, an `Executed 794 tests` line — because
+# nobody writes those inside a sentence on purpose. The first version also matched "command not found",
+# which flagged candor-java@626e1f4: a commit whose message CORRECTLY DESCRIBES an earlier corruption.
+# A detector that fires on writing about the defect is worse than none, so that pattern is gone.
+#
+# A message written as `git commit -m "…`cmd`…"` has its backticks EXECUTED by the shell before git sees
+# it, so the commit ships with command output spliced in and the intended words gone. It happened FOUR
+# times on 2026-08-19 — one message shipped `test result: ok. 38 passed;` in the middle of a sentence,
+# another lost the word it was quoting entirely. git cannot refuse this (the damage precedes it), and the
+# message is permanent once pushed, so the only place to catch it is a scan of what was actually written.
+# The fix is to write messages via `git commit -F -` with a QUOTED heredoc, which no shell expands.
+DAMAGED=""
+for r in $WFREPOS; do
+  [ -d "$ROOT/$r" ] || continue
+  base="$(git -C "$ROOT/$r" describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)"
+  # PER COMMIT, not per line: a body is multi-line, so grepping the whole log stream reports the matched
+  # TEXT rather than the commit it came from — which is what the first version of this check printed.
+  for h in $(git -C "$ROOT/$r" log --format='%h' "$base"..HEAD 2>/dev/null); do
+    if git -C "$ROOT/$r" log -1 --format='%B' "$h" 2>/dev/null \
+       | grep -qE "test result: (ok|FAILED)\. [0-9]+ passed|^ *Compiling [a-z-]+ v[0-9]|^ *Finished .(dev|release|test) profile|^ *Executed [0-9]+ tests, with"; then
+      DAMAGED="$DAMAGED $r@$h"
+    fi
+  done
+done
+if [ -n "$DAMAGED" ]; then
+  bad "commit message(s) carrying shell output — backticks were executed before git saw them:$DAMAGED"
+else
+  ok "no commit in the release range shows substitution damage"
+fi
+
 echo "[7b] every CI workflow declares a timeout"
 # A workflow with no `timeout-minutes` inherits GitHub's SIX-HOUR default. On 2026-08-19 two hung for
 # 3h45m with no log output and were given a deadline — and their four siblings were not, so `ci.yml`
@@ -393,11 +429,6 @@ echo "[7b] every CI workflow declares a timeout"
 # HEAD) while looking indistinguishable from a slow job. Fixing the workflows that failed and not the
 # ones beside them is the habit this family keeps finding in its own engines; this makes the omission
 # impossible to leave behind, because it asks EVERY file in EVERY repo rather than the ones that broke.
-# The repo list comes from release.sh itself — the same derivation [8] uses — so this can never become a
-# hand-kept allowlist whose omissions are silent, which is the failure mode changelog-lag.sh's own header
-# argues against and which [8] below ties down for the same reason.
-WFREPOS="$(grep -oE '^rel candor[a-z-]*' "$ROOT/candor/bin/release.sh" 2>/dev/null | awk '{print $2}' | sort -u)"
-[ -n "$WFREPOS" ] || WFREPOS="candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor"
 MISSING=""
 for r in $WFREPOS; do
   for wf in "$ROOT/$r"/.github/workflows/*.yml; do

@@ -14,6 +14,22 @@ keeps its own.
   0.29.1: it names a PUBLISHED release line and moves only once 0.30.0 artifacts exist — preflight [3]
   gates that ordering, and it is the check that caught the pin lagging at 0.18.0 through 0.23.1.
 
+- **`bin/verify-local.sh` — run what CI runs, before pushing.** `cargo test --workspace` passed twice on
+  candor-rust while `cargo clippy --all-targets -- -D warnings` — which is what CI actually runs — failed,
+  once on a duplicated `#[allow]` and once on a doc comment left on a `thread_local!`. Both times "the
+  suite is green" was true and useless, and the second happened after the first because the lesson lived
+  in my head rather than in a command. Each engine's real gate is a different command per language, kept
+  in that repo's workflow, and nothing local ran the union; this does. It mirrors CI exactly and does not
+  exceed it — no `cargo fmt --check`, because a local gate stricter than CI trains you to ignore it. The
+  ts arm executes every declared bin out of a real `npm pack` tarball, which is the only thing that sees
+  what a consumer receives.
+
+- **release-preflight [7c] — no commit message in the release range shows shell-substitution damage.**
+  Backticks inside a double-quoted commit message are live command substitution; four commit messages
+  today were written with build or test output spliced into them where filenames should have been. The
+  fix is `git commit -F -` with a quoted heredoc, and this is the check that says when it was not used.
+  Narrowed after a false positive on a message that correctly *describes* an earlier corruption.
+
 - **A standing internal-consistency oracle, `bin/selfconsistent.py`.** Every other oracle compares a
   report against something else — another engine, another run, the runtime. This one needs no ground
   truth, so it runs over every report on disk: a `hosts`/`cmds`/`paths`/`tables` literal without its

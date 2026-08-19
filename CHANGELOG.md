@@ -14,6 +14,18 @@ keeps its own.
   0.29.1: it names a PUBLISHED release line and moves only once 0.30.0 artifacts exist — preflight [3]
   gates that ordering, and it is the check that caught the pin lagging at 0.18.0 through 0.23.1.
 
+- **`ci-watch.sh`'s stall alarm was dead on arrival, and its own selftest could not see it.** Minutes
+  after the script landed, a live run showed `0m elapsed` against a run that had started eight minutes
+  earlier. `read` collapses consecutive IFS *whitespace* delimiters and tab is whitespace; an
+  `in_progress` run carries `conclusion: ""`, which jq's `//` does not replace, so the row arrived with
+  two adjacent tabs, they collapsed, `createdAt` fell out of the row, the unparseable date hit a
+  `|| echo "$now"` fallback, and elapsed was **0 for every run, always**. The STALLED branch was
+  unreachable, and nothing about the output looked wrong. The selftest passed throughout because it
+  called `is_stalled()` directly — a copy of the instrument rather than the instrument. Fixed on both
+  halves (a unit separator that cannot collapse, and a conclusion never emitted empty), the fallback now
+  reports an unreadable start time instead of implying health, and the selftest drives the parse and the
+  jq emission. The new arm was run against the old format and fails there.
+
 - **`bin/verify-local.sh` — run what CI runs, before pushing.** `cargo test --workspace` passed twice on
   candor-rust while `cargo clippy --all-targets -- -D warnings` — which is what CI actually runs — failed,
   once on a duplicated `#[allow]` and once on a doc comment left on a `thread_local!`. Both times "the

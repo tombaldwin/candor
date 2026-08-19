@@ -24,6 +24,14 @@ keeps its own.
   `--selftest`. Sub-minute durations now print as seconds — `0m elapsed against a 0m median` is what made
   the false alarm read as nonsense rather than as the short-job case it was.
 
+- **The first STALLED the alarm ever reported was real, and it was ours.** `shell-lint` sat 30 minutes
+  in `apt-get install shellcheck` — on a job whose successful runs take 16-22 seconds — and the
+  `timeout-minutes` added hours earlier killed it, which is the deadline working and also half an hour
+  spent learning that. `ubuntu-latest` already ships shellcheck, so the install is now a fallback rather
+  than the normal route, the job's deadline is 10 minutes instead of 30, and every remaining network
+  install across candor-rust and candor-swift carries a 5-minute **step** deadline: a job-level clock
+  bounds a hang at the job's whole budget, and the fetch is the part that hangs.
+
 - **`bin/wf-expected.py` — and the third thing wrong with `ci-watch.sh`: it printed OK over a row that
   said "verify before trusting".** For a docs-only commit the umbrella repo has no run at HEAD, and the
   script said so and then declared the fleet green. The row was honest about not knowing; the verdict was

@@ -386,6 +386,31 @@ fi
 # tagged and never released and the verifier failed on repos the publisher was never asked to cut. Neither
 # script is wrong on its own terms — only the PAIR is, which is why no test inside either could see it.
 # Comparing them is the whole check.
+echo "[7b] every CI workflow declares a timeout"
+# A workflow with no `timeout-minutes` inherits GitHub's SIX-HOUR default. On 2026-08-19 two hung for
+# 3h45m with no log output and were given a deadline — and their four siblings were not, so `ci.yml`
+# then hung for 54 minutes against an ~11-minute median, stalling this very gate ([10] reads CI green on
+# HEAD) while looking indistinguishable from a slow job. Fixing the workflows that failed and not the
+# ones beside them is the habit this family keeps finding in its own engines; this makes the omission
+# impossible to leave behind, because it asks EVERY file in EVERY repo rather than the ones that broke.
+# The repo list comes from release.sh itself — the same derivation [8] uses — so this can never become a
+# hand-kept allowlist whose omissions are silent, which is the failure mode changelog-lag.sh's own header
+# argues against and which [8] below ties down for the same reason.
+WFREPOS="$(grep -oE '^rel candor[a-z-]*' "$ROOT/candor/bin/release.sh" 2>/dev/null | awk '{print $2}' | sort -u)"
+[ -n "$WFREPOS" ] || WFREPOS="candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor"
+MISSING=""
+for r in $WFREPOS; do
+  for wf in "$ROOT/$r"/.github/workflows/*.yml; do
+    [ -e "$wf" ] || continue
+    grep -q "timeout-minutes" "$wf" || MISSING="$MISSING $r/$(basename "$wf")"
+  done
+done
+if [ -n "$MISSING" ]; then
+  bad "workflow(s) with no \`timeout-minutes\` — a hang there blocks a release for up to 6 hours and reads as slow:$MISSING"
+else
+  ok "every workflow in every released repo declares a timeout"
+fi
+
 echo "[8] release.sh and release-verify.sh name the same repos"
 PUB="$(grep -oE '^rel candor[a-z-]*' "$ROOT/candor/bin/release.sh" 2>/dev/null | awk '{print $2}' | sort -u)"
 VFY="$(grep -oE '"candor[a-z-]*:v\$(VER|SPEC)"' "$ROOT/candor/bin/release-verify.sh" 2>/dev/null | sed 's/"//g; s/:v\$.*//' | sort -u)"

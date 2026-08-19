@@ -51,23 +51,38 @@ JQ_ROW='.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion /
 # THE STALL DECISION, as a function so it can be exercised without waiting for a real hang. A check whose
 # alarm has never been seen to fire is a check nobody should trust — this is the arm that was missing on
 # 2026-08-19, and a version of it that silently never fired would have left the same gap wearing a green.
+#
+# The threshold is `factor x median` OR `STALL_FLOOR`, WHICHEVER IS LARGER. The floor is not padding: the
+# first thing this alarm ever did, once the parse was repaired, was call candor's `shell-lint` STALLED 55
+# seconds in. Its median is 18s (measured: 16 16 16 17 17 17 18 18 22 62 77 100), so `3x median` is 54s,
+# and a normal run trips it before the runner has finished installing shellcheck. A multiplier alone
+# cannot express "stuck" for a job whose whole life is shorter than its own startup variance. 300s still
+# fires on everything this exists for: the real 3h45m hang against a 10m median clears 30m by 7x.
 #   $1 elapsed seconds   $2 median seconds   $3 factor   -> 0 = stalled, 1 = still within budget
+STALL_FLOOR="${STALL_FLOOR:-300}"
 is_stalled() {
-  [ "$2" -gt 0 ] && [ "$1" -gt $(( $2 * $3 )) ]
+  [ "$2" -gt 0 ] || return 1
+  local threshold=$(( $2 * $3 ))
+  [ "$threshold" -lt "$STALL_FLOOR" ] && threshold="$STALL_FLOOR"
+  [ "$1" -gt "$threshold" ]
 }
 
 if [ "${1:-}" = "--selftest" ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
-  for row in "3420 600 3 yes" "300 600 3 no" "1801 600 3 yes" "1800 600 3 no" "99999 0 3 no"; do
+  for row in "3420 600 3 yes" "300 600 3 no" "1801 600 3 yes" "1800 600 3 no" "99999 0 3 no" \
+             "55 18 3 no" "400 18 3 yes" "301 100 3 yes" "300 100 3 no"; do
     set -- $row
     if is_stalled "$1" "$2" "$3"; then got=yes; else got=no; fi
     if [ "$got" = "$4" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
     printf "  %s elapsed=%-6s median=%-5s factor=%s -> stalled=%-3s (want %s)\n" \
            "$mark" "$1" "$2" "$3" "$got" "$4"
   done
-  echo "  (row 1 is the real 3h45m hang against a 10m median; the last row is a workflow with no"
-  echo "   successful history, which must never be called stalled on no evidence)"
+  echo "  (row 1 is the real 3h45m hang against a 10m median; row 5 is a workflow with no successful"
+  echo "   history, which must never be called stalled on no evidence; row 6 is candor's shell-lint,"
+  echo "   which this alarm's very first firing called STALLED at 55s against an 18s median — 3x a"
+  echo "   short job is shorter than its own startup variance, which is what STALL_FLOOR=${STALL_FLOOR}s fixes,"
+  echo "   and row 7 shows the same workflow genuinely stuck is still caught)"
 
   # THE ARM THAT WAS MISSING. The rows above exercise the decision; these exercise the PARSE that feeds
   # it, over the exact shape `gh` emits for a run that has not concluded. The first is what the query
@@ -99,6 +114,10 @@ if [ "${1:-}" = "--selftest" ]; then
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
+
+# Durations under a minute printed as "0m" are why the false STALLED above read as nonsense ("0m elapsed
+# against a 0m median") instead of as the short-job case it was. Say seconds when it is seconds.
+dur() { if [ "$1" -lt 60 ]; then printf "%ds" "$1"; else printf "%dm" $(( $1 / 60 )); fi; }
 
 # The historical median duration of a workflow, in seconds, from its last successful runs. Median rather
 # than mean: one 3h45m hang in the history would drag a mean past any threshold worth having.
@@ -146,12 +165,12 @@ for repo in "${REPOS[@]}"; do
         med=$(median_secs "$repo" "${wf}.yml")
         [ "$med" -eq 0 ] && med=$(median_secs "$repo" "$wf")
         if is_stalled "$elapsed" "$med" "$STALL_FACTOR"; then
-          printf "  %-14s %-26s ✘ STALLED — %dm elapsed against a %dm median (%dx). Not slow: stuck.\n" \
-                 "$repo" "$wf" $(( elapsed / 60 )) $(( med / 60 )) "$STALL_FACTOR"
+          printf "  %-14s %-26s ✘ STALLED — %s elapsed against a %s median. Not slow: stuck.\n" \
+                 "$repo" "$wf" "$(dur "$elapsed")" "$(dur "$med")"
           rc=1
         else
-          printf "  %-14s %-26s … %s (%dm elapsed, %dm median)\n" \
-                 "$repo" "$wf" "$status" $(( elapsed / 60 )) $(( med / 60 ))
+          printf "  %-14s %-26s … %s (%s elapsed, %s median)\n" \
+                 "$repo" "$wf" "$status" "$(dur "$elapsed")" "$(dur "$med")"
           rc=1
         fi ;;
     esac

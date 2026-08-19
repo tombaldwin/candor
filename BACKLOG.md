@@ -14,8 +14,34 @@ level of indirection.
 **It is 2 of the 31 measured ⟨0.30⟩ flips** — i.e. the only two of that sweep that are NOT justified. The
 other 29 are genuine denied effects in unjudged files.
 
-**PRE-EXISTING — ⟨0.30⟩ only made it verdict-bearing.** Under ⟨0.29⟩ this was a wrong line in an advisory
-block; now it can turn a gate red over a stream write.
+**PRE-EXISTING — ⟨0.30⟩ only made it REACHABLE.** Confirmed by measurement, after a wrong turn worth
+recording: published 0.29.1 and the current build charge this IDENTICALLY on a minimal fixture, so the
+classifier is unchanged. On execa the flip looks new only because those files are excluded from an
+ordinary scan and the peek analyses them — the same answer about DIFFERENT code, not two answers about
+the same code. (I briefly concluded the peek fabricated it and that PART 48's twin arm was too weak to
+catch that; both were wrong. The peek and an ordinary scan agree given the same file set.)
+
+**THE MECHANISM, located 2026-08-19 — a four-line reproduction, both controls written:**
+
+```js
+const pick = fd => (fd === 1 ? process.stdout : createWriteStream(undefined, {fd}));
+pick(3).write('hello');          // direct: ["Net"], netClass: ["unknown-host"]   <- the over-charge
+process.stdout.write('hello');   // pure                                          <- the direct form
+```
+
+The receiver types as `tty.WriteStream | fs.WriteStream`, and **`tty.WriteStream` extends `net.Socket`**,
+so resolving `.write` on that union reaches a declaration in the net cluster's typings and `declModule`
+answers `net` — which the κ rule charges for every non-constructor member. The direct form never gets
+there: its receiver is a property chain rooted at `process`. So the distinction was only ever holding
+SYNTACTICALLY, and one level of indirection defeats it.
+
+**The fix is in RECEIVER TYPING** — decide the module from the receiver's own apparent type rather than
+from where the resolved member happens to be declared. That is the R48–R53 vein, where the wrong version
+under-reports every genuine `Socket.write`. Hence its own change, its own review.
+
+**Both controls are written and currently discriminate** (in `scratchpad/carveout`): the over-charge case
+above must LOSE Net, and `pickSock().write(...)` — a real `new Socket()` through the identical
+indirection — must KEEP it.
 
 **WHY IT WAS NOT FIXED UNDER THE RELEASE, deliberately.** Narrowing an over-charge is the single move this
 family has measured producing silent under-reports — 4 defects in 5 such fixes, and the ⟨0.30⟩ work

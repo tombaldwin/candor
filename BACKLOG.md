@@ -111,7 +111,30 @@ look like a normal report.
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts
 
-- **`[P2]` A DEPENDENCY'S `incomplete`-ONLY FUNCTION IS DROPPED BEFORE ITS MARKER CAN PROPAGATE.** Found
+- **`[P2]` CLOSED 2026-08-20 — VERIFIED FIXED END-TO-END; this entry was stale.** Both halves are in the
+  code and pinned: `Loader.java:834` admits an entry carrying `incomplete` (`!de.effects.isEmpty() ||
+  !de.incomplete.isEmpty()`), pinned by `CrossScanBoundaryTest#anEffectLessDepEntrysIncompleteReachesTheCaller`;
+  the writer serialises a method whose only signal is the marker, pinned by
+  `IncompleteOnlyReachesTheReportTest`. Measured end-to-end through a real chained report:
+
+      dep.Dep.f  inferred[Db] + incomplete[Db]  ->  caller: inferred=['Db'] incomplete=['Db']
+      dep.Dep.f  inferred[Db] only              ->  caller: inferred=['Db'] incomplete=None
+      dep.Dep.f  incomplete[Db] ONLY            ->  caller: inferred=[]     incomplete=['Db']   <- works
+
+  The third row is the defect this entry was filed for. The caller is reported with an EMPTY `inferred`
+  carrying the marker, and the "unexplained `Unknown`" the entry describes does not appear.
+
+  **THE FIXTURE TRAP THAT MADE THIS LOOK BROKEN, worth more than the item.** A dep entry is joined on its
+  **`hash`** (`dep/Dep.f()V` — the JVM descriptor form), not on `fn`. An entry injected into a report
+  without a `hash` is silently NEVER FOUND: the caller comes back "not reported / claimed pure", which is
+  indistinguishable from the defect. My first three attempts reproduced the bug perfectly and were
+  measuring nothing — caught only because the CONTROL (`inferred:["Db"]` alone, which is known to
+  propagate) also failed, which no real defect could explain. **If a hand-injected dep entry seems to be
+  dropped, check the `hash` field before believing it.**
+
+  (original entry follows, for the record)
+
+- **`[P2]` (original) A DEPENDENCY'S `incomplete`-ONLY FUNCTION IS DROPPED BEFORE ITS MARKER CAN PROPAGATE.** Found
   while building the regression row for the java report-writer fix — it is that same defect one layer
   over. `Loader` records a dep entry only `if (!de.effects.isEmpty())`, and the comment there gives a
   real reason: admitting empty entries would make a key that is currently ABSENT resolve as

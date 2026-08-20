@@ -10,6 +10,17 @@ keeps its own.
 
 ## 2026-08-20 — the release ladder, made faster by measuring it
 
+- **`ci-watch`: a failure on an earlier commit is no longer erased by a quiet one on top.** Every check
+  in it asked only about HEAD, so a workflow that failed on commit N went invisible the moment a commit
+  N+1 landed that its path filter ignores — HEAD legitimately needs no run, the repo prints "no run
+  expected ✔", and the red leaves the summary while still being the newest thing that workflow has to
+  say. Noticed on a GREEN run: candor's row read "no run expected" directly after a push that did change
+  `bin/`, because HEAD was a CHANGELOG-only commit on top of it. That run had passed; nothing would have
+  said so if it had not. The newest run of each workflow on main is now checked too, reported only when
+  it is not at HEAD so no run gets two verdicts. It also surfaces SCHEDULED workflows, whose failures
+  this could never see before — they only ever run on older commits. Calibrated with a `stale-red` fault
+  hook, alongside the existing `drop-row`.
+
 - **`wf-expected`: `paths-ignore` was read as a malformed `paths`, making candor-spec a standing false
   red.** The key lookup used `startswith`, so `paths-ignore` matched `paths`, choked on the leftover
   `-ignore`, and marked the workflow unparseable — which fails closed to "required" and reported NO RUN

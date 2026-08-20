@@ -224,6 +224,40 @@ for repo in "${REPOS[@]}"; do
     esac
   done <<< "$rows"
 
+  # ── A FAILURE ON AN EARLIER COMMIT IS NOT ERASED BY A QUIET ONE ON TOP ────────────────────────────
+  # Everything above asks only about HEAD. So a workflow that FAILED on commit N goes invisible the
+  # moment a commit N+1 lands that its path filter ignores: HEAD legitimately needs no run, the repo
+  # prints "no run expected ✔", and the red is gone from the summary while still being the newest thing
+  # that workflow has to say.
+  #
+  # NOTICED ON A GREEN RUN, not a red one — candor's row read "no run expected" right after a push that
+  # did change `bin/`, because HEAD was a CHANGELOG-only commit on top of it. That run happened to have
+  # passed. Nothing would have said so if it had not.
+  #
+  # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
+  # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
+  latest="$(gh run list -R "$OWNER/$repo" --branch main --limit 40             --json workflowName,status,conclusion,headSha,createdAt             -q '.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .headSha'             2>/dev/null)"
+  # FAULT HOOK, same idea as `drop-row` above: this arm reports only when something upstream is broken,
+  # so on a healthy repo it is indistinguishable from a check that does nothing. `stale-red` recolours
+  # every completed non-HEAD run as a failure, which is exactly the state this exists to catch.
+  if [ "${CI_WATCH_FAULT:-}" = "stale-red" ] && [ -n "$latest" ]; then
+    latest="$(printf '%s\n' "$latest" | awk -v US="$US" -F"$US" \
+              'NF>=4 {print $1 US "completed" US "failure" US $4}')"
+  fi
+  seen_wf=""
+  while IFS="$US" read -r lwf lstatus lconcl lsha; do
+    [ -z "$lwf" ] && continue
+    case " $seen_wf " in *" $lwf "*) continue ;; esac   # the list is newest-first: first row wins
+    seen_wf="$seen_wf $lwf"
+    [ "$lsha" = "$sha" ] && continue                    # already judged against HEAD above
+    [ "$lstatus" != "completed" ] && continue           # an older run still going says nothing
+    [ "$lconcl" = "success" ] && continue
+    printf "  %-14s %-26s ✘ %s at %s — its NEWEST run, on an earlier commit. HEAD needs no run,\n" \
+           "$repo" "$lwf" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"
+    printf "  %-14s %-26s   so this red would otherwise vanish from the summary.\n" "" ""
+    rc=1
+  done <<< "$latest"
+
   # And the subtler half: rows exist, but not for every workflow that had to produce one. This is the
   # shape that let a green `realworld-oracle` stand in for a red `ci` — one row present is not the set.
   while IFS=$'\t' read -r req_wf _ req_why; do

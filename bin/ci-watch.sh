@@ -32,7 +32,32 @@ REPOS=("candor-spec" "candor-rust" "candor-ts" "candor-java" "candor-swift" "can
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STALL_FACTOR="${STALL_FACTOR:-3}"
 OWNER="tombaldwin"
+# ── --wait: POLL UNTIL THE ANSWER EXISTS ───────────────────────────────────────────────────────────
+# Without this every use of this script against a fresh push is: run it, see PENDING, run it again. That
+# hand-polling is a real part of the "waiting more than working" cost, and it is the part a script can do.
+#
+# It re-execs itself rather than looping the body, so the waiting path and the snapshot path cannot drift
+# — there is exactly one implementation of the verdict.
+#
+# On expiry it prints the last snapshot and exits 2. It must never turn "I got bored" into green: the
+# deadline bounds how long this WAITS, not what it CONCLUDES.
+if [ "${1:-}" = "--wait" ]; then
+  WAIT_MAX="${CI_WATCH_WAIT_MAX:-1800}"
+  deadline=$(( $(date +%s) + WAIT_MAX ))
+  while :; do
+    out="$("$0")"; st=$?
+    if [ "$st" -ne 2 ]; then printf '%s\n' "$out"; exit "$st"; fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      printf '%s\n' "$out"
+      echo "ci-watch: gave up WAITING after $(( WAIT_MAX / 60 ))m — still pending, and that is not green."
+      exit 2
+    fi
+    sleep "${CI_WATCH_POLL:-20}"
+  done
+fi
+
 rc=0
+pending=0   # runs that have not concluded. Counted apart from rc so PENDING never reads as red.
 now=$(date -u +%s)
 
 # THE WIRE FORMAT between `gh` and the loop below. Fields are separated by a UNIT SEPARATOR, not a tab.
@@ -194,7 +219,7 @@ for repo in "${REPOS[@]}"; do
         else
           printf "  %-14s %-26s … %s (%s elapsed, %s median)\n" \
                  "$repo" "$wf" "$status" "$(dur "$elapsed")" "$(dur "$med")"
-          rc=1
+          pending=$((pending+1))
         fi ;;
     esac
   done <<< "$rows"
@@ -211,8 +236,15 @@ for repo in "${REPOS[@]}"; do
 done
 
 echo
-if [ "$rc" -eq 0 ]; then
+if [ "$rc" -eq 0 ] && [ "$pending" -eq 0 ]; then
   echo "ci-watch: OK — every workflow enumerated at every HEAD concluded success"
+elif [ "$rc" -eq 0 ]; then
+  # PENDING IS NOT GREEN AND IS NOT RED. Collapsing it into red cost a manual re-run on every use — the
+  # summary line for a healthy 4-second-old run was identical to the one for a failure. It gets its own
+  # exit code so a caller writing `ci-watch || fail` still fails on it (2 is non-zero), while a caller
+  # that wants to distinguish "not yet answered" from "answered badly" now can.
+  echo "ci-watch: PENDING — $pending run(s) still going, none failed. Re-run, or use --wait."
+  rc=2
 else
   echo "ci-watch: NOT GREEN — see the rows above. This never prints OK on a partial read: an aggregate"
   echo "  that summarised these rows by hand once said ALL GREEN over a failure, which is why the"

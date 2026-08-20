@@ -104,9 +104,36 @@ after any edit still pays, and that is the turn the agent waits on.
 **Its acceptance test is what keeps it a patch:** a refreshed report must be BYTE-IDENTICAL to a full
 scan, `analyzed.digest` included. Key on (engine build id, class CONTENT hash) never mtime; invalidate the
 whole cache on an engine change; recompute the closure rather than caching it; full-scan fallback on
-anything ambiguous. **Measure parsing-vs-closure FIRST** — if the closure dominates, per-class caching
-buys little and the answer is elsewhere. A stale cache entry read as current is the cardinal sin and would
-look like a normal report.
+anything ambiguous. A stale cache entry read as current is the cardinal sin and would look like a normal
+report.
+
+**THE "MEASURE PARSING-VS-CLOSURE FIRST" PRECONDITION IS DISCHARGED — 2026-08-20, AND IT SAYS BUILD IT.**
+Measured with `CANDOR_TIMING=1` (opt-in, stderr, added for this and pinned so it cannot reach a document)
+over three independent targets:
+
+    target          load+parse   analyze+edges   fixpoint      indexes
+    uflexi          215 ms       860 ms (72%)    40 ms (3.4%)  37 ms
+    commons-lang3    71 ms       193 ms          5.4 ms (1.9%)  12 ms
+    gson             47 ms        96 ms          2.1 ms (1.3%)  14 ms
+
+**The closure does NOT dominate — it is 1.3–3.4%.** The per-class work does: `analyze+edges` is 2–4× the
+parse and alone is ~72% of uflexi's analysis, and it runs in a plain `for (ClassNode cn : classes)` loop.
+Parse plus analyze is **~90% of the time on every target measured**, and that is exactly the work a
+per-class cache skips.
+
+**So the ceiling is quantified rather than hoped for.** On a one-class edit the unavoidable remainder is
+the fixpoint (~40 ms), the whole-program indexes (subtype/spring/stream, ~37 ms) and that one class —
+call it 80–120 ms against 1200 ms today, so **roughly 10× on this target**, and uflexi is the field case
+the item was filed for.
+
+**Two things the numbers change about the design.** The indexes are computed over ALL classes and are
+cheap, so they can simply be recomputed — no cache key needed for them, which removes the hardest
+invalidation question from the design. And the fixpoint should be recomputed every run as the original
+note says, now with a measurement behind it: at 3.4% it is not worth the risk of ever serving a stale one.
+
+**Baseline for any future comparison** (candor-java 0.30.0, uflexi `build/classes`, 2,602 class files /
+21,247 units): 1.65 s wall, of which 0.06 s is JVM start. Scaling is near-linear in input size (2× the
+files → ~2.3× the time), which independently rules out a runaway closure.
 
 
 ## ⟨0.30⟩ candidate, 2026-08-18 — from the post-release corpus rounds against the PUBLISHED artifacts

@@ -3048,7 +3048,15 @@ release ladder ~30min → ~5-8min; candor-spec conformance 18-19min → 15min; c
 
 What WOULD work: making `npm test` itself cheaper inside the package, or larger runners (paid).
 
-## FILED 2026-08-20 — candor-ts's "no sources" refusal short-circuits the ⟨0.30⟩ peek (rust does not)
+## CLOSED 2026-08-20 — candor-ts's and candor-swift's "no sources" refusal short-circuited the ⟨0.30⟩ peek
+
+**FIXED in candor-ts and candor-swift; pinned by conformance PART 56.** When a policy is configured and
+there are excluded files to read, the run continues to the peek and names them; the refusal becomes a
+third exit-2 arm beside the ⟨0.21⟩ unanalyzed and ⟨0.30⟩ out-of-scope causes. Verdicts unchanged — exit 2
+before, exit 2 after. candor-java is unaffected (a class-directory/jar target has nothing beside it to
+peek). **The clean-sibling control earned its place twice**: it caught ts's first attempt answering
+`policy ✓` at exit 0 over a tree with zero analyzed files, and then caught the same shape in candor-rust
+— see the NEW item below.
 
 Found corpus-testing the PUBLISHED `candor-ts@0.30.0` (not the tree) the night ⟨0.30⟩ shipped.
 
@@ -3098,3 +3106,30 @@ fabricated finding ([[feedback-fabrication-fixes-cause-misses]] is the standing 
 
 Check java and swift for the same short-circuit before calling it closed; only ts and rust were
 measured.
+
+## FILED 2026-08-20 — candor-rust certifies a tree it read nothing of (`analyzed: {count: 0}`, exit 0)
+
+Found by PART 56's CLEAN control — the arm written to stop a disclosure fix fabricating findings caught
+a false all-clear in a third engine instead.
+
+    rsclean/Cargo.toml     [package] name="rsclean" version="0.0.0" edition="2021"
+    rsclean/src/           (empty — no .rs sources at all)
+    rsclean/build.rs       fn main() { let _ = 1 + 1; }        # clean
+    pol.txt                deny Exec
+
+    candor-scan . --policy pol.txt
+    → candor-scan: policy ✓ (advisory floor …)      exit 0
+    → report: analyzed {count: 0}, functions 0, outOfScope 0
+
+**A green over a tree the engine never read.** candor-ts and candor-swift refuse the same shape at exit 2
+(`a gate cannot be green over a tree it did not read`), and candor-rust ALREADY refuses a target that does
+not EXIST for precisely this reason — its own comment says "a typo'd path in CI is a PERMANENT GREEN". An
+existing path holding nothing analyzable is that same permanent green, one step along.
+
+**A fix was attempted and REVERTED the same night.** Keying the new arm on `gate::GATE_ANALYZED` made a
+NORMAL crate with a real `src/lib.rs` exit 2 — the accumulator is not populated on the simple path, so it
+is not the "did we read anything" signal it looks like. The right signal needs care; the regression guard
+(a normal clean crate must stay 0, a normal violating crate must stay 1) caught it immediately and should
+be written before the next attempt.
+
+Until then PART 56 NAMES this divergence on every run rather than asserting it away.

@@ -78,9 +78,9 @@ fi
 # every 0.23 stray is invisible. So when the engines disagree we scan the predecessor of EVERY distinct
 # declared value, not just SPEC.md's — the union can only over-report, and over-reporting here is noise
 # while under-reporting is a false all-clear.
-if [ -z "$FLOOR" ] && [ -n "$SPEC_FLOOR" ]; then
-  FLOOR="$SPEC_FLOOR"
-  note "engines disagree; scanning the predecessor of EVERY declared value, not just SPEC.md's $SPEC_FLOOR"
+if [ -z "$FLOOR" ] && [ -n "${SPEC_FLOOR}" ]; then
+  FLOOR="${SPEC_FLOOR}"
+  note "engines disagree; scanning the predecessor of EVERY declared value, not just SPEC.md's ${SPEC_FLOOR}"
   EXTRA_FLOORS="$(printf '%s\n' "${specs[@]}" | sort -u | tr '\n' ' ')"
 fi
 [ -n "$WANT_SPEC" ] && { [ "$FLOOR" = "$WANT_SPEC" ] && ok "floor == requested $WANT_SPEC" || bad "floor '$FLOOR' != requested '$WANT_SPEC'"; }
@@ -748,14 +748,14 @@ echo "[12] no rung is described above the declared spec version"
 MAXRUNG="$(grep -oE '⟨0\.[0-9]+⟩' "$ROOT/candor-spec/SPEC.md" 2>/dev/null \
            | sed -E 's/⟨0\.([0-9]+)⟩/\1/' | sort -n | tail -1)"
 FLOORMINOR="${SPEC_FLOOR#*.}"
-if [ -z "$MAXRUNG" ] || [ -z "$FLOORMINOR" ]; then
+if [ -z "${MAXRUNG}" ] || [ -z "$FLOORMINOR" ]; then
   bad "could not read a rung marker or a declared version out of SPEC.md — this check would pass over nothing"
-elif [ "$MAXRUNG" -gt "$FLOORMINOR" ]; then
-  bad "SPEC.md declares Version $SPEC_FLOOR but describes ⟨0.$MAXRUNG⟩ — the text is AHEAD of its number.
-      Publishing now ships ⟨0.$MAXRUNG⟩ behaviour under the $SPEC_FLOOR contract, which does not describe it.
-      Run \`spec-bump.sh 0.$MAXRUNG\` and cut that, or move the ⟨0.$MAXRUNG⟩ clauses back out of SPEC.md."
+elif [ "${MAXRUNG}" -gt "$FLOORMINOR" ]; then
+  bad "SPEC.md declares Version ${SPEC_FLOOR} but describes ⟨0.${MAXRUNG}⟩ — the text is AHEAD of its number.
+      Publishing now ships ⟨0.${MAXRUNG}⟩ behaviour under the ${SPEC_FLOOR} contract, which does not describe it.
+      Run \`spec-bump.sh 0.${MAXRUNG}\` and cut that, or move the ⟨0.${MAXRUNG}⟩ clauses back out of SPEC.md."
 else
-  ok "highest rung ⟨0.$MAXRUNG⟩ is within the declared $SPEC_FLOOR"
+  ok "highest rung ⟨0.${MAXRUNG}⟩ is within the declared ${SPEC_FLOOR}"
 fi
 
 echo

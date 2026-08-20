@@ -457,6 +457,37 @@ look like a normal report.
   which is a much larger change and a separate decision.
 
 
+- **`[P1b]` §3.1 ROUTE EQUALITY BROKE ON ORDER — FIXED IN candor-rust, OPEN AS A QUESTION FOR THE OTHER
+  THREE.** Found by `bin/corpus.sh` on **ripgrep under `deny Fs`**: both routes exit 1 and both carry the
+  SAME 16 `outOfScope` findings, byte-identical entry for entry, but `examples::walk::main` sits at the
+  front on one route and the back on the other. §3.1 is BYTE equality, so the ORDER is part of the
+  contract, and the two routes cannot be relied on to build the list the same way — the scan route
+  accumulates across workspace members as it scans them, `gate --report` reads one report per package in
+  the order the locator expands.
+
+  **This is the nastiest shape a §3.1 break can take:** both documents are correct, complete and equally
+  readable. Nothing is missing and nothing is over-claimed. They simply are not equal. No assertion about
+  content can see it.
+
+  Fixed by sorting in `gate_verdict_json_impl` — the one writer both routes go through, beside the
+  `violations.sort_by` that was already there for the same reason. Pinned by a candor-report unit test
+  that renders the same findings in two orders (calibrated: it fails with the sort removed, and it also
+  asserts the findings are still PRESENT, since collapsing the list to nothing would satisfy
+  order-independence while deleting the disclosure).
+
+  **THE OPEN FOUR-WAY QUESTION, with the discriminator already worked out.** candor-ts, candor-java and
+  candor-swift all accumulate `outOfScope` by appending (`push` / `addAll` / `append`) with no sort, so
+  they carry the same latent property. Whether it can FIRE depends on one thing: **does that engine's
+  SCAN route aggregate several packages into a single verdict?** If it does, its two routes can order the
+  merged list differently and it has this defect. Rust's cargo workspaces are why rust has the shape;
+  answering it for the others needs a multi-package fixture per engine, which is the work.
+
+  **Why no existing gate caught it, and what that says.** `ci/gate-equivalence.sh` covers candor's own
+  four crates, which mostly are not multi-package in the relevant way; conformance's fixtures are
+  single-package. **`bin/corpus.sh` is run by no CI workflow** — it found this, and it found it only
+  because it runs over trees nobody wrote for it. That is an argument for putting it in CI, or at minimum
+  for a conformance part whose fixture is deliberately multi-package.
+
 - **`[P1a]` THE PEEK FED `netPartners` IN candor-rust — FOUND, FIXED AND RATCHETED 2026-08-20, the same
   day the key landed.** MEASURED on a crate whose only mention of the declared partner was in `build.rs`:
   the `--gate-json` verdict said `netPartners: [{hosts:["partner.example"]}]` while the report it had just

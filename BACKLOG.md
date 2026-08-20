@@ -585,6 +585,30 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   touched passes for the same reason a correct one does.** It only failed once the body genuinely used
   the token.
 
+- **`[P1e]` A REFUSAL LEAVES A STALE REPORT AT THE **DEFAULT** PREFIX — ALL FOUR ENGINES, MEASURED,
+  OUTSIDE THE SPEC'S CURRENT WORDING.** §3.3.1 ⟨0.28⟩ says the fail-closed report is "written to every
+  prefix NAMED", and the engines honour that exactly: seed a report at an explicit `--out`/`--json` sink
+  and a refusal replaces it (⟨0.31⟩ fixed candor-rust's fourth-cause path, PART 59 row C pins all four).
+  Seed the same report at the DEFAULT prefix — `.candor/report.json`, where the engine writes when no
+  sink is named — and it SURVIVES the refusal on rust, ts, java and swift alike.
+
+  **The harm is identical to the case the clause exists for.** A pipeline that scans without `--out` and
+  later runs `gate --report .candor/report.json` certifies the previous run's green after a refusal. The
+  only difference is whether a flag was typed, which is not a property of the risk.
+
+  **Found by writing PART 59's row C wrong**: it seeded ts and swift at the default prefix while seeding
+  rust at a named one, and duly reported ts and swift as diverging. They were not — rust does the same
+  thing. The row was comparing unlike things, and fixing it to compare like with like turned up this,
+  which is a real question rather than a divergence. **Filed rather than smuggled into the row**, because
+  a conformance part asserting behaviour the spec does not require is how a suite starts inventing the
+  contract.
+
+  **The decision is a spec one, and it is not obviously "just arm the default too":** the default prefix
+  is inside the target tree, so arming it means writing into a directory the engine may be refusing
+  BECAUSE it cannot read it, and the ⟨0.28⟩ hand-back machinery exists precisely because over-arming
+  produced a worse failure than the staleness it fixed (a complete scan refusing at exit 2 off a leftover
+  placeholder until someone deleted it by hand). Decide the clause first, then implement four-way.
+
 - **`[P1a]` THE PEEK FED `netPartners` IN candor-rust — FOUND, FIXED AND RATCHETED 2026-08-20, the same
   day the key landed.** MEASURED on a crate whose only mention of the declared partner was in `build.rs`:
   the `--gate-json` verdict said `netPartners: [{hosts:["partner.example"]}]` while the report it had just

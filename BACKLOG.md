@@ -3107,10 +3107,36 @@ fabricated finding ([[feedback-fabrication-fixes-cause-misses]] is the standing 
 Check java and swift for the same short-circuit before calling it closed; only ts and rust were
 measured.
 
-## FILED 2026-08-20 — candor-rust certifies a tree it read nothing of (`analyzed: {count: 0}`, exit 0)
+## WITHDRAWN 2026-08-20 — "candor-rust certifies a tree it read nothing of" was MY error, not a defect
+
+**I filed this as a cardinal-sin-direction defect and it is the SPEC'S RULING.** Recorded in full because
+the mistake is more instructive than the finding would have been.
+
+§⟨0.24⟩: `analyzed.count == 0` is *"I judged nothing at all"*, and the harm the spec names is a **deleted
+DISCLOSURE, not a moved verdict** — *"verdict-preserving, exit unchanged, the caveat travels"*. candor-rust
+has a `gate-equivalence` row called `judged-nothing` that pins exactly this: exit code and verdict document
+UNMOVED.
+
+**How it surfaced.** I wrote the fix before reading the contract. It passed its own regression guard (4/4)
+and then broke §3.1 ROUTE EQUALITY on the first real check — `scan --policy` exit 2 vs `gate --report`
+exit 0 — because the report route follows the ruling. The route-equality check is the only reason this was
+caught before it shipped. Reverted.
+
+**The standing hazard, verbatim:** *a theory wrong in the STRICT direction produces a finding shaped
+exactly like a real defect — check which side the contract is on FIRST.* I checked the engines against each
+other and never checked either against the spec.
+
+### What IS open, and it is a spec question
+
+ts and swift REFUSE this shape (exit 2, declining to produce a judgement at all — as rust does for a target
+that does not EXIST); candor-rust judges nothing and discloses (exit 0). Both are defensible under
+different clauses, and they are not the same answer. Which convention the family wants is Tom's ruling to
+make; PART 56 NAMES the divergence on every run until it is made.
+
+The original text follows, for the record.
 
 Found by PART 56's CLEAN control — the arm written to stop a disclosure fix fabricating findings caught
-a false all-clear in a third engine instead.
+what looked like a false all-clear in a third engine.
 
     rsclean/Cargo.toml     [package] name="rsclean" version="0.0.0" edition="2021"
     rsclean/src/           (empty — no .rs sources at all)

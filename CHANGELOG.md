@@ -10,6 +10,22 @@ keeps its own.
 
 ## 2026-08-20 — the release ladder, made faster by measuring it
 
+- **`release-preflight [12]`: a cut is refused while `SPEC.md` describes a rung above its own version.**
+  ⟨0.31⟩ was built four-way and held because one half is non-additive — candor-rust's unevaluable-target
+  refusal turns an exit 0 into an exit 2. A routine rust publish would have shipped that flip under a
+  floor whose §3.3 enumerates three exit-2 causes, and nothing here would have objected: conformance
+  green, CI green, changelogs staged. Every check was asking whether the tree is internally consistent;
+  none asked whether it has outgrown the version it declares. Every clause carries a rung marker, so the
+  highest marker above the declared `Version` is exactly that condition. It takes no version argument and
+  so fires in health mode too — the hold was being carried by a paragraph in `BACKLOG.md`.
+- **`ci-watch`: PENDING is its own verdict, and `--wait` polls for the answer.** An in-progress run set
+  the failure code, so a healthy four-second-old run printed the same summary as a failure and every use
+  against a fresh push meant re-running by hand. Pending is counted separately now and exits 2, so
+  `ci-watch || fail` still fails while a caller can tell "not yet answered" from "answered badly". A
+  STALLED run stays red, or `--wait` would sit out its own deadline instead of firing the alarm it exists
+  for. `--wait` re-execs the snapshot so the waiting and snapshot paths cannot drift, and on expiry it
+  prints the snapshot and exits 2: the deadline bounds how long it waits, never what it concludes.
+
 The 0.30.0 cut took **30 minutes wall-clock** (00:42 → 01:12). Two items were 23 of them, and neither
 was doing any work that had not already been done.
 

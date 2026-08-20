@@ -58,7 +58,7 @@ def glob_to_re(pat):
 
 
 def parse_workflow(path):
-    """Returns (display_name, has_push, push_paths, tags, branches, parsed_ok).
+    """Returns (display_name, has_push, push_paths, tags, branches, paths_ignore, parsed_ok).
 
     A deliberately small reader rather than a YAML dependency: these files are machine-written and
     uniform, and the failure mode is handled — anything it cannot read is reported as REQUIRED.
@@ -70,7 +70,7 @@ def parse_workflow(path):
 
     name = os.path.basename(path)
     has_push = False
-    paths, tags, branches, parsed_ok = [], [], [], True
+    paths, tags, branches, paths_ignore, parsed_ok = [], [], [], [], True
     in_on = in_push = False
     listing = None   # which key's list we are currently reading items into
 
@@ -107,8 +107,14 @@ def parse_workflow(path):
         # release.yml — both `on: push: tags: ['v*']` — read as "runs on every push", and the check
         # demanded a run for every branch commit. Those two are also the pair that publish on a tag
         # push, so getting their trigger wrong is not a cosmetic error.
-        bucket = {"paths": paths, "tags": tags, "branches": branches}
-        key = next((k for k in bucket if indent >= 4 and stripped.startswith(k)), None)
+        bucket = {"paths": paths, "tags": tags, "branches": branches,
+                  "paths-ignore": paths_ignore}
+        # `startswith(k)` MATCHED `paths-ignore` AS `paths`, then choked on the leftover `-ignore` and
+        # set parsed_ok=False — so candor-spec's conformance.yml read as unparseable and every push to
+        # that repo produced a false "NO RUN AT HEAD". Match the key EXACTLY, and check the longer key
+        # first so `paths-ignore` can never be shadowed by `paths` again.
+        key = next((k for k in sorted(bucket, key=len, reverse=True)
+                    if indent >= 4 and stripped.startswith(k + ":")), None)
         if key:
             rest = stripped[len(key):].lstrip(":").strip()
             if rest.startswith("["):                      # key: ['a/**', 'b']
@@ -125,10 +131,10 @@ def parse_workflow(path):
             else:
                 listing = None
 
-    return (name, has_push, paths, tags, branches, parsed_ok)
+    return (name, has_push, paths, tags, branches, paths_ignore, parsed_ok)
 
 
-def classify(name, has_push, paths, tags, branches, files, branch, ok, fn):
+def classify(name, has_push, paths, tags, branches, paths_ignore, files, branch, ok, fn):
     """THE decision. main() and selftest() both call this and neither restates it.
 
     The first version of this file had the cascade written out in main() and written out AGAIN in the
@@ -144,6 +150,12 @@ def classify(name, has_push, paths, tags, branches, files, branch, ok, fn):
         return ("not-required", f"{fn} triggers on tag pushes only ({', '.join(tags)})")
     if branches and not any(glob_to_re(b).match(branch) for b in branches):
         return ("not-required", f"{fn} runs on {', '.join(branches)}, not {branch}")
+    # `paths-ignore` is the INVERSE of `paths`: GitHub skips the run only when EVERY changed file
+    # matches. One unmatched file runs the workflow, which is also the safe direction for this reader —
+    # a wrong answer here costs a demanded run, never a missed one.
+    if paths_ignore and files and all(
+            any(glob_to_re(p).match(f) for p in paths_ignore) for f in files):
+        return ("not-required", f"every changed file matches {fn}'s paths-ignore")
     if not paths:
         return ("required", f"{fn} runs on every push (no path filter)")
     hits = [f for f in files for p in paths if glob_to_re(p).match(f)]
@@ -154,6 +166,19 @@ def classify(name, has_push, paths, tags, branches, files, branch, ok, fn):
 
 SELFTEST_CASES = [
     # (yaml, changed files, branch, expected verdict, what it is)
+    # THE FALSE RED THIS READER ACTUALLY PRODUCED. `paths-ignore` starts with `paths`, so a
+    # `startswith(key)` match read it as a malformed `paths:` and declared the whole workflow
+    # unparseable — which fails CLOSED to "required", so candor-spec reported NO RUN AT HEAD on every
+    # push after that key was added.
+    ("name: conf\non:\n  push:\n    branches: [main]\n    paths-ignore:\n      - 'CHANGELOG.md'\n",
+     ["CHANGELOG.md"], "main", "not-required",
+     "paths-ignore, and every changed file matches it"),
+    ("name: conf\non:\n  push:\n    branches: [main]\n    paths-ignore:\n      - 'CHANGELOG.md'\n",
+     ["CHANGELOG.md", "SPEC.md"], "main", "required",
+     "paths-ignore, but ONE changed file is not ignored — GitHub runs it, so this must too"),
+    ("name: conf\non:\n  push:\n    branches: [main]\n    paths-ignore: ['CHANGELOG.md']\n",
+     ["CHANGELOG.md"], "main", "not-required",
+     "…and the same in the inline list form"),
     ("name: ci\non:\n  push:\n", ["README.md"], "main", "required",
      "no filter at all — every push"),
     # The two that produced this reader's first FALSE REDS. Both publish artifacts on a tag push, so
@@ -189,9 +214,10 @@ def selftest():
         with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
             fh.write(yaml_text)
             path = fh.name
-        name, has_push, paths, tags, branches, ok = parse_workflow(path)
+        name, has_push, paths, tags, branches, pignore, ok = parse_workflow(path)
         os.unlink(path)
-        got, _why = classify(name, has_push, paths, tags, branches, files, branch, ok, os.path.basename(path))
+        got, _why = classify(name, has_push, paths, tags, branches, pignore, files, branch, ok,
+                             os.path.basename(path))
         mark = "\u2714" if got == want else "\u2718"
         if got != want:
             fails += 1
@@ -216,8 +242,8 @@ def main():
     for fn in sorted(os.listdir(wfdir)):
         if not fn.endswith((".yml", ".yaml")):
             continue
-        name, has_push, paths, tags, branches, ok = parse_workflow(os.path.join(wfdir, fn))
-        verdict, why = classify(name, has_push, paths, tags, branches, files, branch, ok, fn)
+        name, has_push, paths, tags, branches, pignore, ok = parse_workflow(os.path.join(wfdir, fn))
+        verdict, why = classify(name, has_push, paths, tags, branches, pignore, files, branch, ok, fn)
         print(f"{name}\t{verdict}\t{why}")
     return 0
 

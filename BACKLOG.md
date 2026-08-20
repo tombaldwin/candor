@@ -457,6 +457,38 @@ look like a normal report.
   which is a much larger change and a separate decision.
 
 
+- **`[P1a]` THE PEEK FED `netPartners` IN candor-rust — FOUND, FIXED AND RATCHETED 2026-08-20, the same
+  day the key landed.** MEASURED on a crate whose only mention of the declared partner was in `build.rs`:
+  the `--gate-json` verdict said `netPartners: [{hosts:["partner.example"]}]` while the report it had just
+  written said `null`. Both halves of the failure the FIRST net-partner attempt was reverted for — §3.1
+  route equality breaks (`gate --report` reads the report and can only answer `null`), and the disclosure
+  over-claims by saying an ambient config moved a classification the gate never made.
+
+  **Cause, and the reason it is worth a backlog entry rather than a line in a commit:** the ⟨0.30⟩ peek
+  re-enters `scan_one` with `policy: None`, and that discharges MOST accumulators — but `netPartners` is
+  not policy-derived. It comes from `partners_used` + `discover_config(dir)`, and the peek scans the SAME
+  dir. **Config-derived keys are the ones `policy: None` does not discharge**, and the next such key will
+  land in the same trap. This is the identical defect that hit `analyzed` (measured 276 vs 129 on
+  `crates/candor-query`), one key over, which is why the fix is a RATCHET and not a guard: a test
+  enumerates every `record_gate_*` site in `scan.rs` and requires each to be peek-guarded or named with a
+  reason it is safe. Calibrated both ways.
+
+  **Only rust had it, and the reason is the one the other queue item is about:** ts keeps the accumulator
+  per-scan, java's peek runs on its own thread with its own `ThreadLocal` context, swift orders the record
+  before the peek. Rust is the only engine using PROCESS-GLOBAL gate state. That is the concrete cost of
+  the "thread the gate state through `scan_one`'s signature" item below — it is no longer hypothetical.
+
+  **Pinned:** conformance PART 57 arm E (ts/rust/swift) and `FileSetScopeTest` for java, whose exclusion
+  is a different kind (bytecode: its portable excluded kinds hold no analysable code).
+
+  **TWO MEASUREMENT TRAPS THIS ROW WALKED INTO, both worth carrying forward.** (1) Arm E first used the
+  part's `deny Net[unknown-host]`, and once the partner is DECLARED the host classifies as known-partner,
+  so the narrow policy never matched and the policy-bounded peek stayed silent — a control that looked
+  like a pass. Arm E uses a bare `deny Net`. (2) Arm E then checked the **report** and had NO TEETH:
+  rebuilding candor-scan with the guard deleted left PART 57 green, because the report was always the
+  correct half. **The defect lives in the verdict.** Both traps were found only by rebuilding the engine
+  broken and watching the row stay green — a row that has never been shown to fail is not a gate.
+
 - **`[P1]` netPartners CLOSED FOUR-WAY 2026-08-20.** ⟨0.31⟩ `netPartners` is in §2 + §3.1 and
   implemented in ALL FOUR engines, with conformance PART 57 asserting every one: the config and the
   participating host are named, both routes agree byte-for-byte, and the key is absent both when nothing

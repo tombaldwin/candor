@@ -3212,3 +3212,21 @@ is not the "did we read anything" signal it looks like. The right signal needs c
 be written before the next attempt.
 
 Until then PART 56 NAMES this divergence on every run rather than asserting it away.
+
+## ⟨0.31⟩ IS BUILT AND HELD — do not publish any engine under `spec: "0.30"`
+
+**Landed 2026-08-20 at HEAD, deliberately NOT released.** The unevaluable-target cause (§3.3's fourth):
+a target that exists but holds no file the engine can read is a refusal, exit 2, no report. candor-rust
+changed; ts/swift/java already behaved this way un-enumerated. Four-way conformance OK, PART 56 asserts
+all three engines asked, MUST ledger classified.
+
+**THE RELEASE HOLD, and why the tooling will not enforce it for you.** rust's change is the one
+non-additive cell (0 → 2). A routine candor-rust-only publish would ship it while the published floor
+still enumerates THREE exit-2 causes — and `release-preflight` would not object, because conformance is
+GREEN (the row pins the new behaviour) and nothing compares an engine's behaviour to the FLOOR's text.
+So: **no engine publishes a changed verdict under `spec: "0.30"`.** ⟨0.31⟩ rides the next rung; the
+clause and the row sit at HEAD until then, which is how ⟨0.30⟩ itself was built (built four-way and
+conformance-pinned while the floor was 0.29).
+
+Two engines' behaviour is unchanged by the hold: ts and swift moved 2 → 2 (disclosure only) and are
+patch-safe.

@@ -3,7 +3,30 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
-## An fd/stream write reached through a helper is charged `Net` (over-charge, PRE-EXISTING, now verdict-bearing)
+## CLOSED 2026-08-20 — an fd/stream write through a helper was charged `Net` (R54, candor-ts)
+
+**FIXED.** The carve-out now decides from the receiver's TYPE rather than its spelling, as a denylist:
+`Net` is suppressed only when EVERY constituent is a proven non-network stream class from @types/node's
+own `tty`/`fs`/`process` typings. Unknown constituent, `any`, a project class of the same name, or a real
+`net.Socket` all KEEP the charge. `stream.Writable`/`Readable` are excluded from the safe set because a
+real `net.Socket` IS a `stream.Duplex`. Scoped to `Net` alone so a legitimate `Fs` is untouched.
+
+**A/B on execa's real source: six `⚠ performs Net` fixtures and exit 2 become `policy ✓`.** Six
+regression cases in `test.mjs`, three of them the under-report controls, written before the fix.
+
+**The three under-report controls did their job, and one of them was itself wrong**: `f.write()` on an
+`fs.WriteStream` is not charged `Fs` at all — the `Fs` lands where the stream is OPENED. Measured against
+HEAD before changing either side, the answer was identical, so the assertion was wrong rather than the
+code. Corrected to the module-level check it should always have been.
+
+**Three implementation facts, each found by measuring rather than reading, each silently suppressing
+nothing until found:** an intersection type carries no single symbol (`process.stdout` is
+`WriteStream & { fd: 1 }`); the std streams' `WriteStream` is declared in `process.d.ts`, not `tty.d.ts`;
+TypeScript names anonymous shapes `__type`, so `!name` does not skip them.
+
+The original entry follows, for the record.
+
+## (original) An fd/stream write reached through a helper is charged `Net`
 
 **MEASURED 2026-08-19** on `execa` under `deny Net`, in the ⟨0.30⟩ blast-radius sweep: every finding in
 that project's fixture set is a write to stdout or a file descriptor, charged as **Net**. `fail.js` (whose

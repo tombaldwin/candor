@@ -661,7 +661,16 @@ else
   # emits REPO-relative paths, so it never matched and the step-6 re-run paid the full suite anyway. Dead
   # in the fail-safe direction, which is why nothing reported it.
   SKIP_NEVER='^conformance/'
+  # A4 — THE PIN BUMP PAID FOR THE WHOLE SUITE. Step 6 rewrites the IDE plugin pins and (sometimes) the
+  # release scripts themselves; neither was licensed, so re-entering release.sh for step 7 ran the full
+  # four-way suite again. Measured on the 0.30.0 cut: 11 minutes, out of a 30-minute release. The suite
+  # reads none of these — its only `integrations/` references are prose about FIX-SPEC.md, and it never
+  # invokes anything in bin/ — so a change to them cannot alter a conformance result. Named explicitly
+  # rather than licensing `^bin/` or `^integrations/` wholesale: an unlisted path only ever costs a
+  # wasted run, so the conservative direction here is the SHORT list.
   SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
+  SKIP_LICENSED="$SKIP_LICENSED"'|^integrations/vscode/package\.json$|^integrations/jetbrains/gradle\.properties$'
+  SKIP_LICENSED="$SKIP_LICENSED"'|^bin/release\.sh$|^bin/release-stage\.sh$|^bin/release-verify\.sh$|^bin/release-preflight\.sh$|^bin/changelog-lag\.sh$|^bin/ci-watch\.sh$|^bin/verify-local\.sh$|^bin/spec-bump\.sh$'
   STAMP="$ROOT/candor-spec/conformance/.last-green-shas"
   reuse=1; why=""
   if [ ! -f "$STAMP" ]; then reuse=0; why="no recorded green run"; fi

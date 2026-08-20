@@ -8,6 +8,25 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-20 — the release ladder, made faster by measuring it
+
+The 0.30.0 cut took **30 minutes wall-clock** (00:42 → 01:12). Two items were 23 of them, and neither
+was doing any work that had not already been done.
+
+- **`release-preflight [11]`: the pin bump paid for the whole four-way suite — 11 minutes.** Step 6
+  rewrites `integrations/vscode/package.json`, `integrations/jetbrains/gradle.properties` and sometimes
+  the release scripts themselves; none were on the conformance-reuse licence, so re-entering `release.sh`
+  for step 7 ran the entire suite again. The suite reads none of them — its only `integrations/`
+  references are prose about a doc, and it never invokes anything in `bin/`. Now licensed, named
+  explicitly rather than licensing `^bin/` or `^integrations/` wholesale, because an unlisted path only
+  ever costs a wasted run: the short list is the conservative one. `^conformance/` still overrides every
+  licence.
+- **candor-ts's `publish.yml` re-ran the full battery over bytes ci.yml had just tested — 12 minutes**,
+  on the critical path, since the pin bump waits for npm. Now skipped when a successful ci.yml run exists
+  for the same SHA, and run in every other case. (See candor-ts's changelog.)
+
+Together these should take the next cut from ~30 minutes to under 10.
+
 ## 2026-08-20 — ⟨0.30⟩ RELEASED; the cross-repo pins move to 0.30.0
 
 - **The floor is 0.30, build 0.30.0.** Four crates on crates.io, `candor-ts@0.30.0` on npm with OIDC

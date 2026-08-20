@@ -728,6 +728,36 @@ else
   fi
 fi
 
+# ── [12] THE SPEC MAY NOT DESCRIBE A RUNG ABOVE ITS OWN DECLARED VERSION ───────────────────────────
+# ⟨0.31⟩ was built four-way and held, because one of its two halves is NON-ADDITIVE: candor-rust's
+# unevaluable-target refusal turns an exit 0 into an exit 2. A routine candor-rust publish would have
+# shipped that flip under a floor whose §3.3 enumerates THREE exit-2 causes, and NOTHING here would have
+# objected — conformance is green (PART 56 pins the NEW behaviour), CI is green, the changelogs are
+# staged. Every gate in this script was looking at whether the tree is internally consistent. None was
+# looking at whether the tree has outgrown the version it declares.
+#
+# That is what this check is: SPEC.md carries a rung marker on every clause, so the highest marker in the
+# file is the highest rung the text describes. If it exceeds the version the same file declares, the spec
+# has been written ahead of its number and a cut here would publish behaviour under a contract that does
+# not mention it. The remedy is always the same and is never "ignore this": run `spec-bump.sh`.
+#
+# It takes no version argument on purpose, so it also fires in HEALTH MODE — the hold this encodes was
+# being carried by a paragraph in BACKLOG.md and a line in my memory, both of which are only as good as
+# whoever reads them before typing `release.sh`.
+echo "[12] no rung is described above the declared spec version"
+MAXRUNG="$(grep -oE '⟨0\.[0-9]+⟩' "$ROOT/candor-spec/SPEC.md" 2>/dev/null \
+           | sed -E 's/⟨0\.([0-9]+)⟩/\1/' | sort -n | tail -1)"
+FLOORMINOR="${SPEC_FLOOR#*.}"
+if [ -z "$MAXRUNG" ] || [ -z "$FLOORMINOR" ]; then
+  bad "could not read a rung marker or a declared version out of SPEC.md — this check would pass over nothing"
+elif [ "$MAXRUNG" -gt "$FLOORMINOR" ]; then
+  bad "SPEC.md declares Version $SPEC_FLOOR but describes ⟨0.$MAXRUNG⟩ — the text is AHEAD of its number.
+      Publishing now ships ⟨0.$MAXRUNG⟩ behaviour under the $SPEC_FLOOR contract, which does not describe it.
+      Run \`spec-bump.sh 0.$MAXRUNG\` and cut that, or move the ⟨0.$MAXRUNG⟩ clauses back out of SPEC.md."
+else
+  ok "highest rung ⟨0.$MAXRUNG⟩ is within the declared $SPEC_FLOOR"
+fi
+
 echo
 if [ "$fail" = 0 ]; then
   echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"

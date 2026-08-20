@@ -145,17 +145,24 @@ if [ "${NPM_NO_WAIT:-}" = "1" ] || [ -n "${CANDOR_ROOT:-}" ]; then
   # will be, so waiting on the real registry for it would hang every harness run for ten minutes.
   skip "npm propagation wait skipped (fixture tree, or NPM_NO_WAIT=1)"
 else
-  printf '  waiting for candor-ts@%s on npm (the pin bump triggers the IDE consumers) ' "$VER"
+  # 25 MINUTES, NOT 10. The publish is not a registry propagation delay — `publish.yml` runs the FULL
+  # test battery (behavioural + probe + fuzzer) before it publishes, and its last four successful runs
+  # took 11, 11, 10 and 15 minutes. A 10-minute budget therefore LOSES THIS RACE MOST TIMES and reports
+  # a healthy release as a failure: measured on the 0.30.0 cut, where it died at 10m against a publish
+  # that completed normally. The wait must be sized to the work being waited on, not to a round number —
+  # the same error as calling an 18-second job stalled at 3x its median.
+  printf '  waiting for candor-ts@%s on npm (publish.yml runs the full battery first; 10-15m is normal) ' "$VER"
   npm_ok=0
-  for _ in $(seq 1 60); do                      # 60 × 10s = 10 minutes
+  for _ in $(seq 1 150); do                     # 150 × 10s = 25 minutes
     if npm view "candor-ts@$VER" version >/dev/null 2>&1; then npm_ok=1; break; fi
     printf '.'; sleep 10
   done
   echo
   if [ "$npm_ok" = "1" ]; then ok "candor-ts@$VER is resolvable on npm — the consumers will install it"
-  else die "candor-ts@$VER is STILL not on npm after 10 minutes. Do NOT push the pin bump yet: it starts
-     the vscode + jetbrains jobs, which npm-install this exact version and will fail on it. Check
-     candor-ts's \`publish\` workflow (OIDC), then re-run this script — steps 1-3 skip what exists."; fi
+  else die "candor-ts@$VER is STILL not on npm after 25 minutes — longer than any publish run on record.
+     Do NOT push the pin bump yet: it starts the vscode + jetbrains jobs, which npm-install this exact
+     version and will fail on it. Check candor-ts's \`publish\` workflow (OIDC), then re-run this
+     script — steps 1-3 skip what exists."; fi
 fi
 echo "  The pins are deliberately NOT moved automatically: each names a published artifact, and 0.24 shipped"
 echo "  a jbang pin to a release that did not exist. Update these, commit, push, then run release-verify.sh"

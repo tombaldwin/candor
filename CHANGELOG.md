@@ -8,6 +8,19 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-20 — ⟨0.30⟩ RELEASED; the cross-repo pins move to 0.30.0
+
+- **The floor is 0.30, build 0.30.0.** Four crates on crates.io, `candor-ts@0.30.0` on npm with OIDC
+  provenance, GitHub releases across all six engine repos, and the spec at `v0.30`.
+- **ENGINE_PIN 0.29.1 → 0.30.0**, with it `adopt/candor.yml`, `adopt/candor-digest.yml`, the VS Code and
+  JetBrains plugin pins and candor-java's jbang catalog. They move only AFTER the artifacts exist —
+  preflight `[3]` gates that ordering, and it is the check that caught the pin lagging at 0.18.0 through
+  0.23.1, shipping 0.18 engines under a 0.23 umbrella.
+- **`release.sh`'s npm wait was 10 minutes against a publish that takes 10-15.** `publish.yml` runs the
+  full battery before publishing; its last four successful runs took 11, 11, 10 and 15 minutes, so the
+  budget lost that race most times and reported a healthy cut as a failure — measured on this one, which
+  published normally in 12m. Now 25 minutes. A wait must be sized to the work it waits on.
+
 ## 2026-08-19 — ⟨0.30⟩ built four-way, and a review panel found seven blockers in it
 
 - **UMBRELLA_VERSION → 0.30.0** (the brew formula / `--version` row). `ENGINE_PIN` deliberately stays at

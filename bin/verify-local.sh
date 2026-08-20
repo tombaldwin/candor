@@ -58,11 +58,19 @@ if want candor-rust && [ -d "$ROOT/candor-rust" ]; then
     ( step candor-rust "cargo test"          cargo test --workspace ) &
     # THE ONE THAT KEEPS BITING. CI runs this with -D warnings; `cargo test` never does.
     #
-    # LIMIT, stated so it is not mistaken for a guarantee: this runs YOUR toolchain. CI's stable may be
-    # NEWER and carry lints yours does not — measured 2026-08-20, `clippy::unnecessary_map_or` passed
-    # here and failed there. This script closes the gap where the COMMAND differs, not where the
-    # TOOLCHAIN does. `rustup update stable` before trusting a green here on a release round.
-    ( step candor-rust "clippy -D warnings"  cargo clippy --all-targets -- -D warnings ) &
+    # …AND IT IS TWO COMMANDS, NOT ONE. candor-rust pins a NIGHTLY in `rust-toolchain`, so a bare
+    # `cargo clippy` runs that nightly — while CI runs BOTH legs: the pinned nightly over the workspace,
+    # and `cargo +stable clippy` over the four stable crates. They carry DIFFERENT lint sets; measured
+    # 2026-08-20 the pinned nightly is 0.1.98 (June) and stable is 1.97.1 (July), so stable is the NEWER
+    # of the two here.
+    #
+    # Running only the nightly leg passed twice on code CI's stable leg rejected (`unnecessary_map_or`,
+    # then `collapsible_if` + `manual_contains`), a CI round each time. I first diagnosed that as a
+    # toolchain-AGE problem and wrote it up as one; `rustup update stable` answered "unchanged", which is
+    # what exposed the real cause — a MISSING COMMAND, which is precisely the gap this script exists to
+    # close and had been leaving open.
+    ( step candor-rust "clippy (nightly)"    cargo clippy --all-targets -- -D warnings ) &
+    ( step candor-rust "clippy (+stable)"    cargo +stable clippy -p candor-report -p candor-query -p candor-classify -p candor-scan --all-targets -- -D warnings ) &
     # NO `cargo fmt --check` HERE, deliberately: ci.yml does not run it, and a local gate STRICTER than
     # CI trains you to ignore its output. This script mirrors CI; it does not invent policy.
   else skipped="$skipped candor-rust(no-cargo)"; fi

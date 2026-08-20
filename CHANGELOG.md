@@ -112,10 +112,17 @@ Together these should take the next cut from ~30 minutes to under 10.
   fire. Second bug in the same six lines: `out=$(node …)` under `set -e` killed the step outright,
   because a non-zero exit is data here rather than a failure.
 
-- **verify-local mirrors CI's COMMANDS, not CI's TOOLCHAIN — stated next to the step.** A clippy lint
-  that exists only in a newer stable (`clippy::unnecessary_map_or`) passed locally and failed in CI. The
-  script runs the same command with a different toolchain, so that class is invisible to it by
-  construction. Written down because a check whose limits are unstated gets trusted past them.
+- **verify-local now runs BOTH of candor-rust's clippy legs — it had been running one.** candor-rust pins
+  `nightly-2026-06-14` in `rust-toolchain`, so a bare `cargo clippy` runs that nightly, while CI runs the
+  pinned nightly over the workspace AND `cargo +stable clippy` over the four stable crates. Different lint
+  sets, and the pinned nightly is the OLDER of the two (0.1.98 June vs stable 1.97.1 July). Running only
+  the nightly leg passed twice on code CI's stable leg rejected — `unnecessary_map_or`, then
+  `collapsible_if` + `manual_contains` — costing a CI round each time.
+
+  **The first diagnosis, written here as fact, was wrong.** I recorded it as a toolchain-AGE gap the
+  script could not close by construction. `rustup update stable` answered *"unchanged"*, which ruled that
+  out and exposed a MISSING COMMAND — exactly the gap this script exists to close. Calibrated: with the
+  rejected shape restored, `clippy (+stable)` fails and `clippy (nightly)` passes.
 
 - **`bin/verify-local.sh` — run what CI runs, before pushing.** `cargo test --workspace` passed twice on
   candor-rust while `cargo clippy --all-targets -- -D warnings` — which is what CI actually runs — failed,

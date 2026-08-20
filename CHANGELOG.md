@@ -59,6 +59,13 @@ keeps its own.
   reports an unreadable start time instead of implying health, and the selftest drives the parse and the
   jq emission. The new arm was run against the old format and fails there.
 
+- **verify-local runs the engines concurrently, and asks changelog-lag before the push.** Measured per
+  step: candor-ts `node test.mjs` 298s against 30s/29s/25s/3s for cargo test, gradle, swift and clippy —
+  sequential, 77% of the wall clock was one step with four idle engines behind it. Now 306s instead of
+  385s, bounded by the slowest engine rather than their sum. And `changelog-lag` (release-preflight
+  `[5b]`, ~1 second) is asked here rather than only at preflight: it first spoke tonight *after* CI had
+  gone green on six repos, so one missing paragraph cost another commit and another ~19-minute round.
+
 - **…and its ts arm invented a contract, then died on it.** Its first real run reported
   `bin failed: ./verify.mjs`. That bin is present, loads, and works — it takes verbs, so `--version`
   prints a usage error and exits 2. The check had demanded a flag the code never promised, and a red

@@ -39,6 +39,35 @@ mkdir -p "$SRC" "$JARS" "$OUT" "$LOG"
 findings=0
 finding() { echo "  FINDING: $*"; findings=$((findings+1)); }
 
+# ── WHICH ENGINES ARE ACTUALLY HERE ────────────────────────────────────────────────────────────────
+# Every engine step below is guarded by a `[ -x … ]`, so a missing engine SKIPS — and the summary said
+# `corpus: OK — no findings` either way. Three engines checked and four engines checked printed the same
+# line, which is ⟨0.26⟩'s rule exactly: a PARTIAL manifest answers worse than an absent one, because the
+# reader cannot tell the difference and has no reason to suspect one.
+#
+# That was tolerable while this only ran by hand on a machine with all four built. It stops being
+# tolerable the moment it runs on a schedule, where nobody is watching the roster — and ubuntu has no
+# swift toolchain, so the partial case is the DEFAULT there rather than an accident.
+#
+# So: the roster is always printed, and `CORPUS_REQUIRE_ALL=1` turns an absence into a failure. Same
+# name and same idea as conformance's `CONFORMANCE_REQUIRE_ALL=1`, which exists for the same reason.
+present=""; absent=""
+[ -x "$RS/candor-scan" ]  && present="$present rust"  || absent="$absent rust"
+[ -n "$JAR" ] && [ -f "$JAR" ] && present="$present java" || absent="$absent java"
+[ -f "$TS/scan.mjs" ]     && present="$present ts"    || absent="$absent ts"
+[ -x "$SW" ]              && present="$present swift" || absent="$absent swift"
+echo "[engines] present:${present:- none}${absent:+   ABSENT:$absent}"
+if [ -n "$absent" ] && [ "${CORPUS_REQUIRE_ALL:-0}" = "1" ]; then
+  echo "corpus: REFUSING — CORPUS_REQUIRE_ALL=1 and these engines are not built:$absent"
+  echo "  A run that silently covers fewer engines than it appears to is the failure this flag exists"
+  echo "  for. Build them, or drop the flag and read the roster above."
+  exit 1
+fi
+if [ -z "$present" ]; then
+  echo "corpus: REFUSING — no engine is built, so every oracle below would pass over nothing"
+  exit 1
+fi
+
 # ── acquire ────────────────────────────────────────────────────────────────────────────────────────
 # TAG-PINNED so a re-run measures the same bytes; shallow; nothing is BUILT. rust/ts/swift scan source,
 # and java takes prebuilt jars from Maven Central — a jar target means the round needs no JVM build.

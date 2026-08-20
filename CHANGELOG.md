@@ -10,6 +10,18 @@ keeps its own.
 
 ## 2026-08-20 — the release ladder, made faster by measuring it
 
+- **`wf-expected`: `paths-ignore` was read as a malformed `paths`, making candor-spec a standing false
+  red.** The key lookup used `startswith`, so `paths-ignore` matched `paths`, choked on the leftover
+  `-ignore`, and marked the workflow unparseable — which fails closed to "required" and reported NO RUN
+  AT HEAD on every push, with a real green run sitting beside it. Keys match exactly now, longest first,
+  and `paths-ignore` is understood on its own terms: the inverse of `paths`, so a run is skipped only
+  when every changed file matches and one unmatched file still demands it.
+- **`changelog-lag`: exactly one `## Unreleased` per file.** `release-stage.sh` renames the first, so a
+  file holding more ships work still labelled unreleased. candor-rust had three, candor-java and
+  candor-swift two each; nothing was checking, and all three would have been cut that way. Scoped to the
+  region above the first released version, because flagging settled history is how a check stops being
+  read.
+
 - **`release-preflight [12]`: a cut is refused while `SPEC.md` describes a rung above its own version.**
   ⟨0.31⟩ was built four-way and held because one half is non-additive — candor-rust's unevaluable-target
   refusal turns an exit 0 into an exit 2. A routine rust publish would have shipped that flip under a

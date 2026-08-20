@@ -21,6 +21,11 @@ was doing any work that had not already been done.
   explicitly rather than licensing `^bin/` or `^integrations/` wholesale, because an unlisted path only
   ever costs a wasted run: the short list is the conservative one. `^conformance/` still overrides every
   licence.
+- **CI workflow files were suite input to the licence, and are not.** The suite runs local binaries
+  against local fixtures and reads nothing under `.github/` (zero references in run.sh or any generator).
+  Whether CI is healthy is `[10]`'s question, asked against the live API. Left unlicensed, a workflow
+  edit in any of seven repos bought a full four-way run — the publish-workflow fix below did exactly
+  that, ten minutes, while the fix was being measured.
 - **candor-ts's `publish.yml` re-ran the full battery over bytes ci.yml had just tested — 12 minutes**,
   on the critical path, since the pin bump waits for npm. Now skipped when a successful ci.yml run exists
   for the same SHA, and run in every other case. (See candor-ts's changelog.)

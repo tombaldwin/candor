@@ -8,6 +8,19 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
+
+The rung's two halves ship together and differ in kind, which the spec now says out loud rather than
+leaving a reader to infer. `netPartners` (§2, §3.1) is **additive** — a new optional key, absent unless an
+ambient `net-partner` declaration actually moved a classification. The fourth exit-2 cause (§3.3, an
+UNEVALUABLE TARGET) is **not**: a target that exists and holds no file the engine can read was a clean
+pass on one engine and is a refusal on all four, so a green that came from a typo'd CI path becomes an
+exit 2. That is the direction the change exists to fix, and it is still a verdict that moves — an upgrade
+is a decision, not a drop-in.
+
+`UMBRELLA_VERSION` moves to 0.31.0 with the engines. `ENGINE_PIN`, `adopt/`, jbang and the editor
+extension pins move AFTER the releases exist, because they name download URLs that do not yet.
+
 ## 2026-08-20 — the release ladder, made faster by measuring it
 
 - **The corpus round runs on a schedule now, and refuses a partial one.** `bin/corpus.sh` has found

@@ -457,6 +457,43 @@ look like a normal report.
   which is a much larger change and a separate decision.
 
 
+- **`[P1c]` candor-ts DISCLOSED A FUNCTION AT A FILE IT IS NOT IN — FIXED + PINNED 2026-08-20. ts ONLY.**
+  MEASURED with `src/one/dup.test.ts` and `src/two/dup.test.ts`: `fn_two` was reported in `outOfScope` at
+  `src/one/dup.test.ts`. Both lookups read
+  `excludedFiles.find(e => loc.endsWith(e.path) || loc.endsWith(basename(e.path)))` — **the `||` sits
+  INSIDE one `.find`**, so a BASENAME match on an earlier entry beats a FULL PATH match on a later one.
+
+  **Not a cardinal sin** — both functions are disclosed with the right effects and class, nothing is
+  hidden. It is a FABRICATED LOCATOR: the report asserts a fact that is false, and an operator following
+  it lands on a different function or none. A fifth form of the key-collision class.
+
+  Fixed as TWO PASSES, and the order is the fix: full relative-path suffix match across every entry first
+  (longest wins), then basename ONLY when it names exactly one excluded file. **Still ambiguous ⇒ return
+  nothing and fall back to the child's absolute temp path** — an ugly-but-true locator is a far better
+  answer than a tidy false one, and the basename fallback exists only because the child scan runs under a
+  temp-directory tsconfig, so guessing there is guessing about someone else's filesystem. Also collapsed
+  the two copies of the lookup into one.
+
+  **The other three are correct, measured with the same fixture shape, not assumed:** rust names
+  `tests/dup.rs` and `examples/dup.rs` separately; swift names `Tests/ATests/dup.swift` and
+  `Tests/BTests/dup.swift` separately; java's locator granularity is the JAR (`relativeTo(root, jar)`)
+  with the fully-qualified `fn` disambiguating, so it cannot collide by construction.
+
+  **FOLLOW-ON (cheap, fixtures already exist):** a conformance row asserting "two excluded files sharing
+  a basename are each named by their own path". It would be green four-way on day one and stop any engine
+  acquiring this. Same-basename files are not a corner — `index.ts`, `mod.ts`, `i.test.ts` repeat in
+  every monorepo, which is where this was found.
+
+  **How it was found is the transferable part:** building a multi-package fixture to answer a DIFFERENT
+  question (`[P1b]`, whether ts's scan route aggregates packages). The fixture answered the question it
+  was built for AND showed this, because a monorepo naturally repeats basenames.
+
+  **A HARNESS TRAP FOUND ALONGSIDE IT, worth as much as the fix.** candor-ts's `test.mjs` gates blocks on
+  `if (blk())`, and `blk()` is a SHARD SELECTOR (`_blkIdx++; i % SHARD.n === SHARD.i`). A `blk()` NESTED
+  inside another `blk()` block only ticks when its parent was selected, which desynchronises the index
+  across shards — some blocks run twice, others never, and `npm test` runs `test.mjs --parallel`. **New
+  test blocks must be TOP LEVEL.** Caught before pushing only by checking what `blk()` does.
+
 - **`[P1b]` §3.1 ROUTE EQUALITY BROKE ON ORDER — FIXED IN candor-rust, OPEN AS A QUESTION FOR THE OTHER
   THREE.** Found by `bin/corpus.sh` on **ripgrep under `deny Fs`**: both routes exit 1 and both carry the
   SAME 16 `outOfScope` findings, byte-identical entry for entry, but `examples::walk::main` sits at the

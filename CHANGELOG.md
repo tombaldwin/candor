@@ -21,6 +21,16 @@ keeps its own.
   not a gate: it does not run on push and cannot block anything, because a corpus finding is a candidate
   cardinal sin someone traces to ground truth, and one has been wrong before.
 
+  **Its first run failed, in the check itself, which is the argument for dispatching rather than trusting
+  a schedule.** The roster looked for `scan.mjs` on disk, found it, and reported `present: rust java ts
+  swift` — while every ts scan returned rc=1, because nothing had installed the TypeScript compiler the
+  engine imports. `CORPUS_REQUIRE_ALL=1` certified full coverage over an engine that could not run one
+  target: the exact false assurance the flag exists to prevent, produced by the flag. Each engine is
+  ASKED `--version` now — the cheapest question that exercises the real entry point, since it parses
+  args, loads every module and answers — and the dependency install lives in the script rather than the
+  workflow, the way `conformance/run.sh` does it, so CI, a fresh clone and a human all work. Verified
+  green end to end: four engines, 43 reports, all four oracles.
+
 - **`ci-watch`: a failure on an earlier commit is no longer erased by a quiet one on top.** Every check
   in it asked only about HEAD, so a workflow that failed on commit N went invisible the moment a commit
   N+1 landed that its path filter ignores — HEAD legitimately needs no run, the repo prints "no run

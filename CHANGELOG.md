@@ -10,6 +10,17 @@ keeps its own.
 
 ## 2026-08-20 — the release ladder, made faster by measuring it
 
+- **The corpus round runs on a schedule now, and refuses a partial one.** `bin/corpus.sh` has found
+  defects no other gate could and ran in no workflow at all — it was something someone remembered to
+  type. The most recent was a §3.1 route-equality break on ripgrep, which nothing else could see:
+  `gate-equivalence` runs over candor's own crates and conformance's fixtures are single-package, so it
+  took a cargo workspace nobody wrote for us. Weekly on macOS, because ubuntu has no swift toolchain and
+  a three-engine run printed the same summary as a four-engine one — ⟨0.26⟩'s partial manifest, worse
+  than an absent one because the reader cannot tell. The roster is printed every run and
+  `CORPUS_REQUIRE_ALL=1` turns an absence into a refusal rather than trusting it to be read. A MONITOR,
+  not a gate: it does not run on push and cannot block anything, because a corpus finding is a candidate
+  cardinal sin someone traces to ground truth, and one has been wrong before.
+
 - **`ci-watch`: a failure on an earlier commit is no longer erased by a quiet one on top.** Every check
   in it asked only about HEAD, so a workflow that failed on commit N went invisible the moment a commit
   N+1 landed that its path filter ignores — HEAD legitimately needs no run, the repo prints "no run

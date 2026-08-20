@@ -1,0 +1,119 @@
+name: corpus
+
+# THE CORPUS ROUND, ON A SCHEDULE — every engine over real third-party code.
+#
+# WHY THIS EXISTS. `bin/corpus.sh` has found defects no other gate could, and until now it ran in no
+# workflow at all: it was something someone remembered to type. The most recent was a §3.1 ROUTE-EQUALITY
+# break on ripgrep — `scan --policy` and `gate --report` carrying the SAME sixteen `outOfScope` findings
+# in a DIFFERENT ORDER, so the two documents were unequal while both were correct and complete. Nothing
+# else in the family could see it: `ci/gate-equivalence.sh` runs over candor's own four crates, whose
+# shape does not produce it, and conformance's fixtures are single-package by construction. It took a
+# cargo workspace nobody wrote for us.
+#
+# A MONITOR, NOT A GATE. It does not run on push and cannot block anything. A finding here is a
+# CANDIDATE cardinal sin that a human traces to ground truth — the script's own footer says so, and a
+# corpus finding has been wrong before. Blocking every push on third-party clones would also make the
+# family's slowest signal its most frequent one.
+#
+# macOS, BECAUSE SWIFT. ubuntu has no swift toolchain, and a three-engine run that prints the same
+# summary as a four-engine run is ⟨0.26⟩'s partial manifest — worse than an absent one, because the
+# reader cannot tell. `CORPUS_REQUIRE_ALL=1` makes that refusal explicit rather than trusting the roster
+# to be read, and it is the same flag name and idea as conformance's `CONFORMANCE_REQUIRE_ALL=1`.
+#
+# ITS FAILURES ARE VISIBLE. A scheduled workflow only ever runs on commits that are no longer HEAD, and
+# `ci-watch` used to look only at HEAD — so a red here would have been invisible to the thing everyone
+# checks. That was fixed the same day this was written; without it, scheduling this would have been
+# scheduling a report nobody receives.
+
+on:
+  schedule:
+    - cron: '41 6 * * 2'      # Tuesdays 06:41 UTC — a day off release-audit's Monday, so a bad week
+                              # does not arrive as two unrelated reds in the same hour
+  workflow_dispatch:          # …and on demand, which is how you check a suspicion without waiting a week
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    runs-on: macos-15
+    # Generous, and deliberately not unbounded: this clones ten third-party projects and builds four
+    # engines. A workflow with no timeout hangs for six hours — two in this family did, which is why
+    # release-preflight [7b] refuses a release when any workflow omits this.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout candor (umbrella — this is where corpus.sh lives)
+        uses: actions/checkout@v6
+        with:
+          path: candor
+      - name: Checkout candor-rust
+        uses: actions/checkout@v6
+        with:
+          repository: tombaldwin/candor-rust
+          path: candor-rust
+      - name: Checkout candor-java
+        uses: actions/checkout@v6
+        with:
+          repository: tombaldwin/candor-java
+          path: candor-java
+      - name: Checkout candor-ts
+        uses: actions/checkout@v6
+        with:
+          repository: tombaldwin/candor-ts
+          path: candor-ts
+      - name: Checkout candor-swift
+        uses: actions/checkout@v6
+        with:
+          repository: tombaldwin/candor-swift
+          path: candor-swift
+      - name: Checkout candor-spec (oracle [1] reads its check_honesty.py)
+        uses: actions/checkout@v6
+        with:
+          repository: tombaldwin/candor-spec
+          path: candor-spec
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            candor-rust/target
+          key: ${{ runner.os }}-corpus-cargo-${{ hashFiles('candor-rust/Cargo.lock') }}
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-corpus-gradle-${{ hashFiles('candor-java/**/*.gradle*', 'candor-java/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Cache SwiftPM
+        uses: actions/cache@v5
+        with:
+          path: candor-swift/.build
+          key: ${{ runner.os }}-corpus-swiftpm-${{ hashFiles('candor-swift/Package.resolved') }}
+
+      # corpus.sh BUILDS NOTHING — it expects the engines to exist and skips the ones that do not, which
+      # is exactly why REQUIRE_ALL is set below. Each build is its own step so a failure names the engine
+      # rather than arriving as one opaque red.
+      - name: Build candor-rust
+        run: cargo build --manifest-path candor-rust/Cargo.toml -p candor-scan -p candor-query
+      - name: Build candor-java
+        run: cd candor-java && ./gradlew --no-daemon shadowJar
+      - name: Build candor-swift
+        run: cd candor-swift && swift build
+
+      - name: Corpus round (all four engines, refuse a partial one)
+        run: |
+          CORPUS_REQUIRE_ALL=1 \
+          CANDOR_RUST="$GITHUB_WORKSPACE/candor-rust" \
+          CANDOR_TS="$GITHUB_WORKSPACE/candor-ts" \
+          CANDOR_SWIFT="$GITHUB_WORKSPACE/candor-swift" \
+          CANDOR_SPEC="$GITHUB_WORKSPACE/candor-spec" \
+            bash "$GITHUB_WORKSPACE/candor/bin/corpus.sh"

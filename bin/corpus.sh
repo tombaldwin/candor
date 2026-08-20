@@ -51,16 +51,47 @@ finding() { echo "  FINDING: $*"; findings=$((findings+1)); }
 #
 # So: the roster is always printed, and `CORPUS_REQUIRE_ALL=1` turns an absence into a failure. Same
 # name and same idea as conformance's `CONFORMANCE_REQUIRE_ALL=1`, which exists for the same reason.
+# SELF-PROVISION candor-ts's DEPENDENCIES, exactly as `conformance/run.sh` does — the engine imports the
+# TypeScript compiler, so a fresh checkout has `scan.mjs` and no way to run it. Putting this HERE rather
+# than in the workflow means every caller works: CI, a new machine, a human who just cloned. The first CI
+# run of this script failed precisely because the install lived nowhere and the workflow did not know to
+# do it.
+if [ -f "$TS/package.json" ] && [ ! -d "$TS/node_modules" ]; then
+  # `npm ci` when there is a lockfile: it is deterministic and, unlike `npm install`, does NOT rewrite
+  # `package-lock.json`. That matters because this may run against somebody's working tree — the first
+  # draft used `npm install` and left a modified lockfile behind in candor-ts.
+  echo "[engines] installing candor-ts dependencies (first run on this checkout)"
+  if [ -f "$TS/package-lock.json" ]; then
+    ( cd "$TS" && npm ci --no-fund --no-audit >/dev/null 2>&1 ) || true
+  else
+    ( cd "$TS" && npm install --no-fund --no-audit >/dev/null 2>&1 ) || true
+  fi
+fi
+
+# PRESENCE IS NOT CAPABILITY, and this check learned that the hard way on its first CI run. It asked
+# `[ -f "$TS/scan.mjs" ]`, the file was there, the roster said `present: rust java ts swift` — and every
+# single ts scan returned rc=1, because the workflow had no `npm ci` and the TypeScript compiler the
+# engine imports was not installed. `CORPUS_REQUIRE_ALL=1` reported full coverage over an engine that
+# could not run a single target: the exact false assurance the flag exists to prevent, produced BY the
+# flag. (`verify-local.sh` already carries this lesson for its own ts arm — it asserts the binaries LOAD
+# rather than that a file exists.)
+#
+# So each engine is ASKED something. `--version` is the cheapest question that exercises the real entry
+# point: it parses args, loads every module, and answers. An engine that cannot answer it cannot scan.
+ask() { "$@" --version >/dev/null 2>&1; }
 present=""; absent=""
-[ -x "$RS/candor-scan" ]  && present="$present rust"  || absent="$absent rust"
-[ -n "$JAR" ] && [ -f "$JAR" ] && present="$present java" || absent="$absent java"
-[ -f "$TS/scan.mjs" ]     && present="$present ts"    || absent="$absent ts"
-[ -x "$SW" ]              && present="$present swift" || absent="$absent swift"
+ask "$RS/candor-scan"        && present="$present rust"  || absent="$absent rust"
+{ [ -n "$JAR" ] && [ -f "$JAR" ] && ask java -jar "$JAR"; } \
+                             && present="$present java"  || absent="$absent java"
+{ [ -f "$TS/scan.mjs" ] && ask node "$TS/scan.mjs"; } \
+                             && present="$present ts"    || absent="$absent ts"
+ask "$SW"                    && present="$present swift" || absent="$absent swift"
 echo "[engines] present:${present:- none}${absent:+   ABSENT:$absent}"
 if [ -n "$absent" ] && [ "${CORPUS_REQUIRE_ALL:-0}" = "1" ]; then
-  echo "corpus: REFUSING — CORPUS_REQUIRE_ALL=1 and these engines are not built:$absent"
-  echo "  A run that silently covers fewer engines than it appears to is the failure this flag exists"
-  echo "  for. Build them, or drop the flag and read the roster above."
+  echo "corpus: REFUSING — CORPUS_REQUIRE_ALL=1 and these engines cannot answer \`--version\`:$absent"
+  echo "  Not built, or built and unable to START — a missing \`npm ci\` leaves candor-ts's scan.mjs on"
+  echo "  disk and unable to load, which is how this roster once reported four engines over three."
+  echo "  Build/install them, or drop the flag and read the roster above."
   exit 1
 fi
 if [ -z "$present" ]; then

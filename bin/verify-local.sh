@@ -57,6 +57,11 @@ if want candor-rust && [ -d "$ROOT/candor-rust" ]; then
     cd "$ROOT/candor-rust" || exit 2
     ( step candor-rust "cargo test"          cargo test --workspace ) &
     # THE ONE THAT KEEPS BITING. CI runs this with -D warnings; `cargo test` never does.
+    #
+    # LIMIT, stated so it is not mistaken for a guarantee: this runs YOUR toolchain. CI's stable may be
+    # NEWER and carry lints yours does not — measured 2026-08-20, `clippy::unnecessary_map_or` passed
+    # here and failed there. This script closes the gap where the COMMAND differs, not where the
+    # TOOLCHAIN does. `rustup update stable` before trusting a green here on a release round.
     ( step candor-rust "clippy -D warnings"  cargo clippy --all-targets -- -D warnings ) &
     # NO `cargo fmt --check` HERE, deliberately: ci.yml does not run it, and a local gate STRICTER than
     # CI trains you to ignore its output. This script mirrors CI; it does not invent policy.

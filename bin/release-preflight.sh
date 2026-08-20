@@ -670,6 +670,12 @@ else
   # wasted run, so the conservative direction here is the SHORT list.
   SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
   SKIP_LICENSED="$SKIP_LICENSED"'|^integrations/vscode/package\.json$|^integrations/jetbrains/gradle\.properties$'
+  # …and CI workflow files. The suite runs local binaries against local fixtures and reads nothing under
+  # .github/ (verified: zero references in run.sh or any generator). Whether CI is healthy is check [10]'s
+  # question, asked against the live API; it is not evidence about the four-way contract. Left unlicensed,
+  # every workflow edit in any of seven repos bought a full suite run — this file's own publish-workflow
+  # fix did exactly that, ten minutes, while being measured.
+  SKIP_LICENSED="$SKIP_LICENSED"'|(^|/)\.github/'
   SKIP_LICENSED="$SKIP_LICENSED"'|^bin/release\.sh$|^bin/release-stage\.sh$|^bin/release-verify\.sh$|^bin/release-preflight\.sh$|^bin/changelog-lag\.sh$|^bin/ci-watch\.sh$|^bin/verify-local\.sh$|^bin/spec-bump\.sh$'
   STAMP="$ROOT/candor-spec/conformance/.last-green-shas"
   reuse=1; why=""

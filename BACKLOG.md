@@ -3026,3 +3026,24 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   declarative HTTP-client interfaces → Net.
 - `containment` in the cross-engine conformance differential (PART 11); adoption starter (`adopt/`) +
   5 case studies (`docs/`); candor-swift realizes the MODEL.md vocabulary as named types.
+
+## CI/release speed — what is left, and what must not be tried
+
+Measured 2026-08-20 (see the candor/candor-spec/candor-rust changelogs for the changes that landed):
+release ladder ~30min → ~5-8min; candor-spec conformance 18-19min → 15min; candor-rust ci 9-14min → 6min.
+
+**candor-ts ci (~8min) is the remaining floor and two obvious optimisations are both wrong.**
+
+1. *Parallelise the battery's suites on one runner.* `test.mjs --parallel` (81s local) and
+   `test-lsp.mjs` (57s local) are the cost, and running them together would roughly halve the job.
+   But `test-lsp.mjs` and `test-watch.mjs` both carry **15-second deadlines**, and a CPU-saturating
+   neighbour turns those into a flaky gate. Four minutes is not worth a gate nobody trusts. (The same
+   question asked of the conformance generators had the opposite answer — no internal timeouts
+   anywhere — which is why those *were* parallelised.)
+2. *Split the battery across two CI jobs by suite name.* No contention, so the deadlines are safe —
+   but candor-ts's ci.yml runs `npm test` as ONE command on purpose: *"Driving it through the script
+   keeps CI in lockstep with `npm test` so a gate added locally can't be silently missing here (the
+   probe + mcp/watch suites used to be)."* Enumerating suites in a workflow reintroduces exactly the
+   drift that comment closed. And the non-battery steps total ~25s, so there is nothing to win anyway.
+
+What WOULD work: making `npm test` itself cheaper inside the package, or larger runners (paid).

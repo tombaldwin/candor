@@ -558,6 +558,33 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   because it runs over trees nobody wrote for it. That is an argument for putting it in CI, or at minimum
   for a conformance part whose fixture is deliberately multi-package.
 
+- **`[P1d]` THE RUST GATE-STATE THREADING IS DONE 2026-08-20 — as a COMPILE-TIME constraint, not a
+  refactor of all twelve accumulators.** The open item was "thread the gate state through `scan_one`'s
+  signature", whose purpose was that parallelising the `[workspace]` member loop must not silently lose
+  cross-member violations. `GATE_VIOLATIONS` is a thread-local (correctly — `cargo test` runs on parallel
+  threads and a process-global let tests contaminate each other) while nine siblings are process-globals,
+  so a parallel loop would half-work: violations scatter per worker, everything else merges. The symptom
+  is a WRONG EXIT CODE with no panic and no failing fixture.
+
+  `scan_one` takes `&RunToken`, which is neither `Send` nor `Sync`, so `par_iter`/`thread::scope` over the
+  members **does not compile** and the error points at the type's note. Exactly one mint outside tests, so
+  an author who parallelises has to write a second one and lands on the explanation. The token is required
+  by `record_gate_violations` and `holds_violation` themselves — the proof sits at the write and the read,
+  not at an outer boundary that merely forwards it. That came out of clippy's `only_used_in_recursion`,
+  which was right: until it guarded the thread-local it was ceremony.
+
+  **Why not move all twelve accumulators into threaded state:** that is a ~500-line change across five
+  files on a verified-green tree, and it buys the ability to parallelise, which nobody has asked for — the
+  CI-speed work targeted other loops. This buys the SAFETY for ~40 lines. If parallel members are ever
+  wanted, the compile error is the doorway and the real threading is the work behind it; the note on
+  `RunToken` says exactly that.
+
+  **A verification lesson worth more than the change.** The first probe of the compile-time property was
+  VACUOUS — a thread whose body was `let _ = run;` compiled, because under edition-2021 precise capture
+  that does not use the value and the closure captured nothing. **A property test whose subject is never
+  touched passes for the same reason a correct one does.** It only failed once the body genuinely used
+  the token.
+
 - **`[P1a]` THE PEEK FED `netPartners` IN candor-rust — FOUND, FIXED AND RATCHETED 2026-08-20, the same
   day the key landed.** MEASURED on a crate whose only mention of the declared partner was in `build.rs`:
   the `--gate-json` verdict said `netPartners: [{hosts:["partner.example"]}]` while the report it had just

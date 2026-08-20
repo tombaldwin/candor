@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **`release-preflight [12]` was aborting the script rather than passing it.** The check's messages wrote
+  `⟨0.$MAXRUNG⟩`, and in a UTF-8 locale bash takes the `⟩` bytes as part of the variable NAME — so it
+  looked up an unset `MAXRUNG⟩` and `set -u` killed the run at the last check, after everything above had
+  printed and before the summary could. Every preflight this cycle returned a failure code with some ✘
+  lines above it, which reads exactly like "those checks failed and the rest passed". It was not a verdict
+  at all: `release-preflight: OK` had never once been printed. **A gate that dies one line before its
+  conclusion is indistinguishable from a gate that concluded badly, except for a line that is not there.**
+  The check had been "calibrated" against a standalone re-implementation of its own logic, which agreed
+  with itself perfectly — the anti-pattern `ci-watch.sh` warns about in its own header.
+
 The rung's two halves ship together and differ in kind, which the spec now says out loud rather than
 leaving a reader to infer. `netPartners` (§2, §3.1) is **additive** — a new optional key, absent unless an
 ambient `net-partner` declaration actually moved a classification. The fourth exit-2 cause (§3.3, an

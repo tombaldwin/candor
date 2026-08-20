@@ -479,9 +479,10 @@ look like a normal report.
   `Tests/BTests/dup.swift` separately; java's locator granularity is the JAR (`relativeTo(root, jar)`)
   with the fully-qualified `fn` disambiguating, so it cannot collide by construction.
 
-  **FOLLOW-ON (cheap, fixtures already exist):** a conformance row asserting "two excluded files sharing
-  a basename are each named by their own path". It would be green four-way on day one and stop any engine
-  acquiring this. Same-basename files are not a corner — `index.ts`, `mod.ts`, `i.test.ts` repeat in
+  **FOLLOW-ON DONE: conformance PART 58** asserts "two excluded files sharing a basename are each named
+  by their own path", over ts/rust/swift, with a control requiring both functions still disclosed (row A
+  is trivially satisfied by saying nothing). Calibrated by reverting ts to the defect. Java is excluded
+  with a reason: its locator is the JAR, so it has no per-source-file locator to get wrong. Same-basename files are not a corner — `index.ts`, `mod.ts`, `i.test.ts` repeat in
   every monorepo, which is where this was found.
 
   **How it was found is the transferable part:** building a multi-package fixture to answer a DIFFERENT

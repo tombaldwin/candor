@@ -127,7 +127,41 @@ for r in $REPOS; do
   lag=$((lag+1))
 done
 
+# ── EXACTLY ONE `## Unreleased` PER FILE ───────────────────────────────────────────────────────────
+# `release-stage.sh` renames the FIRST `## Unreleased` to the version being cut. A file holding more
+# than one therefore ships work that stays labelled unreleased, in a section a reader has no reason to
+# distrust — the same class as the empty-stub trap, where an EMPTY first section makes `release.sh`
+# publish the PREVIOUS version's notes.
+#
+# FOUND BY WALKING INTO IT: candor-rust had THREE (two with content, one an empty stub left above
+# [0.30.0]) and candor-java had two, and the only reason it surfaced was an unrelated edit asserting its
+# anchor appeared once. Nothing was checking, and both files would have been cut that way.
+#
+# An EMPTY section counts too — it is the residue that produces the duplicates, and it is exactly what
+# `release.sh` mis-handles.
+dupe=0
+for r in $REPOS; do
+  d="$ROOT/$r"; f="$d/CHANGELOG.md"
+  [ -f "$f" ] || continue
+  # ONLY THE REGION ABOVE THE FIRST RELEASED VERSION. That is the region the stager rewrites, so it is
+  # the only region where a second header does damage. Counting the whole file called candor-rust bad
+  # for `## [Unreleased] (nightly lint)` at line 2216 — a title inside long-released history, which
+  # ships nothing and moves nowhere. A check that flags settled history gets read as noise and then
+  # stops being read at all.
+  n="$(awk '/^## \[[0-9]/ {exit} /^## \[?Unreleased/ {c++} END {print c+0}' "$f")"
+  if [ "$n" -gt 1 ]; then
+    printf '  \033[31m✘\033[0m %-14s %s `## Unreleased` sections — the stager renames only the FIRST,\n' "$r" "$n"
+    echo   "                 so the rest ship still labelled unreleased. Merge them into one:"
+    awk '/^## \[[0-9]/ {exit} /^## \[?Unreleased/ {printf "                   line %d: %s\n", NR, $0}' "$f"
+    dupe=$((dupe+1))
+  fi
+done
+
 echo
+if [ "$dupe" -gt 0 ]; then
+  printf '\033[31mchangelog-lag: %d changelog(s) hold more than one Unreleased section.\033[0m\n' "$dupe"
+  exit 1
+fi
 if [ "$lag" -gt 0 ]; then
   printf '\033[31mchangelog-lag: %d repo(s) describe less than they ship.\033[0m\n' "$lag"
   echo "A pure refactor legitimately needs no entry — touch the file, or write the line."

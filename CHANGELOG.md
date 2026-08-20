@@ -112,6 +112,11 @@ Together these should take the next cut from ~30 minutes to under 10.
   fire. Second bug in the same six lines: `out=$(node …)` under `set -e` killed the step outright,
   because a non-zero exit is data here rather than a failure.
 
+- **verify-local mirrors CI's COMMANDS, not CI's TOOLCHAIN — stated next to the step.** A clippy lint
+  that exists only in a newer stable (`clippy::unnecessary_map_or`) passed locally and failed in CI. The
+  script runs the same command with a different toolchain, so that class is invisible to it by
+  construction. Written down because a check whose limits are unstated gets trusted past them.
+
 - **`bin/verify-local.sh` — run what CI runs, before pushing.** `cargo test --workspace` passed twice on
   candor-rust while `cargo clippy --all-targets -- -D warnings` — which is what CI actually runs — failed,
   once on a duplicated `#[allow]` and once on a doc comment left on a `thread_local!`. Both times "the

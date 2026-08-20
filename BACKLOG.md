@@ -88,6 +88,13 @@ is correct only while members are scanned SEQUENTIALLY on one thread (`for d in 
 anyone parallelises that loop, cross-member accumulation silently breaks and the symptom will be a wrong
 exit code, not a crash. Either thread the state explicitly or pin the sequential assumption with a row.
 
+**PINNED 2026-08-20** (the second half of that choice, not the first): `tests.rs`
+`workspace_members_are_scanned_sequentially_because_the_gate_state_is_thread_local` reads the loop region
+and fails if `par_iter`/`par_bridge`/`thread::spawn`/`scope(|` appears in it, with a message naming the
+remedy. Calibrated by injecting `par_iter` — and the first calibration attempt injected a real
+`dirs.par_iter()` call which did NOT COMPILE, so the test never ran and the green proved nothing.
+Threading the state explicitly is still the better fix and is still open.
+
 ## A cheap report REFRESH (the uflexi Stop-hook cost)
 
 Field-measured: 3.30s of a 3.51s hook is the scan, re-analysing 2,259 classes when one changed. The

@@ -513,12 +513,17 @@ look like a normal report.
   asserts the findings are still PRESENT, since collapsing the list to nothing would satisfy
   order-independence while deleting the disclosure).
 
-  **THE OPEN FOUR-WAY QUESTION, with the discriminator already worked out.** candor-ts, candor-java and
-  candor-swift all accumulate `outOfScope` by appending (`push` / `addAll` / `append`) with no sort, so
-  they carry the same latent property. Whether it can FIRE depends on one thing: **does that engine's
-  SCAN route aggregate several packages into a single verdict?** If it does, its two routes can order the
-  merged list differently and it has this defect. Rust's cargo workspaces are why rust has the shape;
-  answering it for the others needs a multi-package fixture per engine, which is the work.
+  **THE FOUR-WAY QUESTION IS ANSWERED — RUST-ONLY, AND FOR A STRUCTURAL REASON.** ts, java and swift do
+  all accumulate `outOfScope` by appending with no sort, so they carry the latent property. It cannot
+  FIRE in any of them, because firing needs ONE invocation to produce SEVERAL reports that the gate route
+  then re-merges in its own order. MEASURED with multi-package fixtures: candor-ts writes ONE report for
+  a 2-package npm workspace, candor-swift ONE for a package with two test targets, candor-java ONE for a
+  2-package class tree (its `--json <file>` takes a single path). candor-scan wrote **SEVEN** for the
+  regex cargo workspace. One report in, one report out, same order by construction.
+
+  So the sort in `gate_verdict_json_impl` is the whole fix, and no port is owed. **If any engine ever
+  gains per-package report output, it acquires this defect the same day** — that is the trigger to watch
+  for, not the append-without-sort.
 
   **Why no existing gate caught it, and what that says.** `ci/gate-equivalence.sh` covers candor's own
   four crates, which mostly are not multi-package in the relevant way; conformance's fixtures are

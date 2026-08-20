@@ -457,7 +457,23 @@ look like a normal report.
   which is a much larger change and a separate decision.
 
 
-- **`[P1]` CLOSED IN SPEC + candor-ts 2026-08-20; THREE PORTS OPEN.** ⟨0.31⟩ `netPartners` is written
+- **`[P1]` netPartners CLOSED FOUR-WAY 2026-08-20.** ⟨0.31⟩ `netPartners` is in §2 + §3.1 and
+  implemented in ALL FOUR engines, with conformance PART 57 asserting every one: the config and the
+  participating host are named, both routes agree byte-for-byte, and the key is absent both when nothing
+  was declared and when a declaration never matched. No engine skips the row.
+
+  **What each port needed beyond the three shared moves, none of it visible by reading:** candor-java had
+  a SECOND copy of the netClass computation inside `ReportWriter` — a hand duplicate of
+  `Policy.netClassesOf` — so the accumulation went into one copy while the class a reader sees came from
+  the other; it also has TWO envelope consumers on the gate verb, and adopting at one left the routes
+  disagreeing, which is the byte-equality failure this key was reverted for the first time. candor-rust's
+  verdict writer is a versioned chain, so `v31` was added with the older wrappers passing an empty list to
+  keep every existing verdict byte-identical. candor-swift's discovery returns the path beside the text,
+  which is what keeps the disclosure naming the file the vocabulary came from.
+
+  (the superseded entry follows, for the constraints in full)
+
+- **`[P1]` (superseded) CLOSED IN SPEC + candor-ts 2026-08-20; THREE PORTS OPEN.** ⟨0.31⟩ `netPartners` is written
   into §2 (envelope key) and §3.1 (the disclosure clause), implemented in candor-ts, and asserted by
   conformance PART 57 — named, byte-equal across both routes, additive, and a declared-but-unmatched
   partner disclosed nowhere. rust, java and swift SKIP with a stated reason and are ratchet-counted.

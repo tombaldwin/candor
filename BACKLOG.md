@@ -3047,3 +3047,54 @@ release ladder ~30min → ~5-8min; candor-spec conformance 18-19min → 15min; c
    drift that comment closed. And the non-battery steps total ~25s, so there is nothing to win anyway.
 
 What WOULD work: making `npm test` itself cheaper inside the package, or larger runners (paid).
+
+## FILED 2026-08-20 — candor-ts's "no sources" refusal short-circuits the ⟨0.30⟩ peek (rust does not)
+
+Found corpus-testing the PUBLISHED `candor-ts@0.30.0` (not the tree) the night ⟨0.30⟩ shipped.
+
+**Not a cardinal sin** — the verdict is exit 2, fail-closed, and the gate never certifies. It is a
+DISCLOSURE divergence: on the same shape, rust names the offending function and ts names nothing.
+
+### Reproduction (30 seconds, no corpus needed)
+
+A declarations-only package whose JavaScript performs the denied effect:
+
+    dtsonly/package.json                {"main":"./distribution/index.js","types":"./distribution/index.d.ts"}
+    dtsonly/distribution/index.d.ts     export declare function go(): void;
+    dtsonly/distribution/index.js       export function go() { return fetch("https://evil.example/x"); }
+    pol.txt                             deny Net
+
+    npx candor-ts@0.30.0 dtsonly --policy pol.txt
+    → candor-ts: no TypeScript sources under dtsonly          exit 2, NOTHING named
+
+**Control 1 — the effect is really there.** Same tree, `--allow-js`:
+
+    → [AS-EFF-006] `distribution.index.go` performs { Net }, forbidden by policy   exit 1
+
+**Control 2 — rust, on the analogous shape, DOES name it.** A crate with no `.rs` sources and a
+`build.rs` running `curl`, under `deny Exec`:
+
+    → candor-scan: ⚠ build::main performs Exec — OUTSIDE this scan's scope (build-script), so the
+                   gate did NOT judge it.   build.rs
+    → exit 2, function named
+
+### Why it matters
+
+⟨0.30⟩'s premise is that the peek *resolves a concrete denied effect and names the function* — that is
+the measurement the whole rung was justified on. Here the user is told only "no TypeScript sources",
+which is accurate and useless. Whether they get names turns on an incidental layout detail: `axios`
+ships `index.d.ts` at the package ROOT and gets 13 named findings; `ky` ships its declarations under
+`distribution/` and gets a bare refusal. Same situation, different information.
+
+Measured on the real packages: `ky`'s JavaScript gates `policy ✓` under `--allow-js`, so nothing is
+hidden *in that case* — but the fixture above shows the path is silent when there IS something to say.
+
+### The fix, and the thing to be careful about
+
+Run the peek before the "no sources" refusal, so the refusal carries `outOfScope` when the excluded
+files hold a denied effect. **Write the second fixture first** — a tree with no sources and a CLEAN
+sibling must still refuse at exit 2 with an empty peek, or the fix trades a silent refusal for a
+fabricated finding ([[feedback-fabrication-fixes-cause-misses]] is the standing warning here).
+
+Check java and swift for the same short-circuit before calling it closed; only ts and rust were
+measured.

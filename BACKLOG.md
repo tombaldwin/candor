@@ -457,7 +457,27 @@ look like a normal report.
   which is a much larger change and a separate decision.
 
 
-- **`[P1]` `net-partner` FLIPS A VERDICT AND IS DISCLOSED NOWHERE.** **ATTEMPTED 2026-08-17 AND REVERTED —
+- **`[P1]` CLOSED IN SPEC + candor-ts 2026-08-20; THREE PORTS OPEN.** ⟨0.31⟩ `netPartners` is written
+  into §2 (envelope key) and §3.1 (the disclosure clause), implemented in candor-ts, and asserted by
+  conformance PART 57 — named, byte-equal across both routes, additive, and a declared-but-unmatched
+  partner disclosed nowhere. rust, java and swift SKIP with a stated reason and are ratchet-counted.
+
+  **All three constraints below are closed by CONSTRUCTION, and a port should copy the construction, not
+  the care:** (1) a SEPARATE key, because the two anchors differ; (2) the disclosure asks the SAME matcher
+  the decision asks — in ts that meant extracting `partnerFor` and making `netDestClass` call it, so a
+  differently-normalised disclosure is now unwritable rather than merely discouraged; (3) the provenance
+  lives in the REPORT, so `gate --report` copies the producer's record instead of recomputing what it has
+  no target to compute.
+
+  **The port is the same three moves per engine**: extract the partner matcher out of the destination-class
+  function; accumulate what participated where the class is decided; write `{config, hosts}` into the
+  envelope and copy it into the verdict on both routes. Then flip that engine's PART 57 row from SKIP to
+  asserting. rust and java share the `net-partner` key and the `netClass` derivation, so the shape carries
+  directly.
+
+  (original entry follows, for the constraints in full)
+
+- **`[P1]` (original) `net-partner` FLIPS A VERDICT AND IS DISCLOSED NOWHERE.** **ATTEMPTED 2026-08-17 AND REVERTED —
   read the three constraints below before trying again; they cost a full implementation to find.**
 
   **(1) THE TWO CONFIG KEYS ANCHOR DIFFERENTLY, so one `config` cannot name both.** `unknown-alias`

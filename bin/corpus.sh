@@ -313,6 +313,65 @@ PY
   [ -x "$SW" ] && gate "swift" "$(pick "$P"/s.*.Swift.json)" "$SW"
   [ -f "$JAR" ] && gate "java " "$P/j.json" java -jar "$JAR"
 
+  # ── [5] CHAINING A DEP REPORT MAY ONLY ADD ─────────────────────────────────────────────────────
+  # SPEC §2: a consumer that chains a dependency's report inherits that dependency's effects. So for any
+  # function present in BOTH the plain and the chained scan, the chained effect set is a SUPERSET. A
+  # function that LOSES an effect when more information arrives is the cardinal sin with extra steps —
+  # the run knows more and reports less.
+  #
+  # Conformance pins this on fixtures (adding a call only ever ADDS). This asks it of a real dependency
+  # graph, where the join is doing real work: regex's seven member reports chained into ripgrep move 33
+  # functions. That count is also the NON-VACUITY signal and is checked — a run where chaining changes
+  # nothing proves the property over an empty set, which is how this oracle would rot silently if the
+  # locator or the env var ever stopped being read.
+  echo "  [5] chaining a dep report may only ADD (SPEC §2, on a real dependency graph)"
+  if [ -x "$RS/candor-scan" ] && [ -d "$SRC/regex" ] && [ -d "$SRC/ripgrep" ]; then
+    rm -f "$OUT"/ch.* 2>/dev/null
+    "$RS/candor-scan" "$SRC/regex"   --out "$OUT/ch.dep"   >/dev/null 2>&1
+    DEPS_LIST="$(ls "$OUT"/ch.dep.*.scan.json 2>/dev/null | grep -v callgraph | grep -v hierarchy | tr '\n' ',' | sed 's/,$//')"
+    "$RS/candor-scan" "$SRC/ripgrep" --out "$OUT/ch.plain" >/dev/null 2>&1
+    CANDOR_DEPS="$DEPS_LIST" "$RS/candor-scan" "$SRC/ripgrep" --out "$OUT/ch.chained" >/dev/null 2>&1
+    python3 - "$OUT" <<'PY5'
+import json, glob, sys
+O = sys.argv[1]
+def load(pfx):
+    # UNION, not overwrite. A qualified name can appear in more than one member report, and keying by
+    # name with `=` keeps whichever file loaded LAST — so a member that genuinely lost an effect is
+    # masked by an intact copy elsewhere. Found while calibrating: stripping an effect from one file
+    # produced NO detection, and the same strip applied to both occurrences produced it. An oracle whose
+    # failure arm cannot be demonstrated is not an oracle, and this one was one `=` away from silently
+    # under-reporting the thing it exists to catch.
+    out = {}
+    for f in glob.glob(f"{O}/ch.{pfx}.*.scan.json"):
+        if ".callgraph." in f or ".hierarchy." in f: continue
+        for fn in json.load(open(f)).get("functions") or []:
+            out.setdefault(fn["fn"], set()).update(fn.get("inferred") or [])
+    return out
+a, b = load("plain"), load("chained")
+shared = set(a) & set(b)
+shrunk = [k for k in shared if a[k] - b[k]]
+grew   = [k for k in shared if b[k] - a[k]]
+if not shared:
+    print("      FINDING: chain-monotonicity compared NOTHING — no shared function between the plain and")
+    print("      chained scans, so the property held over an empty set and this oracle proved nothing")
+    sys.exit(1)
+if not grew:
+    print(f"      FINDING: chaining changed NO effect set across {len(shared)} shared function(s) — the")
+    print("      dep locator or CANDOR_DEPS is not being read, so this oracle is passing vacuously")
+    sys.exit(1)
+if shrunk:
+    print(f"      FINDING: {len(shrunk)} function(s) LOST an effect when a dep report was chained — more")
+    print("      information produced a smaller answer, which is the cardinal sin with extra steps:")
+    for k in shrunk[:5]:
+        print(f"        {k}: {sorted(a[k])} -> {sorted(b[k])}")
+    sys.exit(1)
+print(f"      {len(shared)} shared fn(s); chaining grew {len(grew)}, shrank 0")
+PY5
+    [ $? -eq 0 ] || finding "chain-monotonicity: see the rows above"
+  else
+    echo "      SKIP (needs the rust engine plus regex and ripgrep)"
+  fi
+
   # ── [4] §3.1 ROUTE EQUALITY, ON CODE WE DID NOT WRITE ───────────────────────────────────────────
   # `ci/gate-equivalence.sh` asserts this already — over candor's OWN four crates, which is where its
   # fixtures could reach. That is exactly where the ⟨0.29⟩ peek defect lived (the nested scan of the

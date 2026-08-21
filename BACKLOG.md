@@ -2340,6 +2340,19 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   qualifier — so two DISTINCT violating functions in two crates are indistinguishable in the verdict,
   and the report route collapses them.
 
+  **MINIMAL REPRO, 2026-08-21 — it is six lines, not a big project.** The filing rested on rustls and
+  zellij, which made it look like something exotic in a large workspace. It is not:
+
+      Cargo.toml   [workspace] members = ["a", "b"]
+      a/src/main.rs   fn main() { Command::new("curl")... }
+      b/src/main.rs   fn main() { Command::new("curl")... }     # byte-identical
+
+  `deny Exec`: scan emits TWO `main` rows, `gate --report` emits ONE. Both exit 1, so the verdict AGREES
+  and only the count differs — which is exactly why it survived: every gate keys on the exit code and
+  none on the document. (Same lesson as [[candor-refuse-before-envelope]].) A fixture this small belongs
+  in the conformance suite whichever way the ruling goes, because it is the smallest program that can
+  tell the two readings apart.
+
   **Which side is right is the question.** If they are two functions, the report route UNDER-REPORTS the
   number of violating sites — a fix list one short. If the verdict is meant to be a set of violating
   NAMES, the scan route double-counts. Either way the two routes disagree about a real repository, which

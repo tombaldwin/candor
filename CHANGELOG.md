@@ -10,6 +10,19 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **Corpus oracle [5]: chaining a dep report may only ADD.** §2 says a consumer that chains a
+  dependency's report inherits its effects, so for any function in both the plain and chained scans the
+  chained effect set is a superset. A function that LOSES an effect when more information arrives is the
+  cardinal sin with extra steps. Conformance pins this on fixtures; this asks it of a real dependency
+  graph — regex's seven member reports chained into ripgrep move 38 of 458 shared functions.
+
+  That count is also the oracle's own non-vacuity signal and is checked: a run where chaining changes
+  nothing is REFUSED rather than passed, because it would prove the property over an empty set. Its
+  loader unions across member reports instead of overwriting — found while calibrating, where stripping
+  an effect from one file produced no detection because an intact copy in a later file replaced it. An
+  oracle whose failure arm cannot be demonstrated is not an oracle, and this one was one `=` away from
+  silently under-reporting the thing it exists to catch.
+
 - **The corpus grows by four trees, each for a shape the set lacked.** `tokio` is a large cargo
   workspace producing ten member reports — the §3.1 ordering break ⟨0.31⟩ fixed needs one invocation
   producing SEVERAL reports for the gate route to re-merge, and ripgrep was the only tree here with that

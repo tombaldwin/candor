@@ -10,6 +10,14 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **The corpus grows by four trees, each for a shape the set lacked.** `tokio` is a large cargo
+  workspace producing ten member reports — the §3.1 ordering break ⟨0.31⟩ fixed needs one invocation
+  producing SEVERAL reports for the gate route to re-merge, and ripgrep was the only tree here with that
+  shape at all. `hyper` is async Net-heavy and a single-crate counterweight. `execa` exists to run
+  child processes, giving the densest `Exec` surface available where every other ts entry is Net- or
+  pure-shaped. `swift-nio` has many targets against alamofire's one. A corpus that stops growing stops
+  finding things: the previous twelve had run clean for several rounds.
+
 - **The VS Code extension's own version tracks its server pin.** Its gate requires `version` and
   `candorTsVersion` to agree at major.minor — an extension published as 0.30.x that bundles the 0.31
   server tells a user the wrong thing about what they installed. Bumping the pin without the version

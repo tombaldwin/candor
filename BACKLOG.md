@@ -585,8 +585,32 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   touched passes for the same reason a correct one does.** It only failed once the body genuinely used
   the token.
 
-- **`[P1e]` REVIEWED 2026-08-21 — MY PROPOSED ANSWER WAS THE REVERTED IMPLEMENTATION. Two candidates now
-  on the table; the decision is open.**
+- **`[P1e]` CLOSED 2026-08-21 — CANDIDATE B SHIPPED AS ⟨0.32⟩, four-way.** Tom chose the refusal marker.
+  A refusal writes `<prefix>.refused.json` beside the reports it would have written, overwriting nothing;
+  `gate --report` consults it across all three §3.3.1 locator forms and declines to certify; a completing
+  run clears it. **candor-rust, candor-ts and candor-swift ship it. candor-java is N/A and measured so** —
+  a bare run persists no report, so it has no default prefix to leave stale, and its `--json` sink is a
+  NAMED one already armed. Pinned by conformance PART 60 (four rows, two of them controls), calibrated
+  by disabling the write and the clear in turn.
+
+  **⟨0.32⟩ IS BUILT AT HEAD AND UNRELEASED — the floor is still 0.31.**
+
+  **The decisive design point, which each of the three ports got wrong once:** the marker can be written
+  during ARGUMENT PARSING precisely because it destroys nothing, and that is not incidental — it is the
+  whole advantage over arming, which cannot be moved that early because doing so is the measured data
+  loss. Latch it any later and the marker is absent on the argv-death case, i.e. strictly weaker than the
+  alternative that was rejected. rust latched too late; ts latched too late AND threw in the temporal
+  dead zone; swift's refusal funnel is GUARDED, so the commonest shape bypassed it entirely. **"Every
+  refusal funnels through here" is a claim to verify per engine.**
+
+  **And a file kind beside the reports has more readers than the engine that writes it.** `refused` went
+  into §2.2's reserved set, and three separate pieces of code had to learn it: candor-ts's `isReport`
+  (by NAME — it counted the marker as a report at once), candor-rust's `SIDECAR_KINDS` (which excluded it
+  only INCIDENTALLY, by segment count — the exact drift §2.2 documents), and the conformance harness
+  itself, which globbed `report*.json` and read a refusal's own marker as "the scan left a report". PART
+  56 — written for ⟨0.30⟩ — caught all of it.
+
+  (the superseded framing follows)
 
   **What I proposed and why it is wrong:** "arm the default prefix, but only where a report already
   exists." That is byte-for-byte the version that WAS built, measured destroying data, and reverted —

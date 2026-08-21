@@ -95,6 +95,29 @@ remedy. Calibrated by injecting `par_iter` — and the first calibration attempt
 `dirs.par_iter()` call which did NOT COMPILE, so the test never ran and the green proved nothing.
 Threading the state explicitly is still the better fix and is still open.
 
+## A TEST THAT REACHES A BRANCH THROUGH INVALID INPUT WILL DEFEND THE BUG (2026-08-21)
+
+Closing the typo'd-effect hole four-way (`path <fn> Fsz` → exit 0 "does not perform Fsz", now exit 2,
+conformance PART 61) was a ~10-line fix per engine. **Both CI failures it caused were tests defending
+the defect, in two different ways, and neither was caught locally.**
+
+  · **candor-java** — `JsonEmitDeterminismTest` reached the empty-path emit using the effect name
+    `"Time"`, which is not a candor effect at all (the vocabulary has `Clock`). It exercised that branch
+    THROUGH A TYPO, so the moment `path` started refusing typos the test broke. A known effect the report
+    genuinely lacks (`Db`) is the real shape of that case and tests the same thing — launch-stability of
+    the empty emit. **Whenever a test reaches a branch with input the program should reject, it has
+    become a guard on the acceptance.**
+  · **candor-ts** — a row asserting the OLD behaviour ON PURPOSE, as a ⟨0.28⟩ SCOPE boundary: rust,
+    java and swift all answered `path: []` at exit 0, so gating it in ts alone would have manufactured a
+    fresh one-engine divergence out of one engine's fix. It said exactly that, and said *"when it is
+    opened, this row changes deliberately"*. **That is the good case**: the deferred defect was written
+    down WITH the condition for revisiting it, so the row flipped instead of being deleted, and the
+    scope note turned out to be the pin.
+
+**And the process failure was mine:** the java suite passed 788/0 locally BEFORE the guard went in and
+I never re-ran it after. CI caught it. `verify-local.sh` runs CI's union — running it, rather than the
+last green suite I happened to remember, is the whole point of it existing.
+
 ## A cheap report REFRESH (the uflexi Stop-hook cost)
 
 Field-measured: 3.30s of a 3.51s hook is the scan, re-analysing 2,259 classes when one changed. The

@@ -585,7 +585,58 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   touched passes for the same reason a correct one does.** It only failed once the body genuinely used
   the token.
 
-- **`[P1e]` A REFUSAL LEAVES A STALE REPORT AT THE **DEFAULT** PREFIX — ALL FOUR ENGINES, MEASURED,
+- **`[P1e]` REVIEWED 2026-08-21 — MY PROPOSED ANSWER WAS THE REVERTED IMPLEMENTATION. Two candidates now
+  on the table; the decision is open.**
+
+  **What I proposed and why it is wrong:** "arm the default prefix, but only where a report already
+  exists." That is byte-for-byte the version that WAS built, measured destroying data, and reverted —
+  the reasoning sits at the arm site in three engines (`candor-rust/crates/candor-scan/src/scan.rs`
+  ~562, `candor-ts/scan.mjs` ~910, `candor-swift/.../main.swift` ~292). `candor-scan <repo>
+  --zzz-not-a-flag` overwrote a COMMITTED report in candor-rust's own tree, found when candor-ts tripped
+  over it during a conformance probe. The predicate I offered as a narrowing is what the reverted version
+  already did (`is_report`), and a committed report satisfies it.
+
+  **Corrections to the framing this item was filed under.** (1) NOT all four engines behave alike: a bare
+  `candor-java <target>` persists nothing, and the umbrella injects `--json <target>/.candor/report.json`
+  (`bin/candor:553`), a NAMED sink — so java's default is already inside the existing rule, and a clause
+  binding java to arm a path it never writes would repeat the ownership mistake. (2) Deletion is off the
+  table because §3.3.1 forbids removing a REPORT (absence reads as "nothing to report" and fails open) —
+  not because of the four-way user-file-destruction review, which was about arming over INPUTS. (3) The
+  gate genuinely cannot defend itself, for a sharper reason than "no signal": the hazard is an EVENT — a
+  refusal occurring AFTER this report was written — witnessed only by the refusing run. No function of
+  (report bytes, tree bytes) computes it, and `analyzed.digest` is over the sorted analyzed-qual set
+  (function NAMES), so a changed body with unchanged names is byte-identical. The defence must be a WRITE.
+
+  **CANDIDATE A — commit-point ownership.** The default prefix becomes a named sink the moment argv is
+  fully accepted with no `--out` and no stream-mode `--json` and the target resolves; from then it arms
+  and disarms under the named-sink rules, scoped to this engine's own report naming. A refusal BEFORE
+  that moment leaves it untouched. Covers every content-driven refusal — the causes CORRELATED with a
+  changed tree, i.e. where a surviving green is actually wrong — while the argv-death that destroyed the
+  committed report is excluded by construction.
+
+  Downsides, weighed: it widens the blast radius of the component with the worst track record here (the
+  armer has produced TWO measured data defects — the original destruction, and the hand-back restoring
+  its own placeholder, fixed 2026-08-21); `.candor/` is shared by every tool and invocation over a tree,
+  so it introduces a concurrency the named-sink rule never faced (candor-ts has a watch mode); and
+  "disclosed rather than closed" for the argv window needs a real mechanism or it is an accepted hole
+  with better prose. **PREREQUISITE, not a companion:** the armer says "only files positively identified
+  as §2 reports" and means ANY candor report — in a polyglot `.candor/` a rust refusal would arm java's
+  and swift's live reports. That must land FIRST.
+
+  Softer than feared: candor-rust's `.candor/.gitignore` tracks BASELINES and ignores live reports as
+  "regenerated on every run", and the armer globs the `report` stem, so baselines are out of range. The
+  project's own answer is that live reports are disposable, which is the premise A rests on.
+
+  **CANDIDATE B — a refusal MARKER, destroying nothing.** A refusing run drops `.candor/REFUSED` naming
+  the cause and the target; `gate --report` checks for it and refuses; a completing run clears it. No
+  file is overwritten, so the blast-radius, cross-engine and concurrency objections to A largely
+  evaporate, and it is strictly better than today and never worse. Costs: a new file kind in the spec,
+  and `gate --report <single-file>` would have to consult a SIBLING rather than only what it was handed —
+  a real design question, not a detail.
+
+  **Weigh A against B before implementing either.** Superseded framing follows.
+
+- **`[P1e]` (superseded framing) A REFUSAL LEAVES A STALE REPORT AT THE **DEFAULT** PREFIX — ALL FOUR ENGINES, MEASURED,
   OUTSIDE THE SPEC'S CURRENT WORDING.** §3.3.1 ⟨0.28⟩ says the fail-closed report is "written to every
   prefix NAMED", and the engines honour that exactly: seed a report at an explicit `--out`/`--json` sink
   and a refusal replaces it (⟨0.31⟩ fixed candor-rust's fourth-cause path, PART 59 row C pins all four).

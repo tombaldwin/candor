@@ -276,7 +276,40 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   Acceptance: `bin/refresh-equiv.sh` — refreshed == cold on BYTES across the report and every sidecar,
   on commons-lang3, gson, jackson-core, joda-time, sqlite-jdbc and uflexi, 6 controls armed.
 
+  **THE PHASE ATTRIBUTION WAS WRONG TWICE, AND BOTH TIMES THE SAME WAY.** Recorded because the pattern
+  is more useful than either number: **a phase that spans two activities gets attributed to whichever one
+  you already suspected.**
+
+    · "replay costs 324 ms" — no. `analyze+edges` had the cache digest and load folded into it because
+      those phases did not exist yet. Replay is **45 ms**; the analysis it replaces is 756 ms.
+    · "~480 ms is per-invocation overhead, so this needs a resident process" — no. JVM start is **80 ms**.
+      The 377 ms was the report phase, and inside THAT: gson **SERIALISATION 315 ms, file I/O 9 ms**. I
+      built the "don't rewrite an identical document" optimisation on the strength of it and saved 9 ms.
+
+  Splitting serialise from write is now permanent instrumentation, for exactly that reason.
+
+  **WHERE IT LANDED** (uflexi, 2,602 classes):
+
+      mode                                  cold     warm     ratio
+      --json (full report + sidecars)       1750     1140     1.5x
+      gate-only (--policy --gate-json)      1534      900     1.7x
+
+  Gate-only is the mode the edit-time loop should use and the one worth quoting: it serialises nothing.
+  Warm phases: parse 268 · indexes 39 · cache-read 99 · cache-digest 45 · replay 51 · fixpoint 43 ·
+  JVM 80 · ~275 untimed (gate + conformance).
+
+  **The digest went 150 ms → 45 ms** by caching each class's STRUCTURAL digest under its content hash —
+  sound for the same reason the cache is (same bytes, same structure), and it has a second benefit worth
+  naming: a BODY-ONLY edit now misses the structural lookup, re-renders, and produces the SAME structural
+  digest, so the whole-program digest holds still and only that one class re-analyses. Streaming the
+  digest into the hash was tried FIRST and did nothing, which is what identified rendering as the cost.
+
   **STILL OPEN, with the numbers that decide them:**
+  · **`[P2]` gson serialisation of the 8 MB report is 315 ms** — only paid in `--json` mode. Skipping it
+    needs knowing the document is unchanged BEFORE building it, i.e. another digest over everything that
+    feeds it; weigh that against just making the writer faster.
+  · **`[P2]` ~275 ms of a gate-only warm run is untimed** (gate evaluation + class conformance). Time it
+    before optimising anything else — on today's record, guessing where it goes is not reliable.
   · **`[P2]` skip the PARSE for unchanged classes (255 ms of the 1184).** Needs each class's structural
     summary cached too, so the whole-program indexes can be rebuilt without `ClassNode`s.
   · **`[P2]` the 15 MB cache costs ~320 ms to load and replay.** A compact/columnar format instead of

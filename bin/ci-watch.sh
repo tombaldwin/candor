@@ -198,9 +198,25 @@ for repo in "${REPOS[@]}"; do
       printf "  %-14s %-26s ✔ no run expected (no changed file matches any workflow's push trigger)\n" \
              "$repo" "(none)"
     else
-      printf "  %-14s %-26s ✘ NO RUN AT HEAD, and these were required:\n" "$repo" "(none)"
-      printf "%s\n" "$required" | awk -F'\t' '{printf "      · %s — %s\n", $1, $3}'
-      rc=1
+      # ⟨2026-08-21⟩ A RUN CANNOT BE MISSING BEFORE GITHUB HAS HAD TIME TO CREATE IT. Immediately after a
+      # push there is a window — seconds — where the commit is on the remote and no run exists yet. This
+      # branch called that "NO RUN AT HEAD", a hard failure, so `--wait` returned instead of waiting and
+      # the summary was red over a perfectly healthy push. Hit twice in one session.
+      #
+      # Commit age is the proxy: push time is not observable from here, and a commit made moments ago is
+      # the case that produces this. Outside the window the old verdict stands unchanged — a workflow
+      # that genuinely never ran is exactly what this check exists for, and staying quiet about that
+      # would trade a false red for a false green.
+      _age=$(( now - $(git -C "$d" log -1 --format=%ct HEAD 2>/dev/null || echo 0) ))
+      if [ "$_age" -lt 90 ]; then
+        printf "  %-14s %-26s … no run yet (HEAD is %ss old — GitHub has not created it)\n" \
+               "$repo" "(none)" "$_age"
+        pending=$((pending+1))
+      else
+        printf "  %-14s %-26s ✘ NO RUN AT HEAD, and these were required:\n" "$repo" "(none)"
+        printf "%s\n" "$required" | awk -F'\t' '{printf "      · %s — %s\n", $1, $3}'
+        rc=1
+      fi
     fi
     continue
   fi

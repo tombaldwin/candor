@@ -10,6 +10,21 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **`probe.sh --concluded <marker>`: did it FINISH, or die before its own verdict?** A long gate prints
+  rows as it goes and its verdict at the end. If it dies in the middle you see rows plus a non-zero
+  exit — which is exactly what a real failure looks like. The only difference is a line that is not
+  there, and an absent line is the hardest thing to notice. `release-preflight` did this for an entire
+  release cycle: it aborted at its final check on an unbound variable, after every other check had
+  printed, and had never once shown `OK` while its output was being quoted as a verdict.
+
+  Non-zero WITH the marker is a real failure and the subject's exit passes through. Non-zero WITHOUT it
+  exits 4 — deliberately outside the range any subject uses — and says the output is a report about the
+  command, not a verdict about the thing it checks.
+
+  Five more wrong measurements are recorded in the header, all from one night, and the pattern across
+  them is sharper than any single one: **every one was caught by something downstream contradicting it,
+  never by re-reading what had been run.** The list now stands at ten.
+
 - **Corpus oracle [6]: a seeded violation in real code is REPORTED.** Every other oracle asks whether a
   report contradicts itself. None asked the question that matters most — *if a real project performed a
   denied effect, would this engine say so?* A corpus round that reports nothing is perfectly consistent

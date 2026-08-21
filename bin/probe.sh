@@ -16,6 +16,32 @@
 #   5. `set -- $spec` — the SAME zsh splitting bug as (1), after the lesson had been written down, in a
 #      matrix whose wrong answers happened to match the expected ones for 3 of 4 engines.
 #
+# FIVE MORE, from 2026-08-21, and the pattern across them is sharper than any single one: EVERY ONE was
+# caught by something downstream contradicting it, never by re-reading what I had run.
+#
+#   6. `out=$(cmd | head -1); rc=$?` — `$?` after a pipeline is the LAST command's status, so `rc` was
+#      `head` succeeding, forever. Ten verbs across three engines "exited 0"; a finding was FILED and
+#      committed on it. Run directly, every one exits 2. THIS SCRIPT'S `run_one` is already immune —
+#      `out=$("$@"); rc=$?` with no pipe — which is the argument for using it instead of writing the
+#      loop again by hand.
+#   7. A GATE THAT DIED BEFORE ITS SUMMARY read exactly like a gate that concluded badly.
+#      `release-preflight` aborted at its final check on an unbound variable, after every other check had
+#      printed. Each run showed ✘ rows and a non-zero exit — indistinguishable from a real failure except
+#      for a summary line that was NOT THERE. It had never once printed `OK` and I quoted its output as a
+#      verdict for a whole release cycle. `--concluded` below exists for this.
+#   8. A PROBE THAT NEVER TOUCHED ITS SUBJECT. A thread spawned to prove `&RunToken` cannot cross threads
+#      had the body `let _ = run;` — which under edition-2021 precise capture does not use the value, so
+#      the closure captured nothing and compiled. The property was fine; the probe was testing air. (The
+#      mandatory control below catches this class: a probe that does not exercise the subject answers the
+#      same for both arms and is refused.)
+#   9. A CALIBRATION THAT WAS ITSELF BROKEN. Perturbing a report to prove a comparison could fail edited a
+#      CALLGRAPH sidecar with a replace targeting a key sidecars do not contain — a no-op. "The oracle
+#      cannot fail" was itself a wrong measurement. Calibrate the calibration: assert the perturbation
+#      landed before concluding the instrument is blind.
+#  10. COMPARING UNLIKE THINGS. A conformance row seeded two engines at their DEFAULT report prefix and a
+#      third at a NAMED one, and duly reported a divergence that does not exist. No harness can catch
+#      this; only asking "is the only difference between these arms the one I am testing?" can.
+#
 # THE ASYMMETRY THAT EXPLAINS ALL FIVE. Every conformance ROW written that day was falsified — the engine
 # was deliberately broken, the row was confirmed to FAIL, the break was reverted. None of those was wrong.
 # Every ad-hoc PROBE was unfalsified. Five were wrong. Rigour was applied to the artifact being built and
@@ -25,6 +51,7 @@
 # treatment as a row. This script is that treatment, mechanised.
 #
 #   probe.sh <control argv…> -- <subject argv…>
+#   probe.sh --concluded <marker> -- <argv…>     # did it FINISH, or die before its own verdict?
 #
 # WHAT IT ENFORCES
 #   argv as an ARRAY          — the caller passes real argv after `--`; nothing is re-split, so (1)/(5)
@@ -123,6 +150,29 @@ for tok in "$@"; do
   if [ "$tok" = "--" ] && [ "$_seen" = 0 ]; then _seen=1; continue; fi
   if [ "$_seen" = 0 ]; then CONTROL+=("$tok"); else SUBJECT+=("$tok"); fi
 done
+# ── --concluded: DID IT FINISH, OR DIE BEFORE ITS OWN VERDICT? ─────────────────────────────────────
+# A long gate prints its rows as it goes and its verdict at the end. If it dies in the middle, what you
+# see is rows plus a non-zero exit — which is exactly what a real failure looks like. The only difference
+# is a line that is not there, and an absent line is the hardest thing to notice.
+#
+# So: name the marker the command prints when it CONCLUDES. Non-zero WITH the marker is a real failure.
+# Non-zero WITHOUT it is a command that never reached its own verdict, and its output is not evidence.
+if [ "${1:-}" = "--concluded" ]; then
+  MARKER="${2:?usage: probe.sh --concluded <marker> -- <argv…>}"
+  shift 2; [ "${1:-}" = "--" ] && shift
+  [ "$#" -gt 0 ] || die "no argv after -- for --concluded"
+  _log=$(mktemp); "$@" >"$_log" 2>&1; _rc=$?
+  if grep -qF -- "$MARKER" "$_log"; then
+    echo "probe: concluded (marker '$MARKER' present), exit=$_rc — this output IS a verdict"
+    tail -3 "$_log"; rm -f "$_log"; exit "$_rc"
+  fi
+  echo "probe: DID NOT CONCLUDE — exit=$_rc and the marker '$MARKER' never printed." >&2
+  echo "  The command stopped before its own summary, so its output is NOT a verdict about the thing" >&2
+  echo "  it checks — it is a report about the command. Rows above the stop are real; the absence of" >&2
+  echo "  rows below it means nothing. Fix the stop before reading anything into this run." >&2
+  echo "  last lines:" >&2; tail -5 "$_log" >&2; rm -f "$_log"; exit 4
+fi
+
 [ "$_seen" = 1 ] || die "usage: probe.sh <control argv…> -- <subject argv…>   (the -- is required)"
 [ "${#SUBJECT[@]}" -gt 0 ] || die "no subject argv after --"
 [ "${#CONTROL[@]}" -gt 0 ] || die "no control argv before --. A control is mandatory: it is the only thing

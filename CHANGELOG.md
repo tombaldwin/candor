@@ -10,6 +10,11 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **The VS Code extension's own version tracks its server pin.** Its gate requires `version` and
+  `candorTsVersion` to agree at major.minor — an extension published as 0.30.x that bundles the 0.31
+  server tells a user the wrong thing about what they installed. Bumping the pin without the version
+  turned that gate red, which is the gate working.
+
 - **The cross-repo pins move to 0.31.0, after the releases exist.** `ENGINE_PIN`, `adopt/`'s java and
   agents pins, and the vscode + jetbrains pins all name published artifacts, so they move only once those
   artifacts resolve — 0.24 shipped a jbang pin to a release that did not exist, and the string said the

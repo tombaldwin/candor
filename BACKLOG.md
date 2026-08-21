@@ -222,7 +222,75 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   `bin/corpus.sh` a release-ladder gate rather than a habit; (c) build the fixture properly once the
   `declared` mechanism is understood.
 
-- **`[P1]` A CHEAP REPORT REFRESH — the edit-time loop re-analyses everything on every turn.** Field
+- **`[P1]` A CHEAP REPORT REFRESH — BUILT 2026-08-21, candor-java, opt-in `CANDOR_REFRESH=<dir>`.
+  It works and it is FAR below the projection: 1.48×, not 10×.** Measured on the field case (uflexi,
+  2,602 classes) with one class changed: cold 1750 ms → refresh 1184 ms, 2601 of 2602 classes reused.
+
+      cold                        1750 ms
+      refresh, 1 class changed    1184 ms      1.48x
+      warm, nothing changed       1140 ms
+
+  **THE PROJECTION WAS WRONG, NOT THE IMPLEMENTATION, and the gap is fully accounted for.** "80–120 ms
+  against 1200 ms" assumed the only remaining work was the fixpoint, the indexes and the one changed
+  class. Two costs it never counted now dominate the warm run: every class is still **PARSED** (255 ms)
+  because the whole-program indexes are rebuilt from `ClassNode`s, and the **15 MB cache** costs ~320 ms
+  to load and replay. Those two are the whole remaining ladder, and both are now quantified rather than
+  guessed — see the open items below.
+
+  **HOW IT WORKS.** Each class is analysed into an OVERLAY whose accumulators start empty, so what it
+  leaves behind is exactly that class's delta; the delta is keyed on (engine build, whole-program
+  digest, class CONTENT hash) and replayed instead of recomputed. The split runs ALWAYS, not only when
+  caching is on, so the cached and uncached routes cannot drift.
+
+  **THE CLASSIFICATION HAZARD, AND THE INVERSION THAT DEFUSES IT.** Splitting ~70 accumulators into
+  "shared input" and "per-class output" and getting ONE output wrong in the shared direction means its
+  writes reach the master on the priming run, never enter the delta, and vanish on every refresh after —
+  a silent under-report in a report that looks entirely normal. So the default is inverted: a field is
+  an OUTPUT unless explicitly named an input (carried by `final` vs non-`final`), and **a field nobody
+  classified is merged rather than dropped**. The one error a cold byte-equality test cannot see — an
+  accumulator misfiled as an input, where the priming run still gets the RIGHT answer — is caught by
+  `assertNoInputGrowth`, whose field list is derived by reflection from the same fact, because a
+  hand-written list would be missing precisely the field just misfiled. Calibrated by misfiling
+  `entryPoints`: it names the field and refuses.
+
+  **TWO MEASUREMENT LESSONS, both earned here.**
+
+  1. **The digest was non-deterministic and the cache hit ZERO times.** ASM encodes an enum annotation
+     value as `String[]`, so rendering with `toString()` emitted an IDENTITY HASH. It failed in the SAFE
+     direction — a cache that never hits is a full scan — which is exactly why it could have lived there
+     indefinitely. **And it did not look random:** identity hashes follow allocation order, so
+     consecutive runs of the same shape agreed and the cache APPEARED to work, while a run preceded by a
+     different run did not. **Three consecutive runs would have called it fixed.** A regex now refuses
+     any digest containing an identity hash, so the class cannot return quietly.
+  2. **The byte-equality arm cannot detect a cache that never engages** — it produces byte-identical
+     reports, so equivalence passes perfectly while the feature does nothing. `bin/refresh-equiv.sh`
+     therefore refuses to conclude anything without a NON-ZERO reuse count. Its control deletes a class
+     rather than appending a byte: ASM parses by offset, so trailing bytes are never read and the append
+     control would have sat INCONCLUSIVE forever **while looking armed**.
+
+  **The codec refuses unknown field and value types rather than skipping them**, and a refusal abandons
+  the whole run's cache rather than storing a partial one. It fired for real on `deferredForcePairs`
+  (a `List<String[]>`) — a quiet skip would have dropped the deferred-forwarding bookkeeping from every
+  later refresh.
+
+  Acceptance: `bin/refresh-equiv.sh` — refreshed == cold on BYTES across the report and every sidecar,
+  on commons-lang3, gson, jackson-core, joda-time, sqlite-jdbc and uflexi, 6 controls armed.
+
+  **STILL OPEN, with the numbers that decide them:**
+  · **`[P2]` skip the PARSE for unchanged classes (255 ms of the 1184).** Needs each class's structural
+    summary cached too, so the whole-program indexes can be rebuilt without `ClassNode`s.
+  · **`[P2]` the 15 MB cache costs ~320 ms to load and replay.** A compact/columnar format instead of
+    JSON is the obvious move; measure before building, as above.
+  · **`[P2]` the one assumption left is UNMEASURED**: that analysing class A never reads another class's
+    instruction BODIES. If it did, editing B's body would leave A's cached delta stale while the digest
+    held still. The digest covers every class's STRUCTURE and the pre-pass outputs explicitly, so this is
+    the only hole — and it should be MEASURED (analyse each class twice, once against the real program
+    and once against one whose other bodies are stripped, and require equal deltas), not documented.
+  · candor-rust/ts/swift have no refresh. Java first because the field case is JVM.
+
+  (original filing follows)
+
+- **`[P1 — ORIGINAL FILING]` A CHEAP REPORT REFRESH — the edit-time loop re-analyses everything on every turn.** Field
   report from uflexi (candor-java 0.26.0, 2,259 class files / 15MB of bytecode, a 4.9MB baseline),
   measured per Stop-hook invocation:
 

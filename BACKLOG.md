@@ -2593,6 +2593,36 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   part covering three. PART 4n is the live example, recorded in prose beside its declaration rather than
   left as a silent property of the granularity. 0.06s over 46 slices.
 
+- **[P1 — MEASURED FOUR-WAY 2026-08-21, post-0.31 corpus round] EVERY QUERY VERB EXITS 0 WHEN IT CANNOT
+  FIND A REPORT — it answered nothing and reported success.** Not the zero-rule-policy item below; this is
+  operational, not semantic. The verb could not do the job at all.
+
+      candor-query where       → "usage: …"                                  exit 0
+      candor-query map         → "candor: no report files at prefix …"       exit 0
+      candor-query tour        → "candor: no report files at prefix …"       exit 0
+      candor-query blindspots  → "candor: no report files at prefix …"       exit 0
+      node query.mjs where     → "candor-ts: no report files at prefix …"    exit 0   (all 5 verbs probed)
+      java -jar … where        → "candor: no report found for locator …"     exit 0   (all 3 verbs probed)
+
+  **Why it matters more than a usage nit.** `candor-query where Net --report X` exiting 0 having found no
+  report is indistinguishable, to a script, from `where Net` finding nothing that performs Net. A CI step
+  written as `candor-query where Net --report "$P" || fail` passes over a moved path, a failed scan, or a
+  typo — the same false-all-clear shape as ⟨0.31⟩'s unevaluable target, arriving through the advisory
+  channel. Every one of these verbs prints an accurate message to stderr; the EXIT CODE contradicts it.
+
+  **`candor-scan` is disciplined here and `candor-query` is not** — the scan binary exits 2 on an unknown
+  flag, a valueless flag and an unreadable policy. So this is not a house style; it is one binary that
+  was never asked the question.
+
+  **NOT fixed on the spot, deliberately.** The entry below rules that the advisory verbs' shape is its own
+  decision and "do not assume the gate verbs' refusal transfers" — and changing exit codes across four
+  engines is exactly the kind of change that wants a stated contract first, not a 2am sweep after a
+  release. Two candidate shapes: (a) usage/`no report` = exit 2 uniformly, which matches `candor-scan`
+  and makes `|| fail` mean what its author thinks; (b) exit 2 only for "could not read the input",
+  leaving a genuine empty answer at 0. **(b) is probably right** — "no function performs Net" IS a real
+  answer worth exit 0, while "no report" is not an answer at all. Decide, then do all four engines and
+  pin it, since a per-engine answer here is worse than either.
+
 - **[P2 — THE THIRD ROUTE, opened 2026-08-10] The ADVISORY verbs proceed silently over a zero-rule
   policy.** `whatif`, `fix-gate` and `unverified` share the policy loader with the gate verbs and were
   NOT touched by the ⟨0.28⟩ rung; PART 38 does not probe them. Found by the java arm while implementing

@@ -10,6 +10,13 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **`ci-watch`: "no run at HEAD" cannot fire before GitHub has created the run.** There is a window of
+  seconds after a push where the commit is on the remote and no run exists yet. That was reported as a
+  hard failure, so `--wait` returned instead of waiting and the summary went red over a healthy push —
+  hit twice in one session. Commit age is the proxy, since push time is not observable from here. Outside
+  the window the old verdict stands unchanged: a workflow that genuinely never ran is exactly what the
+  check exists for, and staying quiet about that would trade a false red for a false green.
+
 - **`ci-watch`: one row per workflow, the newest.** `gh run list --commit` returns EVERY run at that sha,
   and a workflow with a concurrency group leaves superseded ones behind — a re-run, or a dispatch firing
   while another is queued, cancels the older and both come back. The cancelled one read as a hard failure,

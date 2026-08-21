@@ -10,6 +10,20 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **Corpus oracle [6]: a seeded violation in real code is REPORTED.** Every other oracle asks whether a
+  report contradicts itself. None asked the question that matters most — *if a real project performed a
+  denied effect, would this engine say so?* A corpus round that reports nothing is perfectly consistent
+  with an engine that reports nothing.
+
+  So a real crate is copied, one function performing a denied effect is appended, and the gate must name
+  it. The control is the same tree unseeded, and it does two jobs: it catches an engine that charges
+  everything, and it catches a probe matching a name that was already present. The rust arm discriminates
+  on the VERDICT, not just on a name — regex under `deny Net` is exit 0 unseeded and exit 1 seeded.
+
+  Verified across all four engines at 0.31.0 before this was written (rust into regex, ts into zod, swift
+  into swift-argument-parser, java into a compiled class); rust and ts seed cheaply from trees already
+  cloned, so those run every round.
+
 - **Corpus oracle [5]: chaining a dep report may only ADD.** §2 says a consumer that chains a
   dependency's report inherits its effects, so for any function in both the plain and chained scans the
   chained effect set is a superset. A function that LOSES an effect when more information arrives is the

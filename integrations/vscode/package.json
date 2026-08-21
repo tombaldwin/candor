@@ -2,7 +2,7 @@
   "name": "candor-vscode",
   "displayName": "candor: effects & architecture gate",
   "description": "Every function's side-effect map, where the code is \u2014 CodeLens (effects + blast radius), your architecture policy enforced live as diagnostics, and effect-provenance hover, from candor's per-function effect analysis (JVM bytecode, TypeScript/JavaScript, Rust, Swift).",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "candorTsVersion": "0.31.0",
   "publisher": "polymorphism",
   "license": "(MIT OR Apache-2.0)",

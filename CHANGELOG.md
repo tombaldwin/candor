@@ -10,6 +10,17 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **`ci-watch`: one row per workflow, the newest.** `gh run list --commit` returns EVERY run at that sha,
+  and a workflow with a concurrency group leaves superseded ones behind — a re-run, or a dispatch firing
+  while another is queued, cancels the older and both come back. The cancelled one read as a hard failure,
+  so the script stayed RED at that HEAD however many green runs followed, and `--wait` returned
+  immediately because a red row is not waited out. Measured on candor-spec's conformance after a re-run.
+
+  The old `sort -u` made it worse than arbitrary: it sorted rows ALPHABETICALLY, so which duplicate
+  survived had nothing to do with which was current. A superseded run is not evidence about anything.
+  Calibrated three ways — a newer failure still beats an older success, a cancelled run no longer masks a
+  newer success, and two distinct workflows are not collapsed.
+
 - **`probe.sh --concluded <marker>`: did it FINISH, or die before its own verdict?** A long gate prints
   rows as it goes and its verdict at the end. If it dies in the middle you see rows plus a non-zero
   exit — which is exactly what a real failure looks like. The only difference is a line that is not

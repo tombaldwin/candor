@@ -158,8 +158,21 @@ for repo in "${REPOS[@]}"; do
   d="$ROOT/$repo"
   [ -d "$d" ] || { printf "  %-14s SKIP  (not checked out)\n" "$repo"; continue; }
   sha="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
+  # ONE ROW PER WORKFLOW: THE NEWEST. `gh run list --commit` returns EVERY run at that sha, and a
+  # workflow with a concurrency group leaves superseded ones behind — a re-run, or a `workflow_dispatch`
+  # firing while another is queued, cancels the older and both come back. The cancelled one then reads as
+  # a hard failure and this script stays RED at that HEAD for ever, however many green runs follow.
+  #
+  # MEASURED: re-running candor-spec's conformance after a cross-repo ordering fix left `✘ cancelled`
+  # beside `… in_progress`, and `--wait` returned immediately because a red row does not wait. The old
+  # `sort -u` made it worse: it sorted rows ALPHABETICALLY, so which duplicate survived was arbitrary.
+  #
+  # A superseded run is not evidence about anything — the newest run of a workflow at a commit is the
+  # only one whose answer is about that commit. `gh` returns newest-first, so the first row per workflow
+  # name wins; `awk` keeps insertion order rather than re-sorting.
   rows="$(gh run list -R "$OWNER/$repo" --commit "$sha" \
-          --json workflowName,status,conclusion,createdAt -q "$JQ_ROW" 2>/dev/null | sort -u)"
+          --json workflowName,status,conclusion,createdAt -q "$JQ_ROW" 2>/dev/null \
+          | awk -F"$US" '!seen[$1]++')"
 
   # WHICH WORKFLOWS MUST HAVE RUN, asked of the workflow files rather than of GitHub. Until this existed
   # the script printed "no run at HEAD (path-filtered, or never triggered — verify before trusting)" and

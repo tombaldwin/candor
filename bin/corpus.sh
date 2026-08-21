@@ -134,6 +134,20 @@ acquire() {
   clone zx      https://github.com/google/zx            8.1.4
   clone swift-argument-parser https://github.com/apple/swift-argument-parser 1.4.0
   clone alamofire             https://github.com/Alamofire/Alamofire         5.9.1
+  # ⟨2026-08-21⟩ FOUR TREES ADDED AFTER THE 0.31 CUT, each for a SHAPE the set above lacks — the point of
+  # a corpus is code nobody wrote for us, and a set that stops growing stops finding things. The existing
+  # twelve had been run clean for several rounds.
+  #   tokio     a LARGE cargo workspace (10 member reports). The §3.1 ordering break that ⟨0.31⟩ fixed
+  #             needed one invocation producing SEVERAL reports for the gate route to re-merge; ripgrep
+  #             has 7 and was the only tree here with that shape at all.
+  #   hyper     async Net-heavy rust, and a single-crate counterweight to tokio.
+  #   execa     a ts package whose whole purpose is child_process — the densest Exec surface available,
+  #             where every other ts entry here is Net- or pure-shaped.
+  #   swift-nio a large swift package with many targets, against alamofire's single one.
+  clone tokio     https://github.com/tokio-rs/tokio  tokio-1.38.0
+  clone hyper     https://github.com/hyperium/hyper  v1.4.0
+  clone execa     https://github.com/sindresorhus/execa v9.3.0
+  clone swift-nio https://github.com/apple/swift-nio 2.68.0
   local M=https://repo1.maven.org/maven2
   jar() { [ -f "$JARS/$1" ] && return 0; curl -fsSL -o "$JARS/$1" "$2" && echo "  got $1" || echo "  MISS $1"; }
   jar gson.jar          $M/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
@@ -163,12 +177,12 @@ scan() {
     grep -qE "panicked|Exception in thread|Traceback|RUST_BACKTRACE|internal error" "$LOG/$eng.$item.err" \
       && finding "$eng/$item stderr carries a crash signature: $(grep -m1 -E 'panicked|Exception in thread|Traceback|internal error' "$LOG/$eng.$item.err" | cut -c1-100)"
   }
-  for r in ripgrep clap serde regex; do [ -d "$SRC/$r" ] && run rust "$r" "$RS/candor-scan" "$SRC/$r" --out "$OUT/rust.$r"; done
+  for r in ripgrep clap serde regex tokio hyper; do [ -d "$SRC/$r" ] && run rust "$r" "$RS/candor-scan" "$SRC/$r" --out "$OUT/rust.$r"; done
   # axios exits 2 with "no TypeScript sources" ONLY if its `.d.ts` is excluded; it currently scans. A
   # JS-only tree (express) legitimately refuses at exit 2 — that is candor-ts being right, not a finding,
   # which is why the set holds no JS-only package.
-  for t in zod chalk hono axios got zx; do [ -d "$SRC/$t" ] && run ts "$t" node "$TS/scan.mjs" "$SRC/$t" --out "$OUT/ts.$t"; done
-  for s in swift-argument-parser alamofire; do [ -d "$SRC/$s" ] && run swift "$s" "$SW" "$SRC/$s" --out "$OUT/swift.$s"; done
+  for t in zod chalk hono axios got zx execa; do [ -d "$SRC/$t" ] && run ts "$t" node "$TS/scan.mjs" "$SRC/$t" --out "$OUT/ts.$t"; done
+  for s in swift-argument-parser alamofire swift-nio; do [ -d "$SRC/$s" ] && run swift "$s" "$SW" "$SRC/$s" --out "$OUT/swift.$s"; done
   # java's file sink is `--json <file>`, NOT `--out <prefix>`. Getting this wrong makes all four java
   # rows exit 2 on an unknown flag — which is §6.2 behaving correctly, and reads as an engine defect.
   for j in "$JARS"/*.jar; do [ -f "$j" ] || continue; local n; n=$(basename "$j" .jar)
@@ -315,7 +329,7 @@ PY
   # the calibration run. A guard against measuring nothing must not also fire when the measurement worked
   # and the answer was bad.
   local re_ok=0 re_tried=0
-  for pair in ripgrep:Fs clap:Env serde:Unknown regex:Unknown; do
+  for pair in ripgrep:Fs clap:Env serde:Unknown regex:Unknown tokio:Fs; do
     local proj="${pair%%:*}" eff="${pair##*:}"
     [ -d "$SRC/$proj" ] || continue
     re_tried=$((re_tried+1))

@@ -10,6 +10,12 @@ keeps its own.
 
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
+- **The cross-repo pins move to 0.31.0, after the releases exist.** `ENGINE_PIN`, `adopt/`'s java and
+  agents pins, and the vscode + jetbrains pins all name published artifacts, so they move only once those
+  artifacts resolve — 0.24 shipped a jbang pin to a release that did not exist, and the string said the
+  right thing the whole time. Each was resolved before being written: the jar URL returns 200, the agents
+  tag exists and is not a draft, `candor-ts@0.31.0` is on npm, and all four crates list 0.31.0.
+
 - **`release-preflight [12]` was aborting the script rather than passing it.** The check's messages wrote
   `⟨0.$MAXRUNG⟩`, and in a UTF-8 locale bash takes the `⟩` bytes as part of the variable NAME — so it
   looked up an unset `MAXRUNG⟩` and `set -u` killed the run at the last check, after everything above had

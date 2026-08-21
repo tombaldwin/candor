@@ -95,6 +95,47 @@ remedy. Calibrated by injecting `par_iter` — and the first calibration attempt
 `dirs.par_iter()` call which did NOT COMPILE, so the test never ran and the green proved nothing.
 Threading the state explicitly is still the better fix and is still open.
 
+## ⟨0.33⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN
+
+Tom's ruling (2026-08-21): code the engine admits it never READ must make the gate INCOMPLETE (exit
+2), not pass. Closes B1 and the execa/axios item together — both were `excluded[].peeked == false`
+carrying no verdict consequence. ⟨0.30⟩ keys on what the peek FOUND, and a peek that cannot open a
+file finds nothing, which is byte-identical to finding it clean.
+
+**candor-java SHIPPED both routes** (scan → exit 2, `gate --report` → exit 2 from the document, and a
+compiled-only control still exits 0 on both). `excluded` rides the REPORT, so the report route needs
+no target to re-derive it — the constraint that defeated the `net-partner` disclosure.
+
+**THE REVIEW BEFORE PORTING FOUND THE DESIGN DEFECT, which is exactly what it was for.** java carved
+out `build-output-archive` — a jar under `build/` is a DERIVED copy of classes the scan already
+judged, so failing on it would redden every project that builds one. The carve-out lives in the
+CONSUMER as a private name list, and the other engines spell the same concept differently:
+
+    excluded class in the report          java `gate --report`
+      build-output          (rust, swift)      exit 2   <- refused
+      build-output-archive  (java's own)       exit 0   <- carved out
+      build-script          (rust's build.rs)  exit 2   <- correct: real unjudged code that RUNS
+
+**So the same report gated by java and by rust would disagree** — §3.1 route equality one level up,
+cross-ENGINE rather than cross-route. Porting as-is would have hard-coded four private tables that
+have to be kept in sync by hand, and the failure would surface only when someone gated another
+engine's report.
+
+**THE FIX: THE CARVE-OUT MUST RIDE THE DOCUMENT.** The producer knows whether an exclusion class is a
+derived duplicate of code it already judged; the consumer must not guess from a name. `excluded[]`
+needs that fact as a field (alongside `peeked`), so every consumer applies ONE rule with no table:
+*unread AND not-already-judged ⇒ INCOMPLETE*. It also makes the carve-out VISIBLE — an engine
+declaring something derived has to say so in the report, which is this family's standard everywhere
+else and is the difference between a disclosed decision and a private one.
+
+Note the two classes are genuinely different, so this is not a naming quibble: rust's `build-script`
+is `build.rs` — code that RUNS at build time, `Command::new("curl")` and all, and the original B1
+filing names it. It must fail closed. `build-output` must not. Only the producer can tell them apart.
+
+**STATE:** java implemented and green (788/0), NOT shippable — a one-engine rung is the divergence
+this project exists to prevent. rust/ts/swift + the SPEC clause + a conformance part remain, and
+should be built on the document-carried field rather than on java's current name list.
+
 ## A TEST THAT REACHES A BRANCH THROUGH INVALID INPUT WILL DEFEND THE BUG (2026-08-21)
 
 Closing the typo'd-effect hole four-way (`path <fn> Fsz` → exit 0 "does not perform Fsz", now exit 2,

@@ -313,6 +313,53 @@ PY
   [ -x "$SW" ] && gate "swift" "$(pick "$P"/s.*.Swift.json)" "$SW"
   [ -f "$JAR" ] && gate "java " "$P/j.json" java -jar "$JAR"
 
+  # ── [6] SEEDED-VIOLATION SENSITIVITY, ON REAL CODE ─────────────────────────────────────────────
+  # Every other oracle here asks whether a report CONTRADICTS itself. None asks the question that
+  # matters most: **if a real project performed a denied effect, would this engine say so?** A corpus
+  # round that reports nothing is consistent with an engine that reports nothing.
+  #
+  # So: copy a real crate/package, append ONE function performing a denied effect, and require the gate
+  # to name it. The CONTROL is the same tree unseeded — without it, an engine that charges everything
+  # passes the seeded arm while being useless, and the control also catches a probe that is matching on
+  # a name that was already there.
+  #
+  # Verified for candor-rust, candor-ts, candor-swift and candor-java at 0.31.0 before this was written;
+  # rust and ts run here because they seed cheaply from trees already cloned. The rust arm is the one
+  # whose EXIT flips (regex under `deny Net` is 0 unseeded, 1 seeded), so it discriminates on the verdict
+  # and not merely on a name appearing.
+  echo "  [6] a seeded violation in real code is REPORTED (sensitivity, not just consistency)"
+  if [ -x "$RS/candor-scan" ] && [ -d "$SRC/regex" ]; then
+    rm -rf "$OUT/seed"; mkdir -p "$OUT/seed"
+    cp -R "$SRC/regex" "$OUT/seed/regex" 2>/dev/null
+    printf '\npub fn candor_seeded_probe() {\n    let _ = std::net::TcpStream::connect("seeded.example:443");\n}\n' \
+      >> "$OUT/seed/regex/src/lib.rs"
+    printf 'deny Net\n' > "$OUT/seed/pol"
+    "$RS/candor-scan" "$OUT/seed/regex" --policy "$OUT/seed/pol" --out "$OUT/seed/s" >/dev/null 2>&1; sx=$?
+    "$RS/candor-scan" "$SRC/regex"      --policy "$OUT/seed/pol" --out "$OUT/seed/c" >/dev/null 2>&1; cx=$?
+    python3 - "$OUT/seed" "$sx" "$cx" <<'PY6'
+import json, glob, sys
+O, sx, cx = sys.argv[1], sys.argv[2], sys.argv[3]
+def has(pfx):
+    return any("candor_seeded_probe" in fn["fn"]
+               for f in glob.glob(f"{O}/{pfx}.*.scan.json") if ".callgraph." not in f and ".hierarchy." not in f
+               for fn in (json.load(open(f)).get("functions") or []))
+seeded, control = has("s"), has("c")
+if not seeded:
+    print("      FINDING: a seeded Net call in a real crate was NOT reported — the engine read the tree")
+    print("      and did not say what it found, which is the cardinal sin on real code"); sys.exit(1)
+if control:
+    print("      FINDING: the CONTROL tree also reports the seeded fn — this probe is matching something")
+    print("      that was already there, so the seeded arm proves nothing"); sys.exit(1)
+if sx == cx:
+    print(f"      FINDING: seeding a denied effect did not move the verdict (both exit {sx}) — the gate")
+    print("      names the function but does not act on it"); sys.exit(1)
+print(f"      rust: seeded exit {sx} vs control exit {cx}; the seeded fn is named only when seeded")
+PY6
+    [ $? -eq 0 ] || finding "seeded-violation sensitivity: see the rows above"
+  else
+    echo "      SKIP (needs the rust engine and regex)"
+  fi
+
   # ── [5] CHAINING A DEP REPORT MAY ONLY ADD ─────────────────────────────────────────────────────
   # SPEC §2: a consumer that chains a dependency's report inherits that dependency's effects. So for any
   # function present in BOTH the plain and the chained scan, the chained effect set is a SUPERSET. A
@@ -328,7 +375,14 @@ PY
   if [ -x "$RS/candor-scan" ] && [ -d "$SRC/regex" ] && [ -d "$SRC/ripgrep" ]; then
     rm -f "$OUT"/ch.* 2>/dev/null
     "$RS/candor-scan" "$SRC/regex"   --out "$OUT/ch.dep"   >/dev/null 2>&1
-    DEPS_LIST="$(ls "$OUT"/ch.dep.*.scan.json 2>/dev/null | grep -v callgraph | grep -v hierarchy | tr '\n' ',' | sed 's/,$//')"
+    # A glob and a loop, not `ls | grep`: shellcheck SC2010 is a WARNING and CI lints at -S warning, so
+    # the pipeline form turns shell-lint red. It is also the correct form — a filename with a newline in
+    # it would split the list.
+    DEPS_LIST=""
+    for _d in "$OUT"/ch.dep.*.scan.json; do
+      case "$_d" in *.callgraph.json|*.hierarchy.json|*'*'*) continue ;; esac
+      DEPS_LIST="${DEPS_LIST:+$DEPS_LIST,}$_d"
+    done
     "$RS/candor-scan" "$SRC/ripgrep" --out "$OUT/ch.plain" >/dev/null 2>&1
     CANDOR_DEPS="$DEPS_LIST" "$RS/candor-scan" "$SRC/ripgrep" --out "$OUT/ch.chained" >/dev/null 2>&1
     python3 - "$OUT" <<'PY5'

@@ -134,6 +134,18 @@ report describes a world the file is simply not in, and nothing on any channel s
 opened. §2's whole point is that absence licenses a purity claim only where the report says the file
 was CONSIDERED; here it does not say anything.
 
+**THE MECHANISM, pinned 2026-08-22.** The file IS in the tsconfig program (the `include` glob matches
+it whatever its mode), so the walk skips it at `scan.mjs:1470` — *"analyzed, therefore not excluded"* —
+and it then yields no functions and is never recorded as `unanalyzed` either. It falls BETWEEN the two
+manifests. Run directly, reading the exit code without a pipe:
+
+    all readable    -> exit 0
+    one unreadable  -> exit 0   "wrote 0 effectful functions (2 analyzed, 1 files)"   policy ✓
+
+`2 analyzed, 1 files` is the tell and nobody would read it as one: the count is of UNITS from the file
+that WAS readable, and the second file is simply gone. So the disclosure that would have caught this —
+the analyzed manifest — reports a number that looks entirely healthy.
+
 Worse than the ⟨0.29⟩ cases it resembles, because an unreadable file is an ORDINARY CI condition —
 permissions, a broken symlink, a truncated checkout, a stale artifact mount — not an exotic build
 setting. And note the count moved: `excluded` went from 1 entry to 0, so a consumer diffing manifests

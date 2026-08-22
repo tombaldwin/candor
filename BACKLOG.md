@@ -150,6 +150,33 @@ today had the same shape — `cargo build` reporting success without rebuilding,
 zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
 nothing. All of them looked like clean answers.
 
+## **`[P1]` REVIEW BEFORE THE PORTS: DOES THE AMBIGUOUS-EDGE RULE LOSE EFFECTS?** (open 2026-08-22)
+
+rust's merge drops an edge entirely when a cross-package callee NAME is declared by more than one
+sibling. The reasoning was that union is unsafe for REASONS — a borrowed reason turns "I cannot say"
+into "I checked". **But dropping the edge also drops EFFECT propagation**: a caller no longer inherits
+that callee's effects, which is the UNDER-report direction. That would be a false green introduced by
+the fix for a false green, in the same commit — the [[feedback-fabrication-fixes-cause-misses]] shape.
+
+If it IS wrong, the answer the argument actually implies is: union the EFFECTS, refuse to union the
+REASONS. That is not what is implemented, and it must be settled BEFORE three engines copy it —
+finding it after the ports costs four fixes instead of one.
+
+**ATTEMPTED AND UNRESOLVED — three confounded fixtures in a row, which is its own data point about
+how much to trust my next attempt without a control that fires.**
+  1. `deny Exec` over a-helper(Exec) / b-helper(pure) / c-caller: both arms exit 1, but `a#helper`
+     performs Exec DIRECTLY, so the exit says nothing about whether `caller` inherited.
+  2. scoped to package `c`: matched nothing — `fn` is bare `caller`, with no package prefix, so the
+     scope never bound.
+  3. scoped to `caller`: BOTH arms exit 0, including the unique-helper CONTROL that must exit 1. The
+     control not firing means propagation is not being exercised at all.
+
+**What the next attempt needs FIRST: a fixture where the control demonstrably fires** — a caller that
+provably inherits an effect through a report-carried `calls` edge, verified before the ambiguous arm is
+added. Probably needs the callgraph sidecar rather than the report's `calls` alone, since that is the
+difference between the two propagation paths. Do not add the ambiguous arm until the plain one is
+green.
+
 ## **`[P1]` THE FALSE GREEN IS LIVE IN java AND ts — CONFIRMED, SITES LOCATED** (2026-08-22)
 
 Measured against conformance PART 63's own fixture, and it reproduces CROSS-ENGINE (rust-shaped

@@ -2416,6 +2416,23 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   re-breaks exactly as ⟨0.31⟩'s `outOfScope` did. candor-sarif also fingerprints on `fn|rule|effects`
   (integrations/github/candor-sarif:227-233), so one GitHub alert currently hides the other.
 
+  **THE CONSTRAINT THAT DECIDES THE IMPLEMENTATION, found 2026-08-22 and not in the review.** `hash` is
+  `package#fn` (`grep_pcre2#matcher::RegexMatcher::new`), but a report's `calls` array names its callees
+  by BARE `fn` (`matcher::RegexMatcherBuilder::build`). So keying the NODES by hash does not key the
+  EDGES: the call graph would still join by name one layer down, and the fabrication and the false green
+  come back in a form that is harder to see, because the node table would look correct.
+
+  A merge therefore has to resolve each report's `calls` to hashes WITHIN that report — trivial for a
+  same-package call, since the package is the report's own — and then decide the case that has no
+  answer today: **an edge that LEAVES the package.** Its callee is not in this report, so the name can
+  only be matched against sibling reports, and if two siblings both declare that name the edge is
+  genuinely ambiguous. That is where the ladder has to be defined, and the safe rung is to DISCLOSE the
+  ambiguity and fail closed rather than pick one — picking is what the current code does implicitly.
+
+  Worth noting the current behaviour is not merely unsound, it is unsound in BOTH directions: a
+  cross-package edge that happens to resolve to the right sibling works by luck, and one that resolves
+  to the wrong same-named function invents a reach. Neither is distinguishable from the outside.
+
   **THE OBSTACLE, to resolve deliberately:** SPEC.md:1919-1923 classes `hash` as a DECORATION that
   "carr[ies] no claim a verdict reads". Option E requires a verdict to read it. That clause must be
   re-scoped for the multi-report route before E can be implemented honestly.

@@ -195,6 +195,20 @@ FILELESS diagnostic. That matters because `unanalyzedUnits` is built by iteratin
 reading `diag.file`, so a diagnostic with NO file is skipped by the `if (!sf) continue` at the top of
 that loop: the one channel carrying the evidence is the one the loop discards.
 
+**CONFIRMED ON A NON-TEST FILE 2026-08-22, and two of my own readings along the way were wrong.**
+The first fixture used `helper.test.ts`, and `fromTsconfig` filters test files out of the program by
+design (scan.mjs:1389) — so "unreadable" and "excluded-as-a-test-file" were confounded. Re-run with an
+ordinary `src/lib.ts`, report read DIRECTLY rather than through a glob:
+
+    analyzed:   {count: 2}      <- from a.ts alone; stderr says "2 analyzed, 1 files"
+    unanalyzed: absent
+    excluded:   []
+    exit 0, policy ✓
+
+The defect is real and independent of the test filter. Twice I read an empty result from a mistyped
+glob as "the scan collapsed" — the report was fine and my reader was wrong. **Read the artifact by its
+actual path; a glob that matches nothing looks exactly like a program that produced nothing.**
+
 **AND THE SECOND ATTEMPT SHOULD HAVE WORKED**, which is the open thread. `projectFiles` is
 `new Set(fileNames.map(resolve))` (scan.mjs:2358) so it DOES contain the unreadable file, and `sources`
 excludes it — so `projectFiles - sources` names it. It did not fire, which means **scan.mjs's runtime

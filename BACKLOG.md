@@ -150,7 +150,58 @@ today had the same shape — `cargo build` reporting success without rebuilding,
 zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
 nothing. All of them looked like clean answers.
 
-## **`[P1]` REVIEW BEFORE THE PORTS: DOES THE AMBIGUOUS-EDGE RULE LOSE EFFECTS?** (open 2026-08-22)
+## **`[P1]` SETTLED: THE AMBIGUOUS-EDGE RULE TRADED ONE FALSE GREEN FOR ANOTHER** (2026-08-22)
+
+**MY WORRY WAS THE WRONG CHANNEL, AND THE PREMISE WAS FALSE.** `gate --report` never propagates
+EFFECTS: `inferred` is taken off the wire per entry (gate.rs:443) and the only fixpoint is
+`propagate_str` over REASON CLASSES (gate.rs:495); `forbid`/`only`/`allow` are refused on this route.
+So the dropped edge cannot lose an inherited effect — there was none to lose, before or after. My
+effect control could not fire because there was nothing to fire.
+
+**THE SAME DEFECT IS LIVE IN THE REASON CHANNEL:**
+
+    ctrl (a+c)     deny Unknown[dispatch] caller  -> exit 1, row names `caller`
+    amb  (a+b+c)   same policy                    -> exit 0, `policy ✓`     THE FLIP
+
+Adding an unrelated report turns a red verdict green — **the exact shape PART 63 exists to forbid.** I
+closed one route to it and opened another IN THE SAME COMMIT. The drop is safe only when the caller has
+no reason of its own (that case exits 2, withheld); the has-own-reason shape — one callback plus one
+ambiguous call — is the common one, and there the caller loses the inherited `dispatch` class while
+staying ANSWERABLE through its own, so the filter tolerates.
+
+**THE CORRECT RULE, and it needs no second edge set:** an ambiguous callee name contributes NO EDGE but
+MUST contribute `Unknown` + reason class `dispatch` AT THE CALLER'S ENTRY, before the fixpoint — the
+existing CONTRIBUTES precedent (gate.rs:474-492). The vocabulary already sanctions it:
+`ReasonClass::Dispatch` is defined as *"unresolved virtual/dynamic dispatch, **same-name ambiguity**"*
+(policy.rs:28) and `classify` already maps `ambiguous:` to it (policy.rs:91). It closes both flips and
+cannot re-open PART 63's green: the contribution lands only on the fn that OWNS the ambiguous edge,
+naming evidence the merge itself holds (it saw ≥2 declarers), never a class borrowed from another
+function's body.
+
+**AND THE BRANCH I VALIDATED IS DEAD CODE ON REAL REPORTS.** The same-package-first resolution
+(gate.rs:446-448) keys on a `#` in the hash — but a real rust hash is a hex `DefPathHash` with no `#`
+(candor-report/src/lib.rs:219-221), so the package prefix is ALWAYS empty and only hand-authored
+`p#fn` hashes take that branch. **Every fixture I validated against was hand-authored.** The unique-
+declarer fallback is what actually runs in production.
+
+**Old vs new, on this axis:** the bare-name join unioned both `helper`s into one node, so every arm
+fired — fail-CLOSED here, while being the measured false green on answerability. So the trade is real
+and symmetric, and only the entry-contribution rule closes both.
+
+**SAME-REPORT SHAPE TOO:** two same-named units with DIFFERENT hashes inside ONE report lose the edge
+identically (1 -> 0 measured), and that shape is plausibly self-produced — gate.rs:272-273 names
+cfg-paired fns as "the everyday case" of one name, two units. Two entries sharing one hash are fine
+(union, nothing lost).
+
+**PART 63 additions once fixed:** (1) the ctrl/amb pair under `deny Unknown[dispatch] caller`, wanting
+`a+c = 1` naming `caller` and `a+b+c = 1` (today 0), with the unscoped-Exec arm kept as the control
+that proves propagation is exercised at all; (2) a single-report hex-hash pair wanting 1/1 (today 1/0),
+which also covers the dead branch.
+
+**THE PORTS ARE BLOCKED ON THIS.** java and ts were about to copy a rule that trades one cardinal sin
+for another, plus a resolution branch that never executes.
+
+
 
 rust's merge drops an edge entirely when a cross-package callee NAME is declared by more than one
 sibling. The reasoning was that union is unsafe for REASONS — a borrowed reason turns "I cannot say"
@@ -161,21 +212,6 @@ the fix for a false green, in the same commit — the [[feedback-fabrication-fix
 If it IS wrong, the answer the argument actually implies is: union the EFFECTS, refuse to union the
 REASONS. That is not what is implemented, and it must be settled BEFORE three engines copy it —
 finding it after the ports costs four fixes instead of one.
-
-**ATTEMPTED AND UNRESOLVED — three confounded fixtures in a row, which is its own data point about
-how much to trust my next attempt without a control that fires.**
-  1. `deny Exec` over a-helper(Exec) / b-helper(pure) / c-caller: both arms exit 1, but `a#helper`
-     performs Exec DIRECTLY, so the exit says nothing about whether `caller` inherited.
-  2. scoped to package `c`: matched nothing — `fn` is bare `caller`, with no package prefix, so the
-     scope never bound.
-  3. scoped to `caller`: BOTH arms exit 0, including the unique-helper CONTROL that must exit 1. The
-     control not firing means propagation is not being exercised at all.
-
-**What the next attempt needs FIRST: a fixture where the control demonstrably fires** — a caller that
-provably inherits an effect through a report-carried `calls` edge, verified before the ambiguous arm is
-added. Probably needs the callgraph sidecar rather than the report's `calls` alone, since that is the
-difference between the two propagation paths. Do not add the ambiguous arm until the plain one is
-green.
 
 ## **`[P1]` THE FALSE GREEN IS LIVE IN java AND ts — CONFIRMED, SITES LOCATED** (2026-08-22)
 

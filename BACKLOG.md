@@ -180,11 +180,27 @@ attempt.** `unanalyzedUnits` is built from `getSyntacticDiagnostics()`, i.e. fil
 not PARSE, so the natural addition is: any file in `projectFiles` with no `SourceFile` in `sources` is
 one it could not OPEN. Implemented, and the fixture still exited 0.
 
-So the file is NOT missing from the program. **UNVERIFIED HYPOTHESIS for the next attempt: tsc creates
-a SourceFile with EMPTY TEXT for a file it cannot read**, which would make it indistinguishable from a
-genuinely empty file by presence alone and is why every presence-based check passes over it. If so the
-discriminator is the file's text length against its stat size — the point being that the check has to
-be on CONTENT, not on membership, and both my attempts were membership checks.
+**MECHANISM PROVEN 2026-08-22, AND MY HYPOTHESIS WAS WRONG.** Probed the TypeScript API directly on the
+fixture:
+
+    fileNames:        [ a.ts, helper.test.ts ]
+    a.ts              sourceFile=present  textLen=59
+    helper.test.ts    sourceFile=ABSENT
+    syntactic diags:  0
+    fileless diag:    "File '…/helper.test.ts' not found. The file is in the program because:
+                       Root file specified for compilation"
+
+Not an empty-text SourceFile — the SourceFile is genuinely ABSENT, and the evidence tsc offers is a
+FILELESS diagnostic. That matters because `unanalyzedUnits` is built by iterating diagnostics and
+reading `diag.file`, so a diagnostic with NO file is skipped by the `if (!sf) continue` at the top of
+that loop: the one channel carrying the evidence is the one the loop discards.
+
+**AND THE SECOND ATTEMPT SHOULD HAVE WORKED**, which is the open thread. `projectFiles` is
+`new Set(fileNames.map(resolve))` (scan.mjs:2358) so it DOES contain the unreadable file, and `sources`
+excludes it — so `projectFiles - sources` names it. It did not fire, which means **scan.mjs's runtime
+`fileNames` differs from what the tsconfig yields when read directly**. That is the next question, and
+it is narrow: print `fileNames` inside a real scan and compare. Do that BEFORE writing a third fix —
+two have now been written on plausible reasoning and both were inert.
 
 Note the shape: two fixes, both plausible, both inert, and both would have committed clean with a
 green 1440-test battery. Nothing in the suite exercises an unreadable file, which is why the hole is

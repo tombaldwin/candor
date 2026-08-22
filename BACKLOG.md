@@ -95,6 +95,47 @@ remedy. Calibrated by injecting `par_iter` — and the first calibration attempt
 `dirs.par_iter()` call which did NOT COMPILE, so the test never ran and the green proved nothing.
 Threading the state explicitly is still the better fix and is still open.
 
+## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
+
+**THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**
+MEASURED: candor-ts and candor-rust PEEK their excluded sources — ts builds a child tsconfig listing
+every excluded file with `allowJs: true` (`scan.mjs:6959`), rust recurses `scan_one` over the excluded
+set (`scan.rs:2771`) — so those classes come back `peeked: true` and ⟨0.33⟩ cannot fire on them. A ts
+fixture with a `.d.ts`, a test file and an out-of-program stray exits 0, both classes peeked. Only an
+engine that CANNOT READ the excluded file has the case at all.
+
+  · **`[P1]` swift's `build-output` MUST carry `judgedElsewhere` or every SPM project refuses.**
+    `PEEKED_CLASSES` (`main.swift:1805`) excludes `.build/`, so without the producer flag the port turns
+    every project with a build directory red on contact. rust's equivalent already carries it.
+  · **`[P1]` swift's PLATFORM-PRUNED files never enter `excluded` AT ALL** (`#if os(…)`,
+    `main.swift:969-972`) — genuinely unread code disclosed only in prose. A B1-shaped hole sitting
+    directly beside the rung that exists to close B1, and nobody had filed it. It is not fixed by
+    ⟨0.33⟩: the rule keys on `excluded`, and these files are not in it.
+
+**`[P2]` THE CLOSER FOR JAVA — A SOURCE PEEK.** The other engines escape the cost because their peek
+opens what the scan skipped; java's cannot, so `source-without-class` is unpeekable by construction and
+fires on any tree with a stray `.java`. MEASURED: candor-java's own repo reports `source-without-class
+(71)` of 207 sources — fixtures and samples, i.e. the norm, not a broken build; uflexi 93 of 2237. A
+peek that `javac`s the strays into a temp dir and runs java's own classifier turns those `peeked: true`,
+returns repo-root scans to 0, and brings `Deploy.java` back as a NAMED `outOfScope` finding rather than
+a refusal — which is the answer everyone actually wants.
+
+**THE ARGUMENT AGAINST ⟨0.33⟩ SHIPPING WITHOUT THAT CLOSER, worth keeping because it is the honest
+counter-case:** `candor <repo-root> --policy` is the natural first command, and after this rung it
+answers INCOMPLETE on effectively every naive JVM invocation, including fully-built clean projects.
+A gate that always says "incomplete" on first contact trains people to read exit 2 as noise, or to pin
+scans to `build/classes` and stop looking at the one tree where a `Deploy.java` would sit — **B1
+re-opens at the WORKFLOW level while the spec stays sound.** Two things soften it and both are measured:
+a genuine violation still DOMINATES (uflexi under `deny Exec` exits 1, not 2 — the rung converts false
+greens, not real findings), and an unbuilt clone already exited 2 before the rung, so the middle case
+now matches both edges rather than inventing a third.
+
+**Also on record: every narrowing of the rule re-opens B1 by construction.** The annoying case and the
+filed defect are the SAME SCAN SHAPE — an operator-chosen repo-root scan — distinguishable only by the
+content of a file nobody read. An operator-vs-build distinction fails (the motivating scan was
+operator-chosen), scope-covered-unread fails (a global `deny` covers everything), and any ratio that
+tolerates candor-java's own 71 strays tolerates one hostile file 71 times over.
+
 ## ⟨0.33⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN
 
 Tom's ruling (2026-08-21): code the engine admits it never READ must make the gate INCOMPLETE (exit

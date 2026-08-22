@@ -122,108 +122,33 @@ enumerates the gate's exit-2 causes and fails unless each is an arm of the share
 conformance R11 row catches it only when a generated shape happens to exercise the new cause — it did
 here, by luck of the matrix, and four cells is a thin margin to rely on twice.
 
-## **`[P1]` candor-ts: AN UNREADABLE FILE VANISHES FROM EVERY MANIFEST** (measured 2026-08-22)
+## ~~**`[P1]` candor-ts: AN UNREADABLE FILE VANISHES FROM EVERY MANIFEST**~~ **CLOSED 2026-08-22**
 
-MEASURED on a tsconfig fixture, `deny Exec`, one excluded `*.test.ts`:
+An unreadable source reached NO manifest and the gate answered `policy ✓` at exit 0 — `unanalyzed`
+absent, `excluded: []`, stderr reading "2 analyzed, 1 files" (units from the file that WAS readable;
+the other simply gone). MEASURED four-way: rust, java and swift all exit 2 with the file named in
+`unanalyzed`, so this was a ts defect against a three-engine norm, not a family gap. Fixed: a root file
+with no `SourceFile` is now recorded as `source could not be read`, relative path, matching rust.
 
-    readable    -> excluded: [{class: "test-file", peeked: true}]   unanalyzed: absent   exit 0
-    chmod 000   -> excluded: []                                     unanalyzed: absent   exit 0
+**THE PART WORTH KEEPING IS HOW LONG IT TOOK, BECAUSE THE CODE WAS RIGHT ON THE FIRST TRY.** I wrote
+this fix, saw it not fire, reverted it; wrote it again, saw it not fire, reverted it again; and filed a
+conclusion — *"membership checks pass over the file, the discriminator has to be CONTENT"* — that was
+exactly backwards, as guidance for the next attempt.
 
-**The unreadable file is neither `excluded` nor `unanalyzed`.** It is in NO completeness manifest — the
-report describes a world the file is simply not in, and nothing on any channel says a file could not be
-opened. §2's whole point is that absence licenses a purity claim only where the report says the file
-was CONSIDERED; here it does not say anything.
+The fixture was wrong, not the fix. It used `helper.test.ts`, and `fromTsconfig` filters test files out
+of the program (`scan.mjs:1389`), so the file was never in `fileNames` and the check had nothing to
+find. **A negative result from a broken instrument is indistinguishable from a negative result** — and
+I turned two of them into a theory, wrote the theory down as fact, and pointed the next reader at a
+discriminator that does not exist.
 
-**THE MECHANISM, pinned 2026-08-22.** The file IS in the tsconfig program (the `include` glob matches
-it whatever its mode), so the walk skips it at `scan.mjs:1470` — *"analyzed, therefore not excluded"* —
-and it then yields no functions and is never recorded as `unanalyzed` either. It falls BETWEEN the two
-manifests. Run directly, reading the exit code without a pipe:
+What settled it: ONE debug print of what `fileNames` actually held at runtime. A minute of measurement
+against two rounds of confident reasoning that had it inverted.
 
-    all readable    -> exit 0
-    one unreadable  -> exit 0   "wrote 0 effectful functions (2 analyzed, 1 files)"   policy ✓
-
-`2 analyzed, 1 files` is the tell and nobody would read it as one: the count is of UNITS from the file
-that WAS readable, and the second file is simply gone. So the disclosure that would have caught this —
-the analyzed manifest — reports a number that looks entirely healthy.
-
-Worse than the ⟨0.29⟩ cases it resembles, because an unreadable file is an ORDINARY CI condition —
-permissions, a broken symlink, a truncated checkout, a stale artifact mount — not an exotic build
-setting. And note the count moved: `excluded` went from 1 entry to 0, so a consumer diffing manifests
-sees the exclusion DISAPPEAR rather than sees a problem.
-
-**FOUND BY TRYING TO MAKE ⟨0.33⟩ FIRE AND FAILING.** The rule keys on `excluded[].peeked == false`, so
-it cannot fire on a file that never reaches `excluded` — which is exactly the case ⟨0.33⟩ exists for.
-**The ts port is BLOCKED on this**: implementing the rule first would ship a soundness rule that is
-inert in its motivating case, and green suites would say nothing (the ts battery passes 1440/0 with the
-rule in, because nothing exercises it).
-
-**MEASURED FOUR-WAY 2026-08-22 — ts IS ALONE, and I had been assuming the opposite.** One unreadable
-source, `deny Exec`, each engine's own fixture:
-
-    rust   exit 2   unanalyzed: [{path: "src/other.rs", reason: "source failed to read/parse"}]
-    java   exit 2   unanalyzed: [{path: "<ABSOLUTE>",   reason: "class file failed to parse: …"}]
-    swift  exit 2   unanalyzed: [{path: "<ABSOLUTE>",   reason: "source failed to read"}]
-    ts     exit 0   unanalyzed ABSENT, excluded []      "2 analyzed, 1 files" · policy ✓
-
-So this is a ts DEFECT against a three-engine norm, not a family-wide gap — the fix is ts plus a
-conformance row, not four ports. The plan said "add the fixture to all four suites"; the measurement
-said otherwise, which is the argument for measuring before building.
-
-**`[P2]` AND A SECOND FINDING FELL OUT: java and swift emit ABSOLUTE paths in `unanalyzed`, rust emits
-RELATIVE.** The codebase's own `scanRoot` comment says an absolute path in a report records where the
-CI runner's checkout was — so two engines leak that into a published artifact, and the same defect
-produces DIFFERENT BYTES on different machines, which any report-diffing consumer sees as a change.
-Rust's relative form is the one to converge on.
-
-**ATTEMPTED AND REVERTED 2026-08-22 — the obvious fix does not fire, and the reason narrows the next
-attempt.** `unanalyzedUnits` is built from `getSyntacticDiagnostics()`, i.e. files tsc OPENED and could
-not PARSE, so the natural addition is: any file in `projectFiles` with no `SourceFile` in `sources` is
-one it could not OPEN. Implemented, and the fixture still exited 0.
-
-**MECHANISM PROVEN 2026-08-22, AND MY HYPOTHESIS WAS WRONG.** Probed the TypeScript API directly on the
-fixture:
-
-    fileNames:        [ a.ts, helper.test.ts ]
-    a.ts              sourceFile=present  textLen=59
-    helper.test.ts    sourceFile=ABSENT
-    syntactic diags:  0
-    fileless diag:    "File '…/helper.test.ts' not found. The file is in the program because:
-                       Root file specified for compilation"
-
-Not an empty-text SourceFile — the SourceFile is genuinely ABSENT, and the evidence tsc offers is a
-FILELESS diagnostic. That matters because `unanalyzedUnits` is built by iterating diagnostics and
-reading `diag.file`, so a diagnostic with NO file is skipped by the `if (!sf) continue` at the top of
-that loop: the one channel carrying the evidence is the one the loop discards.
-
-**CONFIRMED ON A NON-TEST FILE 2026-08-22, and two of my own readings along the way were wrong.**
-The first fixture used `helper.test.ts`, and `fromTsconfig` filters test files out of the program by
-design (scan.mjs:1389) — so "unreadable" and "excluded-as-a-test-file" were confounded. Re-run with an
-ordinary `src/lib.ts`, report read DIRECTLY rather than through a glob:
-
-    analyzed:   {count: 2}      <- from a.ts alone; stderr says "2 analyzed, 1 files"
-    unanalyzed: absent
-    excluded:   []
-    exit 0, policy ✓
-
-The defect is real and independent of the test filter. Twice I read an empty result from a mistyped
-glob as "the scan collapsed" — the report was fine and my reader was wrong. **Read the artifact by its
-actual path; a glob that matches nothing looks exactly like a program that produced nothing.**
-
-**AND THE SECOND ATTEMPT SHOULD HAVE WORKED**, which is the open thread. `projectFiles` is
-`new Set(fileNames.map(resolve))` (scan.mjs:2358) so it DOES contain the unreadable file, and `sources`
-excludes it — so `projectFiles - sources` names it. It did not fire, which means **scan.mjs's runtime
-`fileNames` differs from what the tsconfig yields when read directly**. That is the next question, and
-it is narrow: print `fileNames` inside a real scan and compare. Do that BEFORE writing a third fix —
-two have now been written on plausible reasoning and both were inert.
-
-Note the shape: two fixes, both plausible, both inert, and both would have committed clean with a
-green 1440-test battery. Nothing in the suite exercises an unreadable file, which is why the hole is
-there at all.
-
-Sibling hazard already filed above: candor-swift's platform-pruned files (`#if os(…)`) never enter
-`excluded` either. Two engines, same shape — worth asking of rust and java before their ports too:
-**does an unreadable/skipped file reach a manifest AT ALL, or only the ones the walk chose to skip
-deliberately?**
+**The rule this earns, beside the ones already in [[feedback-measure-directly]]: when a change does not
+fire, prove the FIXTURE reaches the code before concluding anything about the code.** Every instance
+today had the same shape — `cargo build` reporting success without rebuilding, `swift test` running
+zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
+nothing. All of them looked like clean answers.
 
 ## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
 

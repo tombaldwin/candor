@@ -157,6 +157,24 @@ it cannot fire on a file that never reaches `excluded` — which is exactly the 
 inert in its motivating case, and green suites would say nothing (the ts battery passes 1440/0 with the
 rule in, because nothing exercises it).
 
+**MEASURED FOUR-WAY 2026-08-22 — ts IS ALONE, and I had been assuming the opposite.** One unreadable
+source, `deny Exec`, each engine's own fixture:
+
+    rust   exit 2   unanalyzed: [{path: "src/other.rs", reason: "source failed to read/parse"}]
+    java   exit 2   unanalyzed: [{path: "<ABSOLUTE>",   reason: "class file failed to parse: …"}]
+    swift  exit 2   unanalyzed: [{path: "<ABSOLUTE>",   reason: "source failed to read"}]
+    ts     exit 0   unanalyzed ABSENT, excluded []      "2 analyzed, 1 files" · policy ✓
+
+So this is a ts DEFECT against a three-engine norm, not a family-wide gap — the fix is ts plus a
+conformance row, not four ports. The plan said "add the fixture to all four suites"; the measurement
+said otherwise, which is the argument for measuring before building.
+
+**`[P2]` AND A SECOND FINDING FELL OUT: java and swift emit ABSOLUTE paths in `unanalyzed`, rust emits
+RELATIVE.** The codebase's own `scanRoot` comment says an absolute path in a report records where the
+CI runner's checkout was — so two engines leak that into a published artifact, and the same defect
+produces DIFFERENT BYTES on different machines, which any report-diffing consumer sees as a change.
+Rust's relative form is the one to converge on.
+
 **ATTEMPTED AND REVERTED 2026-08-22 — the obvious fix does not fire, and the reason narrows the next
 attempt.** `unanalyzedUnits` is built from `getSyntacticDiagnostics()`, i.e. files tsc OPENED and could
 not PARSE, so the natural addition is: any file in `projectFiles` with no `SourceFile` in `sources` is

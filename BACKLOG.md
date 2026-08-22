@@ -2389,8 +2389,50 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   reported and the manifest requirement is not — never dropping the effect, which would trade an
   over-report for silence.
 
-- **[P2 — opened 2026-08-07] The ⟨0.24⟩ byte-equality MUST fails on a multi-crate WORKSPACE: two
-  same-named violating functions merge into one on the `gate --report` route.**
+- **[P1 — CARDINAL SIN, re-graded 2026-08-22. WAS filed as a P2 count discrepancy; it is a FALSE GREEN.]
+  `gate --report` MERGES MEMBER REPORTS BY BARE `fn`, and SPEC §2.2 already forbids exactly that.**
+
+  **REPRODUCED with matched candor-scan/candor-query 0.31.0:**
+
+      gate --report <a>        -> exit 2   (correctly refuses the scoped rule)
+      gate --report <a and b>  -> exit 0   "policy ✓"
+
+  **Adding an unrelated sibling report turns a refusal into a certification.** The filter reads the
+  SIBLING's Unknown-class set through the name join, sees a class the rule does not deny, and tolerates.
+  The same join was also measured FABRICATING a violation — `a::main` charged with a class it inherits
+  from `b::util` purely by name. Needs a foreign or degraded member report to reach (a self-produced
+  rust set always carries the callee in `calls`, SPEC.md:1836-1838) — and §3.1 says the verb serves
+  exactly those.
+
+  **THE SPEC ALREADY SAYS SO.** SPEC.md:288-290: a consumer *"MUST join across reports by `hash`, never
+  by bare `fn` (names may legitimately repeat across packages)"*. candor-query violates it at
+  gate.rs:148 + `report_signature` (gate.rs:380-434), which keys NINE accumulators by bare `fn` — its
+  own comment calls a duplicate key "malformed input", which is false on a workspace. candor-ts is
+  identical (query-core.mjs:787+, policy.mjs:53-91).
+
+  **THE FIX IS OPTION E: key the merge and the fixpoint by entry `hash`**, surface that identity on the
+  verdict row, and extend the shared serializer sort — `(rule, detail)` at candor-report/src/lib.rs:1067
+  ties between the twin rows, and the two routes insert in different orders, so without it byte-equality
+  re-breaks exactly as ⟨0.31⟩'s `outOfScope` did. candor-sarif also fingerprints on `fn|rule|effects`
+  (integrations/github/candor-sarif:227-233), so one GitHub alert currently hides the other.
+
+  **THE OBSTACLE, to resolve deliberately:** SPEC.md:1919-1923 classes `hash` as a DECORATION that
+  "carr[ies] no claim a verdict reads". Option E requires a verdict to read it. That clause must be
+  re-scoped for the multi-report route before E can be implemented honestly.
+
+  **THREE OPTIONS THAT LOOKED REASONABLE AND ARE NOT.** Recorded because each fails for a different
+  reason worth remembering:
+  · **dedupe in the scan route** — cheap, and leaves the fabricating merge in place.
+  · **qualify `fn` with the crate** — does NOT restore per-function identity. MEASURED: one crate with
+    an inherent `impl A { fn go }` and an `impl T for A { fn go }` emits TWO entries, both `fn: "A::go"`
+    and both `hash: "ti#A::go"`, already unioned by the scan. `fn` is not unique even within ONE report.
+  · **put `package` on the verdict row** — my own recommendation, and unsound. It stamps identity on the
+    fabricated row rather than preventing it, and it is ill-defined on the REFERENCE engine: candor-java
+    emits plural `packages` (one report spans several), so "the report's package" is not single-valued.
+    The per-entry `hash` prefix is single-valued in all four.
+
+  (original filing) The ⟨0.24⟩ byte-equality MUST fails on a multi-crate WORKSPACE: two
+  same-named violating functions merge into one on the `gate --report` route.
 
   SPEC §3.3.1 requires `gate --report <it> --policy P` to produce a verdict BYTE-EQUAL to
   `scan --policy P`'s. Measured over 43 real projects (9 rust, 9 ts, 17 swift, 8 java jars): **41 are

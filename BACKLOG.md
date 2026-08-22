@@ -2433,6 +2433,33 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   cross-package edge that happens to resolve to the right sibling works by luck, and one that resolves
   to the wrong same-named function invents a reach. Neither is distinguishable from the outside.
 
+  **PROTOTYPED 2026-08-22 — THE FIX WORKS AND IS NOT A KEY CHANGE. Reverted, with what it taught.**
+  Keying the merge by `hash` and resolving each report's `calls` against its own package (falling back
+  to a UNIQUE declarer across the set, and leaving an ambiguous cross-package name with NO edge) CLOSED
+  the false green: `a` alone exits 2 and `a` beside the sibling now also exits 2, where it had exited 0.
+
+  It broke two other things, and both are the actual work:
+  · **`fn` in the verdict row became the KEY.** The gate route emitted
+    `regex_cli#cmd::generate::run` where the scan route emits `cmd::generate::run`, so §3.3.1 byte
+    equality broke in the other direction. The row needs the DISPLAY name plus identity as a separate
+    field, on BOTH routes — which is the half of option E that has to reach the scan route too, not
+    only the merge.
+  · **`all` also feeds POLICY SCOPE MATCHING**, so hash-keyed names would stop `deny Exec app::`
+    matching `pkg#app::…` — a FALSE GREEN introduced by the false-green fix. That is the shape
+    [[feedback-fabrication-fixes-cause-misses]] names, caught here only because the byte-equality
+    comparison was run immediately.
+
+  So the structure the port needs is (hash, name) PAIRS through the merge: hash for identity and the
+  join, name for scope matching and display. Not a key swap.
+
+  **THE OTHER HALF OF WHY UNION IS WRONG, and it is not "names collide".** The measured false green was
+  not two functions' effects merging. `a::main` had an `Unknown` with NO reachable reason — UNANSWERABLE,
+  so the gate refused. The sibling gave that NAME a reason (`callback:` → class indirect), the filter
+  saw {indirect} ∌ dispatch, and tolerated. **Union is safe for EFFECTS and unsafe for REASONS**: adding
+  effects can only add violations, but adding a reason converts "I cannot say" into "I checked, it's
+  fine". Same shape as [[candor-unanswerable-key]], one level up — which is why an ambiguous edge must
+  contribute NOTHING rather than the union of its candidates.
+
   **THE OBSTACLE, to resolve deliberately:** SPEC.md:1919-1923 classes `hash` as a DECORATION that
   "carr[ies] no claim a verdict reads". Option E requires a verdict to read it. That clause must be
   re-scoped for the multi-report route before E can be implemented honestly.

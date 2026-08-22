@@ -150,6 +150,36 @@ today had the same shape — `cargo build` reporting success without rebuilding,
 zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
 nothing. All of them looked like clean answers.
 
+## **`[P1]` THE FALSE GREEN IS LIVE IN java AND ts — CONFIRMED, SITES LOCATED** (2026-08-22)
+
+Measured against conformance PART 63's own fixture, and it reproduces CROSS-ENGINE (rust-shaped
+reports gated by java and ts, which §3.1 puts in contract):
+
+    rust   a alone=2   a+b=2    fixed
+    java   a alone=2   a+b=0    CARDINAL SIN, live
+    ts     a alone=2   a+b=0    CARDINAL SIN, live
+    swift  not exercised — needs a swift-shaped fixture
+
+**THE SITES, both keying on bare `fn` with the same "a duplicate key is malformed input" comment rust
+carried:**
+  · java — `Policy.gateInputFromReport` (Policy.java:984), `String fn = e.fn()` at :993 feeding
+    `inferred.merge(fn, …)`, `edges`, `hosts`, `cmds`, … Prerequisite CONFIRMED: `Effector` already
+    carries `hash` (Effector.java:32), so the key is available without a format change.
+    Note `fix`'s own map (Query.java:4646) uses `put`, not `merge` — a duplicate name OVERWRITES there,
+    which is worse than rust's union and wants checking as part of the same pass.
+  · ts — `query-core.mjs:787+` concatenating entries across sibling reports, feeding maps keyed by
+    `f.fn` (`policy.mjs:53-91`, `:597-604`, `:744-753`).
+
+**THE RECIPE IS RUST'S, INCLUDING ITS FOUR LEAKS.** Land the key→name map first as a VERIFIED NO-OP
+(identity display, corpus byte-equal), then switch the key. Rust's fix leaked into four readers and
+every one failed QUIETLY: policy scope matching (`deny Exec app::` silently stopped matching
+`pkg#app::…` — a false green introduced by the false-green fix), the verdict row (`fn` became the unit
+key, breaking §3.3.1 the other way), `reason_classes` (`--class` selected nothing), and the advisory
+verbs (`unverified --strict` exited 0 over a report the gate refused at 2). Expect the same four.
+
+**Acceptance is already written**: PART 63 asserts rust and MEASURES java and ts, so a correct port
+flips its own row from CONFIRMED DEFECTIVE to OK, and the two skip-baseline lines come out.
+
 ## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**

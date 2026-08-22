@@ -122,6 +122,34 @@ enumerates the gate's exit-2 causes and fails unless each is an arm of the share
 conformance R11 row catches it only when a generated shape happens to exercise the new cause — it did
 here, by luck of the matrix, and four cells is a thin margin to rely on twice.
 
+## **`[P1]` candor-ts: AN UNREADABLE FILE VANISHES FROM EVERY MANIFEST** (measured 2026-08-22)
+
+MEASURED on a tsconfig fixture, `deny Exec`, one excluded `*.test.ts`:
+
+    readable    -> excluded: [{class: "test-file", peeked: true}]   unanalyzed: absent   exit 0
+    chmod 000   -> excluded: []                                     unanalyzed: absent   exit 0
+
+**The unreadable file is neither `excluded` nor `unanalyzed`.** It is in NO completeness manifest — the
+report describes a world the file is simply not in, and nothing on any channel says a file could not be
+opened. §2's whole point is that absence licenses a purity claim only where the report says the file
+was CONSIDERED; here it does not say anything.
+
+Worse than the ⟨0.29⟩ cases it resembles, because an unreadable file is an ORDINARY CI condition —
+permissions, a broken symlink, a truncated checkout, a stale artifact mount — not an exotic build
+setting. And note the count moved: `excluded` went from 1 entry to 0, so a consumer diffing manifests
+sees the exclusion DISAPPEAR rather than sees a problem.
+
+**FOUND BY TRYING TO MAKE ⟨0.33⟩ FIRE AND FAILING.** The rule keys on `excluded[].peeked == false`, so
+it cannot fire on a file that never reaches `excluded` — which is exactly the case ⟨0.33⟩ exists for.
+**The ts port is BLOCKED on this**: implementing the rule first would ship a soundness rule that is
+inert in its motivating case, and green suites would say nothing (the ts battery passes 1440/0 with the
+rule in, because nothing exercises it).
+
+Sibling hazard already filed above: candor-swift's platform-pruned files (`#if os(…)`) never enter
+`excluded` either. Two engines, same shape — worth asking of rust and java before their ports too:
+**does an unreadable/skipped file reach a manifest AT ALL, or only the ones the walk chose to skip
+deliberately?**
+
 ## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**

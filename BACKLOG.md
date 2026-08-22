@@ -157,6 +157,21 @@ it cannot fire on a file that never reaches `excluded` — which is exactly the 
 inert in its motivating case, and green suites would say nothing (the ts battery passes 1440/0 with the
 rule in, because nothing exercises it).
 
+**ATTEMPTED AND REVERTED 2026-08-22 — the obvious fix does not fire, and the reason narrows the next
+attempt.** `unanalyzedUnits` is built from `getSyntacticDiagnostics()`, i.e. files tsc OPENED and could
+not PARSE, so the natural addition is: any file in `projectFiles` with no `SourceFile` in `sources` is
+one it could not OPEN. Implemented, and the fixture still exited 0.
+
+So the file is NOT missing from the program. **UNVERIFIED HYPOTHESIS for the next attempt: tsc creates
+a SourceFile with EMPTY TEXT for a file it cannot read**, which would make it indistinguishable from a
+genuinely empty file by presence alone and is why every presence-based check passes over it. If so the
+discriminator is the file's text length against its stat size — the point being that the check has to
+be on CONTENT, not on membership, and both my attempts were membership checks.
+
+Note the shape: two fixes, both plausible, both inert, and both would have committed clean with a
+green 1440-test battery. Nothing in the suite exercises an unreadable file, which is why the hole is
+there at all.
+
 Sibling hazard already filed above: candor-swift's platform-pruned files (`#if os(…)`) never enter
 `excluded` either. Two engines, same shape — worth asking of rust and java before their ports too:
 **does an unreadable/skipped file reach a manifest AT ALL, or only the ones the walk chose to skip

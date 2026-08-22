@@ -95,6 +95,33 @@ remedy. Calibrated by injecting `par_iter` — and the first calibration attempt
 `dirs.par_iter()` call which did NOT COMPILE, so the test never ran and the green proved nothing.
 Threading the state explicitly is still the better fix and is still open.
 
+## **`[P1]` A NEW EXIT-2 CAUSE MUST FAIL LOUDLY IF THE ADVISORY SIBLINGS DO NOT SHARE IT** (2026-08-22)
+
+⟨0.33⟩ leaked into FOUR readers of gate state before conformance had them all, and **every one failed
+QUIETLY** — which is why none was caught by running the thing and looking at it:
+
+    policy scope matching   `deny Exec app::` silently stopped matching `pkg#app::…`  (a FALSE GREEN
+                            introduced by the false-green fix)
+    the verdict row         `fn` became the unit KEY, breaking §3.3.1 byte-equality the other way
+    reason_classes          `--class dispatch` selected NOTHING, which reads as "nothing to report"
+    the advisory verbs      `unverified --strict` exited 0 over a report the gate refused at 2
+
+**THE LAST ONE IS THE ARGUMENT FOR A MECHANISM.** `ReportCompleteness#incomplete()` already carried an
+`outOfScope` arm added at ⟨0.30⟩ FOR EXACTLY THIS REASON, with a comment recording that the gate had
+moved and the advisory siblings were left behind — *"MEASURED, the gate exited 2 while `unverified
+--strict` answered PROVABLY clean at 0 over the same report."* I read that comment WHILE adding the
+⟨0.33⟩ arm beside it. The codebase had documented the failure, the fix, and the fact that it recurs,
+and it recurred anyway. **A note telling the next person to remember is not a mechanism** — the same
+lesson as [[feedback-documented-limitation-is-not-measured]], one level up: a documented RECURRENCE
+reads as handled.
+
+⟨0.24⟩ already binds this ("an advisory verb must never be LESS sensitive to incompleteness than the
+gate over the same bytes … `unverified`, `fix-gate` and any later sibling"), and R11 asserts the law
+over engines. What is missing is a check that fires when a NEW cause is added: something that
+enumerates the gate's exit-2 causes and fails unless each is an arm of the shared predicate. The
+conformance R11 row catches it only when a generated shape happens to exercise the new cause — it did
+here, by luck of the matrix, and four cells is a thin margin to rely on twice.
+
 ## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**

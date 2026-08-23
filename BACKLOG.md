@@ -97,7 +97,7 @@ Threading the state explicitly is still the better fix and is still open.
 
 ## **`[P1]` A NEW EXIT-2 CAUSE MUST FAIL LOUDLY IF THE ADVISORY SIBLINGS DO NOT SHARE IT** (2026-08-22)
 
-⟨0.33⟩ leaked into FOUR readers of gate state before conformance had them all, and **every one failed
+⟨0.32⟩ leaked into FOUR readers of gate state before conformance had them all, and **every one failed
 QUIETLY** — which is why none was caught by running the thing and looking at it:
 
     policy scope matching   `deny Exec app::` silently stopped matching `pkg#app::…`  (a FALSE GREEN
@@ -110,7 +110,7 @@ QUIETLY** — which is why none was caught by running the thing and looking at i
 `outOfScope` arm added at ⟨0.30⟩ FOR EXACTLY THIS REASON, with a comment recording that the gate had
 moved and the advisory siblings were left behind — *"MEASURED, the gate exited 2 while `unverified
 --strict` answered PROVABLY clean at 0 over the same report."* I read that comment WHILE adding the
-⟨0.33⟩ arm beside it. The codebase had documented the failure, the fix, and the fact that it recurs,
+⟨0.32⟩ arm beside it. The codebase had documented the failure, the fix, and the fact that it recurs,
 and it recurred anyway. **A note telling the next person to remember is not a mechanism** — the same
 lesson as [[feedback-documented-limitation-is-not-measured]], one level up: a documented RECURRENCE
 reads as handled.
@@ -243,12 +243,12 @@ verbs (`unverified --strict` exited 0 over a report the gate refused at 2). Expe
 **Acceptance is already written**: PART 63 asserts rust and MEASURES java and ts, so a correct port
 flips its own row from CONFIRMED DEFECTIVE to OK, and the two skip-baseline lines come out.
 
-## ⟨0.33⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
+## ⟨0.32⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**
 MEASURED: candor-ts and candor-rust PEEK their excluded sources — ts builds a child tsconfig listing
 every excluded file with `allowJs: true` (`scan.mjs:6959`), rust recurses `scan_one` over the excluded
-set (`scan.rs:2771`) — so those classes come back `peeked: true` and ⟨0.33⟩ cannot fire on them. A ts
+set (`scan.rs:2771`) — so those classes come back `peeked: true` and ⟨0.32⟩ cannot fire on them. A ts
 fixture with a `.d.ts`, a test file and an out-of-program stray exits 0, both classes peeked. Only an
 engine that CANNOT READ the excluded file has the case at all.
 
@@ -258,7 +258,7 @@ engine that CANNOT READ the excluded file has the case at all.
   · **`[P1]` swift's PLATFORM-PRUNED files never enter `excluded` AT ALL** (`#if os(…)`,
     `main.swift:969-972`) — genuinely unread code disclosed only in prose. A B1-shaped hole sitting
     directly beside the rung that exists to close B1, and nobody had filed it. It is not fixed by
-    ⟨0.33⟩: the rule keys on `excluded`, and these files are not in it.
+    ⟨0.32⟩: the rule keys on `excluded`, and these files are not in it.
 
 **`[P2]` THE CLOSER FOR JAVA — A SOURCE PEEK.** The other engines escape the cost because their peek
 opens what the scan skipped; java's cannot, so `source-without-class` is unpeekable by construction and
@@ -268,7 +268,7 @@ peek that `javac`s the strays into a temp dir and runs java's own classifier tur
 returns repo-root scans to 0, and brings `Deploy.java` back as a NAMED `outOfScope` finding rather than
 a refusal — which is the answer everyone actually wants.
 
-**THE ARGUMENT AGAINST ⟨0.33⟩ SHIPPING WITHOUT THAT CLOSER, worth keeping because it is the honest
+**THE ARGUMENT AGAINST ⟨0.32⟩ SHIPPING WITHOUT THAT CLOSER, worth keeping because it is the honest
 counter-case:** `candor <repo-root> --policy` is the natural first command, and after this rung it
 answers INCOMPLETE on effectively every naive JVM invocation, including fully-built clean projects.
 A gate that always says "incomplete" on first contact trains people to read exit 2 as noise, or to pin
@@ -284,7 +284,7 @@ content of a file nobody read. An operator-vs-build distinction fails (the motiv
 operator-chosen), scope-covered-unread fails (a global `deny` covers everything), and any ratio that
 tolerates candor-java's own 71 strays tolerates one hostile file 71 times over.
 
-## ⟨0.33⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN
+## ⟨0.32⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN
 
 Tom's ruling (2026-08-21): code the engine admits it never READ must make the gate INCOMPLETE (exit
 2), not pass. Closes B1 and the execa/axios item together — both were `excluded[].peeked == false`

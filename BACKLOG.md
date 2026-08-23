@@ -195,6 +195,30 @@ which is what the reporter already tried, and is the spelling everyone will gues
 Four-way: the same prefix rule is in java's `Policy.scopeMatches` (measured earlier today at
 Policy.java:1645). Whatever is decided binds all four.
 
+## ⟨0.32⟩ REMAINING GAPS — the rust unread half, with its plumbing MEASURED (2026-08-23)
+
+**rust's unread half: the verdict change is trivial, the plumbing is the work, and I twice guessed the
+plumbing wrong before looking.** Recorded so the next attempt is mechanical.
+
+  · VERDICT (done and reverted twice, both times correct):
+    `candor-report/src/lib.rs` `gate_verdict_json_impl` — add `unpeeked: &[String]` and extend
+    `let incomplete = … || !unpeeked.is_empty()`. FOUR call sites plus the `v31` public wrapper need
+    the argument; three of them end with a TRAILING COMMA before `)`, which a naive `)` → `, &[])`
+    rewrite mangles into `, &[])` on its own line. Add the arg to the last argument line, not the
+    closing paren.
+  · PLUMBING (this is what I got wrong): `write_gate_json(exit_code)` takes NO data — it reads
+    everything from PROCESS-GLOBAL statics (`GATE_JSON_PATH`, `GATE_ANALYZED`, `GATE_UNANALYZED`).
+    Neither `excluded` nor a gate-configured flag is in scope there, so the port needs a
+    **`GATE_UNPEEKED` static recorded where `excluded` is built**, mirroring `GATE_UNANALYZED`. Same
+    process-global gate-state shape [[candor-peek-accumulator-vein]] already documents for this engine.
+  · The two conditions to apply at the RECORDING site, both earned in java: skip classes carrying
+    `judged_elsewhere`, and record nothing unless the peek RAN (`peeked: false` also means nothing was
+    asked). java's fix keys the second on `outOfScope` being present.
+
+**ts's unread half and swift's merge half** are untouched. ts's site is `scan.mjs:7764`
+(`const incomplete = …`), with `envelope.excluded` already in scope there — smaller than rust's.
+swift's merge half needs a swift-shaped fixture, since PART 63's reports are Rust-shaped.
+
 ## RULED 2026-08-23: `released-floor` STAYS RED UNTIL THE ⟨0.32⟩ CUT — no hotfix-tag channel
 
 The job pins itself to the latest released spec tag (`conformance.yml:235`) and a tag is IMMUTABLE, so

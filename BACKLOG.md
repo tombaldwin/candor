@@ -235,9 +235,34 @@ spans printed instead of the named function being traced. `policy`, `where` and 
 correctly in the same session, so it is isolated to `explain`. NOT yet reproduced here — the report is
 against the dylint/cargo-candor front end rather than candor-scan.
 
-**Note the shape**: a verb that answers identically for a nonexistent name is the `path <fn> <typo'd
-Effect>` defect again (closed today as PART 61) in a different verb — an argument that binds nothing,
-scored as an answer. Worth asking of every verb that takes a name, not just this one.
+**LIKELY CAUSE FOUND BY READING, NOT YET REPRODUCED — and it is the reporter's OWN cache finding
+pointing back at us.** The lint DOES filter on the query (`src/lib.rs:2970`, `.filter(|f| …
+def_path_str(…).contains(query))`, with an empty-targets branch), so the filter is not the bug. But
+`cargo-candor`'s `lint_fresh` (:471-479) forces freshness like this:
+
+    out="$(env "$@" cargo dylint --lib-path "$LIB" 2>&1 || true)"
+    if ! grep -qE '^ *(Compiling|Checking) ' <<<"$out"; then
+      rm -rf target/dylint            # <- clears the LINT DRIVER, not the analysed crate
+      out="$(env "$@" cargo dylint --lib-path "$LIB" 2>&1 || true)"
+
+`rm -rf target/dylint` invalidates the dylint driver; cargo's CHECK cache for the crate under analysis
+survives, so the retry can return cached output too. And `CANDOR_EXPLAIN` changing invalidates nothing,
+because env vars are not part of cargo's fingerprint unless declared. That produces exactly the
+reported symptom: identical bytes for two different real functions and for a name that does not exist,
+all of them whichever run populated the cache.
+
+**The reporter's own CI fix is the right invalidation** — `touch src/lib.rs src/main.rs`, i.e. the
+crate roots — and they found it independently for their gate without knowing we had the same bug in
+`lint_fresh`. Their report and its remedy are the same defect seen from both sides.
+
+Note also the two `|| true`s: a lint that FAILS TO RUN is swallowed and its output treated as data,
+which is the gate hazard filed above, inside our own tooling.
+
+**Note the shape too**: a verb that answers identically for a nonexistent name is the `path <fn>
+<typo'd Effect>` defect again (closed today as PART 61) in a different verb — an argument that binds
+nothing, scored as an answer. Worth asking of every verb that takes a name. If the cache diagnosis is
+right, `explain` ALSO needs a not-found branch: a query matching no function should say so, not print
+a previous query's answer.
 
 ## `[P3]` `--include-tests` and cfg(test) — a documented caveat, not a bug
 

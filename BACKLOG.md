@@ -173,6 +173,19 @@ violation it exists to catch will now never fire. A rule that cries wolf gets re
 rule is a silent under-report with no disclosure anywhere. Same shape as
 [[candor-oracle-disclosure-recall]]: an alarm nobody trusts is not an alarm.
 
+**AND THE UNDER-REPORT IS NOT JUST "THIS REPORTER DELETED THE RULE"** (added by the reporter, and it
+generalises the item): anyone with an `app`, `api` or `db` layer gets the same experience, and the two
+available responses are DELETE the rule or WIDEN the scope until it stops firing. Both end in the same
+place, and **neither leaves a trace in the policy file that a boundary is no longer checked.** So the
+population of silently-unchecked boundaries grows with adoption, invisibly. That is a stronger argument
+than the false-positive count and it is why this sits at P1.
+
+**`app::` FAILING SILENTLY IS THE WORST OF THE THREE OPTIONS.** It could match exactly (what everyone
+expects), or error as an unsupported spelling, or — as today — parse to `["app"]` and quietly behave as
+`app`. A scope spelling that has no effect should AT MINIMUM be disclosed: ⟨0.24⟩ §3.1 already rules
+that an unanswerable condition must be disclosed rather than scored, and a scope token that segments
+away is exactly that. Even before the rung lands, the parser could say so.
+
 **Fix shape, and it needs a ruling because it is a contract change:** the reporter suggests matching
 only on `P == L` or `P.startsWith(L + "::")`. That would change existing verdicts for anyone relying
 on the prefix behaviour (`domain` matching `domain_service`), so it is a rung, not a patch. A cheaper
@@ -181,6 +194,35 @@ which is what the reporter already tried, and is the spelling everyone will gues
 
 Four-way: the same prefix rule is in java's `Policy.scopeMatches` (measured earlier today at
 Policy.java:1645). Whatever is decided binds all four.
+
+## **`[P1]` A CI GATE CAN PASS BECAUSE THE ANALYSIS NEVER RAN — ship `gate --ci`** (field, 2026-08-23)
+
+Contributed from the ebman adoption, and it is aimed straight at the "a gate you can trust" claim. The
+integration they nearly shipped:
+
+    out=$(CANDOR_POLICY=.candor/policy cargo dylint --lib-path "$LIB" 2>&1 || true)
+    if echo "$out" | grep -qE "AS-EFF-00[689]"; then exit 1; fi
+
+**That gate passes unconditionally if the lint fails to RUN** — missing lib, compile error, driver
+mismatch. No AS-EFF lines, grep finds nothing, green tick. Caught only because they run a deliberate
+violation through every gate they add, which is the habit this project calls calibration.
+
+Two more, both silent, both cache-related:
+  · `rust-cache` restores check artefacts, so a cached `cargo dylint` prints "Finished" and re-runs
+    NOTHING — the gate then passes on analysis from BEFORE the change under review. `touch` the crate
+    roots first.
+  · "Checking &lt;crate&gt;" is therefore NOT proof of execution unless the re-analysis is forced.
+
+**THE ROOT SHAPE, and it is ours to fix, not theirs: the useful signal is on STDOUT while the exit code
+is what CI reads, and the two disagree.** Every integrator has to reconstruct the same three checks —
+did it run, did it re-run, did it find anything — and each is silent when wrong. That is the same
+family as reading `$?` after a pipe ([[feedback-measure-directly]]): a proxy standing in for the
+signal, indistinguishable from success when it breaks.
+
+**`cargo candor gate --ci` should own all three** and exit non-zero on any of them. We ship
+`adopt/` and a SARIF action for the GitHub path; the dylint path has no equivalent, so every user
+hand-rolls it and inherits the whole class. Their working shape is in the message and worth lifting
+verbatim as the interim doc.
 
 ## **`[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT** — reported from the field
 

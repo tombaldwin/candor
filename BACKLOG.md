@@ -150,6 +150,61 @@ today had the same shape — `cargo build` reporting success without rebuilding,
 zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
 nothing. All of them looked like clean answers.
 
+## **`[P1]` A POLICY SCOPE HAS NO WAY TO SAY "EXACTLY THIS SEGMENT"** — reported from the field, reproduced
+
+Routed in from the ebman CI adoption (candor-scan 0.26.0, tombaldwin/ebman @ 8ca6e31) and REPRODUCED
+here on a three-line fixture with **no `app` module in the tree at all**:
+
+    forbid aws -> app       -> exit 1, "reaches into a forbidden layer (via `dep::application_name`)"
+    forbid aws -> app::     -> exit 1, identical
+
+**It is not a broken matcher — it is a DESIGNED prefix rule with no escape hatch.** `scope_matches`
+(candor-classify/src/policy.rs:663-673) matches the LAST scope segment by `starts_with`, and the doc
+comment above it says so deliberately. `name_segments` (:624) splits on `.`/`:` and DROPS EMPTY parts,
+so `app::` segments to exactly `["app"]` — writing the separator cannot anchor it, which the reporter
+deduced from behaviour without seeing the source.
+
+So a user who wants an exact segment match has NO WAY TO EXPRESS ONE. That is the defect: not the
+prefix rule, the absence of an alternative to it.
+
+**THE FIELD COST IS THE POINT, and it is the cardinal sin one level up.** 14 false AS-EFF-009s on
+honest AWS SDK calls, so the rule was DELETED from ebman's policy — meaning the genuine `aws -> app`
+violation it exists to catch will now never fire. A rule that cries wolf gets removed, and a removed
+rule is a silent under-report with no disclosure anywhere. Same shape as
+[[candor-oracle-disclosure-recall]]: an alarm nobody trusts is not an alarm.
+
+**Fix shape, and it needs a ruling because it is a contract change:** the reporter suggests matching
+only on `P == L` or `P.startsWith(L + "::")`. That would change existing verdicts for anyone relying
+on the prefix behaviour (`domain` matching `domain_service`), so it is a rung, not a patch. A cheaper
+alternative preserving both: keep prefix as the default and make a TRAILING `::` mean exact-segment —
+which is what the reporter already tried, and is the spelling everyone will guess.
+
+Four-way: the same prefix rule is in java's `Policy.scopeMatches` (measured earlier today at
+Policy.java:1645). Whatever is decided binds all four.
+
+## **`[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT** — reported from the field
+
+    cargo candor explain util::config_dir              -> dumps aws::eb::clone_env spans
+    cargo candor explain ui::shell::draw_shell         -> identical output
+    cargo candor explain definitely_not_a_function_xyz -> identical output
+
+Same bytes for two different real functions and for a name that does not exist. Looks like raw lint
+spans printed instead of the named function being traced. `policy`, `where` and `path` all behaved
+correctly in the same session, so it is isolated to `explain`. NOT yet reproduced here — the report is
+against the dylint/cargo-candor front end rather than candor-scan.
+
+**Note the shape**: a verb that answers identically for a nonexistent name is the `path <fn> <typo'd
+Effect>` defect again (closed today as PART 61) in a different verb — an argument that binds nothing,
+scored as an answer. Worth asking of every verb that takes a name, not just this one.
+
+## `[P3]` `--include-tests` and cfg(test) — a documented caveat, not a bug
+
+With `--include-tests`, 102 ebman test functions report Clipboard; all 102 are the `#[cfg(not(test))]`
+arm of a `yank()` helper, i.e. precisely the arm compiled OUT under test. Correct for a syntactic
+scanner and safe-direction, but it makes "the test harness reaches no clipboard / no $HOME / no
+network" unusable on any codebase using cfg(test) stubs to hold that boundary — which is the standard
+way to hold it. A cfg-aware mode or a documented line would save the next person the dead end.
+
 ## **`[P1]` SETTLED: THE AMBIGUOUS-EDGE RULE TRADED ONE FALSE GREEN FOR ANOTHER** (2026-08-22)
 
 **MY WORRY WAS THE WRONG CHANNEL, AND THE PREMISE WAS FALSE.** `gate --report` never propagates

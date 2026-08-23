@@ -195,6 +195,22 @@ which is what the reporter already tried, and is the spelling everyone will gues
 Four-way: the same prefix rule is in java's `Policy.scopeMatches` (measured earlier today at
 Policy.java:1645). Whatever is decided binds all four.
 
+## RULED 2026-08-23: `released-floor` STAYS RED UNTIL THE ⟨0.32⟩ CUT — no hotfix-tag channel
+
+The job pins itself to the latest released spec tag (`conformance.yml:235`) and a tag is IMMUTABLE, so
+today's two harness fixes cannot reach the `v0.31` suite it checks out. The alternative was a hotfix
+tag (`v0.31-conformance.1` off v0.31, plus version-sorted pin selection) — about half a day.
+
+**Tom's call: A, accept the red.** The cost of the channel outweighs the cost of the gap: a hotfix tag
+is a way for a tag to change which contract judges RELEASED artifacts, and "a harness-only fix that
+turns red green" is the exact shape this project has measured its own fixes taking. Cutting ⟨0.32⟩
+carries the fixes into a new tag for free, with no new risk surface.
+
+**THIS MAKES THE CUT THE FIX, so the remaining ⟨0.32⟩ gaps are now what gates restoring the only check
+on published bytes.** That check has been off through the whole ⟨0.31⟩ window; the longer the cut
+slips, the longer it stays off. Worth stating because it reorders the remaining work: the gaps are no
+longer just "finish the rung", they are "turn the published-artifact detector back on".
+
 ## **`[P1]` A CI GATE CAN PASS BECAUSE THE ANALYSIS NEVER RAN — ship `gate --ci`** (field, 2026-08-23)
 
 Contributed from the ebman adoption, and it is aimed straight at the "a gate you can trust" claim. The

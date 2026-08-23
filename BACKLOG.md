@@ -218,6 +218,20 @@ plumbing wrong before looking.** Recorded so the next attempt is mechanical.
     report disagrees with the exit code — measured as `scan --policy` 2 vs `gate --report` 0); and keyed
     on the WALK'S FILE SET rather than an analyzed count, which reddened normal crates. The ⟨0.32⟩ arm
     has the same shape and the same three traps.
+  · **ATTEMPT 2 (2026-08-23) — the chain compiles end to end and the value STILL does not flow.**
+    Proven: `GATE_UNPEEKED`, `record_gate_unpeeked` at `scan.rs:3230` beside `record_gate_out_of_scope`,
+    the `v31` parameter, and BOTH routes reading it — the query side reads `excluded` in three lines via
+    the existing `read_key`, and `KeyRead::Present` gives the ⟨0.26⟩ absent-vs-empty rule for free.
+    Route equality held byte-equal on regex and ripgrep throughout.
+    NOT working: with `deny Exec` and a chmod-000 `build.rs`, the report carries
+    `excluded:[{class:"build-script", peeked:false}]` and BOTH verdict documents still say `ok:true`.
+    **NEXT CHECK IS ONE PRINT: is `scan.rs:3230` reached on that fixture?** `recording_suppressed()` is
+    only `IN_PEEK`, so suppression is not it on the main path, and `out_of_scope.is_some()` should hold
+    with a policy configured — which leaves "not reached", and the ⟨0.31⟩ comment at `scan.rs:2955`
+    records three earlier arms that return before this point.
+    AND: a TEST-ONLY call site of `write_verdict` needs the argument in a different position — the
+    release build passes while `cargo test --workspace` fails, so it does not surface under
+    `cargo build --release`.
   · PLUMBING: `write_gate_json(exit_code)` takes NO data — it reads
     everything from PROCESS-GLOBAL statics (`GATE_JSON_PATH`, `GATE_ANALYZED`, `GATE_UNANALYZED`).
     Neither `excluded` nor a gate-configured flag is in scope there, so the port needs a

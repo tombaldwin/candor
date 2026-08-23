@@ -206,7 +206,19 @@ plumbing wrong before looking.** Recorded so the next attempt is mechanical.
     the argument; three of them end with a TRAILING COMMA before `)`, which a naive `)` → `, &[])`
     rewrite mangles into `, &[])` on its own line. Add the arg to the last argument line, not the
     closing paren.
-  · PLUMBING (this is what I got wrong): `write_gate_json(exit_code)` takes NO data — it reads
+  · **THE SPLIT IS ALREADY RULED IN THE FILE** (`gate.rs:670`): *"Kept SEPARATE from the exit-code
+    decision on purpose: this accumulator is gated on `--gate-json` being set … an exit code must not
+    depend on whether a machine-readable sink was requested. scan.rs decides the exit from the local
+    value; this only feeds the document."* That is the SAME guard hazard that cost three attempts in
+    candor-ts, written down here before I hit it. So ⟨0.32⟩ needs BOTH halves: a `GATE_UNPEEKED` static
+    feeding the DOCUMENT, and an exit decision in `scan.rs` from the LOCAL `excluded`. No inconsistency
+    results — the document only exists when the flag was given.
+  · **AND THE PLACEMENT CONSTRAINTS ARE ALREADY WRITTEN** (`scan.rs:2955`), three of them, each recorded
+    as having broken a previous attempt at the ⟨0.31⟩ arm: AFTER the peek; BEFORE the envelope (or the
+    report disagrees with the exit code — measured as `scan --policy` 2 vs `gate --report` 0); and keyed
+    on the WALK'S FILE SET rather than an analyzed count, which reddened normal crates. The ⟨0.32⟩ arm
+    has the same shape and the same three traps.
+  · PLUMBING: `write_gate_json(exit_code)` takes NO data — it reads
     everything from PROCESS-GLOBAL statics (`GATE_JSON_PATH`, `GATE_ANALYZED`, `GATE_UNANALYZED`).
     Neither `excluded` nor a gate-configured flag is in scope there, so the port needs a
     **`GATE_UNPEEKED` static recorded where `excluded` is built**, mirroring `GATE_UNANALYZED`. Same

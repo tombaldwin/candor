@@ -215,8 +215,35 @@ plumbing wrong before looking.** Recorded so the next attempt is mechanical.
     `judged_elsewhere`, and record nothing unless the peek RAN (`peeked: false` also means nothing was
     asked). java's fix keys the second on `outOfScope` being present.
 
-**ts's unread half and swift's merge half** are untouched. ts's site is `scan.mjs:7764`
-(`const incomplete = …`), with `envelope.excluded` already in scope there — smaller than rust's.
+**ts's unread half — attempted, reverted, and the reconnaissance is the useful part.** The
+verdict-document arm is CORRECT and was verified: with it in place the gate-json read `ok: false,
+incomplete: true` on an excluded `*.test.ts` at mode 000. What is missing is the EXIT arm, the same
+two-part split java and swift both needed.
+
+**The blocker is not scoping, it is a GUARD, and that matters:**
+
+    7775:  if (gateJsonPath) {          <- the verdict block OPENS here
+    7786:    const scopeIncomplete …        unreadClasses computed inside
+    7849:  }
+    7896:  if (gateConfigured && …)     <- the exit arm, OUTSIDE it
+
+So `unreadClasses` is only computed WHEN `--gate-json` WAS PASSED. Hoisting the declaration — which I
+tried three times — would have produced an exit arm that fires only for `--gate-json` users and is
+silently inert for everyone else. **That is the same shape as the CI-gate hazard filed above: a check
+that quietly depends on a flag being present.** Succeeding on attempt two would have been worse than
+failing.
+
+**Next attempt:** compute `unreadClasses` OUTSIDE the `if (gateJsonPath)` block — `envelope.excluded`
+and `peekRead` are both available there — and have the verdict block READ it rather than define it.
+Do not recompute at the exit site: duplicating the two conditions is how the advisory verbs came to
+disagree with the gate.
+
+**MEASURED, so the fixture is known-good**: an excluded `*.test.ts` at mode 000 gives
+`excluded: [{class: "test-file", peeked: false}]`, `unanalyzed` ABSENT (the file is not in the tsconfig
+program, so the unreadable-file fix does not see it), exit 0. Control: same tree readable, exit 0.
+
+**swift's merge half** is untouched and needs a swift-shaped fixture, since PART 63's reports are
+Rust-shaped.
 swift's merge half needs a swift-shaped fixture, since PART 63's reports are Rust-shaped.
 
 ## RULED 2026-08-23: `released-floor` STAYS RED UNTIL THE ⟨0.32⟩ CUT — no hotfix-tag channel

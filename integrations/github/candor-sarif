@@ -11,8 +11,11 @@ Usage:
     candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD"] [-o out.sarif]
 
     <report.json>   the spec-0.8 report (carries each function's `loc`)
-    --gate FILE     the engine's `gate --json` output: {"violations":[{fn,rule,effects,loc,...}],"ok":bool}
-                    ('-' or omitted → read from stdin)
+    --gate FILE     the engine's `gate --json` output: {"violations":[{fn,rule,effects,loc,hash?,...}],"ok":bool}
+                    ('-' or omitted → read from stdin). ⟨0.32⟩ a row's OPTIONAL `hash` is the unit
+                    identity (SPEC §2.2): with it, two same-named units in different packages get
+                    distinct alerts. Without it the tool falls back to `loc`, and discloses the one case
+                    it cannot separate — see `unit_key`.
     --src-root DIR  source root the SARIF `uri` is relative to (default "."). candor-java's `loc` is a bare
                     `File.java:line` (the bytecode SourceFile), so the repo path is rebuilt from the fn's
                     package: app.domain.Order.audit + Order.java → <src-root>/app/domain/Order.java. Scan
@@ -88,23 +91,86 @@ def dict_items(container, key, what):
     return out
 
 
-def fn_loc_index(report):
-    """fn name -> its `loc` string, from the report envelope."""
-    idx = {}
-    for f in dict_items(report, "functions", "report"):
-        if "fn" in f and f.get("loc"):
-            idx[f["fn"]] = f["loc"]
-    return idx
+def str_or_none(v):
+    """A non-empty string, else None. Used for identity/loc fields, where an int, a null or `""` must
+    degrade to "no identity" rather than become one."""
+    return v if isinstance(v, str) and v.strip() else None
 
 
-def fn_effects_index(report):
-    """fn name -> its `direct` effect names, from the report envelope (the effects it performs itself —
-    what a codeFlow to the source should trace). Used when the gate verdict doesn't carry effects."""
-    idx = {}
+def unit_index(report):
+    """⟨0.32⟩ THE TWO JOINS, AND WHICH ONE IS SOUND.
+
+    SPEC §2.2 requires a consumer to join units by `hash` and NEVER by bare `fn`: names repeat across
+    packages, and they are not unique even WITHIN one report (an inherent method and a trait
+    implementation of the same name emit two entries sharing `fn`). §2's ⟨0.32⟩ clause names THIS TOOL
+    as the consumer that got it wrong.
+
+    Returns (by_hash, by_fn, ambiguous):
+      by_hash    `hash` -> the entry. The identity join; used when a verdict row carries its own `hash`.
+      by_fn      `fn` -> the entry, for the ONE-ENTRY case only.
+      ambiguous  the set of `fn`s the report carries MORE THAN ONE entry for.
+
+    A name in `ambiguous` is deliberately ABSENT from `by_fn`. The old indexes were last-one-wins, which
+    is worse than useless here: a violation on one unit would be decorated with a SIBLING'S `loc`, and a
+    SARIF alert pointing at the wrong file is a fabricated location, not a missing one. Withholding the
+    decoration says "cannot attribute"; borrowing one says something false."""
+    by_hash, by_fn, ambiguous = {}, {}, set()
     for f in dict_items(report, "functions", "report"):
-        if "fn" in f:
-            idx[f["fn"]] = f.get("direct") or f.get("inferred") or []
-    return idx
+        fn = str_or_none(f.get("fn"))
+        if not fn:
+            continue
+        h = str_or_none(f.get("hash"))
+        if h:
+            by_hash[h] = f
+        if fn in by_fn or fn in ambiguous:
+            by_fn.pop(fn, None)
+            ambiguous.add(fn)
+        else:
+            by_fn[fn] = f
+    return by_hash, by_fn, ambiguous
+
+
+def unit_key(fn, v_hash, entry, loc, ambiguous, collided):
+    """The identity half of a result's fingerprint — what tells two units apart. DEGRADES DELIBERATELY,
+    because the field it wants is not yet emitted everywhere.
+
+      1. the verdict row's own `hash` — ⟨0.32⟩'s "a verdict row MUST carry enough identity for a consumer
+         to tell two units apart". This is the answer; the rest exist because an engine may not carry it.
+      2. the report entry's `hash`, when the row resolved to exactly one entry. Same identity, joined
+         one hop later.
+      3. `fn@loc`, when the report shows the name is AMBIGUOUS and no hash is reachable. A location is a
+         weaker key than an identity — moving the code re-opens the alert — but that is the right way to
+         be wrong: a churned alert is visible and a hidden one is not.
+      4. bare `fn`, when the name is unambiguous in this report. Not a fallback so much as the correct
+         answer for that case: one entry, one unit, nothing to confuse it with.
+
+    A name that is ambiguous AND has no loc to separate the rows is the one case this cannot key, so it
+    is DISCLOSED on stderr rather than passed off as a fingerprint — the collision is real and the reader
+    is the only one who can act on it."""
+    if v_hash:
+        return "hash:" + v_hash
+    if entry is not None:
+        h = str_or_none(entry.get("hash"))
+        if h:
+            return "hash:" + h
+    if fn in ambiguous:
+        if loc:
+            return f"fn:{fn}@{loc}"
+        if fn not in collided:
+            collided.add(fn)
+            print(f"candor-sarif: `{fn}` names more than one unit in the report and the verdict row "
+                  f"carries neither `hash` nor `loc` — its alerts cannot be told apart and GitHub will "
+                  f"dedup them into one. Re-run the gate with an engine that emits unit identity.",
+                  file=sys.stderr)
+    return "fn:" + fn
+
+
+def entry_effects(entry):
+    """An entry's `direct` effect names (the effects it performs itself — what a codeFlow to the source
+    should trace), falling back to `inferred`. `None` entry -> []."""
+    if not isinstance(entry, dict):
+        return []
+    return entry.get("direct") or entry.get("inferred") or []
 
 
 def parse_loc(loc):
@@ -183,25 +249,35 @@ def code_flow(query_cmd, report_path, fn, effect, src_root, loc_idx):
 
 
 def build_sarif(report, report_path, gate, src_root, query_cmd):
-    loc_idx = fn_loc_index(report)
-    eff_idx = fn_effects_index(report)
+    by_hash, by_fn, ambiguous = unit_index(report)
+    # codeFlow hops name a callee by BARE `fn` (SPEC §4), so an ambiguous name has no location this tool
+    # can attribute. `by_fn` already excludes those, which turns a wrong hop location into an absent one.
+    loc_idx = {k: e["loc"] for k, e in by_fn.items() if str_or_none(e.get("loc"))}
     violations = dict_items(gate, "violations", "gate")
-    seen_rules, results = {}, []
+    seen_rules, results, collided, fp_src = {}, [], set(), []
     for v in violations:
         fn, rule = v.get("fn"), v.get("rule", "AS-EFF-006")
         if not fn or not isinstance(fn, str):
             continue
         if not isinstance(rule, str):
             rule = "AS-EFF-006"    # a malformed rule id degrades to the generic policy code, never crashes
+        # ⟨0.32⟩ RESOLVE THE UNIT BEFORE DECORATING IT. A verdict row's own `hash` is the identity join
+        # (§2.2); without one the name join is used, and ONLY when the report holds a single entry for
+        # that name. An ambiguous name resolves to nothing, so `loc` and the effects fallback come back
+        # empty rather than borrowed from a same-named sibling.
+        v_hash = str_or_none(v.get("hash"))
+        entry = by_hash.get(v_hash) if v_hash else None
+        if entry is None and v_hash is None:
+            entry = by_fn.get(fn)
         # effects: trust the verdict's denied set when the KEY is present — an explicit [] means "no single
         # effect" (a 009 layer-flow / 003 unresolved) and MUST be respected, not overwritten by the report's
         # (superset) direct set. Only fall back to the report when a verdict omits the key entirely (a pre-0.8
         # / non-emitting engine). loc always joins from the report.
-        effects = v["effects"] if "effects" in v else (eff_idx.get(fn) or [])
+        effects = v["effects"] if "effects" in v else entry_effects(entry)
         if not isinstance(effects, list):
             effects = []       # a malformed verdict (effects: null / non-list) degrades, never crashes
         effects = [e for e in effects if isinstance(e, str)]
-        loc = v.get("loc") or loc_idx.get(fn)
+        loc = str_or_none(v.get("loc")) or (str_or_none(entry.get("loc")) if entry else None)
         scope = v.get("scope")
         # `detail` (from the engine's own diagnostic) is authoritative and already names fn/effect/rule;
         # only compose a message when the verdict didn't carry one.
@@ -224,11 +300,17 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
             # fn that violates two rules for DIFFERENT effects (e.g. `deny Fs` + `deny Env` both hitting one
             # method) collides into a single alert, hiding a real violation. Content-based (not positional) so
             # it stays stable as results reorder between runs.
-            "partialFingerprints": {
-                "candorViolation": hashlib.sha256(
-                    f"{fn}|{rule}|{','.join(effects)}".encode()).hexdigest()[:16]
-            },
+            #
+            # ⟨0.32⟩ …AND THE NAME IS NOT THE UNIT. This read `fn|rule|effects`, and SPEC §2 names it: "a
+            # consumer that fingerprints on name alone silently hides one finding behind another". Two
+            # units that differ only by package — or an inherent method and a trait implementation of the
+            # same name in ONE report — produce identical fingerprints, so GitHub dedups them into a
+            # single alert and one real violation disappears DOWNSTREAM of a red gate. The gate is still
+            # red; the reviewer is shown one finding and fixes it, and the second is never surfaced.
+            "partialFingerprints": {"candorViolation": ""},   # filled below, after the collision sweep
         }
+        fp_src.append((f"{unit_key(fn, v_hash, entry, loc, ambiguous, collided)}"
+                       f"|{rule}|{','.join(effects)}", loc))
         if effects:
             res["properties"] = {"effects": effects}   # the denied set, structured (not just in the message prose)
         ph = physical_location(fn, loc, src_root) if loc else None
@@ -237,6 +319,30 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         if cf:
             res["codeFlows"] = cf
         results.append(res)
+
+    # ⟨0.32⟩ THE INVARIANT IS CHECKED, NOT ASSUMED: two results that are DIFFERENT findings must not
+    # share a fingerprint. `unit_key` above picks the best identity each row offers, but the identity can
+    # still be UNAVAILABLE — a multi-report gate whose rows carry no `hash`, handed the report for one
+    # member, resolves two rows to the one entry it can see and keys them identically. That is the same
+    # silent hide by another route, so the sweep is over the OUTPUT rather than over any one input.
+    #
+    # A tie is only re-keyed when the two rows sit at DIFFERENT locations. A tie at the SAME location is
+    # one finding listed twice, and collapsing it is correct — inventing an ordinal there would split one
+    # alert into two that flip places between runs, which is the churn this whole design avoids.
+    tied = {}
+    for i, (k, _) in enumerate(fp_src):
+        tied.setdefault(k, []).append(i)
+    for k, idxs in tied.items():
+        distinct_locs = {fp_src[i][1] for i in idxs}
+        if len(idxs) > 1 and len(distinct_locs) > 1:
+            print(f"candor-sarif: {len(idxs)} verdict rows share the identity `{k.split('|')[0]}` and no "
+                  f"`hash` distinguishes them; falling back to their locations so GitHub does not dedup "
+                  f"distinct findings into one alert.", file=sys.stderr)
+            for i in idxs:
+                fp_src[i] = (f"{k}@{fp_src[i][1] or ''}", fp_src[i][1])
+    for res, (k, _) in zip(results, fp_src):
+        res["partialFingerprints"]["candorViolation"] = hashlib.sha256(k.encode()).hexdigest()[:16]
+
     rules = [{
         "id": rid,
         "name": name,

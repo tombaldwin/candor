@@ -92,6 +92,51 @@ echo '{"spec":"0.8","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.Svc.
 OUTF=$(python3 "$SARIF" "$WORK/rfp.json" --gate "$WORK/gfp.json" --src-root src 2>/dev/null)
 ok "same fn+rule, diff effect -> distinct fingerprints" '[ "$(printf "%s" "$OUTF" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 2 ]'
 
+# ⟨0.32⟩ TWO UNITS, ONE NAME. SPEC §2 names this tool: "a consumer that fingerprints on name alone
+# silently hides one finding behind another". `fn|rule|effects` collided for two units that differ only
+# by package, so GitHub's dedup showed ONE alert for two real violations — downstream of a red gate,
+# where the reviewer never learns the second exists. Four rows, and they are the four states this can be
+# in: identity on the verdict row, identity only in the report, no identity anywhere, and the honest
+# limit. The OVER-CHARGE CONTROL is the row below them — one finding listed twice must still collapse,
+# or "never collide" is satisfied by splitting every alert in two on every run.
+cat > "$WORK/rid.json" <<'JSON'
+{"candor":{"spec":"0.32"},"functions":[
+  {"fn":"run","loc":"a/src/lib.rs:3:1","hash":"a#run","direct":["Fs"],"inferred":["Fs"]},
+  {"fn":"run","loc":"b/src/lib.rs:7:1","hash":"b#run","direct":["Fs"],"inferred":["Fs"]}
+]}
+JSON
+# [1] the verdict rows CARRY `hash` (⟨0.32⟩'s "a verdict row MUST carry enough identity"): keyed on it.
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"run","hash":"a#run","effects":["Fs"]},{"rule":"AS-EFF-006","fn":"run","hash":"b#run","effects":["Fs"]}]}' > "$WORK/gid.json"
+OUTI=$(python3 "$SARIF" "$WORK/rid.json" --gate "$WORK/gid.json" 2>/dev/null)
+ok "two units, one name, row hash -> 2 fingerprints"   '[ "$(printf "%s" "$OUTI" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 2 ]'
+# …and each result gets ITS OWN loc, not a same-named sibling's. A borrowed location is a fabricated one.
+ok "…and each row joins its OWN unit's loc"            '[ "$(printf "%s" "$OUTI" | jq -r "[.runs[0].results[].locations[0].physicalLocation.artifactLocation.uri]|sort|join(\",\")")" = "a/src/lib.rs,b/src/lib.rs" ]'
+# [2] the rows carry NO identity and the NAME is ambiguous in the report: the old code borrowed
+# whichever entry happened to be last. Now the name resolves to nothing, the rows fall back to their own
+# `loc`, and they stay distinct.
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"run","effects":["Fs"],"loc":"a/src/lib.rs:3:1"},{"rule":"AS-EFF-006","fn":"run","effects":["Fs"],"loc":"b/src/lib.rs:7:1"}]}' > "$WORK/gid2.json"
+OUTI2=$(python3 "$SARIF" "$WORK/rid.json" --gate "$WORK/gid2.json" 2>/dev/null)
+ok "ambiguous name, no row hash -> 2 fingerprints"     '[ "$(printf "%s" "$OUTI2" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 2 ]'
+# [3] THE HONEST LIMIT: ambiguous name, no hash, no loc on either row — nothing can tell them apart, so
+# they collapse (as they always did) and the tool SAYS SO on stderr rather than passing it off.
+echo '{"candor":{"spec":"0.32"},"functions":[{"fn":"run","hash":"a#run","direct":["Fs"]},{"fn":"run","hash":"b#run","direct":["Fs"]}]}' > "$WORK/rid3.json"
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"run","effects":["Fs"]},{"rule":"AS-EFF-006","fn":"run","effects":["Fs"]}]}' > "$WORK/gid3.json"
+OUTI3=$(python3 "$SARIF" "$WORK/rid3.json" --gate "$WORK/gid3.json" 2>"$WORK/iderr"); rci3=$?
+ok "no identity at all -> collapse is DISCLOSED"       '[ "$rci3" = 0 ] && grep -q "names more than one unit" "$WORK/iderr"'
+# [4] OVER-CHARGE CONTROL — one unambiguous finding, gated twice (a re-run, a duplicated row): SAME
+# fingerprint. A tool that answers "distinct" here would churn every alert on every run and dismissals
+# would never stick, which is a worse failure than the one being fixed and passes a naive "no collisions"
+# assertion perfectly.
+echo '{"candor":{"spec":"0.32"},"functions":[{"fn":"solo","loc":"s.rs:1:1","hash":"s#solo","direct":["Fs"]}]}' > "$WORK/rid4.json"
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"solo","effects":["Fs"]},{"rule":"AS-EFF-006","fn":"solo","effects":["Fs"]}]}' > "$WORK/gid4.json"
+OUTI4=$(python3 "$SARIF" "$WORK/rid4.json" --gate "$WORK/gid4.json" 2>/dev/null)
+ok "one finding listed twice still collapses"          '[ "$(printf "%s" "$OUTI4" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 1 ]'
+# [5] DEGRADE SAFELY when the identity field is absent from the report the row points at — a row hash
+# that matches nothing must not crash and must not borrow a name-matched entry's decoration.
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"run","hash":"z#run","effects":["Fs"]}]}' > "$WORK/gid5.json"
+OUTI5=$(python3 "$SARIF" "$WORK/rid.json" --gate "$WORK/gid5.json" 2>/dev/null); rci5=$?
+ok "unresolvable row hash -> no crash, no borrowed loc" '[ "$rci5" = 0 ] && [ "$(printf "%s" "$OUTI5" | jq -r ".runs[0].results[0].locations|length")" = 0 ]'
+
 # advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
 echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
 OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)

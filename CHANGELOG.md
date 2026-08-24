@@ -8,6 +8,60 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-24 — ⟨0.32⟩: the SARIF surface stops hiding one finding behind another (unreleased)
+
+- **⚠ THE PR-NATIVE SARIF ACTION FINGERPRINTED ON THE NAME, AND SPEC §2 NAMES IT.** ⟨0.32⟩'s hash-join
+  clause ends "a consumer that fingerprints on name alone (candor's own SARIF action did) silently hides
+  one finding behind another" — written in the PAST TENSE for a repair that had not happened.
+  `integrations/github/candor-sarif` keyed `partialFingerprints.candorViolation` on `fn|rule|effects`, so
+  two units that differ only by package — or an inherent method and a trait implementation of the same
+  name inside ONE report — produced the identical fingerprint and GitHub's code-scanning dedup collapsed
+  them into a single alert.
+
+  This is a silent hide DOWNSTREAM of a red gate, which is why it survived: the check still fails, the
+  reviewer is shown one finding, fixes it, and the second violation is never surfaced at all. The gate
+  being right does not make the surface right.
+
+  The fix is the same join the spec requires. A verdict row's own `hash` is the identity; failing that,
+  the report entry's `hash` when the name resolves to exactly ONE entry; failing that, the row's `loc`;
+  and the one case nothing can separate — an ambiguous name with no `hash` and no `loc` anywhere — is
+  DISCLOSED on stderr rather than passed off as a fingerprint. A final sweep over the OUTPUT re-keys any
+  two results that still tie at different locations, because a multi-report verdict handed the report for
+  one member can resolve two rows to the single entry it can see.
+
+  **It degrades safely, deliberately, because the field it wants is not emitted everywhere yet.**
+  ⟨0.32⟩ requires a verdict row to carry enough identity to tell two units apart; candor-rust is adding it
+  now and the other engines have not. Every rung above works today with no engine change, and a row
+  carrying a `hash` that matches nothing in the report is not a crash and does not silently borrow a
+  name-matched entry's location.
+
+  **The same borrowing was in the decoration, not only the fingerprint.** The `fn -> loc` and
+  `fn -> effects` indexes were last-one-wins, so a violation on one unit could be rendered at a SIBLING'S
+  location — a fabricated location, which is worse than an absent one. An ambiguous name now resolves to
+  nothing and the decoration is withheld.
+
+  **⚠ CONSEQUENCE FOR EXISTING USERS: dismissed alerts may re-open.** GitHub tracks a code-scanning alert
+  by its fingerprint, so changing the fingerprint makes every current alert look new — a dismissal or a
+  "fixed" state recorded against the old key does not carry over, and a re-triage pass is expected on the
+  first run after this upgrade. There is no way to change the key and keep the history; the alternative is
+  keeping a key that hides real findings. Pinned by six rows in `test-candor-sarif.sh`, five of which fail
+  against the previous action — including the OVER-CHARGE CONTROL, one finding listed twice, which must
+  still collapse (a tool that answers "distinct" there churns every alert on every run and passes a naive
+  no-collisions assertion perfectly).
+
+- **⟨0.32⟩ UPGRADE ORDER, for anyone running `adopt/` or their own two-step pipeline: POLICY FIRST, ENGINE
+  SECOND.** ⟨0.32⟩ is not additive. If your CI scans in one step and gates the report in a later step:
+  FIRST, while still on 0.31, add your policy to the SCAN step (`--policy <file>` / `CANDOR_POLICY`) — the
+  same policy the gate step uses; THEN bump the engine pin. Upgrading the engine first makes `gate --report`
+  exit 2 over any report produced without a policy on a tree with tests, build scripts, `.d.ts` files or a
+  `dist/`, INCLUDING reports archived before the upgrade, which no consumer can repair — they have to be
+  re-produced with the policy. The full note, its measurement and the candor-ts one-step caveat are in
+  [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md).
+
+  **`adopt/candor.yml` needs no change and that was checked, not assumed:** it sets `CANDOR_POLICY:
+  arch.policy` on the scan step itself, so it is already a one-step-with-policy pipeline. The hazard is
+  for hand-rolled workflows that archive `candor-report.json` in one job and gate it in another.
+
 ## 2026-08-20 — ⟨0.31⟩ CUT: the floor moves to 0.31
 
 - **`ci-watch`: "no run at HEAD" cannot fire before GitHub has created the run.** There is a window of

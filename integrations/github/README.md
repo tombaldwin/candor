@@ -71,3 +71,11 @@ candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD
   resolves correctly for lambdas/`$`-inner-classes, and each violation gets a distinct fingerprint (the
   fingerprint includes the effect, so a method that violates `deny Fs` *and* `deny Env` yields two alerts,
   not one collapsed by GitHub's dedup).
+- **Fingerprint = the UNIT's identity, not its name (⟨0.32⟩).** "Distinct fingerprint" above was true on
+  the EFFECT axis and false on the unit axis until ⟨0.32⟩: two units that differ only by package, or an
+  inherent method and a trait implementation of the same name in one report, collided and GitHub showed
+  ONE alert for two real violations — downstream of a red gate, where the reviewer never learns the second
+  exists. The key now prefers the verdict row's `hash` (SPEC §2.2 identity), then the report entry's when
+  the name resolves to exactly one, then the row's `loc`; the one case nothing can separate is disclosed
+  on stderr. **Upgrading changes existing fingerprints, so dismissed alerts re-open once** — GitHub tracks
+  an alert by its key, and there is no way to change the key and keep the history.

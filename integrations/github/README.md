@@ -14,7 +14,7 @@ It never changes the pass/fail decision — the engine's exit code stays the sou
 | File | What it is |
 |------|------------|
 | [`candor-sarif`](./candor-sarif) | The reporter: `report.json` + `gate.json` → `candor.sarif`. Python 3, stdlib only. |
-| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (33 assertions — no engine, no network). |
+| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (44 assertions — no engine, no network). |
 | [`PR-GATE-DESIGN.md`](./PR-GATE-DESIGN.md) | The design + scope. |
 
 The GitHub Action wiring lives in [`../../adopt/candor.yml`](../../adopt/candor.yml) (copy-paste starter).
@@ -75,7 +75,12 @@ candor-sarif <report.json> --gate <gate.json> [--src-root DIR] [--query-cmd "CMD
   the EFFECT axis and false on the unit axis until ⟨0.32⟩: two units that differ only by package, or an
   inherent method and a trait implementation of the same name in one report, collided and GitHub showed
   ONE alert for two real violations — downstream of a red gate, where the reviewer never learns the second
-  exists. The key now prefers the verdict row's `hash` (SPEC §2.2 identity), then the report entry's when
-  the name resolves to exactly one, then the row's `loc`; the one case nothing can separate is disclosed
-  on stderr. **Upgrading changes existing fingerprints, so dismissed alerts re-open once** — GitHub tracks
-  an alert by its key, and there is no way to change the key and keep the history.
+  exists. The key is the verdict row's `fn` AND `hash` TOGETHER (SPEC §2.2 identity), then the report
+  entry's when the name resolves to exactly one, then the row's `loc`; the one case nothing can separate
+  is disclosed on stderr. **It is the PAIR and not `hash` alone**: candor-ts's `hash` is
+  `<package>#<local tail>`, which ts documents as non-unique (five `handle` methods in one package all
+  key `src#handle`), so keying on it alone hid one unit behind another exactly as the name did — and the
+  first version of this repair did precisely that. The `hash -> entry` index likewise WITHHOLDS a
+  collided hash rather than handing back whichever entry it indexed last, since a borrowed location is a
+  fabricated one. **Upgrading changes existing fingerprints, so dismissed alerts re-open once** — GitHub
+  tracks an alert by its key, and there is no way to change the key and keep the history.

@@ -8,6 +8,36 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — the identity is the PAIR, and the fix below reintroduced what it closed (unreleased)
+
+- **⚠ THE SAME HIDE, BY THE OTHER AXIS, INTRODUCED BY THE COMMIT THAT CLOSED IT.** Yesterday's repair
+  keyed `partialFingerprints.candorViolation` on the verdict row's `hash`, calling that "the answer".
+  candor-ts's `hash` is `<package>#<local tail>` and ts's own commit documents it as NON-UNIQUE — 13
+  collisions in one real project, five `handle` methods all keyed `src#handle`. ts's identity is the
+  PAIR, `fn` + `hash`. Measured on a three-row verdict: two DISTINCT violations came out with one
+  fingerprint, so GitHub shows one alert and the second never surfaces — the precise scenario the SPEC
+  clause this action cites describes.
+
+  **And the location was fabricated, not merely shared.** The `by_hash` index was last-one-wins, the one
+  shape the docstring ten lines above it explains is worse than useless here, and which it had fixed for
+  `by_fn` only: the first row was rendered at the SECOND unit's file. A SARIF alert pointing at the wrong
+  file is a fabricated location, not a missing one.
+
+  **The output sweep did not fire, and its blind spot is the general lesson.** It re-keys a tie only when
+  the rows sit at DIFFERENT locations — sound only while those locations are the rows' OWN. Both rows
+  carried the same BORROWED loc, so the sweep read two distinct findings as one finding listed twice and
+  said nothing: the check that exists to catch the hide was blinded by the same defect it was checking
+  for. It now also fires when tied rows SAY DIFFERENT THINGS, whatever their locations agree on.
+
+  The fix is the pair, on both halves. The join resolves (`fn`, `hash`) first; failing that a `hash` the
+  report holds exactly ONE entry for, which serves a row spelling the name differently; and a COLLIDED
+  hash is WITHHELD exactly as a collided name already was, so an unmatched row gets no decoration rather
+  than the last-indexed sibling's. The key is the pair too. The cost is churn — a rename re-opens an
+  alert — which is the direction to be wrong in: a churned alert is visible and a hidden one is not.
+  Eight rows in `test-candor-sarif.sh` (44 assertions), four of which fail against yesterday's action,
+  including both over-charge controls: one finding listed twice must still collapse to one alert, and
+  must still do it SILENTLY, or the new disclosure fires on every re-run and stops being read.
+
 ## 2026-08-24 — ⟨0.32⟩: the SARIF surface stops hiding one finding behind another (unreleased)
 
 - **⚠ THE PR-NATIVE SARIF ACTION FINGERPRINTED ON THE NAME, AND SPEC §2 NAMES IT.** ⟨0.32⟩'s hash-join
@@ -22,7 +52,9 @@ keeps its own.
   reviewer is shown one finding, fixes it, and the second violation is never surfaced at all. The gate
   being right does not make the surface right.
 
-  The fix is the same join the spec requires. A verdict row's own `hash` is the identity; failing that,
+  The fix is the same join the spec requires. A verdict row's own `hash` is the identity (SUPERSEDED the
+  next day — the identity is the PAIR `fn` + `hash`, because `hash` alone is not unique either; see the
+  entry above, which this one's commit is what introduced); failing that,
   the report entry's `hash` when the name resolves to exactly ONE entry; failing that, the row's `loc`;
   and the one case nothing can separate — an ambiguous name with no `hash` and no `loc` anywhere — is
   DISCLOSED on stderr rather than passed off as a fingerprint. A final sweep over the OUTPUT re-keys any

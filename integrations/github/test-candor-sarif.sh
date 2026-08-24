@@ -137,6 +137,56 @@ echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"run","h
 OUTI5=$(python3 "$SARIF" "$WORK/rid.json" --gate "$WORK/gid5.json" 2>/dev/null); rci5=$?
 ok "unresolvable row hash -> no crash, no borrowed loc" '[ "$rci5" = 0 ] && [ "$(printf "%s" "$OUTI5" | jq -r ".runs[0].results[0].locations|length")" = 0 ]'
 
+# [6] ⟨0.32⟩ THE IDENTITY IS THE PAIR, AND `hash` ALONE IS NOT IT. candor-ts's `hash` is
+# `<package>#<local tail>` and is DOCUMENTED NON-UNIQUE in ts's own commit — 13 collisions in hono, five
+# `handle` all keyed `src#handle`. ts's identity is `fn` + `hash` TOGETHER. Keying on `hash` alone
+# reintroduced the exact clause above by the other axis: two DISTINCT units share a fingerprint, GitHub
+# shows ONE alert, and the last-one-wins `by_hash` index hands the first row the SECOND one's file — a
+# fabricated location, not a missing one. The `by_fn` index already withholds a collided name; `by_hash`
+# did not withhold a collided hash.
+cat > "$WORK/rcol.json" <<'JSON'
+{"candor":{"spec":"0.32"},"functions":[
+  {"fn":"src.a.go","loc":"src/a.ts:3:1","hash":"src#go","direct":["Exec"],"inferred":["Exec"]},
+  {"fn":"src.b.go","loc":"src/b.ts:7:1","hash":"src#go","direct":["Exec"],"inferred":["Exec"]},
+  {"fn":"src.b.other","loc":"src/b.ts:9:1","hash":"src#other","direct":["Exec"],"inferred":["Exec"]}
+]}
+JSON
+cat > "$WORK/gcol.json" <<'JSON'
+{"spec":"0.32","ok":false,"violations":[
+ {"rule":"AS-EFF-006","fn":"src.a.go","hash":"src#go","effects":["Exec"],"detail":"`src.a.go` performs { Exec }, forbidden by `deny Exec`"},
+ {"rule":"AS-EFF-006","fn":"src.b.go","hash":"src#go","effects":["Exec"],"detail":"`src.b.go` performs { Exec }, forbidden by `deny Exec`"},
+ {"rule":"AS-EFF-006","fn":"src.b.other","hash":"src#other","effects":["Exec"],"detail":"`src.b.other` performs { Exec }, forbidden by `deny Exec`"}
+]}
+JSON
+OUTP=$(python3 "$SARIF" "$WORK/rcol.json" --gate "$WORK/gcol.json" 2>/dev/null)
+ok "a NON-UNIQUE hash still yields one alert per unit" '[ "$(printf "%s" "$OUTP" | jq -r "[.runs[0].results[].partialFingerprints.candorViolation]|unique|length")" = 3 ]'
+# …and the location half: the join must resolve the PAIR, so `src.a.go` keeps a/, not the sibling's b/.
+ok "…each row keeps its OWN file, none borrowed"       '[ "$(printf "%s" "$OUTP" | jq -r "[.runs[0].results[].locations[0].physicalLocation.artifactLocation.uri]|join(\",\")")" = "src/a.ts,src/b.ts,src/b.ts" ]'
+# THE WITHHELD JOIN MUST NOT FALL THROUGH TO SOMETHING WORSE. A row whose (fn, hash) pair matches no
+# entry, under a hash the report holds TWO entries for: the hash-only rung must refuse it rather than
+# hand back whichever entry it indexed last. No location beats a fabricated one.
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"src.c.go","hash":"src#go","effects":["Exec"],"detail":"x"}]}' > "$WORK/gcol2.json"
+OUTP2=$(python3 "$SARIF" "$WORK/rcol.json" --gate "$WORK/gcol2.json" 2>/dev/null); rcp2=$?
+ok "unmatched pair under a collided hash -> no loc"    '[ "$rcp2" = 0 ] && [ "$(printf "%s" "$OUTP2" | jq -r ".runs[0].results[0].locations|length")" = 0 ]'
+# …while a hash the report holds exactly ONE entry for still joins one hop later (the ladder's rung 2 is
+# not collateral damage of the withhold): a row naming that entry by a DIFFERENT spelling still gets its
+# loc, because the identity — not the name — is what resolved it.
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"other","hash":"src#other","effects":["Exec"],"detail":"x"}]}' > "$WORK/gcol3.json"
+OUTP3=$(python3 "$SARIF" "$WORK/rcol.json" --gate "$WORK/gcol3.json" 2>/dev/null)
+ok "a UNIQUE hash still joins its entry's loc"         '[ "$(printf "%s" "$OUTP3" | jq -r ".runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri")" = "src/b.ts" ]'
+# THE BACKSTOP, AND WHY THE SWEEP MISSED THIS ENTIRELY. The output sweep only re-keys a tie whose rows sit
+# at DIFFERENT locations; both rows here were decorated with the SAME borrowed loc, so it read them as one
+# finding listed twice and said nothing. Two rows that say DIFFERENT THINGS are not one finding, whatever
+# their locations agree on — that must be LOUD even when nothing is left to re-key it by.
+echo '{"candor":{"spec":"0.32"},"functions":[{"fn":"go","hash":"src#go","direct":["Exec"]},{"fn":"go","hash":"src#go","direct":["Exec"]}]}' > "$WORK/rcol4.json"
+echo '{"spec":"0.32","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"go","hash":"src#go","effects":["Exec"],"detail":"`a.go` performs { Exec }"},{"rule":"AS-EFF-006","fn":"go","hash":"src#go","effects":["Exec"],"detail":"`b.go` performs { Exec }"}]}' > "$WORK/gcol4.json"
+OUTP4=$(python3 "$SARIF" "$WORK/rcol4.json" --gate "$WORK/gcol4.json" 2>"$WORK/colerr"); rcp4=$?
+ok "indistinguishable rows that DIFFER -> disclosed"   '[ "$rcp4" = 0 ] && grep -q "say different things" "$WORK/colerr"'
+# …and the over-charge control for THAT disclosure: the identical duplicate of [4] must stay SILENT, or
+# the warning fires on every re-run and stops being read.
+python3 "$SARIF" "$WORK/rid4.json" --gate "$WORK/gid4.json" >/dev/null 2>"$WORK/colerr2"
+ok "one finding listed twice stays silent"             '[ ! -s "$WORK/colerr2" ]'
+
 # advisory AS-EFF-007 -> level:warning (never a false error alert on a passing gate).
 echo '{"spec":"0.8","ok":true,"violations":[{"rule":"AS-EFF-007","fn":"app.domain.Order.checkout","detail":"`checkout` performs { Fs } on caller-derived input"}]}' > "$WORK/adv.json"
 OUTA=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/adv.json" --src-root src 2>/dev/null)

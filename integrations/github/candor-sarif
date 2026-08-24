@@ -105,39 +105,60 @@ def unit_index(report):
     implementation of the same name emit two entries sharing `fn`). §2's ⟨0.32⟩ clause names THIS TOOL
     as the consumer that got it wrong.
 
-    Returns (by_hash, by_fn, ambiguous):
-      by_hash    `hash` -> the entry. The identity join; used when a verdict row carries its own `hash`.
+    …AND `hash` ALONE IS NOT THE IDENTITY EITHER. candor-ts's `hash` is `<package>#<local tail>` and is
+    documented NON-UNIQUE by ts itself — 13 collisions in one real project, five `handle` methods all
+    keyed `src#handle`. ts's identity is the PAIR, `fn` + `hash`. So the joins are a LADDER, and every
+    rung refuses rather than guesses:
+
+    Returns (by_pair, by_hash, by_fn, ambiguous):
+      by_pair    (`fn`, `hash`) -> the entry. The identity join proper; the pair separates two units a
+                 non-unique `hash` puts in the same bucket.
+      by_hash    `hash` -> the entry, for hashes the report holds exactly ONE entry for. Serves a row
+                 that spells `fn` differently from the report, and is WITHHELD on a collision.
       by_fn      `fn` -> the entry, for the ONE-ENTRY case only.
       ambiguous  the set of `fn`s the report carries MORE THAN ONE entry for.
 
-    A name in `ambiguous` is deliberately ABSENT from `by_fn`. The old indexes were last-one-wins, which
-    is worse than useless here: a violation on one unit would be decorated with a SIBLING'S `loc`, and a
-    SARIF alert pointing at the wrong file is a fabricated location, not a missing one. Withholding the
-    decoration says "cannot attribute"; borrowing one says something false."""
-    by_hash, by_fn, ambiguous = {}, {}, set()
+    A name in `ambiguous` is deliberately ABSENT from `by_fn`, and a collided hash is likewise absent
+    from `by_hash`. The old indexes were last-one-wins, which is worse than useless here: a violation on
+    one unit would be decorated with a SIBLING'S `loc`, and a SARIF alert pointing at the wrong file is a
+    fabricated location, not a missing one. Withholding the decoration says "cannot attribute"; borrowing
+    one says something false."""
+    by_pair, by_hash, by_fn, ambiguous = {}, {}, {}, set()
+    hash_seen = set()
     for f in dict_items(report, "functions", "report"):
         fn = str_or_none(f.get("fn"))
         if not fn:
             continue
         h = str_or_none(f.get("hash"))
         if h:
-            by_hash[h] = f
+            # the same withhold-on-collision rule as `by_fn` below, on both keys
+            by_pair[(fn, h)] = None if (fn, h) in by_pair else f
+            if h in hash_seen:
+                by_hash.pop(h, None)
+            else:
+                hash_seen.add(h)
+                by_hash[h] = f
         if fn in by_fn or fn in ambiguous:
             by_fn.pop(fn, None)
             ambiguous.add(fn)
         else:
             by_fn[fn] = f
-    return by_hash, by_fn, ambiguous
+    return by_pair, by_hash, by_fn, ambiguous
 
 
 def unit_key(fn, v_hash, entry, loc, ambiguous, collided):
     """The identity half of a result's fingerprint — what tells two units apart. DEGRADES DELIBERATELY,
     because the field it wants is not yet emitted everywhere.
 
-      1. the verdict row's own `hash` — ⟨0.32⟩'s "a verdict row MUST carry enough identity for a consumer
-         to tell two units apart". This is the answer; the rest exist because an engine may not carry it.
-      2. the report entry's `hash`, when the row resolved to exactly one entry. Same identity, joined
-         one hop later.
+      1. the verdict row's own `fn` AND `hash` TOGETHER — ⟨0.32⟩'s "a verdict row MUST carry enough
+         identity for a consumer to tell two units apart". This is the answer; the rest exist because an
+         engine may not carry it. It is the PAIR and not the hash alone because candor-ts's `hash` is
+         `<package>#<local tail>`, which ts documents as non-unique (five `handle` methods in one real
+         package all key `src#handle`) — so keying on it alone hides one unit behind another exactly as
+         keying on the name did. The pair costs the churn of a rename re-opening an alert, which is the
+         direction to be wrong in: a churned alert is visible and a hidden one is not.
+      2. the report entry's `hash`, paired with the same `fn`, when the row resolved to exactly one
+         entry. Same identity, joined one hop later.
       3. `fn@loc`, when the report shows the name is AMBIGUOUS and no hash is reachable. A location is a
          weaker key than an identity — moving the code re-opens the alert — but that is the right way to
          be wrong: a churned alert is visible and a hidden one is not.
@@ -148,11 +169,11 @@ def unit_key(fn, v_hash, entry, loc, ambiguous, collided):
     is DISCLOSED on stderr rather than passed off as a fingerprint — the collision is real and the reader
     is the only one who can act on it."""
     if v_hash:
-        return "hash:" + v_hash
+        return f"hash:{v_hash}|fn:{fn}"
     if entry is not None:
         h = str_or_none(entry.get("hash"))
         if h:
-            return "hash:" + h
+            return f"hash:{h}|fn:{fn}"
     if fn in ambiguous:
         if loc:
             return f"fn:{fn}@{loc}"
@@ -249,7 +270,7 @@ def code_flow(query_cmd, report_path, fn, effect, src_root, loc_idx):
 
 
 def build_sarif(report, report_path, gate, src_root, query_cmd):
-    by_hash, by_fn, ambiguous = unit_index(report)
+    by_pair, by_hash, by_fn, ambiguous = unit_index(report)
     # codeFlow hops name a callee by BARE `fn` (SPEC §4), so an ambiguous name has no location this tool
     # can attribute. `by_fn` already excludes those, which turns a wrong hop location into an absent one.
     loc_idx = {k: e["loc"] for k, e in by_fn.items() if str_or_none(e.get("loc"))}
@@ -261,13 +282,19 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
             continue
         if not isinstance(rule, str):
             rule = "AS-EFF-006"    # a malformed rule id degrades to the generic policy code, never crashes
-        # ⟨0.32⟩ RESOLVE THE UNIT BEFORE DECORATING IT. A verdict row's own `hash` is the identity join
-        # (§2.2); without one the name join is used, and ONLY when the report holds a single entry for
-        # that name. An ambiguous name resolves to nothing, so `loc` and the effects fallback come back
-        # empty rather than borrowed from a same-named sibling.
+        # ⟨0.32⟩ RESOLVE THE UNIT BEFORE DECORATING IT, DOWN A LADDER WHOSE EVERY RUNG REFUSES RATHER
+        # THAN GUESSES. The (`fn`, `hash`) PAIR is the identity join (§2.2) — not `hash` alone, which
+        # candor-ts documents as non-unique. Failing that, a `hash` the report holds exactly ONE entry
+        # for, which serves a row spelling `fn` differently; a COLLIDED hash is withheld, so a row whose
+        # pair matched nothing gets no decoration instead of the last-indexed sibling's. Only a row with
+        # NO hash at all reaches the name join, and only when the name is unambiguous — so `loc` and the
+        # effects fallback come back empty rather than borrowed from a same-named sibling.
         v_hash = str_or_none(v.get("hash"))
-        entry = by_hash.get(v_hash) if v_hash else None
-        if entry is None and v_hash is None:
+        if v_hash:
+            entry = by_pair.get((fn, v_hash))
+            if entry is None:
+                entry = by_hash.get(v_hash)
+        else:
             entry = by_fn.get(fn)
         # effects: trust the verdict's denied set when the KEY is present — an explicit [] means "no single
         # effect" (a 009 layer-flow / 003 unresolved) and MUST be respected, not overwritten by the report's
@@ -310,7 +337,7 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
             "partialFingerprints": {"candorViolation": ""},   # filled below, after the collision sweep
         }
         fp_src.append((f"{unit_key(fn, v_hash, entry, loc, ambiguous, collided)}"
-                       f"|{rule}|{','.join(effects)}", loc))
+                       f"|{rule}|{','.join(effects)}", loc, text))
         if effects:
             res["properties"] = {"effects": effects}   # the denied set, structured (not just in the message prose)
         ph = physical_location(fn, loc, src_root) if loc else None
@@ -329,18 +356,32 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
     # A tie is only re-keyed when the two rows sit at DIFFERENT locations. A tie at the SAME location is
     # one finding listed twice, and collapsing it is correct — inventing an ordinal there would split one
     # alert into two that flip places between runs, which is the churn this whole design avoids.
+    #
+    # …AND "SAME LOCATION" WAS THE HOLE. That test is only sound when the locations are the rows' OWN. A
+    # last-one-wins index handed two rows the SAME borrowed loc, so the sweep read two distinct findings
+    # as one listed twice and passed in silence — the very hide it exists to catch, arriving through the
+    # instrument. Rows that SAY DIFFERENT THINGS are not one finding, whatever their locations agree on.
+    # There is nothing left to re-key them by at that point (a location that cannot separate them is the
+    # only key on offer), so the obligation is the disclosure: the reader is the one who can act on it.
     tied = {}
-    for i, (k, _) in enumerate(fp_src):
-        tied.setdefault(k, []).append(i)
+    for i, e in enumerate(fp_src):
+        tied.setdefault(e[0], []).append(i)
     for k, idxs in tied.items():
+        if len(idxs) < 2:
+            continue
         distinct_locs = {fp_src[i][1] for i in idxs}
-        if len(idxs) > 1 and len(distinct_locs) > 1:
+        if len(distinct_locs) > 1:
             print(f"candor-sarif: {len(idxs)} verdict rows share the identity `{k.split('|')[0]}` and no "
                   f"`hash` distinguishes them; falling back to their locations so GitHub does not dedup "
                   f"distinct findings into one alert.", file=sys.stderr)
             for i in idxs:
-                fp_src[i] = (f"{k}@{fp_src[i][1] or ''}", fp_src[i][1])
-    for res, (k, _) in zip(results, fp_src):
+                fp_src[i] = (f"{k}@{fp_src[i][1] or ''}", fp_src[i][1], fp_src[i][2])
+        elif len({fp_src[i][2] for i in idxs}) > 1:
+            print(f"candor-sarif: {len(idxs)} verdict rows share the identity `{k.split('|')[0]}` at one "
+                  f"location but say different things, so nothing here can tell them apart and GitHub "
+                  f"will dedup them into a single alert. Re-run the gate with an engine that emits unit "
+                  f"identity, or with a `loc` on each row.", file=sys.stderr)
+    for res, (k, _, _) in zip(results, fp_src):
         res["partialFingerprints"]["candorViolation"] = hashlib.sha256(k.encode()).hexdigest()[:16]
 
     rules = [{

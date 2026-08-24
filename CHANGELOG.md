@@ -30,8 +30,9 @@ keeps its own.
   one member can resolve two rows to the single entry it can see.
 
   **It degrades safely, deliberately, because the field it wants is not emitted everywhere yet.**
-  ⟨0.32⟩ requires a verdict row to carry enough identity to tell two units apart; candor-rust is adding it
-  now and the other engines have not. Every rung above works today with no engine change, and a row
+  ⟨0.32⟩ requires a verdict row to carry enough identity to tell two units apart. **All four engines emit
+  `hash` on verdict rows as of ⟨0.32⟩** (pinned four-way by conformance PART 68); the degradation below is
+  kept for reports produced by an OLDER engine or by hand, which §3.1 says this action must serve. Every rung above works today with no engine change, and a row
   carrying a `hash` that matches nothing in the report is not a crash and does not silently borrow a
   name-matched entry's location.
 

@@ -4247,3 +4247,21 @@ conformance-pinned while the floor was 0.29).
 
 Two engines' behaviour is unchanged by the hold: ts and swift moved 2 → 2 (disclosure only) and are
 patch-safe.
+
+## A mistyped verb CREATES a directory in the operator's repo (found 2026-08-25)
+
+`candor <unrouted-verb>` treats the verb name as a TARGET PATH: it creates a directory named after it
+and writes `<verb>/.candor/report.refused.json` inside. Observed seven times in one session in the
+umbrella repo itself — `gate/`, `blindspots/`, `containment/`, `map/`, `reachable/`, `show helper/`,
+`where Fs/` — each holding nothing but the refusal document. Note `show helper/` and `where Fs/`: a
+verb WITH ARGUMENTS becomes a directory with a SPACE in its name.
+
+Why it matters beyond mess: `release.sh` step 0 refuses a dirty tree, so this blocks a cut until
+someone notices; and a tool whose whole claim is that it does not touch the code it scans should not
+be creating directories in a repository because an argument was misspelt.
+
+The refusal document itself is correct — ⟨0.32⟩ says a refusal is recorded beside the reports it would
+have written. The defect is that the PREFIX was derived from a token that was never a path. Likely
+fix: resolve the target BEFORE arming the refusal sink, and refuse without writing when the target does
+not exist. Compare the ⟨0.28⟩ ruling that arming a DEFAULT prefix is not licensed — a convention does
+not license creating a file, and a mistyped verb licenses even less.

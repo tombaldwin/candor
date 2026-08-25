@@ -42,6 +42,12 @@ Three things the fallback deliberately does not do:
   the exit is 1 — an `✘` that scrolls past above a green `doctor` summary is exactly how a
   failed install gets read as a successful one in a script or a CI step.
 
+The jar write also gained the `mkdir -p ~/.candor` it never had. Every jar *reader* (`run_java`,
+`doctor`, the status dashboard) looks in `~/.candor`, but the only directory `update` created was
+`$CANDOR_CACHE/bin` — the same place only when `CANDOR_CACHE` is unset. Measured: with `CANDOR_CACHE`
+pointed elsewhere the fetch dies on `curl: (56) Failure writing output to destination`, so on those
+machines the new fallback would have failed in the act of rescuing them.
+
 `bin/candor.test.sh` gained 19 rows covering all four outcomes, network-free:
 `CANDOR_JAVA_RELEASE_BASE` serves a fake release over `file://`. Two mutations confirm the
 rows discriminate the behaviour rather than the seam — removing the fallback reddens only

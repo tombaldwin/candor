@@ -1054,7 +1054,11 @@ PY
     jvm_rc=0
     # fetch the portable jar for the pinned tag. Used by BOTH routes: the platforms that have no native
     # binary at all, and as the fallback when this platform's native asset is not published for this tag.
+    # ~/.candor, NOT $CANDOR_CACHE: every jar READER here (run_java, doctor, the status dashboard) looks
+    # in $HOME/.candor, so the writer has to agree with them. `mkdir -p` because the earlier one creates
+    # $CANDOR_CACHE/bin, which is only the same directory when CANDOR_CACHE is unset.
     jarf="$HOME/.candor/candor-java-$ENGINE_PIN-all.jar"
+    mkdir -p "$HOME/.candor"
     fetch_jvm_jar() {
       if curl -fsSL -o "$jarf.tmp" "$base/candor-java-$ENGINE_PIN-all.jar"; then
         mv "$jarf.tmp" "$jarf"; return 0

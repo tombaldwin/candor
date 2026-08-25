@@ -8,6 +8,45 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — the umbrella's own workflows can be run locally, and the ladder has a dress rehearsal
+
+- **`bin/verify-umbrella.sh` — what `bin/verify-local.sh` is for the engines, for this repo.**
+  `verify-local.sh` walks the engine repos; nothing ran candor's own three push-triggered workflows, and
+  that gap showed three times in one day. An agent ran four commands in a clean worktree and called them
+  "the union of what the three workflows run" — `integrations.yml` runs **nine** steps and four were
+  missing, so main went red on the push. `release-test.sh` said 148/148 locally while CI said 8 FAILED,
+  because local ran against a working tree CI never checks out. And a reproduction on **arm64** Linux
+  reported 18 failures where CI reported 2.
+
+- **The step list is DERIVED, never transcribed** (`bin/wf-steps.py`, new). Every `run:` step in
+  `.github/workflows/*.yml` is enumerated from the YAML; add a step to a workflow and it runs here with
+  no edit to the runner. A hand-kept list of what CI runs drifts from CI by construction, silently, in
+  the direction of running less — and its shortfall looks exactly like a pass. Whether GitHub would
+  *trigger* a workflow stays `bin/wf-expected.py`'s question, asked rather than re-implemented.
+
+- **What it did NOT run is part of every report**, counted, with a reason each: a scheduled monitor
+  (`corpus.yml`, `release-audit.yml`), a job whose `if:` is false for a push, a step needing a secret or
+  an unresolvable `${{ }}`, a workflow GitHub's path filter would not start for this commit.
+
+- **It runs a COMMIT, in a throwaway worktree** — the 148/148 case — and prints the sha it validated.
+
+- **`--docker` reproduces the platform, on `linux/amd64` explicitly.** Measured on the commit before
+  `0382c91`: all nine `integrations.yml` steps pass on darwin/arm64, and the dispatcher routing contract
+  fails on linux/amd64 with `candor-dispatch: 2 FAILED` — the same **two** CI reported, not the eighteen
+  an arm64 run produced. A faithless reproduction manufactures work; `--platform linux/amd64` is not
+  optional in it.
+
+- **`bin/release-rehearsal.sh <spec> <version>` — the ladder minus publishing, every failure at once.**
+  The 0.32.0 cut discovered failures serially: rust CI red → fix → push → wait → swift red → fix → push
+  → wait → spec red, then preflight failures over three more rounds, ~10 minutes a loop. Four arms —
+  tree state for every repo (`release.sh` step 0 without its `die` on the first), engine suites, the
+  umbrella workflows, and `release-preflight` — run concurrently, none short-circuiting another, ending
+  in one numbered list. It refuses without both arguments, because a bare `release-preflight.sh` is
+  health mode and its `OK` has been quoted as a release gate.
+
+- **And it says what a rehearsal cannot prove**: CI on a pushed commit, registry state, the publish
+  calls' network half, and anything downstream of the release existing.
+
 ## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door
 
 - **`bin/candor` now carries a per-engine pin beside the family one.** `ENGINE_PIN` was a single value

@@ -8,6 +8,18 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — a night log is a dated record, not a shipped claim (unreleased)
+
+`release-preflight.sh`'s stale-spec-string scan flagged two lines of
+`NIGHT-2026-08-21.md`: the engine used that night, and the releases cut that night.
+Both are TRUE and must stay true — a night log records what was measured when it was
+written, and falsifying it to quiet a scan would destroy the record the file exists to be.
+
+Marking the lines individually was the wrong unit: the file is historical by
+construction, so the next night log trips the scan on its first line. `NIGHT-*.md` is
+excluded as a class, at BOTH scan sites — the first attempt patched one, asserted a
+single occurrence, and left the record neither marked nor excluded.
+
 ## 2026-08-25 — the identity is the PAIR, and the fix below reintroduced what it closed (released 2026-08-25 as 0.32.0)
 
 - **⚠ THE SAME HIDE, BY THE OTHER AXIS, INTRODUCED BY THE COMMIT THAT CLOSED IT.** Yesterday's repair

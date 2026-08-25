@@ -79,6 +79,24 @@ check: build test props clippy conformance probe
 bootstrap *flags:
     bash {{root}}/candor/bin/bootstrap-dev.sh {{flags}}
 
+# What CI runs, before pushing. Two halves, because the family has two: `verify-local.sh` runs each
+# ENGINE repo's own gate, and this runs the UMBRELLA's — derived from .github/workflows/*.yml rather than
+# transcribed, so it cannot drift the way a hand-kept list did (a four-command "union of what the three
+# workflows run" was missing four of integrations.yml's nine steps, and main went red on the push).
+# `just verify-umbrella --docker` runs the ubuntu jobs on linux/amd64: on 0382c91^ the dispatcher routing
+# contract passes on darwin/arm64 and fails on linux exactly as CI did.
+verify-umbrella *flags:
+    cd {{root}}/candor && bash bin/verify-umbrella.sh {{flags}}
+
+verify-engines *repo:
+    cd {{root}}/candor && bash bin/verify-local.sh {{repo}}
+
+# THE DRESS REHEARSAL — everything the release ladder does except publishing, every failure at once.
+# The 0.32.0 cut found them one per ~10-minute CI round: rust red, then swift, then spec, then three
+# rounds of preflight. `just rehearse 0.32 0.32.2`.
+rehearse spec version *flags:
+    cd {{root}}/candor && bash bin/release-rehearsal.sh {{spec}} {{version}} {{flags}}
+
 # Release gates (read-only — publishing is deliberately NOT a recipe).
 # `*flags` carries `--only <repos>` through for a SCOPED cut (one engine at a patch version, the rest of
 # the family unmoved): `just preflight 0.32 0.32.1 --only candor-java`. With no flag both behave exactly

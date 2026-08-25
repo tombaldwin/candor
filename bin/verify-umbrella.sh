@@ -78,7 +78,7 @@ git -C "$REPO" worktree add --detach --quiet "$WT" "$SHA" \
 # ── the platform question ────────────────────────────────────────────────────────────────────────────
 HOST_OS="linux"; [ "$(uname -s)" = "Darwin" ] && HOST_OS="darwin"
 HOST_ARCH="$(uname -m)"
-IMAGE="candor-verify-umbrella:bookworm-amd64"
+IMAGE="candor-verify-umbrella:bookworm-amd64-2"
 if [ "$DOCKER" = 1 ]; then
   command -v docker >/dev/null 2>&1 || { echo "verify-umbrella: --docker but no docker on PATH"; exit 2; }
   docker info >/dev/null 2>&1 || { echo "verify-umbrella: --docker but the docker daemon is not running"; exit 2; }
@@ -147,10 +147,24 @@ wf_required() {  # $1 = workflow display name
 # running against something other than what CI gave it must never be indistinguishable from one that was.
 SHIMS="$TMP/shims"; mkdir -p "$SHIMS"
 PROVISIONED=""; MISSING_TOOLS=""
-provision_native() {
-  local tools; tools="$(awk -F"$SEP" -v ok="$INSCOPE" '
+
+# The tools the IN-SCOPE jobs' `uses:` steps stand for. One definition, two callers (the native
+# provisioner and the container probe) — the alternative is two filters that agree until they do not.
+inscope_tools() {
+  awk -F"$SEP" -v ok="$INSCOPE" '
       BEGIN { while ((getline l < ok) > 0) live[l] = 1 }
-      $1=="PROVISION" && $8!="" && (($2 "|" $4) in live) { print $8 }' "$STEPS" | sort -u)"
+      $1=="PROVISION" && $8!="" && (($2 "|" $4) in live) { print $8 }' "$STEPS" | sort -u
+}
+# Which in-scope jobs depend on a given tool — so a missing one names the jobs it disqualifies rather
+# than letting them run and fail on `command not found`.
+jobs_needing() {  # $1 = tool
+  awk -F"$SEP" -v ok="$INSCOPE" -v want="$1" '
+      BEGIN { while ((getline l < ok) > 0) live[l] = 1 }
+      $1=="PROVISION" && $8==want && (($2 "|" $4) in live) { print $2 "|" $4 }' "$STEPS" | sort -u
+}
+
+provision_native() {
+  local tools; tools="$(inscope_tools)"
   local t
   for t in $tools; do
     case "$t" in
@@ -199,12 +213,54 @@ build_image() {
 FROM node:22-bookworm-slim
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       bash ca-certificates curl git jq python3 python3-venv python3-pip shellcheck unzip zip procps \
+      cargo \
     && rm -rf /var/lib/apt/lists/*
+# `cargo` is NOT provisioned by any `uses:` step — the GitHub ubuntu runner PREINSTALLS it, and
+# `release-test.sh`'s Cargo.lock arm calls `note_skip` without it, which that script turns into a
+# FAILURE under CI. Measured: without this line the container reported `release-test: 1 FAILED` on a
+# commit CI had just passed. That is the harness's failure wearing the code's clothes.
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --quiet jsonschema
 ENV PATH=/opt/venv/bin:$PATH
 DOCKERFILE
 }
-[ "$DOCKER" = 1 ] && { build_image || { echo "verify-umbrella: image build failed"; exit 2; }; }
+
+# THE IMAGE IS NOT THE RUNNER, AND THE GAP MUST BE A SKIP RATHER THAN A RED. `jetbrains.yml` needs a JDK
+# that the runner's `actions/setup-java` provides and this image does not carry; running its steps in
+# there would produce `command not found` — a failure of the harness wearing the clothes of a failure of
+# the code, which is the single most expensive kind of false red. So the container is asked ONCE which of
+# the in-scope tools it actually has, and the jobs depending on a missing one are skipped BY NAME.
+DOCKER_SKIP="$TMP/docker-skip"; : > "$DOCKER_SKIP"
+docker_probe() {
+  local tools; tools="$(inscope_tools)"
+  [ -n "$tools" ] || return 0
+  # The tool names go in as ARGUMENTS, not spliced into the script text. `inscope_tools` returns them one
+  # per line, and a newline inside a `for t in …;` list splices as a statement break: the first probe
+  # reported `node` absent from an image literally named `node:22-bookworm-slim`, because the container's
+  # bash died on a syntax error and the empty output read as "nothing is present". A probe whose failure
+  # mode is a plausible-looking answer is worse than one that crashes.
+  local present t j
+  local -a tool_argv=()
+  while IFS= read -r t; do [ -n "$t" ] && tool_argv+=("$t"); done <<EOF
+$tools
+EOF
+  present="$(docker run --rm --platform linux/amd64 "$IMAGE" bash -c \
+      'for t in "$@"; do command -v "$t" >/dev/null 2>&1 && echo "$t"; done' _ "${tool_argv[@]}" 2>/dev/null)"
+  for t in $tools; do
+    printf '%s\n' "$present" | grep -qxF "$t" && continue
+    MISSING_TOOLS="$MISSING_TOOLS $t"
+    while IFS= read -r j; do
+      [ -n "$j" ] && printf '%s\t%s\n' "$j" \
+        "the linux/amd64 image does not carry \`$t\` (the runner's \`uses:\` step provides it) — run this job without --docker" \
+        >> "$DOCKER_SKIP"
+    done <<EOF
+$(jobs_needing "$t")
+EOF
+  done
+}
+if [ "$DOCKER" = 1 ]; then
+  build_image || { echo "verify-umbrella: image build failed"; exit 2; }
+  docker_probe
+fi
 
 # ── run ──────────────────────────────────────────────────────────────────────────────────────────────
 RESULTS="$TMP/results"; SKIPS="$TMP/skips"; : > "$RESULTS"; : > "$SKIPS"
@@ -283,6 +339,11 @@ while IFS=$'\x1f' read -r status file wfname job runson label reason wd sh envb 
       skipped=$((skipped+1))
       printf "  %-15s %-18s %-46s %s\n" "${file%.yml}" "$job" "${label:0:46}" "$reason" >> "$SKIPS" ;;
     RUN)
+      if dreason="$(grep -F "$file|$job	" "$DOCKER_SKIP" 2>/dev/null | head -1)" && [ -n "$dreason" ]; then
+        skipped=$((skipped+1))
+        printf "  %-15s %-18s %-46s %s\n" "${file%.yml}" "$job" "${label:0:46}" "${dreason#*	}" >> "$SKIPS"
+        continue
+      fi
       if ! wf_required "$wfname"; then
         skipped=$((skipped+1))
         printf "  %-15s %-18s %-46s %s\n" "${file%.yml}" "$job" "${label:0:46}" \
@@ -305,12 +366,19 @@ if [ -s "$SKIPS" ]; then sort "$SKIPS"; else echo "    (none)"; fi
 echo
 echo "  ENVIRONMENT the runner would have provisioned ($provision \`uses:\` steps, none of them executable here):"
 if [ "$DOCKER" = 1 ]; then
-  echo "    the linux/amd64 image above carries node/python+jsonschema/jq/shellcheck/git in place of them"
+  echo "    the linux/amd64 image above carries node/python+jsonschema/jq/shellcheck/git/cargo in place of them"
   echo "    it is Debian bookworm, NOT the GitHub ubuntu-24.04 runner image — the platform is reproduced, the image is not"
 else
   [ -n "$PROVISIONED" ] && printf '%s\n' "$PROVISIONED" || echo "    (nothing to stand in for)"
 fi
-[ -n "$MISSING_TOOLS" ] && echo "    ✘ NOT AVAILABLE LOCALLY:$MISSING_TOOLS — steps needing these can only be trusted from CI or --docker"
+if [ -n "$MISSING_TOOLS" ]; then
+  if [ "$DOCKER" = 1 ]; then
+    echo "    ✘ ABSENT FROM THE IMAGE:$MISSING_TOOLS — the jobs needing them are in the DID NOT RUN list above,"
+    echo "      by name. Run those without --docker (this host has them) or read them from CI."
+  else
+    echo "    ✘ NOT ON THIS MACHINE:$MISSING_TOOLS — steps needing them can only be trusted from CI or --docker"
+  fi
+fi
 echo
 echo "  ONE DELIBERATE DIVERGENCE FROM GITHUB: a real job STOPS at its first failed step. This runs every"
 echo "    step of the job anyway, because the point is N problems in one pass — so a ✘ below may be a"
@@ -326,6 +394,13 @@ echo "    · whether the workflow FILE itself is valid to GitHub — this reads 
 echo
 if [ "$LIST" = 1 ]; then
   echo "verify-umbrella: LISTED $ran runnable step(s); nothing was executed"; exit 0
+fi
+if [ "$ran" -eq 0 ]; then
+  # A RUN THAT EXECUTED NOTHING IS NOT A PASS, and must not be worded like one. Zero-and-green is the
+  # exact shape of the failure this script exists for; every reason is in the DID NOT RUN list above.
+  echo "verify-umbrella: NOTHING RAN — 0 of $((ran + skipped)) step(s). That is a verdict about the"
+  echo "  selection, not about the code. Every reason is listed above; --all ignores the path filters."
+  exit 0
 fi
 if [ "$failed" -eq 0 ]; then
   echo "verify-umbrella: OK — $ran step(s) ran, $failed failed, $skipped not run (see above)"

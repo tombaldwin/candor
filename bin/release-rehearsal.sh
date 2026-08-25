@@ -163,26 +163,37 @@ wait
 
 rc_of() { cat "$TMP/$1.rc" 2>/dev/null || echo 99; }
 
+# EVERY FINDING BECOMES ITS OWN LINE, not one line per arm. "1 problem" for an arm holding five of them
+# is the under-count `release-preflight`'s own `bad()` was fixed for — a report that under-counts its
+# findings is the same shape as an engine that under-reports, and worse here, because the number is what
+# tells you whether the last fix helped.
+harvest() {  # $1 arm number ; $2 rc-key ; $3 log ; $4 grep -E pattern for one finding per line
+  [ "$(rc_of "$2")" != 0 ] || return 0
+  local found=0 line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    found=$((found + 1))
+    problem "[$1] $(printf '%s' "$line" | sed 's/^ *//; s/  */ /g' | cut -c1-140)"
+  done <<EOF
+$(grep -E "$4" "$3" | head -25)
+EOF
+  # A non-zero arm whose pattern matched nothing must still produce a line. Otherwise a failure the
+  # harvester cannot parse disappears, and the run reports "no problems" while exiting non-zero.
+  [ "$found" = 0 ] && problem "[$1] arm exited non-zero with no line this report could parse — read $3"
+  return 0
+}
+
 arm_start 2 "engine suites — what each engine's own CI runs (bin/verify-local.sh)"
 tail -30 "$E_LOG"
-if [ "$(rc_of e)" != 0 ]; then
-  problem "[2] engine suites FAILED — full log: $E_LOG (copied below)"
-  grep -E "✘|FAILED" "$E_LOG" | head -10 | sed 's/^/      /' >> "$PROBLEMS"
-fi
+harvest 2 e "$E_LOG" "✘ FAILED"
 
 arm_start 3 "umbrella workflows — derived from .github/workflows/*.yml (bin/verify-umbrella.sh --all)"
 sed -n '/^  [a-z]/,$p' "$U_LOG" | head -40
-if [ "$(rc_of u)" != 0 ]; then
-  problem "[3] umbrella workflows FAILED — this is release-scripts.yml + integrations.yml + shell-lint.yml"
-  grep -E "✘ FAILED" "$U_LOG" | head -10 | sed 's/^/      /' >> "$PROBLEMS"
-fi
+harvest 3 u "$U_LOG" "✘ FAILED"
 
 arm_start 4 "release-preflight $SPEC $VER — the real gate, which already reports all its findings"
 grep -E "^\[|✘" "$P_LOG" | head -60
-if [ "$(rc_of p)" != 0 ]; then
-  problem "[4] release-preflight FAILED — full log: $P_LOG"
-  grep -E "✘" "$P_LOG" | head -20 | sed 's/^/      /' >> "$PROBLEMS"
-fi
+harvest 4 p "$P_LOG" "^ *✘ "
 
 # ── the one report ───────────────────────────────────────────────────────────────────────────────────
 echo
@@ -191,7 +202,8 @@ n="$(grep -c '^\[' "$PROBLEMS")"
 if [ "$n" = 0 ]; then
   echo "  no problems found in 4 arm(s)."
 else
-  echo "  $n problem(s), ALL of them, in one pass:"
+  arms="$(sed -n 's/^\(\[[0-9]*\]\).*/\1/p' "$PROBLEMS" | sort -u | tr -d '\n')"
+  echo "  $n problem(s) across arm(s) $arms — ALL of them, in one pass:"
   echo
   sed 's/^/  /' "$PROBLEMS"
 fi

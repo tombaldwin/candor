@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-25 — the identity is the PAIR, and the fix below reintroduced what it closed (unreleased)
+## 2026-08-25 — the identity is the PAIR, and the fix below reintroduced what it closed (released 2026-08-25 as 0.32.0)
 
 - **⚠ THE SAME HIDE, BY THE OTHER AXIS, INTRODUCED BY THE COMMIT THAT CLOSED IT.** Yesterday's repair
   keyed `partialFingerprints.candorViolation` on the verdict row's `hash`, calling that "the answer".
@@ -38,7 +38,7 @@ keeps its own.
   including both over-charge controls: one finding listed twice must still collapse to one alert, and
   must still do it SILENTLY, or the new disclosure fires on every re-run and stops being read.
 
-## 2026-08-24 — ⟨0.32⟩: the SARIF surface stops hiding one finding behind another (unreleased)
+## 2026-08-24 — ⟨0.32⟩: the SARIF surface stops hiding one finding behind another (released 2026-08-25 as 0.32.0)
 
 - **⚠ THE PR-NATIVE SARIF ACTION FINGERPRINTED ON THE NAME, AND SPEC §2 NAMES IT.** ⟨0.32⟩'s hash-join
   clause ends "a consumer that fingerprints on name alone (candor's own SARIF action did) silently hides

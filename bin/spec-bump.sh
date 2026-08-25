@@ -2,7 +2,8 @@
 # spec-bump.sh — REHEARSE a spec-floor bump before committing one.
 #
 #   bash bin/spec-bump.sh --check          # are all seven declarations already consistent?
-#   bash bin/spec-bump.sh 0.28             # bump every declaration, then verify the whole family
+#   bash bin/spec-bump.sh 0.28             # bump every declaration AND every doc/packaging literal,
+#                                          # name the pins it must not touch, then verify the family
 #
 # WHY THIS EXISTS, stated as it happened.
 #

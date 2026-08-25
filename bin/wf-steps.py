@@ -67,14 +67,13 @@ PROVISION_TOOL = {
     "gradle/actions/setup-gradle": "java",
 }
 
-# The one thing a local run of a GitHub `run:` step must get right that is easy to get wrong. GitHub's
-# DEFAULT shell for `run:` on Linux and macOS is `bash -e {0}`; an explicit `shell: bash` is
-# `bash --noprofile --norc -eo pipefail {0}`. The difference is not cosmetic here: release-scripts.yml's
-# "parse every release script" step is a `for` loop whose body is `bash -n "$f" && echo "  ok  $f"`, and
-# under a shell without `-e` a parse error is swallowed by the loop and the step passes.
-SHELL_DEFAULT = ["bash", "--noprofile", "--norc", "-e"]
-SHELL_BASH = ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail"]
-
+# THE `shell` COLUMN, and why it is emitted rather than assumed by the caller. GitHub's DEFAULT shell for
+# `run:` on Linux and macOS is `bash -e {0}`; an explicit `shell: bash` is
+# `bash --noprofile --norc -eo pipefail {0}`. The difference is not cosmetic: release-scripts.yml's "parse
+# every release script" step is a loop whose body is `bash -n "$f" && echo "  ok  $f"`, and `-e` decides
+# whether the step is a gate or a printout. (It turned out to be a printout either way — `set -e` does not
+# fire for a command on the LEFT of `&&` — which is how that vacuous gate was found; but a runner that
+# guessed the shell would not have been able to reason about it at all.)
 EXPR = re.compile(r"\$\{\{(.*?)\}\}", re.S)
 # An `if:` this evaluator understands is built only from these tokens. Anything else — a function call,
 # `github.ref`, a matrix reference — is UNEVALUABLE, and an unevaluable condition makes the job SKIP with

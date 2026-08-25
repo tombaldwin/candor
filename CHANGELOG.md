@@ -47,6 +47,25 @@ keeps its own.
 - **And it says what a rehearsal cannot prove**: CI on a pushed commit, registry state, the publish
   calls' network half, and anything downstream of the release existing.
 
+- **`release-scripts.yml`'s `parse every release script` step was VACUOUS, and is fixed.** Found by
+  mutating a script the step names and watching the step pass. `set -e` — GitHub's default `run:` shell
+  is `bash -e {0}` — does not fire for a command on the LEFT of `&&`, so `bash -n "$f" && echo "  ok  $f"`
+  printed `syntax error: unexpected end of file` for `bin/changelog-lag.sh`, the loop carried on, and the
+  step's exit status was the last command's. **STEP EXIT CODE: 0.** The gate whose entire job is to
+  notice a parse error could not fail on one. It now collects every failure and exits on the count.
+
+- **`bin/wf-expected.py` takes the target branch as `argv[3]` and refuses on a detached HEAD.**
+  `rev-parse --abbrev-ref HEAD` answers the literal string `"HEAD"` in a detached checkout: not empty, so
+  its `or "main"` fallback never fired, and matching no `branches:` filter. `verify-umbrella` validates
+  commits in exactly such a worktree, and its own first green control printed OK having run 2 steps of 23
+  — silently dropping three workflows the commit's paths trigger.
+
+- **`verify-umbrella` states its one deliberate divergence from GitHub on every run**: a real job stops at
+  its first failed step; this runs every step of the job, because the point is N problems in one pass.
+
+- **`just verify-umbrella`, `just verify-engines`, `just rehearse`** — the recipes, so the commands are
+  discoverable rather than remembered.
+
 ## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door
 
 - **`bin/candor` now carries a per-engine pin beside the family one.** `ENGINE_PIN` was a single value

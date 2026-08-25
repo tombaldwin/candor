@@ -158,6 +158,7 @@ for PRIOR in $PRIORS; do
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude='*WORK-QUEUE.md' \
+      --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
     | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
@@ -190,6 +191,7 @@ for PRIOR in $PRIORS; do
       --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude='*WORK-QUEUE.md' \
+      --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
     | grep -iw spec | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"

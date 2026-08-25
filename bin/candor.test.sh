@@ -11,6 +11,11 @@ mkdir -p "$T/fakebin"; for e in candor-query candor-scan candor-ts candor-ts-que
 export PATH="$T/fakebin:$PATH"
 
 fails=0
+# A SKIP IS NOT A PASS. Two rows below can only be measured on Darwin/arm64, and a row that quietly
+# disappears on every other platform is indistinguishable from one that ran and passed — which is how
+# `candor-dispatch: OK` on a Linux runner would come to mean less than it says.
+skips=0
+skip() { echo "  SKIP $1"; skips=$((skips+1)); }
 ok() { # $1 label ; $2 expected-substring ; $3… command
   local label="$1" want="$2"; shift 2
   local got; got="$("$@" 2>&1)"
@@ -508,9 +513,32 @@ pinsay() { # $1 label ; $2 want ; $3 engine ; rest: env — what `update <engine
   if [[ "$got" == *"$2"* ]]; then echo "  ok   $1"; else echo "  FAIL $1"; echo "       want: *$2*"; echo "       got:  $got"; fails=$((fails+1)); fi
 }
 pinsay "java pin leaves rust on the family line"  "cargo install --version $PIN" rust  "CANDOR_ENGINE_PIN_JAVA=$JPIN"
-pinsay "java pin leaves swift on the family line" "no published binary for v$PIN"  swift "CANDOR_ENGINE_PIN_JAVA=$JPIN"
 pinsay "…and a rust pin moves rust, alone"        "cargo install --version $JPIN" rust  "CANDOR_ENGINE_PIN_RUST=$JPIN"
-pinsay "…and a swift pin moves swift, alone"      "no published binary for v$JPIN"  swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+# THE SWIFT PIN HAS NO SURFACE IN `update` OFF Darwin/arm64 — and that is a fact about `candor update
+# swift`, not about the pin. candor-swift publishes only a macos-arm64 asset, so the branch that builds
+# the download URL — the ONLY place `update` names the swift version — is gated on Darwin+arm64. On Linux
+# it prints "macOS only" and names no version at all, so a row asserting a version there asserts something
+# that cannot exist. The first version of these two rows did exactly that: green on this Mac, RED on
+# ubuntu-latest, which is where they were caught.
+#
+# THE PIN ITSELF IS NOT SPECIAL. ENGINE_PIN_SWIFT is declared, resolved and consumed exactly like the
+# other three; the asymmetry is in one platform-gated branch that predates it. Its PLATFORM-INDEPENDENT
+# coverage is the generated-CI-workflow row further down ("init's swift workflow curls the SWIFT pin"),
+# which builds `download/v<swift pin>/candor-swift-macos-arm64` on every platform — that is the row to
+# break if you want to know whether the swift pin still works.
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64)
+    pinsay "java pin leaves swift on the family line" "no published binary for v$PIN"  swift "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+    pinsay "…and a swift pin moves swift, alone"      "no published binary for v$JPIN" swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN";;
+  Darwin:*)
+    # NOT SILENT, on either arm. A row that simply vanished off Darwin/arm64 would leave the impression
+    # the swift pin had been checked here; assert what `update swift` DOES say instead, and skip loudly.
+    pinsay "on Intel macOS, update swift names no version" "published binary is macos-arm64" swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+    skip "the two swift-pin rows (Darwin/arm64 only — the pin's cross-platform row is the workflow one below)";;
+  *)
+    pinsay "off macOS, update swift names no version at all" "macOS only" swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+    skip "the two swift-pin rows (Darwin/arm64 only — the pin's cross-platform row is the workflow one below)";;
+esac
 # 5. THE ts PIN reaches the npx route the dispatcher takes for every ts verb.
 # The npx route fires only when candor-ts-query is NOT on PATH and node IS — this harness's fakebin has
 # the former, so these rows need a PATH of their own or they measure the installed-engine branch.
@@ -623,4 +651,6 @@ initwf "init's rust workflow installs the RUST pin"    Cargo.toml    "--version 
 initwf "init's swift workflow curls the SWIFT pin"     Package.swift "download/v$JPIN/candor-swift"    "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
 
 echo
-if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi
+if [ "$fails" -eq 0 ]; then
+  echo "candor-dispatch: OK$( [ "$skips" -gt 0 ] && printf ' (%d SKIPPED — a platform this row cannot be measured on, not a pass)' "$skips" )"
+else echo "candor-dispatch: $fails FAILED"; exit 1; fi

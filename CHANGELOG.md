@@ -79,6 +79,26 @@ keeps its own.
   battery refuses to score a mutation that did not change the file, so a regex matching nothing reads as a
   broken row rather than as a passing one.
 
+- **Two of those rows were then RED on `ubuntu-latest` while green on macOS, and the finding is about the
+  suite rather than the pin.** `candor update swift` builds its download URL — the only place it names a
+  swift version — inside a branch gated on `Darwin && arm64`, because candor-swift publishes only a
+  `macos-arm64` asset. Off that platform it prints "macOS only" and names no version at all, so the two
+  rows asserted a string that cannot exist there. `ENGINE_PIN_SWIFT` itself is declared, resolved and
+  consumed exactly like the other three — **the four pins stay symmetric and the release guard stays one
+  rule over four engines**; the asymmetry is one platform-gated branch that predates them. The rows are
+  now `Darwin:arm64` / `Darwin:*` / everything-else, each asserting what that platform actually prints,
+  with a **visible SKIP counter** (`candor-dispatch: OK (1 SKIPPED …)`) so a row that cannot be measured
+  is never read as one that passed. The swift pin's cross-platform coverage is the generated-CI-workflow
+  row, which builds `download/v<swift pin>/candor-swift-macos-arm64` everywhere — verified by mutating
+  `ENGINE_PIN_SWIFT` *inside a linux/amd64 container* and confirming the suite still goes red there.
+
+- **The process gap was the inventory, not the checkout.** The verification ran in a disposable worktree
+  at the exact commit — right, and it caught two vacuous rows — but it ran four commands described as
+  "the union of what CI runs". `integrations.yml` runs **nine** steps, and the dispatcher routing contract
+  was not among the four. All nine now run, transcribed from the workflow file rather than from memory,
+  on `linux/amd64` to match the runner (an arm64 container reported 18 failures, twelve of them artefacts
+  of the wrong architecture — a faithless reproduction is its own trap).
+
 - **NOT SOLVED, and it is the honest residual.** `release-audit.yml`'s weekly npm/crates checks compare
   the registry's newest against a single `$VER` derived from the family pin, so a **ts- or rust-only**
   patch makes that monitor red until the family moves. Pre-existing — a scoped cut already published to

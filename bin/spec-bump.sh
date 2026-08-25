@@ -15,14 +15,29 @@
 # minutes. None was found until CI went red, because nothing ran the family's suites against the bump.
 #
 # WHAT IT DOES
-#   1. Bumps the SEVEN declaration sites (the constants each engine emits as `candor.spec`, plus SPEC.md).
-#   2. Runs every engine's own suite, the four-way conformance run, and the doc-drift gates.
-#   3. LISTS every remaining mention of the old version for a human to triage.
+#   1.  Bumps the SEVEN declaration sites (the constants each engine emits as `candor.spec`, plus SPEC.md).
+#   1b. Bumps the DOC + PACKAGING literals — READMEs, AGENTS docs, `package.json`, `pyproject.toml`,
+#       jbang's catalog description, SPEC.md's own envelope fences — in EVERY spelling.
+#   1c. NAMES the deliberate literal canaries, which it must not touch, as a hand-edit list.
+#   2.  Runs every engine's own suite, the four-way conformance run, and the doc-drift gates.
+#   3.  LISTS every remaining mention of the old version for a human to triage.
 #
-# WHY STEP 3 IS A LIST AND NOT A SWEEP. A blanket find-and-replace would have caused harm on 2026-08-04:
-# candor-rust's `crates/candor-scan/src/tests.rs` builds fixture reports declaring the PREVIOUS spec
-# version as INPUTS, proving an older report still loads. Replacing those would have silently deleted a
-# backward-compatibility test. So the script bumps what it KNOWS is a declaration and reports the rest.
+# WHY STEP 1b EXISTS, measured on the ⟨0.32⟩ bump. Step 1 rewrote seven declarations and the version was
+# ALSO written by hand in twenty-odd doc and packaging sites, in three spellings — `spec-0.31`,
+# `"spec": "0.31"` and `(spec 0.31)` in prose. Every hand pass caught the two that LOOK LIKE DECLARATIONS
+# and missed the one that LOOKS LIKE PROSE: candor-swift's embedded doc drifted by one character,
+# candor-rust's and candor-java's README JSON examples survived a full sweep, and SPEC.md itself carried
+# three fences saying `"spec": "0.31"` under a `**Version 0.32**` header. The gates that DERIVE from an
+# engine's own constant never failed. Only literals did — so the literals are now rewritten by machine,
+# and what cannot be is NAMED (1c) rather than discovered one CI round at a time.
+#
+# WHY STEP 1b IS AN ALLOWLIST AND STEP 3 IS STILL A LIST. A blanket find-and-replace would have caused
+# harm on 2026-08-04: candor-rust's `crates/candor-scan/src/tests.rs` builds fixture reports declaring the
+# PREVIOUS spec version as INPUTS, proving an older report still loads. Replacing those would have
+# silently deleted a backward-compatibility test. So 1b rewrites a NAMED SET of documents whose every
+# spec claim is a claim about the CURRENT contract, and everything outside that set is reported, never
+# swept. An allowlist under-reaches by construction, and that is the safe direction here: a doc this
+# script forgets is a doc the engines' own derived gates redden on, and it appears in step 3's list.
 #
 # It does not commit, tag or push. It leaves the tree bumped on failure ON PURPOSE — you fix forward from
 # a rehearsal, and reverting would throw away the diff you need to read.
@@ -46,6 +61,74 @@ DECLS=(
   "ts-query|candor-ts/query.mjs|const SPEC_VERSION = \"%s\";"
   "swift|candor-swift/Sources/candor-swift/main.swift|let specVersion = \"%s\""
   "agents|candor-agents/candor_agents/scan.py|SPEC = \"%s\""
+)
+
+# ── THE DOC + PACKAGING LITERALS (step 1b) ──────────────────────────────────────────────────────────
+# Every file here is a document whose spec claims are claims about the CURRENT contract, so every claim
+# in it moves with the floor. Missing from the list ON PURPOSE:
+#   · candor-spec/SPEC.md — handled separately below, JSON-ONLY. That file is dense with TRUE statements
+#     about past rungs ("⟨0.27⟩", "measured at spec 0.28", clause histories) and a prose sweep there
+#     would be a false-positive machine. Inside a fence, `"spec": "X.Y"` is always an envelope example,
+#     i.e. always a current-contract claim, so restricting to it loses nothing.
+#   · every test fixture, every CHANGELOG, every night log. Those are dated records and INPUTS; see the
+#     header's note on the backward-compatibility fixtures a blanket sweep would have deleted.
+# The three MIRROR copies (java's jar resource, rust's two crate copies) are listed because they are
+# byte-identical siblings pinned by their own repos' gates — rewriting the root and forgetting the
+# mirror turns one hand-edit into a red suite, so the same rewrite is applied to both and the equality
+# is re-checked afterwards. candor-swift's `AgentsDoc.swift` embeds AGENTS.md inside a raw string, so it
+# takes the identical rewrite for the identical reason.
+DOCS=(
+  candor-spec/README.md
+  candor-spec/AGENTS.md
+  candor-rust/README.md
+  candor-rust/AGENTS.md
+  candor-rust/crates/candor-query/AGENTS.md
+  candor-rust/crates/candor-scan/AGENTS.md
+  candor-java/README.md
+  candor-java/AGENTS.md
+  candor-java/src/main/resources/AGENTS.md
+  candor-java/jbang-catalog.json
+  candor-ts/README.md
+  candor-ts/AGENTS.md
+  candor-ts/package.json
+  candor-swift/README.md
+  candor-swift/AGENTS.md
+  candor-swift/SPEC-EXTENSION-privacy.md
+  candor-swift/Sources/candor-swift/AgentsDoc.swift
+  candor-agents/README.md
+  candor-agents/AGENTS.md
+  candor-agents/pyproject.toml
+  candor-agents/candor_agents/__init__.py
+)
+
+# MIRRORS — `a|b` pairs that must stay byte-identical, re-checked after 1b rewrites them. Their own
+# repos' suites assert this too; checking it here means a forgotten sibling is reported by the step that
+# caused it, in the same second, rather than by a red engine suite ten minutes later.
+MIRRORS=(
+  "candor-java/AGENTS.md|candor-java/src/main/resources/AGENTS.md"
+  "candor-rust/AGENTS.md|candor-rust/crates/candor-query/AGENTS.md"
+  "candor-rust/AGENTS.md|candor-rust/crates/candor-scan/AGENTS.md"
+)
+
+# ── THE DELIBERATE CANARIES (step 1c) ───────────────────────────────────────────────────────────────
+# label | repo-relative file | the literal, with @V@ standing in for the version.
+#
+# These three assertions are literals ON PURPOSE and each carries a comment saying so: everything else in
+# their repos DERIVES the spec from the engine's own constant, which is right for checking AGREEMENT and
+# useless for checking the VALUE. With only derived assertions there is no in-tree pin at all — setting
+# candor-swift's `specVersion = "0.29"` once passed every test and both drift gates. They exist to make a
+# human acknowledge a floor bump, so this script must NOT rewrite them.
+#
+# It must still NAME them. Before this list they fired serially through CI, one round trip each, which is
+# the round-trip cost the rest of this script exists to remove — the teeth were never the problem.
+#
+# `@V@` rather than printf's `%s`: these patterns contain escaped quotes, and bash's printf interprets
+# backslash escapes in its FORMAT string, so a `\"` in a template is silently a different string from the
+# one in the file. Parameter expansion does not interpret anything.
+CANARIES=(
+  "rust floor pin|candor-rust/crates/candor-report/src/lib.rs|assert_eq!(SPEC_VERSION, \"@V@\")"
+  "rust envelope|candor-rust/crates/candor-report/src/lib.rs|\\\"spec\\\":\\\"@V@\\\""
+  "swift floor pin|candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift|declaredSpec(), \"@V@\""
 )
 
 current_of() {  # echo the version a declaration file currently carries
@@ -133,6 +216,127 @@ PY
 
 [ "${PIPESTATUS[0]:-0}" = 3 ] && fails=$((fails+1))   # the SPEC.md bump above failed; count it
 
+# ── 1b. the doc + packaging literals, in EVERY spelling ─────────────────────────────────────────────
+say "1b. doc + packaging literals"
+docs_abs=()
+for rel in "${DOCS[@]}"; do
+  if [ -f "$ROOT/$rel" ]; then docs_abs+=("$ROOT/$rel")
+  else bad "$(printf 'doc site missing — it moved or was renamed; update DOCS in this script   (%s)' "$rel")"; fi
+done
+if [ "${#docs_abs[@]}" -gt 0 ]; then
+  CB_ROOT="$ROOT" python3 - "$OLD" "$NEW" "${docs_abs[@]}" <<'PY'
+import os, re, sys
+old, new, paths = sys.argv[1], sys.argv[2], sys.argv[3:]
+root = os.environ["CB_ROOT"].rstrip("/") + "/"
+
+# THE FAMILY'S SHARED CLAIM GRAMMAR — the same one candor-rust's `spec_claims`, candor-java's
+# `spec_claims.py`, candor-ts's `claim`, candor-swift's `AgentsDocDriftTests` and candor-agents'
+# `_claim` carry: `spec` + one to EIGHT of [-: "*)\]] + <digits>.<digits>.
+#
+# ONE GRAMMAR FOR THE REWRITER AND THE CHECKERS, deliberately. If the bump could rewrite a spelling the
+# gates cannot see, a stale claim would ship silently; if the gates could see one the bump cannot
+# rewrite, the gate's remedy would be a hand edit — which is this whole item. Eight rather than four
+# because SPEC.md's own aligned `"spec":    "0.32"` needs six separators; `)` and `]` because
+# candor-swift's README says `[candor-spec](…) 0.32`. Both were live in shipped documents at ⟨0.32⟩ and
+# every gate in the family read clean over them.
+claim = re.compile(r'spec[-: "*)\]]{1,8}(\d+\.\d+)')
+
+for p in paths:
+    s = open(p, encoding="utf-8").read()
+    out, last, moved, kept = [], 0, 0, []
+    for m in claim.finditer(s):
+        # The family's historical marker: a note naming the rung a feature arrived at is a true
+        # statement about the PAST and must not move with the floor. Keying on the marker rather than
+        # on a list of tolerated old versions means a new annotation never needs this script edited.
+        if s[m.end():m.end() + 16].startswith(", informative)"):
+            kept.append(m.group(1)); continue
+        if m.group(1) != old:
+            # A claim at neither the old floor nor an exempt marker. NOT rewritten and NOT silent: it
+            # is either a stale claim an earlier bump missed or a typo, and both want a human.
+            kept.append(m.group(1) + "?"); continue
+        out.append(s[last:m.start(1)]); out.append(new); last = m.end(1); moved += 1
+    out.append(s[last:])
+    if moved:
+        open(p, "w", encoding="utf-8").write("".join(out))
+    rel = p[len(root):] if p.startswith(root) else p
+    unknown = [k for k in kept if k.endswith("?")]
+    tail = ""
+    if unknown:
+        tail = "   \033[33m← %s NOT at %s: %s\033[0m" % (
+            len(unknown), old, ", ".join(sorted(set(k[:-1] for k in unknown))))
+    mark, colour = ("✔", "32") if moved else ("•", "33")
+    print("  \033[%sm%s\033[0m %-52s %s claim(s) → %s%s"
+          % (colour, mark, rel, moved, new, tail))
+PY
+fi
+
+# SPEC.md's own envelope fences — JSON-ONLY, for the reason `check_agents_drift.py` states at length:
+# this document's PROSE is full of true statements about past rungs, and inside a fence `"spec": "X.Y"`
+# is always an envelope example, i.e. always a claim about the current contract. Three of them were left
+# at the prior floor under a bumped header at ⟨0.32⟩, and the alignment padding on one had already
+# defeated a hand sweep for the exact string at 0.30.
+CB_ROOT="$ROOT" python3 - "$ROOT/candor-spec/SPEC.md" "$OLD" "$NEW" <<'PY'
+import re, sys
+p, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(p, encoding="utf-8").read()
+json_spec = re.compile(r'("spec"\s*:\s*")(\d+\.\d+)(")')
+moved = 0
+lines = s.splitlines(keepends=True)
+for i, line in enumerate(lines):
+    if ", informative)" in line:      # per-LINE, because that is where SPEC.md puts the marker
+        continue
+    def sub(m):
+        global moved
+        if m.group(2) != old:
+            return m.group(0)
+        moved += 1
+        return m.group(1) + new + m.group(3)
+    lines[i] = json_spec.sub(sub, line)
+if moved:
+    open(p, "w", encoding="utf-8").write("".join(lines))
+mark, colour = ("✔", "32") if moved else ("•", "33")
+print("  \033[%sm%s\033[0m %-52s %s envelope fence(s) → %s"
+      % (colour, mark, "candor-spec/SPEC.md (JSON fences only)", moved, new))
+PY
+
+# THE MIRRORS MUST STILL MATCH. A doc rewrite is exactly what breaks byte-equality between a canonical
+# document and its shipped copy — one forgotten entry in DOCS above and the copies diverge — so the
+# invariant is re-checked by the step that just risked it, not ten minutes later by a red engine suite.
+for m in "${MIRRORS[@]}"; do
+  IFS='|' read -r a b <<<"$m"
+  [ -f "$ROOT/$a" ] && [ -f "$ROOT/$b" ] || continue
+  if cmp -s "$ROOT/$a" "$ROOT/$b"; then
+    note "mirror OK: $b matches $a"
+  else
+    bad "mirror BROKEN: $b no longer matches $a — the rewrite reached one copy and not the other"
+  fi
+done
+
+# ── 1c. the DELIBERATE canaries — named, never rewritten ────────────────────────────────────────────
+say "1c. deliberate literal pins — EDIT THESE BY HAND, in this pass"
+echo "  These are literals ON PURPOSE: everything else derives the spec from an engine's own constant,"
+echo "  which checks AGREEMENT and not the VALUE. They are the only in-tree pins that notice the"
+echo "  constant moved, so this script names them and refuses to edit them. Keep the teeth."
+echo
+canary_todo=0
+for c in "${CANARIES[@]}"; do
+  IFS='|' read -r label rel pat <<<"$c"
+  f="$ROOT/$rel"
+  [ -f "$f" ] || { bad "$(printf 'canary %-14s missing file %s' "$label" "$rel")"; continue; }
+  at_old="${pat//@V@/$OLD}"; at_new="${pat//@V@/$NEW}"
+  if grep -qF "$at_old" "$f"; then
+    canary_todo=$((canary_todo+1))
+    printf '  \033[33m✎\033[0m %-14s %s\n      %s\n' "$label" "$rel" "$at_old  →  $at_new"
+  elif grep -qF "$at_new" "$f"; then
+    note "$(printf '%-14s already at %s   (%s)' "$label" "$NEW" "$rel")"
+  else
+    # NOT a silent skip. A canary that cannot be located is not pinning anything, and the failure mode
+    # of a missing pin is indistinguishable from a satisfied one — which is what made the pin necessary.
+    bad "$(printf 'canary %-14s not found at %s OR %s — it moved or was deleted; a pin nobody can locate is not pinning the floor   (%s)' "$label" "$OLD" "$NEW" "$rel")"
+  fi
+done
+[ "$canary_todo" = 0 ] && ok "no canary edits outstanding"
+
 # ── 3. what is LEFT — reported, never swept ─────────────────────────────────────────────────────────
 # A FUNCTION, so `--decls-only` can run it too. It was written inline BELOW the suites, and the harness
 # drives every spec-bump row through `--decls-only` — which exits at step 1. So this step, and the
@@ -211,7 +415,7 @@ if [ "${2:-}" = "--decls-only" ]; then
   echo
   # It exits EARLY, so it must do the step-1 accounting itself — otherwise the shortcut is the one path
   # where a skipped declaration site still reports success.
-  [ "$fails" = 0 ] || { bad "$fails declaration site(s) NOT bumped — the family is SPLIT"; exit 1; }
+  [ "$fails" = 0 ] || { bad "$fails site(s) NOT bumped — the family is SPLIT"; exit 1; }
   # Step 3 DOES run here — it is grep, not a suite — so the harness can reach it and its liveness probe.
   rc=0; remaining_mentions
   [ "$scan_dead" = 0 ] || exit 1
@@ -247,7 +451,13 @@ remaining_mentions
 echo
 # A skipped DECLARATION is not a suite failure, so it would not otherwise reach this line — which is
 # exactly how "GREEN at 0.28" got printed over an engine still emitting 0.27.
-[ "$fails" = 0 ] || { rc=1; bad "$fails declaration site(s) NOT bumped — the family is SPLIT, whatever the suites say"; echo; }
+[ "$fails" = 0 ] || { rc=1; bad "$fails site(s) NOT bumped — the family is SPLIT, whatever the suites say"; echo; }
+# THE CANARIES ARE THE EXPECTED RED, so say so where the operator is standing when the suites go red.
+# Without this line the run ends in "suites failed", the operator reads a red engine suite, and the two
+# assertions that were SUPPOSED to fail look like defects rather than the acknowledgement they are.
+[ "$canary_todo" = 0 ] || printf '  \033[33m✎\033[0m %s\n' \
+  "$canary_todo deliberate pin(s) still at $OLD — step 1c lists them; the candor-report and \
+candor-swift suites are RED until you edit them, and that is the pin working"
 # NAME THE RIGHT ONE. Three different failures used to arrive under the single label "suites failed": a
 # red engine suite, a moved declaration site, and a mentions scan that could not run. This file already
 # carries a comment saying why a broken scan must not be announced as a split family; the summary was
@@ -255,7 +465,7 @@ echo
 # was not.
 why=""
 [ "$rc" = 0 ]        || why="suites failed"
-[ "$fails" = 0 ]     || why="${why:+$why + }$fails declaration site(s) not bumped"
+[ "$fails" = 0 ]     || why="${why:+$why + }$fails declaration/doc site(s) not bumped"
 [ "$scan_dead" = 0 ] || { why="${why:+$why + }the remaining-mentions scan is broken"; rc=1; }
 if [ "$rc" = 0 ]; then
   printf '\033[32mspec-bump: the family is GREEN at %s.\033[0m Review the diff, triage any list above, then commit.\n' "$NEW"

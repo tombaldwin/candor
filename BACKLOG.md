@@ -77,7 +77,77 @@ the upload still happens on `release: published`. [10] now also waits on `native
 (~4 min at the tail of a cut) — comment updated in `release-preflight.sh`, which previously named only
 candor-ts's `publish` and candor-swift's `release` as the tag-started workflows.
 
-## **`[P1]` THE SPEC VERSION IS WRITTEN BY HAND IN MANY PLACES, IN THREE SPELLINGS** (filed 2026-08-25)
+## ~~**`[P1]` THE SPEC VERSION IS WRITTEN BY HAND IN MANY PLACES, IN THREE SPELLINGS**~~ / ~~**`[P2]` THE DELIBERATE CANARIES ARE DISCOVERED ONE CI ROUND AT A TIME**~~ **BOTH CLOSED 2026-08-25**
+
+One item, three buckets, and the inventory turned out to be worth as much as the fix — nobody knew how
+many sites there were. **35 hand-written claim occurrences across 19 documents** in the seven repos (two
+more documents legitimately carry none), plus the 7 declarations and 3 deliberate pins. Counted by
+running the bump for real: `spec-bump.sh 0.33` reports the per-file tally. There was also a **FOURTH
+spelling** nobody had named: a version behind a MARKDOWN LINK.
+
+**(a) DERIVED — the gates now see the sites they could not.** Five doc gates already derived their
+expected value from an engine's own constant, which is why they never failed. They failed the other way:
+they were narrow in FILE SET and narrow in GRAMMAR.
+
+  · **candor-spec had no README sweep at all.** Checks 2 and 3 of `check_agents_drift.py` read one JSON
+    envelope in AGENTS.md and every JSON fence in SPEC.md. Nothing read README.md, whose family table
+    states the contract FIVE times as `**shipped (spec X.Y)**`. Every code engine gained a sweep of its
+    own README at ⟨0.32⟩; the repo that DEFINES the version was the one left without one. Check 3c.
+  · **candor-java's gate did not read `jbang-catalog.json`** — a contract claim on its own distribution
+    channel, printed by `jbang candor@tombaldwin/candor-java`.
+  · **candor-agents' gate did not read `candor_agents/__init__.py`** — the module docstring, a fourth
+    literal in a repo whose other three were covered.
+  · **THE GRAMMAR WAS `spec` + one to FOUR of `[-: "]`, IN ALL FIVE ENGINES, AND MISSED TWO SPELLINGS
+    THAT WERE LIVE IN SHIPPED DOCUMENTS.** An ALIGNED envelope column, `"spec":    "0.32"`, has SIX
+    separators — `check_agents_drift.py`'s own header already recorded that this padding "defeated a hand
+    sweep for the exact string" at 0.30; it defeated the automated one too, one layer down, and nobody
+    had asked. And a MARKDOWN LINK: **candor-swift/README.md line 3 reads `[candor-spec](…) 0.32`**, so
+    the `) ` put the file's headline claim outside its own gate. That gate is the one the other four
+    ported at ⟨0.32⟩ *because it was clean through the bump* — it was clean over a claim it could not
+    read. **A gate cited as the reason a spelling is covered has to be asked which spellings it reads.**
+    All five now use `spec` + one to EIGHT of `[-: "*)\]]`, with a control fixture that is byte-for-byte
+    the same in each, so a widening applied in one repo and forgotten in another reddens rather than
+    going quiet. Measured: with the old grammar, a README carrying both stale forms passed.
+
+**(b) TAUGHT — `spec-bump.sh` step 1b rewrites the doc and packaging literals by machine**, in every
+spelling, over an explicit allowlist of 21 documents plus SPEC.md's JSON fences. An ALLOWLIST because the
+0.27 bump proved a blanket sweep destructive — candor-rust's `tests.rs` builds fixture reports at the
+PREVIOUS spec as INPUTS — and an allowlist under-reaches in the safe direction: a doc it forgets is a doc
+the derived gates redden on, and it still appears in step 3's triage list. SPEC.md is JSON-ONLY for the
+reason `check_agents_drift.py` states: its prose is true statements about past rungs. The
+`(spec X.Y, informative)` marker is honoured, so a note about the past does not move with the floor. The
+three MIRROR copies (java's jar resource, rust's two crate copies) take the identical rewrite and their
+byte-equality is re-checked by the step that risked it.
+
+**ONE GRAMMAR FOR THE REWRITER AND THE CHECKERS, deliberately.** If the bump could rewrite a spelling the
+gates cannot see, a stale claim would ship silently; if a gate could see one the bump cannot rewrite, its
+remedy would be a hand edit — which is this whole item.
+
+**(c) LISTED — step 1c NAMES the three deliberate pins, with the exact before → after**, and refuses to
+edit them. That is the `[P2]`. Their teeth are intact and the reason is unchanged: everything else
+DERIVES the spec, which checks AGREEMENT and not the VALUE, and with only derived assertions there is no
+in-tree pin at all — setting candor-swift's `specVersion = "0.29"` once passed every test and both drift
+gates. A pin the script cannot LOCATE now fails the run, because a missing pin reads exactly like a
+satisfied one.
+
+### THE ACCEPTANCE TEST, and it is the one that matters
+
+An incomplete list is the defect this closes, so completeness had to be the assertion. In a disposable
+clone of all seven repos, `spec-bump.sh 0.33` was run, **exactly the three edits step 1c printed** were
+applied, and nothing else. Then: an INDEPENDENT oracle (written from the grammar, not imported from any
+engine) found every declaration and every gated document at 0.33 and nothing left at 0.32; the touched-
+file audit showed **no fixture and no backward-compatibility test was swept**; and the gates that run
+without a build — candor-spec's drift gate, candor-agents' full 469-test suite, java's doc gate, ts's doc
+gate — were all green at the new floor.
+
+`release-test.sh` §5b carries 16 rows for this, and they have teeth: dropping ONE entry from the `DOCS`
+list reddens three rows including the acceptance row, naming the file; narrowing the rewriter's grammar
+back to `{1,4}` reddens the aligned-column and markdown-link rows by name.
+
+**Residual, and it is deliberate.** `candor-spec/conformance/gate/*/.candor/*.json` are conformance
+artifacts carrying the floor; they are regenerated by a run, not hand-edited, and step 3 lists them.
+
+### Original filing (2026-08-25)
 
 Measured on the 0.32 bump: `spec-bump.sh` rewrites seven declaration sites, and the version ALSO
 appears in READMEs, AGENTS docs, `package.json`, `pyproject.toml`, embedded AGENTS copies, jbang's
@@ -230,7 +300,7 @@ network half: `release-test.sh` drives `release.sh` against STUBS, which covers 
 not the remote's answer. And anything downstream of the release existing — `native.yml`'s release-event
 upload, the brew formula's hash of an uncut tarball, `candor update` fetching an unpublished engine.
 
-## **`[P2]` THE DELIBERATE CANARIES ARE RIGHT, BUT THEY ARE DISCOVERED ONE CI ROUND AT A TIME** (filed 2026-08-25)
+## ~~**`[P2]` THE DELIBERATE CANARIES ARE RIGHT, BUT THEY ARE DISCOVERED ONE CI ROUND AT A TIME**~~ **CLOSED 2026-08-25 — `spec-bump.sh` step 1c names them; see the `[P1]` entry above** (filed 2026-08-25)
 
 Three literal assertions exist on purpose, each with a comment saying deriving them from the
 constant would make them vacuous: candor-report's `SPEC_VERSION` + envelope assertion, and swift's

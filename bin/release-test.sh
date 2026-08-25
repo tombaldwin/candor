@@ -274,7 +274,7 @@ say "1c. release.sh REFUSES to cut the umbrella while ENGINE_PIN lags"
 # The REAL script: the fixture tree carries only what this test copies into it, and release.sh is read
 # rather than run here (running it would publish).
 REALREL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release.sh"
-grep -q 'PINNED=' "$REALREL" && ok "the ENGINE_PIN guard exists in release.sh" || bad "no ENGINE_PIN guard"
+grep -q 'rs_pin_violations' "$REALREL" && ok "the ENGINE_PIN guard exists in release.sh" || bad "no ENGINE_PIN guard"
 awk '/^rel candor +"/{u=NR} /^say "6\. cross-repo pins/{p=NR} END{exit !(u>p && p>0)}' "$REALREL" \
   && ok "the umbrella release is cut AFTER the pin step, not before" \
   || bad "the umbrella is still cut before ENGINE_PIN moves"
@@ -351,7 +351,7 @@ printf '%s' "$_early" | grep -q 'after=1' \
   || ok "…and it stops at the closing quote, not after it"
 rm -f "$_probe"
 
-if STEP7=$(extract_die "$REALREL" '^[[:space:]]*die "ENGINE_PIN is'); then
+if STEP7=$(extract_die "$REALREL" '^[[:space:]]*die "ENGINE_PIN mismatch'); then
   ok "step 7's remedy is bounded by its own die string (not by a sentence)"
   printf '%s\n' "$STEP7" | grep -q 'MUST ALSO TOUCH' \
     && ok "…and still carries the pin-bump-touches-the-CHANGELOG warning" \
@@ -359,12 +359,12 @@ if STEP7=$(extract_die "$REALREL" '^[[:space:]]*die "ENGINE_PIN is'); then
   printf '%s\n' "$STEP7" | grep -q 'bin/candor' \
     && ok "step 7's remedy names bin/candor in its SOURCE text" \
     || bad "step 7's remedy lost bin/candor from its source text"
-  # The block now begins at `die "ENGINE_PIN is ${PINNED:-unset}, not $VER`, which release.sh has bound
-  # and this harness does not — under `set -u` the heredoc died and RENDERED came back EMPTY, which the
-  # case below reports as "backticks are executing". A right verdict for the wrong reason is still a
-  # wrong instrument, so: bind them, and say so separately when nothing rendered at all.
-  # shellcheck disable=SC2034  # both ARE read — by the heredoc that `eval` expands on the next line
-  RENDERED=$(cd /tmp && VER="0.0.0" PINNED="0.0.0"; eval "cat <<CANDOR_EOF
+  # The block references $VER and $PINMSG, which release.sh has bound and this harness does not —
+  # under `set -u` the heredoc died and RENDERED came back EMPTY, which the case below reports as
+  # "backticks are executing". A right verdict for the wrong reason is still a wrong instrument, so:
+  # bind them, and say so separately when nothing rendered at all.
+  # shellcheck disable=SC2034  # all three ARE read — by the heredoc that `eval` expands below
+  RENDERED=$(cd /tmp && VER="0.0.0" PINNED="0.0.0" PINMSG="       · java is pinned to 0.0.0"; eval "cat <<CANDOR_EOF
 $STEP7
 CANDOR_EOF" 2>/dev/null)
   [ -n "$RENDERED" ] || bad "step 7's remedy rendered to NOTHING — the heredoc itself failed, so the substitution check below did not run"
@@ -1170,8 +1170,14 @@ edition = "2021"
 '
   csmk candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.32";
 '
+  # The dispatcher's pin block, in the shape release.sh / preflight / release-verify actually parse:
+  # a family line plus four per-engine declarations, empty = follow the family.
   csmk candor/bin/candor 'UMBRELLA_VERSION="0.32.0"
 ENGINE_PIN="0.32.0"
+ENGINE_PIN_JAVA=""
+ENGINE_PIN_TS=""
+ENGINE_PIN_RUST=""
+ENGINE_PIN_SWIFT=""
 '
   csmk candor/adopt/candor.yml '          CANDOR_JAVA_VERSION: 0.32.0
 '
@@ -1371,6 +1377,103 @@ printf '%s' "$relout" | grep -q "candor/integrations/jetbrains/gradle.properties
 printf '%s' "$relout" | grep -qE '^ +· candor/integrations/(vscode|jetbrains)/[a-z.]+ +candorTsVersion' \
   && bad "step 6 told the operator to bump a candor-ts pin in a java-only cut — a pin naming a release nobody made" \
   || ok "…and does not name a pin for an engine this cut never published"
+# --- …AND THE ONE-ENGINE PATCH THAT REACHES THE FRONT DOOR ------------------------------------------
+# The whole point of the per-engine pins: `--only candor-java,candor` publishes ONE engine and moves the
+# umbrella with it, so `candor update` and Homebrew install the patched java engine and the family line
+# for everything else. Before this existed the umbrella could not ride a subset cut at all, and a
+# one-engine fix reached the front door only by republishing five engines with no functional change.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+# THE OPERATOR'S STEP 6, done by hand as the script instructs: java's pin moves, the family line does not.
+perl -pi -e 's/^ENGINE_PIN_JAVA=""/ENGINE_PIN_JAVA="0.32.1"/' "$CSF/candor/bin/candor"
+grep -q '^ENGINE_PIN_JAVA="0.32.1"$' "$CSF/candor/bin/candor" \
+  && ok "[fixture] the per-engine pin edit landed (this row's premise, measured not assumed)" \
+  || bad "[fixture] ENGINE_PIN_JAVA was not set — every row below would measure the wrong thing"
+printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nENGINE_PIN_JAVA moves to 0.32.1; the family line stays 0.32.0.\n' > "$CSF/candor/CHANGELOG.md"
+perl -pi -e 's/^UMBRELLA_VERSION="0.32.0"/UMBRELLA_VERSION="0.32.1"/' "$CSF/candor/bin/candor"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+juout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
+printf '%s' "$juout" | grep -q "STUB-CREATE.*-R tombaldwin/candor" \
+  && ok "[java+umbrella] the umbrella release IS cut for a one-engine patch" \
+  || { bad "the umbrella was still refused for a scoped cut that legitimately moves the front door"
+       printf '%s' "$juout" | grep -E '✘' | head -4; }
+printf '%s' "$juout" | grep -q "ENGINE_PIN mismatch" \
+  && bad "the step-7 guard fired on a correctly-pinned java patch" \
+  || ok "…and the step-7 pin guard passes, because every pin names a release this cut publishes"
+printf '%s' "$juout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-ts" \
+  && bad "a java+umbrella cut published candor-ts" || ok "…and still publishes no other engine"
+is "…and the FAMILY line is untouched by the patch" '0.32.0' \
+   "$(sed -n 's/^ENGINE_PIN="\([^"]*\)".*/\1/p' "$CSF/candor/bin/candor")"
+printf '%s' "$juout" | grep -qE '^ +· candor/bin/candor +ENGINE_PIN_JAVA="0.32.1"' \
+  && ok "…and step 6 tells the operator to move exactly ENGINE_PIN_JAVA" \
+  || { bad "step 6 did not name the per-engine pin this cut has to move"; printf '%s' "$juout" | grep -A6 '6. cross-repo pins' | head -8; }
+printf '%s' "$juout" | grep -qE '^ +· candor/bin/candor +ENGINE_PIN_(TS|RUST|SWIFT)=' \
+  && bad "step 6 told the operator to move a pin for an engine this cut never published" \
+  || ok "…and names no other engine's front-door pin"
+
+# CONTROL 1: THE SAME CUT WITH THE PIN NOT MOVED MUST REFUSE. Without this row, "the umbrella can ride a
+# scoped cut" is satisfied by a step 7 that no longer checks anything — which is the shape the whole
+# guard exists to prevent, one level up.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nnotes.\n' > "$CSF/candor/CHANGELOG.md"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+lagout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
+printf '%s' "$lagout" | grep -q "java is pinned to 0.32.0, not 0.32.1" \
+  && ok "CONTROL: …and the same cut REFUSES while ENGINE_PIN_JAVA still follows the family line" \
+  || bad "the umbrella was cut with a front door that installs the engine this patch replaced"
+printf '%s' "$lagout" | grep -qE "(ts|rust|swift) is pinned to" \
+  && bad "the guard demanded a pin move for an engine this cut does not publish" \
+  || ok "…and demands nothing of the three engines it is not publishing"
+
+# CONTROL 2: A PIN NAMING A RELEASE NOBODY CUT. The new failure mode the per-engine pins introduce —
+# 0.32.1 exists for java and for nothing else, so a ts pin at 0.32.1 404s on every user's machine.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+perl -pi -e 's/^ENGINE_PIN_JAVA=""/ENGINE_PIN_JAVA="0.32.1"/; s/^ENGINE_PIN_TS=""/ENGINE_PIN_TS="0.32.1"/' "$CSF/candor/bin/candor"
+grep -q '^ENGINE_PIN_TS="0.32.1"$' "$CSF/candor/bin/candor" \
+  && ok "[fixture] the phantom ts pin landed" || bad "[fixture] ENGINE_PIN_TS was not set — the control below is vacuous"
+printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nnotes.\n' > "$CSF/candor/CHANGELOG.md"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+ghostout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
+printf '%s' "$ghostout" | grep -q "ts is pinned to 0.32.1, but candor-ts is NOT in this cut" \
+  && ok "CONTROL: …and a pin naming a release this cut never published is REFUSED" \
+  || bad "the front door was allowed to name candor-ts@0.32.1, a release nobody made"
+
+# --- preflight judges the front door too, with the same rule -----------------------------------------
+csfix "$CSF"
+perl -pi -e 's/^ENGINE_PIN_JAVA=""/ENGINE_PIN_JAVA="0.32.1"/' "$CSF/candor/bin/candor"
+perl -pi -e 's/^UMBRELLA_VERSION="0.32.0"/UMBRELLA_VERSION="0.32.1"/' "$CSF/candor/bin/candor"
+printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nnotes.\n' > "$CSF/candor/CHANGELOG.md"
+pfj="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
+printf '%s' "$pfj" | grep -q "engine pin java: 0.32.1" \
+  && ok "[3] reports the per-engine front-door pin for the engine being cut" \
+  || { bad "[3] never asked what \`candor update\` would fetch for java"; printf '%s' "$pfj" | grep -i "engine pin" | head -4; }
+printf '%s' "$pfj" | grep -qE "engine pin (ts|rust|swift): 0.32.0 \(follows the family line" \
+  && ok "…and says the other three follow the family line rather than demanding a version they never cut" \
+  || bad "[3] mis-scoped the per-engine pins of the engines this cut does not publish"
+# CONTROL: the same preflight must go RED when the pin lags. PINS_ADVISORY is deliberately NOT set —
+# it downgrades a lagging pin to a note pre-publish, and this row is about the strict form release-verify
+# and the operator's re-run use.
+csfix "$CSF"
+perl -pi -e 's/^UMBRELLA_VERSION="0.32.0"/UMBRELLA_VERSION="0.32.1"/' "$CSF/candor/bin/candor"
+pfr="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
+# THE VERDICT, NOT THE SENTENCE. The first version of this row grepped the message text — which `bad`
+# and `note` print identically — so downgrading the check from a failure to a remark left the row GREEN.
+# Found by mutating the arm it covers. Assert the ✘ marker AND that the run does not certify itself.
+printf '%s' "$pfr" | grep -q "✘ engine pin java: 0.32.0, not 0.32.1" \
+  && ok "CONTROL: [3] fails when the front door still installs the engine this patch replaces" \
+  || { bad "[3] passed a java patch whose front door names the previous release"
+       printf '%s' "$pfr" | grep -i "engine pin java" | head -2; }
+printf '%s' "$pfr" | grep -q "release-preflight: OK" \
+  && bad "[3] noted the lagging front-door pin and then certified the cut anyway" \
+  || ok "…and the run as a whole is RED, not a remark inside a green verdict"
+
 # CONTROL: the ENGINE_PIN guard is NOT disarmed. Family-wide, a lagging pin must still refuse the
 # umbrella — the guard that stops brew hashing a tarball whose `candor update` fetches the old engines.
 csfix "$CSF"
@@ -1378,9 +1481,16 @@ cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 famout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 2>&1)"
-printf '%s' "$famout" | grep -q "ENGINE_PIN is 0.32.0, not 0.32.1" \
+printf '%s' "$famout" | grep -q "java is pinned to 0.32.0, not 0.32.1" \
   && ok "CONTROL: family-wide, the step-7 ENGINE_PIN guard still refuses a lagging pin" \
   || bad "the ENGINE_PIN guard was disarmed by the cut-set change"
+# …for EVERY engine, not just the first one it happens to name. A guard that reports one engine and
+# stops would let a family cut move three pins and publish the fourth's front door on the old line.
+for _e in ts rust swift; do
+  printf '%s' "$famout" | grep -q "$_e is pinned to 0.32.0, not 0.32.1" \
+    && ok "CONTROL: …and names $_e too (the rule is over all four engines)" \
+    || bad "the step-7 pin guard did not report $_e"
+done
 printf '%s' "$famout" | grep -q "STUB cargo publish" \
   && ok "CONTROL: …and a family-wide cut still publishes the crates" \
   || bad "the default cut stopped publishing crates — the subset scoping leaked into the family form"

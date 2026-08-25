@@ -8,6 +8,84 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door
+
+- **`bin/candor` now carries a per-engine pin beside the family one.** `ENGINE_PIN` was a single value
+  read for the candor-java release tag, `cargo install --version`, `npx candor-ts@…` AND the candor-swift
+  tag alike — so no value of it said "java 0.32.1, everything else 0.32.0", and 0.32.1 republished five
+  engines with no functional change to deliver one candor-java native-image fix. `--only` had already made
+  a one-engine CUT expressible; the front door was the last place the lockstep assumption lived.
+  `ENGINE_PIN_JAVA` / `_TS` / `_RUST` / `_SWIFT` default to empty, meaning "follow the family line", with a
+  `CANDOR_ENGINE_PIN_<ENGINE>` env seam above them.
+
+- **All four engines, not just java** (the backlog entry named java alone). java was special in occasion,
+  not in kind: each engine has its own release channel and its own patch case, an asymmetric override
+  would have to be redesigned the first time candor-ts or candor-rust needed one, and four symmetric pins
+  let the release guard be **one rule over four engines** instead of a special case. candor-agents and
+  candor-spec get no pin — the umbrella never installs them.
+
+- **Every consumer of an engine's version moves with its pin**, which is the half that would otherwise be
+  worse than no pin at all: the java release tag, jar filename and fallback URLs; the npx invocation on
+  all seven ts routes (query, scan, verify, lsp/mcp, hook-run, doctor, `engine_release`); `cargo install
+  --version`; the candor-swift asset; the CI workflow `candor init` generates for that language; and
+  `update`'s **stale-native version check** — left on the family line it would have DELETED a correctly
+  installed patched engine as stale.
+
+- **Default behaviour is byte-identical, measured rather than asserted.** A harness drives 25
+  version-bearing strings through the real code paths on the old and the new dispatcher; `candor doctor`,
+  `engines`, `update` and `--version` are diffed whole. All identical. That is why every disclosure below
+  is gated on divergence existing rather than printed unconditionally.
+
+- **`doctor` and `engines` disclose divergence, and `update` says it before fetching.** Divergence is now
+  expressible, so an operator diagnosing "why is my jvm engine a different version from everything else"
+  can see it without reading the dispatcher. Silent when nothing diverges.
+
+- **The update-check notice compares each channel to its OWN pin.** Against the family line alone it would
+  nag "0.32.2 is available" about the release the machine is already pinned to, which is how a real notice
+  stops being read.
+
+- **Fixed while here, in the safe direction and disclosed:** every reader of `~/.candor` picked the jar
+  with `ls candor-java*-all.jar | head -1`, and `ls` sorts **ascending** — so with two jars stashed the
+  dispatcher ran the OLDEST while `candor update` reported the newest. Already reachable (an update at
+  0.31 followed by one at 0.32 leaves both, and `update` removes a stale *native binary* but has never
+  removed a stale jar); per-engine pins make two jars an ordinary state. `java_jar()` now takes the pinned
+  jar, else the newest by version, glob-driven.
+
+- **The release tooling asks the same question in both places.** `bin/_release_set.sh` gains
+  `rs_engine_pin` / `rs_pin_violations`, used by `release-preflight [3]` and `release.sh` step 7 so the
+  gate before a cut and the gate during it cannot disagree. The rule: every engine this cut publishes must
+  resolve `$VER`; every engine it does not must resolve something else, because `$VER` was never cut for
+  it and a pin naming a release nobody made 404s on a user's machine. Family-wide this reduces to the
+  `ENGINE_PIN == $VER` check that was always there, **plus one it could not express** — a leftover
+  per-engine pin holding one engine behind while the family moves past it.
+
+- **So `--only candor-java,candor` now cuts the umbrella too**, and that is the shape a one-engine patch
+  takes end to end. `--only candor-java` alone still leaves the front door where it is and says so, with
+  the two-repo form printed as the remedy.
+
+- **`release-verify.sh` builds the java asset URLs from the JAVA pin**, not the family line: under a java
+  patch those are different versions, and the family line resolves the assets of the release the patch
+  REPLACED while reporting the front door verified. Its `ENGINE_PIN` comparison is directional now —
+  behind `$VER` fails, ahead is reported and the run continues — because `release-audit.yml` runs the same
+  script weekly with `$VER` derived FROM the family pin, where an engine pinned ahead is the ordinary
+  state rather than a fault.
+
+- **Every guard falsified: 18 mutations against the code each row covers**, all caught, run in a
+  disposable `git worktree` at the exact commit rather than against a working tree only this machine has.
+  Two rows had no teeth on the first pass and both are recorded because the shapes recur: a control that
+  grepped the **message text**, which `bad` and `note` print identically, so downgrading a failure to a
+  remark left it green (it now asserts the ✘ and that the run does not certify itself); and two `java_jar`
+  rows in which the pinned jar was also the newest, so they could not tell the pin from the sort. The
+  battery refuses to score a mutation that did not change the file, so a regex matching nothing reads as a
+  broken row rather than as a passing one.
+
+- **NOT SOLVED, and it is the honest residual.** `release-audit.yml`'s weekly npm/crates checks compare
+  the registry's newest against a single `$VER` derived from the family pin, so a **ts- or rust-only**
+  patch makes that monitor red until the family moves. Pre-existing — a scoped cut already published to
+  those registries without moving `ENGINE_PIN` — and not made worse here (a java-only patch is fine,
+  since GitHub releases are checked per tag), but per-engine pins make the case likelier and it should
+  move to a per-engine comparison next.
+
 ## 2026-08-25 — the gates that only ran at release time now run on `main`
 
 - **candor-java's native/jar parity gate and candor-swift's release-configuration build moved off the

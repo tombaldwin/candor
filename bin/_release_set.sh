@@ -22,15 +22,24 @@
 # THE DEFAULT IS UNCHANGED. With no `--only`, every script behaves exactly as before: the set is the
 # whole family and every check, publish step and verification is the one it always was.
 #
-# WHAT A SCOPED CUT CANNOT DO, stated here because it constrains everything downstream:
-# `bin/candor`'s ENGINE_PIN is ONE value for the whole family — `candor update` uses it for the java
-# release tag, `cargo install --version "$ENGINE_PIN"`, `npx candor-ts@$ENGINE_PIN` and the swift
-# binary's tag alike. It is therefore not expressible per engine, and moving it for a one-engine patch
-# would point the other three at a version that does not exist. So a scoped cut publishes ENGINE
-# releases and moves the PER-ENGINE pins (adopt's CANDOR_JAVA_VERSION and candor-agents@v, jbang's
-# script-ref, the IDE plugins' candorJavaVersion/candorTsVersion) — it does NOT move ENGINE_PIN and does
-# NOT cut an umbrella/Homebrew release. `candor update` keeps installing the family line until the
-# family moves. That is a real limitation, not a rounding error, and every script says so where it bites.
+# WHAT A SCOPED CUT CAN NOW DO, AND WHAT IT STILL CANNOT — the front door, updated 2026-08-25.
+#
+# This header used to end "ENGINE_PIN is ONE value for the whole family … so a scoped cut does NOT move
+# it and does NOT cut an umbrella/Homebrew release". That was true and it cost a family republish: the
+# 0.32.1 cut pushed five engines with no functional change to deliver one candor-java fix, because the
+# front door had a single pin and no value of it said "java 0.32.1, everything else 0.32.0".
+#
+# `bin/candor` now carries a FAMILY pin (ENGINE_PIN) plus an optional PER-ENGINE pin each for java, ts,
+# rust and swift, empty by default. So a one-engine cut can include the umbrella: it moves that engine's
+# pin, leaves the family line alone, and brew hashes a tarball carrying the divergence. `candor update`
+# then installs the patched engine and the family line for everything else.
+#
+# STILL TRUE, and the reason the umbrella is not automatically in every scoped cut: the umbrella is a
+# REPO, so moving the front door means cutting an umbrella release (UMBRELLA_VERSION, a tag, a brew
+# formula). A cut that names only `--only candor-java` publishes the engine and its per-engine consumer
+# pins (adopt's CANDOR_JAVA_VERSION, jbang's script-ref, the IDE plugins' candorJavaVersion) and leaves
+# the front door where it is — `candor update` keeps installing the family line. To move the front door
+# too, put the umbrella in the cut: `--only candor-java,candor`.
 
 # The family, in the order every loop in these scripts walks it. Deliberately ONE list: the repo sets
 # in four scripts drifting apart is the defect preflight [8] exists to catch, and this is its root fix.
@@ -49,6 +58,10 @@ rs_pin_owner() { # $1 = pin label as used by preflight [3] / release-verify
     *) echo '*family*' ;;
   esac
 }
+# ENGINE_PIN itself keeps the `*family*` owner above: it is the FAMILY LINE, and only a family-wide cut
+# moves it. The per-engine pins beside it are owned by their own repos and are checked separately (see
+# rs_pin_violations below), because their assertion is not "does this line contain $VER" — it is a
+# RESOLVED comparison that has to answer for the engines this cut is NOT publishing as well.
 
 # `--only` is accepted as a FLAG by every script and travels to child processes as CANDOR_ONLY, because
 # `release.sh` invokes preflight and must pass the same set on without re-deriving it. Call this with
@@ -108,6 +121,49 @@ rs_init() {
 }
 
 rs_in_set()  { case " $RS_SET " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# ── THE FRONT DOOR'S PINS ────────────────────────────────────────────────────────────────────────────
+# `bin/candor` declares ENGINE_PIN (the family line) and four optional per-engine pins. Read here, once,
+# so preflight, release.sh and release-verify.sh ask the file the same question — four scripts deriving
+# the repo set independently is the defect [8] exists to catch, and a pin is the same shape of hazard.
+RS_PIN_ENGINES="java ts rust swift"
+rs_pin_repo() { # engine → the repo that publishes it
+  case "$1" in java) echo candor-java ;; ts) echo candor-ts ;; rust) echo candor-rust ;; swift) echo candor-swift ;; esac
+}
+rs_family_pin() { # $1 = path to bin/candor
+  sed -n 's/^ENGINE_PIN="\([0-9][0-9.]*\)".*/\1/p' "$1" 2>/dev/null | head -1
+}
+# The version `candor update` ACTUALLY fetches for one engine: its own pin when set, else the family
+# line. Anchored on the DECLARATION (`^ENGINE_PIN_JAVA="0.32.1"`), never on the resolution line beneath
+# it — that one holds a `${…:-…}` expression and would parse as an empty pin, i.e. as "follows the
+# family", which is the answer that silently passes every check below.
+rs_engine_pin() { # $1 = engine ; $2 = path to bin/candor
+  local u o
+  u="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+  o="$(sed -n 's/^ENGINE_PIN_'"$u"'="\([0-9.]*\)"$/\1/p' "$2" 2>/dev/null | head -1)"
+  [ -n "$o" ] && { printf '%s' "$o"; return 0; }
+  printf '%s' "$(rs_family_pin "$2")"
+}
+# THE ONE RULE THE FRONT DOOR MUST SATISFY BEFORE THE UMBRELLA IS CUT. For every engine:
+#   · its repo IS in this cut   → the dispatcher must resolve $VER for it. Otherwise the umbrella tarball
+#     brew hashes installs the OLD engine for the very repo this release was cut to fix — the
+#     0.18-engines-under-a-0.23-umbrella failure, now expressible one engine at a time.
+#   · its repo is NOT in this cut → it must resolve something OTHER than $VER, because $VER was never
+#     published for that engine and a pin naming a release that does not exist 404s on a user's machine.
+# Family-wide this reduces to "all four resolve $VER" — the check that was always here, plus one it could
+# not express: a LEFTOVER per-engine pin holding one engine behind while the family moves past it.
+# Prints one line per violation; empty output means clean.
+rs_pin_violations() { # $1 = path to bin/candor ; $2 = the version being cut
+  local e repo p
+  for e in $RS_PIN_ENGINES; do
+    repo="$(rs_pin_repo "$e")"; p="$(rs_engine_pin "$e" "$1")"
+    if rs_in_set "$repo"; then
+      [ "$p" = "$2" ] || echo "$e is pinned to ${p:-unset}, not $2 — this cut publishes $repo@$2, and \`candor update\` would keep installing ${p:-nothing}"
+    else
+      [ "$p" != "$2" ] || echo "$e is pinned to $2, but $repo is NOT in this cut — that names a release nobody published"
+    fi
+  done
+}
 rs_is_full() { [ "${RS_FULL:-1}" = 1 ]; }
 rs_count()   { printf '%s\n' $RS_SET | grep -c .; }
 

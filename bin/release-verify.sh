@@ -101,23 +101,34 @@ fi
 # failure, which this verifier passed. Reading the pin makes the mismatch a FAILURE here rather than
 # something only a strict re-run of preflight [3] would catch, and the documented post-publish path says
 # "run release-verify", not "re-run preflight".
-EPIN="$(grep -oE '^ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT_C/candor/bin/candor" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+EPIN="$(rs_family_pin "$ROOT_C/candor/bin/candor")"
+# THE PER-ENGINE PIN IS THE ONE THAT ANSWERS "what does `candor update` fetch for THIS engine". Since
+# 2026-08-25 `bin/candor` carries a family pin plus an optional pin per engine, so the java URLs below
+# must be built from JPIN, not from EPIN: with a java-only patch in effect they are different versions,
+# and building them from the family line would resolve the assets of the release the patch REPLACED and
+# call the front door verified.
+JPIN="$(rs_engine_pin java "$ROOT_C/candor/bin/candor")"
 #
-# ENGINE_PIN IS THE ONE PIN NO SUBSET CUT CAN MOVE — it is a single value used for the java release tag,
-# `cargo install --version`, `npx candor-ts@…` and the swift tag alike, so there is no value of it that
-# says "java 0.32.1, everything else 0.32.0". A scoped cut therefore leaves it on the family line by
-# construction, and asserting `EPIN == $VER` here would fail every scoped cut for doing the only correct
-# thing available to it. Reading it stays UNCONDITIONAL: an unreadable pin is a fact about the file, not
-# about the cut, and it is the one state in which nothing downstream can be trusted.
+# READING THE PIN IS UNCONDITIONAL: an unreadable pin is a fact about the file, not about the cut, and it
+# is the one state in which nothing downstream can be trusted. The COMPARISON is directional, because
+# this script has two callers with different questions. `release.sh` runs it after a cut, where a pin
+# BEHIND $VER means the release did not reach the front door — the 0.18-engines-under-a-0.23-umbrella
+# failure. `release-audit.yml` runs it weekly with $VER derived FROM the family pin, where an engine
+# pinned AHEAD is the ordinary state after a one-engine patch and must not be a red monitor forever.
+# So: behind → fail (family-wide); ahead → say so and carry on, with the artifacts still RESOLVED below,
+# which is the check that actually protects a user.
 if [ -z "$EPIN" ]; then bad "could not read ENGINE_PIN from candor/bin/candor — the front door's version is unverifiable"
 elif [ "$EPIN" != "$VER" ] && rs_is_full; then
   bad "ENGINE_PIN is $EPIN, not $VER — \`candor update\` and \`candor init\` still install the OLD engine, whatever this release published"
 elif [ "$EPIN" != "$VER" ]; then
-  oos "ENGINE_PIN is $EPIN — a scoped cut cannot move it (one value for the whole family), so \`candor update\` and \`candor init\` keep installing the $EPIN line. Assert the front door with: release-verify.sh ${EPIN%.*} $EPIN"
+  oos "ENGINE_PIN is $EPIN — this cut did not move the family line, so \`candor update\` and \`candor init\` keep installing the $EPIN line for every engine not pinned separately. Assert the front door with: release-verify.sh ${EPIN%.*} $EPIN"
 fi
-for a in "candor-java-${EPIN:-$VER}-all.jar" candor-linux-x64 candor-macos-arm64; do
-  if rs_is_full; then urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a")
-  else oos_urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a"); fi
+if [ -n "$JPIN" ] && [ "$JPIN" != "$EPIN" ]; then
+  oos "the front door pins java SEPARATELY at $JPIN (family line $EPIN) — a one-engine patch. The java URLs below are resolved at $JPIN, which is what \`candor update\` fetches."
+fi
+for a in "candor-java-${JPIN:-$VER}-all.jar" candor-linux-x64 candor-macos-arm64; do
+  if rs_is_full; then urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${JPIN:-$VER}/$a")
+  else oos_urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${JPIN:-$VER}/$a"); fi
 done
 # …and for a SCOPED java cut, the release's OWN assets at $VER, which nothing else here would reach. The
 # jbang pin names only the jar, so without this the two native binaries — the entire reason a java-only

@@ -17,6 +17,61 @@
 CDBIN="${CANDOR_CACHE:-$HOME/.candor}/bin"   # where candor-rust/install.sh stashes candor-scan + candor-query
 UMBRELLA_VERSION="0.32.1"                    # the umbrella's OWN version (brew formula / --version row) — bumpable for CLI-only patches
 ENGINE_PIN="0.32.1"                          # the engine release line `candor update` fetches — MUST move with every engine release (release-preflight [3] gates it; it lagged at 0.18.0 through 0.23.1 and shipped 0.18 engines under a 0.23 umbrella)
+# ---- PER-ENGINE PINS: the front door's answer to a ONE-ENGINE patch ------------------------------------
+# ENGINE_PIN above used to be the ONLY pin, one value read for the candor-java release tag, `cargo install
+# --version`, `npx candor-ts@…` AND the candor-swift tag alike. So there was no value of it that said
+# "java 0.32.1, everything else 0.32.0", and a one-engine fix could only reach `candor update` and Homebrew
+# by republishing all five engines with no functional change — which is exactly what 0.32.1 did, to deliver
+# a candor-java native-image fix. `--only <repos>` had already made a one-engine CUT expressible; the front
+# door was the last place the lockstep assumption lived.
+#
+# EMPTY MEANS "FOLLOW THE FAMILY LINE", and empty is the normal state: with all four empty every route
+# below resolves exactly what a single ENGINE_PIN resolved, byte for byte. A one-engine patch sets exactly
+# ONE of these to the patched version and leaves ENGINE_PIN alone; the umbrella is then re-cut, so brew
+# hashes a tarball carrying the divergence. `release.sh` step 7 refuses to cut the umbrella unless every
+# engine in the cut resolves the version being published AND no engine outside it does (a pin naming a
+# release nobody made 404s on a user's machine) — see bin/_release_set.sh's rs_pin_violations.
+#
+# ALL FOUR ENGINES, NOT JUST JAVA. java was special in occasion, not in kind: each engine has its own
+# release channel and its own patch case, and one asymmetric override would have to be redesigned the
+# first time candor-ts or candor-rust needed the same thing. Four symmetric pins also let the release
+# guard be ONE rule over four engines rather than a special case. (candor-agents and candor-spec carry no
+# pin here: the umbrella never installs them.)
+ENGINE_PIN_JAVA=""
+ENGINE_PIN_TS=""
+ENGINE_PIN_RUST=""
+ENGINE_PIN_SWIFT=""
+# Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
+# trying an unreleased engine without editing an installed file) beats the shipped constant, which beats
+# the family pin. After these four lines each variable holds the RESOLVED version — the declarations above
+# are what a release edits, and the release tooling reads THOSE (`^ENGINE_PIN_<E>="<semver>"$`).
+ENGINE_PIN_JAVA="${CANDOR_ENGINE_PIN_JAVA:-${ENGINE_PIN_JAVA:-$ENGINE_PIN}}"
+ENGINE_PIN_TS="${CANDOR_ENGINE_PIN_TS:-${ENGINE_PIN_TS:-$ENGINE_PIN}}"
+ENGINE_PIN_RUST="${CANDOR_ENGINE_PIN_RUST:-${ENGINE_PIN_RUST:-$ENGINE_PIN}}"
+ENGINE_PIN_SWIFT="${CANDOR_ENGINE_PIN_SWIFT:-${ENGINE_PIN_SWIFT:-$ENGINE_PIN}}"
+# the resolved pin for a language/backend token, for the paths that carry the engine in a VARIABLE
+# (autofetch, engine_release, init's generated CI workflow). An unknown token follows the family line.
+engine_pin() {
+  case "$1" in
+    java|jvm)    printf '%s' "$ENGINE_PIN_JAVA";;
+    ts|JS)       printf '%s' "$ENGINE_PIN_TS";;
+    rust)        printf '%s' "$ENGINE_PIN_RUST";;
+    swift|Swift) printf '%s' "$ENGINE_PIN_SWIFT";;
+    *)           printf '%s' "$ENGINE_PIN";;
+  esac
+}
+# The engines NOT on the family line, as `java 0.32.2 · ts 0.33.0`; EMPTY when every engine follows
+# ENGINE_PIN. Every disclosure below is gated on it being non-empty, which is what keeps the no-override
+# case byte-identical to the single-pin dispatcher — and means an operator is told about divergence
+# exactly when there is divergence to be told about.
+pin_divergence() {
+  local out="" e p
+  for e in java ts rust swift; do
+    p="$(engine_pin "$e")"; [ "$p" = "$ENGINE_PIN" ] && continue
+    out="$out · $e $p"
+  done
+  printf '%s' "${out# · }"
+}
 # The first engine release that ENFORCES the §3.4 `engine` pin (⟨0.28 PROPOSED⟩, candor-java leads it).
 # `candor init` writes the pin regardless — `.candor/run` reads it to fetch the right engine — but it
 # must not claim enforcement an OLDER pinned engine does not perform. Move this when the rung ships.
@@ -104,6 +159,25 @@ run() {
   exec "$@"
 }
 
+# WHICH STASHED candor-java JAR TO RUN: the PINNED one if it is there, else the newest by VERSION.
+#
+# Every reader of ~/.candor used `ls candor-java*-all.jar | head -1`, and `ls` sorts ASCENDING — so with
+# two jars stashed (an update at 0.31 followed by one at 0.32 leaves both; `update` removes a stale native
+# binary but has never removed a stale jar) the dispatcher ran the OLDEST one, while `candor update` had
+# just reported the newest. That is the "moves the download but not the version check" split, and it was
+# already reachable; per-engine pins make two jars an ordinary state rather than a rare one, so it is
+# fixed here rather than left as the one path the pin does not reach. Glob-driven, never `ls | head`.
+java_jar() {
+  local pinned="$HOME/.candor/candor-java-$ENGINE_PIN_JAVA-all.jar" f best="" bb fb
+  [ -f "$pinned" ] && { printf '%s' "$pinned"; return 0; }
+  for f in "$HOME"/.candor/candor-java*-all.jar; do
+    [ -f "$f" ] || continue
+    if [ -z "$best" ]; then best="$f"; continue; fi
+    bb="$(basename "$best")"; fb="$(basename "$f")"
+    [ "$(printf '%s\n%s\n' "$bb" "$fb" | sort -V | tail -1)" = "$fb" ] && best="$f"
+  done
+  [ -n "$best" ] && printf '%s' "$best"
+}
 # candor-java resolution, in preference order: a `candor-java` launcher on PATH → the native binary the
 # umbrella stashes (`candor update`, no JVM needed) → `java -jar <jar>` (CANDOR_JAVA_JAR or a stashed jar).
 run_java() {
@@ -112,7 +186,7 @@ run_java() {
   if have candor-java; then run candor-java "$@"; return $?; fi
   [ -x "$CDBIN/candor-java" ] && { run "$CDBIN/candor-java" "$@"; return $?; }
   local jar="${CANDOR_JAVA_JAR:-}"
-  [ -n "$jar" ] || jar="$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)"
+  [ -n "$jar" ] || jar="$(java_jar)"
   [ -n "$jar" ] && [ -f "$jar" ] || die "a Java target, but no candor-java engine — run \`candor update\` to fetch it (or set CANDOR_JAVA_JAR)."
   # Short interactive scans waste wall time on C2 JIT that never pays off; C1-only is ~20% faster there,
   # while large batch scans need C2 (the hot analysis loop). FAIL-SAFE: prefer C1 only for a provably small
@@ -153,12 +227,17 @@ maybe_refresh_update_cache() {
   now=$(date +%s 2>/dev/null || echo 0)
   [ $((now - ${checked:-0})) -ge 86400 ] && refresh_update_cache
 }
-# the newest cached channel version greater than the umbrella pin (empty if none / no cache) — no network.
+# the newest cached channel version greater than THAT CHANNEL'S OWN pin (empty if none / no cache) — no
+# network. EACH CHANNEL AGAINST ITS OWN PIN, not against the family line: the cache is keyed per channel
+# (jvm/rust/ts), so once java can be pinned ahead of the family, comparing every channel to ENGINE_PIN
+# would nag "0.32.2 is available" about the release the user is already running. A notice that fires on
+# a version you already have is how a real one stops being read.
 newest_beyond_pin() {
   [ -f "$UPDATE_CACHE" ] || return 0
-  python3 - "$UPDATE_CACHE" "$ENGINE_PIN" <<'PY' 2>/dev/null || true
+  python3 - "$UPDATE_CACHE" "$ENGINE_PIN" "$ENGINE_PIN_JAVA" "$ENGINE_PIN_RUST" "$ENGINE_PIN_TS" <<'PY' 2>/dev/null || true
 import sys
-cache, pin = sys.argv[1], sys.argv[2]
+cache, fam, pjava, prust, pts = sys.argv[1:6]
+pins = {"jvm": pjava, "rust": prust, "ts": pts}
 def t(v):
     try: return tuple(int(x) for x in (v.split(".")+["0","0","0"])[:3])
     except Exception: return (0,0,0)
@@ -167,7 +246,7 @@ for line in open(cache):
     if "=" in line and not line.startswith("checked"):
         k,v = line.strip().split("=",1)
         if v: latest[k]=v
-newer = [v for v in latest.values() if t(v) > t(pin)]
+newer = [v for k,v in latest.items() if t(v) > t(pins.get(k, fam))]
 if newer: print(sorted(newer, key=t)[-1])
 PY
 }
@@ -379,7 +458,7 @@ route_query() {
 
   case "${uniq# }" in
     JS)    if have candor-ts-query; then run candor-ts-query "$verb" "$@"
-           elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-query "$verb" "$@"
+           elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN_TS" candor-ts-query "$verb" "$@"
            else die "a TypeScript report, but neither candor-ts-query nor Node is installed — install Node (the engine then runs via npx)."; fi;;
     jvm)   run_java "$verb" "$@";;
     Swift) local c; c=$(rust_bin candor-swift) || die "a Swift report, but candor-swift isn't installed — run \`candor update swift\` (macOS)."; run "$c" "$verb" "$@";;
@@ -463,7 +542,7 @@ autofetch_engine() {
     rust|java|ts) ;;
     *) return 1;;
   esac
-  echo "candor: the $lang engine isn't installed — fetching v$ENGINE_PIN from the package registry (no candor server, no telemetry)." >&2
+  echo "candor: the $lang engine isn't installed — fetching v$(engine_pin "$lang") from the package registry (no candor server, no telemetry)." >&2
   # Re-invoke this same script's `update`, which is an inline case branch ending in `exit` rather than a
   # function — a subshell is the honest way to reuse it without refactoring the release-critical path.
   ( "$0" update "$lang" >&2 ) || true
@@ -517,7 +596,7 @@ engine_release() {
   case "$lang" in
     rust)  local c; c=$(rust_bin candor-scan 2>/dev/null) && v=$("$c" --version 2>/dev/null | head -1 | awk '{print $2}');;
     ts)    if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1 | awk '{print $2}')
-           elif have node; then v=$(npx -y "candor-ts@$ENGINE_PIN" --version 2>/dev/null | head -1 | awk '{print $2}'); fi;;
+           elif have node; then v=$(npx -y "candor-ts@$ENGINE_PIN_TS" --version 2>/dev/null | head -1 | awk '{print $2}'); fi;;
     swift) local s; s=$(rust_bin candor-swift 2>/dev/null) && v=$("$s" --version 2>/dev/null | head -1 | awk '{print $2}');;
     java)  v=$(CANDOR_DISPATCH_NOEXEC=1 run_java --version 2>/dev/null | head -1 | awk '{print $2}');;
   esac
@@ -529,7 +608,7 @@ engine_scan() {
   local lang="$1"; shift
   case "$lang" in
     rust) local c; c=$(rust_bin candor-scan) || { autofetch_engine rust && c=$(rust_bin candor-scan); }; [ -n "$c" ] || die "a Rust project, but the rust engine isn't installed and could not be fetched — run \`candor update rust\`."; run "$c" "$@";;
-    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
+    ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN_TS" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
       # --workspace/--deps is N/A for the bytecode engine — it is given the whole classpath, so cross-module
       # interface dispatch resolves natively (no per-package chaining). The JVM CLI errors on the unknown flag,
@@ -734,7 +813,7 @@ case "$verb" in
     if [ "$veng" = "java" ]; then
       run_java verify "${vargs[@]}"
     elif have candor-ts-verify; then run candor-ts-verify "${vargs[@]}"
-    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" candor-ts-verify "${vargs[@]}"
+    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN_TS" candor-ts-verify "${vargs[@]}"
     else die "candor verify needs Node (the honesty oracle wraps the Node runtime; the ts engine runs via npx) — install Node."; fi
     ;;
   effects|glossary)
@@ -936,7 +1015,7 @@ H
       rb="$(rust_bin candor-query 2>/dev/null)" && "$rb" --version 2>/dev/null | head -1
       if have candor-java; then candor-java --version 2>/dev/null | head -1
       elif [ -x "$CDBIN/candor-java" ]; then "$CDBIN/candor-java" --version 2>/dev/null | head -1
-      else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
+      else jar="${CANDOR_JAVA_JAR:-$(java_jar)}"
            { [ -n "$jar" ] && [ -f "$jar" ]; } && java -jar "$jar" --version 2>/dev/null | head -1; fi
       have candor-ts && candor-ts --version 2>/dev/null | head -1
       swb="$(rust_bin candor-swift 2>/dev/null)" && "$swb" --version 2>/dev/null | head -1
@@ -993,6 +1072,9 @@ PY
     # List the engines the umbrella manages: what each is, where it comes from, and its status.
     # A pure read — checks what's installed locally; makes NO network calls (unlike `update`).
     echo "candor engines — engines pinned to $ENGINE_PIN (umbrella $UMBRELLA_VERSION)"
+    # The line above is the FAMILY line, and it is the whole truth only while nothing is pinned past it.
+    _dv="$(pin_divergence)"
+    [ -n "$_dv" ] && echo "  · pinned separately: $_dv   (a one-engine patch — \`candor update\` fetches these)"
     echo ""
     printf "  %-7s %-30s %s\n" "ENGINE" "STATUS" "SOURCE"
     jstat="not installed — run \`candor update\`"
@@ -1028,7 +1110,7 @@ PY
     mkdir -p "$CDBIN"
     # Provenance, stated up front — `update` is the ONE network action; the analysis itself never is.
     echo "candor: fetching from package registries only (github.com · crates.io · npm) — no candor server, no telemetry, no version-check ping."
-    tag="v$ENGINE_PIN"
+    tag="v$ENGINE_PIN_JAVA"
     base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
     # CANDOR_JAVA_RELEASE_BASE points the JVM fetch at somewhere else (a `file://` dir works, curl reads
     # it). It exists so the four JVM-install outcomes below — native ok / asset absent / asset present but
@@ -1049,6 +1131,11 @@ PY
       asset=""
     fi
     echo "candor: syncing engines to $ENGINE_PIN (the pinned engine line)"
+    # …and, when an engine is NOT on that line, say so before fetching rather than after. A user who
+    # reads "syncing engines to 0.32.1" and then finds a 0.32.2 jvm engine installed has been told the
+    # wrong thing by the command that did it.
+    _dv="$(pin_divergence)"
+    [ -n "$_dv" ] && echo "candor:   …except $_dv — pinned separately (a one-engine patch; \`candor doctor\` shows this too)"
     # --- JVM engine (flagship) ---
     if want jvm; then
     jvm_rc=0
@@ -1057,10 +1144,10 @@ PY
     # ~/.candor, NOT $CANDOR_CACHE: every jar READER here (run_java, doctor, the status dashboard) looks
     # in $HOME/.candor, so the writer has to agree with them. `mkdir -p` because the earlier one creates
     # $CANDOR_CACHE/bin, which is only the same directory when CANDOR_CACHE is unset.
-    jarf="$HOME/.candor/candor-java-$ENGINE_PIN-all.jar"
+    jarf="$HOME/.candor/candor-java-$ENGINE_PIN_JAVA-all.jar"
     mkdir -p "$HOME/.candor"
     fetch_jvm_jar() {
-      if curl -fsSL -o "$jarf.tmp" "$base/candor-java-$ENGINE_PIN-all.jar"; then
+      if curl -fsSL -o "$jarf.tmp" "$base/candor-java-$ENGINE_PIN_JAVA-all.jar"; then
         mv "$jarf.tmp" "$jarf"; return 0
       fi
       rm -f "$jarf.tmp"; return 1
@@ -1111,19 +1198,19 @@ PY
         echo "           Report it, and to proceed on the jar meanwhile:  CANDOR_NO_NATIVE=1 candor update jvm"
         jvm_rc=1
       elif [ "$native_fail" = absent ]; then
-        echo "         ✘ no native binary published at v$ENGINE_PIN ($base/$asset)"
+        echo "         ✘ no native binary published at v$ENGINE_PIN_JAVA ($base/$asset)"
         echo "  jvm    → falling back to the jar for the same tag — SAME engine, SAME version, but it"
         echo "           NEEDS A JVM at runtime. This is not the no-JVM install."
         if fetch_jvm_jar; then
-          echo "         ✔ jar stashed in ~/.candor/ (candor-java-$ENGINE_PIN-all.jar) — requires \`java\` on PATH"
+          echo "         ✔ jar stashed in ~/.candor/ (candor-java-$ENGINE_PIN_JAVA-all.jar) — requires \`java\` on PATH"
           have java || echo "         ! no \`java\` on PATH — install a JDK 17+ or the JVM engine cannot run"
           # A native binary left over from an EARLIER pin outranks this jar in run_java, so leaving it
           # would mean `update` reports $ENGINE_PIN while every later command runs the old engine — a
           # silent version split across the family. Only remove one that is NOT already at the pin.
           if [ -x "$CDBIN/candor-java" ]; then
             nv=$("$CDBIN/candor-java" --version 2>/dev/null | head -1 | awk '{print $2}')
-            if [ "$nv" = "$ENGINE_PIN" ]; then
-              echo "         • the installed native binary is already $ENGINE_PIN — keeping it (it outranks the jar)"
+            if [ "$nv" = "$ENGINE_PIN_JAVA" ]; then
+              echo "         • the installed native binary is already $ENGINE_PIN_JAVA — keeping it (it outranks the jar)"
             else
               rm -f "$CDBIN/candor-java"
               echo "         • removed the stale native binary (${nv:-unknown version}) — it outranks the jar and would have run instead"
@@ -1132,8 +1219,8 @@ PY
         else
           # BOTH routes failed: name both causes, because "download failed" alone sends people to check
           # the wrong one.
-          echo "         ✘ the jar failed too ($base/candor-java-$ENGINE_PIN-all.jar)"
-          echo "         ✘ no JVM engine installed: native $asset unavailable AND the jar unavailable at v$ENGINE_PIN."
+          echo "         ✘ the jar failed too ($base/candor-java-$ENGINE_PIN_JAVA-all.jar)"
+          echo "         ✘ no JVM engine installed: native $asset unavailable AND the jar unavailable at v$ENGINE_PIN_JAVA."
           echo "           Check the release exists: https://github.com/tombaldwin/candor-java/releases/tag/$tag"
           jvm_rc=1
         fi
@@ -1143,7 +1230,7 @@ PY
       if fetch_jvm_jar; then
         echo "         ✔ jar stashed in ~/.candor/"
       else
-        echo "         ✘ jar download failed ($base/candor-java-$ENGINE_PIN-all.jar)"
+        echo "         ✘ jar download failed ($base/candor-java-$ENGINE_PIN_JAVA-all.jar)"
         jvm_rc=1
       fi
     fi
@@ -1156,10 +1243,10 @@ PY
     # --- Rust engine: needs a toolchain; set up only when present ---
     if want rust; then
       if have cargo; then
-        echo "  rust   → cargo install --version $ENGINE_PIN candor-scan candor-query"
+        echo "  rust   → cargo install --version $ENGINE_PIN_RUST candor-scan candor-query"
         # Pin to ENGINE_PIN (NOT latest) so the whole family stays at one version — an unpinned `cargo install`
         # fetched crates.io's newest and split the family (rust ahead of the pinned jvm/ts).
-        cargo install -q --force --version "$ENGINE_PIN" candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN candor-scan candor-query)"
+        cargo install -q --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
       else
         echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
       fi
@@ -1172,7 +1259,7 @@ PY
     if want swift; then
       if [ "$os" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
         mkdir -p "$CDBIN"
-        sw="https://github.com/tombaldwin/candor-swift/releases/download/v$ENGINE_PIN/candor-swift-macos-arm64"
+        sw="https://github.com/tombaldwin/candor-swift/releases/download/v$ENGINE_PIN_SWIFT/candor-swift-macos-arm64"
         if curl -fsSL -o "$CDBIN/candor-swift.tmp" "$sw" 2>/dev/null; then
           chmod +x "$CDBIN/candor-swift.tmp"; mv "$CDBIN/candor-swift.tmp" "$CDBIN/candor-swift"
           echo "  swift  → native binary (candor-swift-macos-arm64), no Swift toolchain required"
@@ -1180,9 +1267,9 @@ PY
         else
           rm -f "$CDBIN/candor-swift.tmp"
           if have swift; then
-            echo "  swift  → no published binary for v$ENGINE_PIN — build from the candor-swift repo: swift build -c release"
+            echo "  swift  → no published binary for v$ENGINE_PIN_SWIFT — build from the candor-swift repo: swift build -c release"
           else
-            echo "  swift  → optional (no published binary for v$ENGINE_PIN; needs macOS + a Swift toolchain)"
+            echo "  swift  → optional (no published binary for v$ENGINE_PIN_SWIFT; needs macOS + a Swift toolchain)"
           fi
         fi
       elif [ "$os" = Darwin ]; then
@@ -1232,11 +1319,11 @@ PY
     report "rust query" "$v" "run \`candor update rust\`"
     if have candor-java; then v=$(candor-java --version 2>/dev/null | head -1)
     elif [ -x "$CDBIN/candor-java" ]; then v=$("$CDBIN/candor-java" --version 2>/dev/null | head -1)
-    else jar="${CANDOR_JAVA_JAR:-$(ls "$HOME"/.candor/candor-java*-all.jar 2>/dev/null | head -1)}"
+    else jar="${CANDOR_JAVA_JAR:-$(java_jar)}"
          { [ -n "$jar" ] && [ -f "$jar" ]; } && v=$(java -jar "$jar" --version 2>/dev/null | head -1) || v=""; fi
     report "jvm" "$v" "run \`candor update\` to fetch it"
     if have candor-ts; then v=$(candor-ts --version 2>/dev/null | head -1)
-    else v=$(npx -y "candor-ts@$ENGINE_PIN" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
+    else v=$(npx -y "candor-ts@$ENGINE_PIN_TS" --version 2>/dev/null | head -1); [ -n "$v" ] && v="$v (via npx)"; fi
     report "ts" "$v" "install Node — the ts engine then runs via npx, no install"
     if swb="$(rust_bin candor-swift 2>/dev/null)"; then report "swift" "$("$swb" --version 2>/dev/null | head -1)" ""
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
@@ -1245,6 +1332,18 @@ PY
       echo "  ✘ SPEC DRIFT: installed engines declare different spec versions ($(printf "%s" "$specs" | tr ' ' ',' | sed 's/^,//')) — upgrade the stragglers."; rc=1
     elif [ "$u" -eq 1 ]; then
       echo "  ✔ all installed engines agree on spec $(printf "%s\n" $specs | sort -u)"
+    fi
+    # ⟨PER-ENGINE PINS⟩ WHAT THIS MACHINE IS ACTUALLY POINTED AT. Divergence between the family line and
+    # one engine is now EXPRESSIBLE, so an operator diagnosing "why is my jvm engine a different version
+    # from everything else" must be able to see it here rather than by reading the dispatcher. Printed
+    # ONLY when something diverges — with every engine on the family line this block emits nothing, which
+    # is what keeps `candor doctor` byte-identical to the single-pin version it replaces. Informational,
+    # never a failure: divergence is a deliberate state (a one-engine patch), not a fault.
+    _dv="$(pin_divergence)"
+    if [ -n "$_dv" ]; then
+      echo "  · engine pins: family line $ENGINE_PIN; pinned separately: $_dv"
+      echo "    → \`candor update\` fetches those versions for those engines. If that is NOT what you"
+      echo "      expect, check CANDOR_ENGINE_PIN_* in your environment before suspecting the install."
     fi
     # ⟨0.24⟩ AGREEMENT IS NOT CURRENCY. The check above proves the installed engines agree with EACH OTHER
     # — and TWO STALE ENGINES AGREE WITH EACH OTHER PERFECTLY. On 2026-08-01 the installed candor-query was
@@ -1367,11 +1466,11 @@ PY
       # case where it is MOST likely to bite (several engines, each possibly ahead of the umbrella pin).
       _pin=""
       if [ "$nlang" -eq 1 ]; then
-        _pin="$(engine_release "$langs")"; [ -n "$_pin" ] || _pin="$ENGINE_PIN"
+        _pin="$(engine_release "$langs")"; [ -n "$_pin" ] || _pin="$(engine_pin "$langs")"
         printf 'engine v%s\n' "$_pin" >> "$cfg"
       else
         for _l in $langs; do
-          _lv="$(engine_release "$_l")"; [ -n "$_lv" ] || _lv="$ENGINE_PIN"
+          _lv="$(engine_release "$_l")"; [ -n "$_lv" ] || _lv="$(engine_pin "$_l")"
           printf 'engine %s v%s\n' "$_l" "$_lv" >> "$cfg"
           [ -n "$_pin" ] || _pin="$_lv"     # for the message below; each engine checks its own line
         done
@@ -1476,7 +1575,11 @@ PY
       wfloc=".github/workflows/$wfname (repo root)"
     fi
     wf="$wfdir/$wfname"
-    pin="$ENGINE_PIN"
+    # THE GENERATED CI WORKFLOW PINS THE ENGINE IT INSTALLS, so it must read the pin for THIS project's
+    # language, not the family line — otherwise a repo gated by the engine a one-engine patch fixed would
+    # have its CI install the unfixed one. `$langs` is a single token here (the block is nlang==1 only);
+    # engine_pin falls back to the family line for anything else.
+    pin="$(engine_pin "$langs")"
     if [ "$nlang" -eq 1 ] && [ ! -f "$wf" ]; then
       mkdir -p "$wfdir"
       [ -n "$wdir" ] && echo "  · monorepo: $rel is below the repo root — GitHub reads workflows only from the root,"
@@ -1809,7 +1912,7 @@ PY
         exit 0;;
     esac
     if have "$bin"; then run "$bin" "$@"
-    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN" "$bin" "$@"
+    elif have node; then run npx -y -p "candor-ts@$ENGINE_PIN_TS" "$bin" "$@"
     else die "\`candor $verb\` needs the candor-ts package — install Node (it then runs via npx), or \`npm i -g candor-ts\`."; fi;;
   hook)
     # candor hook — wire the edit-time Stop hook (Claude Code) into this repo in one command. It locates
@@ -1992,7 +2095,7 @@ PY
     case "${CANDOR_LANG:-}" in
       java)  : "${CANDOR_REVIEW:=$hd/candor-review.sh}";;
       rust)  : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-scan}";;
-      ts)    : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=npx -y candor-ts@$ENGINE_PIN}";;
+      ts)    : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=npx -y candor-ts@$ENGINE_PIN_TS}";;
       swift) : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-swift}";;
       *)     : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}";;
     esac

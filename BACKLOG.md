@@ -118,35 +118,50 @@ But they fired serially through CI, one round trip each. **Fix:** `spec-bump.sh`
 when it runs, so they are edited in the same pass as everything else. Keep the teeth, lose the
 round trips.
 
-<!-- RAISED P2 -> P0 on 2026-08-25 (Tom): the 0.32.1 cut republished five engines with no
-     functional change to deliver a one-engine fix. This is the last place the lockstep
-     assumption lives, and it is the next thing done. -->
+## CLOSED 2026-08-25 — `ENGINE_PIN` split per engine; a one-engine patch now reaches the front door
 
-## **`[P0]` `ENGINE_PIN` IS ONE VALUE FOR THE WHOLE FAMILY, SO NO PATCH CAN MOVE THE FRONT DOOR** (filed 2026-08-25)
+**DONE, four engines rather than the one this entry named.** `bin/candor` carries `ENGINE_PIN` (the family
+line) plus `ENGINE_PIN_JAVA` / `_TS` / `_RUST` / `_SWIFT`, each empty by default and meaning "follow the
+family". A one-engine patch sets exactly one and re-cuts the umbrella, so brew hashes a tarball carrying
+the divergence and `candor update` installs the patched engine plus the family line for everything else.
 
-`--only <repos>` now makes a single-engine cut expressible end to end (stage → preflight → release →
-verify; `bin/_release_set.sh`). **The umbrella cannot ride one, and that is a real limit, not a
-rounding error.** `bin/candor` carries a single `ENGINE_PIN`, read for the candor-java release tag,
-`cargo install --version "$ENGINE_PIN"`, `npx candor-ts@$ENGINE_PIN` AND the candor-swift binary's
-tag — so there is no value of it that says "java 0.32.1, everything else 0.32.0", and moving it for a
-one-engine patch would point three engines at releases that do not exist.
+**WHY ALL FOUR AND NOT JUST JAVA.** java was special in occasion, not in kind — each engine has its own
+release channel and its own patch case, an asymmetric override would have to be redesigned the first time
+candor-ts or candor-rust needed the same thing, and four symmetric pins let the release guard be ONE rule
+over four engines instead of a special case. candor-agents and candor-spec get no pin: the umbrella never
+installs them.
 
-**What it costs, concretely.** A candor-java-only 0.32.1 reaches jbang, `adopt/candor.yml`'s CI path and
-the JetBrains plugin — all of which have per-engine pins already. It does **not** reach `candor update`
-or Homebrew: those install `v$ENGINE_PIN`, which stays on the family line. Live example: v0.32.0 shipped
-the jar and **neither native binary** (the native workflow's parity gate correctly refused an image
-reporting an empty scan), so `bash bin/release-verify.sh 0.32 0.32.0` is RED today on two 404s — and a
-java-only 0.32.1 that republishes them cannot clear it, because the front door still names 0.32.0.
+**WHAT A JAVA-ONLY PATCH LOOKS LIKE NOW, end to end.**
 
-**The fix is a change to the FRONT DOOR, not to the release scripts**: a per-engine override beside the
-family pin (`ENGINE_PIN_JAVA`, defaulting to `ENGINE_PIN`), which touches `run_java`, `update`, `doctor`,
-`init`'s written pins and the status dashboard — five consumers with their own rows in
-`bin/candor.test.sh`. Deliberately NOT smuggled into the release-tooling change: it alters what a user's
-machine installs, which deserves its own diff and its own review.
+```
+bash bin/release-stage.sh 0.32.2 --only candor-java,candor    # java's version + the umbrella's own
+# build the jar, push both repos, wait for CI
+bash bin/release-preflight.sh 0.32 0.32.2 --only candor-java,candor
+bash bin/release.sh 0.32 0.32.2 --only candor-java,candor     # step 6 prints: set ENGINE_PIN_JAVA="0.32.2"
+# do that edit, commit, push, re-run — step 7 then cuts the umbrella and the brew tap
+bash bin/release-verify.sh 0.32 0.32.2 --only candor-java,candor
+```
 
-**Until it exists, the honest sequence for a native-binary republish is a FAMILY patch** (`0.32.1`
-across the seven), which is what the ladder has done to date — or a scoped java cut that reaches jbang
-and CI adopters only, stated as such in its changelog.
+One engine republished, not five. `--only candor-java` alone still works and still leaves the front door
+where it is — it now says so and prints the two-repo form as the remedy.
+
+**THE GUARD, adapted rather than dropped.** `rs_pin_violations` (bin/_release_set.sh), shared by preflight
+[3] and release.sh step 7: every engine this cut publishes must resolve `$VER`, and every engine it does
+not must resolve something else, because `$VER` was never cut for it. Family-wide that is the old
+`ENGINE_PIN == $VER` check PLUS one it could not express — a leftover per-engine pin holding one engine
+behind while the family moves past it.
+
+**Proofs.** (a) 25 version-bearing strings driven through the real code paths, old dispatcher vs new:
+identical; `doctor` / `engines` / `update` / `--version` diffed whole: identical. (b) With
+`ENGINE_PIN=0.32.0` + `ENGINE_PIN_JAVA=0.32.1`, exactly the java rows move. (c) 18 mutations against the
+code each new row covers, all caught, run in a disposable worktree at the exact commit.
+
+**RESIDUAL, filed rather than hidden.** `release-audit.yml`'s weekly npm/crates checks compare the
+registry's newest against a single `$VER` derived from the family pin, so a **ts- or rust-only** patch
+makes that monitor red until the family moves. Pre-existing (a scoped cut already published to those
+registries without moving `ENGINE_PIN`) and not worsened by this change, but per-engine pins make the case
+likelier. The fix is a per-engine comparison in release-verify's registry rows, the same shape as the java
+URL change already made there.
 
 ## **`[P1]` THE SARIF FALLBACK PIN STILL SERVES THE REPORTER SPEC §2 NAMES** (measured 2026-08-25)
 

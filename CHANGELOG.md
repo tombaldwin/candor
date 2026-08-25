@@ -34,7 +34,7 @@ keeps its own.
   hash is WITHHELD exactly as a collided name already was, so an unmatched row gets no decoration rather
   than the last-indexed sibling's. The key is the pair too. The cost is churn — a rename re-opens an
   alert — which is the direction to be wrong in: a churned alert is visible and a hidden one is not.
-  Eight rows in `test-candor-sarif.sh` (44 assertions), four of which fail against yesterday's action,
+  Eight rows in `test-candor-sarif.sh` (45 assertions), four of which fail against yesterday's action,
   including both over-charge controls: one finding listed twice must still collapse to one alert, and
   must still do it SILENTLY, or the new disclosure fires on every re-run and stops being read.
 

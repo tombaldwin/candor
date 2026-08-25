@@ -731,6 +731,55 @@ mkb() { mkdir -p "$(dirname "$SB/$1")"; printf '%s\n' "$2" > "$SB/$1"; }
 # headline (so a row can make it unreadable). Chaining these rows off one fixture meant the final control
 # failed for a REAL reason — an earlier row had deliberately left swift unbumped, so the family it was
 # asked to call consistent genuinely was not.
+# THE FIXTURE CARRIES THE DOC SITES TOO, because step 1b treats a missing one as a MOVED one and fails
+# the run — correctly: a `DOCS` entry that no longer exists is a document this script has stopped
+# bumping, and the ⟨0.32⟩ finding is that exactly those go stale unnoticed. A fixture holding only the
+# seven declarations would make every row below measure that failure instead of what it names.
+#
+# EVERY SPELLING IS REPRESENTED, one per file, and which file carries which is deliberate: swift's
+# README holds the MARKDOWN-LINK form and java's README the ALIGNED-JSON form because those are the two
+# the family's `{1,4}` grammar could not see, and a fixture that omits them cannot tell the widened
+# grammar from the narrow one. The `(spec 0.7, informative)` markers are the control in the other
+# direction — a true statement about a past rung that must NOT move.
+sbdocs() {
+  mkb candor-spec/README.md          '| Java | shipped (spec 0.27)** — the reference engine |'
+  mkb candor-spec/AGENTS.md          '```json'$'\n''{ "candor": { "spec": "0.27" }, "functions": [] }'
+  mkb candor-rust/README.md          '# → { "spec": "0.27", "ok": false }'$'\n''declaring **spec 0.27** (the same contract)'
+  # the three AGENTS copies are MIRRORS — byte-identical, and 1b re-checks that after rewriting them
+  local ragents='This project is on candor-scan 9.9.9 (spec 0.27).'$'\n''carrying `unitKind` (spec 0.7, informative); ordinary'
+  mkb candor-rust/AGENTS.md "$ragents"
+  mkb candor-rust/crates/candor-query/AGENTS.md "$ragents"
+  mkb candor-rust/crates/candor-scan/AGENTS.md "$ragents"
+  mkb candor-java/README.md          'an aligned envelope column, { "spec":    "0.27" }'
+  local jagents='candor-java — the reference engine (spec 0.27) — reports per method.'
+  mkb candor-java/AGENTS.md "$jagents"
+  mkb candor-java/src/main/resources/AGENTS.md "$jagents"
+  mkb candor-java/jbang-catalog.json '{ "description": "candor-java (candor-spec 0.27). Usage: jbang" }'
+  mkb candor-ts/README.md            '| `{ candor: { spec: "0.27" }, functions }` envelope |'
+  mkb candor-ts/AGENTS.md            'e.g. "This project is on candor-ts `<version>` (spec 0.27)."'
+  mkb candor-ts/package.json         '{ "description": "candor for TypeScript (candor-spec 0.27)" }'
+  mkb candor-swift/README.md         '**The Swift implementation of [candor-spec](https://x/candor-spec) 0.27** — per-function'
+  local sagents='Writes the spec-0.27 envelope plus two sidecars.'$'\n''**Report shape:** `{ "candor": {…, "spec": "0.27"} }`'
+  mkb candor-swift/AGENTS.md "$sagents"
+  mkb candor-swift/Sources/candor-swift/AgentsDoc.swift "let AGENTS_MD = \"\"\""$'\n'"$sagents"
+  mkb candor-swift/SPEC-EXTENSION-privacy.md '{ "candor": { "spec": "0.27" }, "extensions": [] }'
+  # candor-agents/README.md and AGENTS.md carry NO current claim in the real repo — the `0 claim(s)`
+  # line is a legitimate state and the fixture has to contain one, or the rows below would be asserting
+  # that every listed doc must match, which is not what 1b promises.
+  mkb candor-agents/README.md        'an annotated rung reference (spec 0.8, informative): nothing current'
+  mkb candor-agents/AGENTS.md        'the agent contract, carrying no version claim at all'
+  mkb candor-agents/pyproject.toml   'description = "candor for agent fleets (candor-spec 0.27)"'
+  mkb candor-agents/candor_agents/__init__.py '"""candor-agents — effect analysis (candor-spec 0.27)."""'
+}
+# THE CANARIES, in the same files the real repos put them in. `lib.rs` already carries the rust
+# DECLARATION, and the order matters: `current_of` takes the FIRST `SPEC_VERSION…"X.Y"` match in the
+# file, so the declaration has to come before the assertion that names it — as it does in the real file.
+sbcanaries() {
+  mkb candor-rust/crates/candor-report/src/lib.rs \
+    'pub const SPEC_VERSION: &str = "0.27";'$'\n''        assert!(s.contains("\"spec\":\"0.27\""), "envelope must carry it");'$'\n''        assert_eq!(SPEC_VERSION, "0.27");'
+  mkb candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift \
+    '        XCTAssertEqual(try declaredSpec(), "0.27", "the spec floor moved — bump this pin with it")'
+}
 sbfix() {
   [ -n "$SB" ] && rm -rf "$SB"
   SB="$(mktemp -d)"
@@ -740,7 +789,11 @@ sbfix() {
   mkb candor-ts/query.mjs 'const SPEC_VERSION = "0.27";'
   mkb candor-swift/Sources/candor-swift/main.swift "${1:-let specVersion = \"0.27\"}"
   mkb candor-agents/candor_agents/scan.py 'SPEC = "0.27"'
-  mkb candor-spec/SPEC.md "${2:-**Version 0.27** — all code engines declare \`0.27\`; the floor is conformance-pinned.}"
+  # SPEC.md carries the headline AND two envelope fences: one plain, one ALIGNED (the padding that
+  # defeated a hand sweep at 0.30), plus an `, informative)` line that must survive the bump untouched.
+  mkb candor-spec/SPEC.md "${2:-**Version 0.27** — all code engines declare \`0.27\`; the floor is conformance-pinned.}"$'\n''  "candor": { "version": "…", "toolchain": "…", "spec":    "0.27" },'$'\n''{ "candor": { "spec": "0.27" }, "functions": [] }'$'\n''  { "spec": "0.20" }   (measured at spec 0.20, informative)'
+  sbdocs
+  sbcanaries
   for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec; do
     ( cd "$SB/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm i )
   done
@@ -752,8 +805,18 @@ sbfix 'let specVersion = "0.26"'
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" --check >/dev/null 2>&1   && bad "--check PASSED a four-way contract split" || ok "--check catches a declaration split"
 sbfix
 CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.28 --decls-only >/dev/null 2>&1
-n=$(grep -rl '"0\.28"\|Version 0\.28' "$SB" 2>/dev/null | wc -l | tr -d ' ')
-is "bump moves all seven declarations" '7' "$n"
+# NAMED FILES, not a count over the whole tree. This row used to count files matching `"0.28"` and
+# assert 7 — which conflated "the seven declarations moved" with "seven files in the tree mention the
+# new version", so adding any doc site to the fixture broke a row about declarations. Ask each
+# declaration file for ITS OWN value.
+sbdecl_stale=""
+for f in candor-rust/crates/candor-report/src/lib.rs candor-java/src/main/java/io/poly/candor/Candor.java \
+         candor-ts/scan.mjs candor-ts/query.mjs candor-swift/Sources/candor-swift/main.swift \
+         candor-agents/candor_agents/scan.py; do
+  grep -q '0\.28' "$SB/$f" || sbdecl_stale="$sbdecl_stale $f"
+done
+grep -q '^\*\*Version 0\.28\*\*' "$SB/candor-spec/SPEC.md" || sbdecl_stale="$sbdecl_stale SPEC.md"
+is "bump moves all seven declarations" '' "$sbdecl_stale"
 # a dirty tree must be refused: the script rewrites seven files across seven repos.
 # COMMIT THE BUMP FIRST. The 0.28 run above left every repo dirty, so the added dirt was doing nothing and
 # this row would have passed with the `printf` deleted — it asserted the refusal, but not the refusal it
@@ -860,6 +923,102 @@ printf '%s' "$mainout" | grep -q 'lingering.md' \
 printf '%s' "$mainout" | grep -q 'suites failed' \
   && ok "…and the summary names the SUITES as what failed" \
   || bad "the summary mislabelled a suite failure: $(printf '%s' "$mainout" | grep -c 'spec-bump:') summary line(s)"
+
+say "5b. spec-bump.sh steps 1b/1c — the DOC literals and the deliberate pins"
+# WHY THESE ROWS EXIST. Measured on the ⟨0.32⟩ bump: step 1 moved seven declarations and the version was
+# ALSO hand-written in twenty-odd doc and packaging sites in three spellings. Every hand pass caught the
+# two that LOOK LIKE DECLARATIONS and missed the one that LOOKS LIKE PROSE — candor-swift's embedded doc
+# drifted by one character, two READMEs' JSON examples survived a full sweep, and SPEC.md itself carried
+# three fences at the prior floor under a bumped header. Step 1b rewrites that named set by machine and
+# step 1c names what it must not touch, so the acceptance question is not "did it change something" but
+# "IS THE LIST COMPLETE" — which is what the last row here asks, the same way the real acceptance run did.
+sbfix; sbcommit
+bumpout="$(CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only 2>&1)"
+
+# 1b — EVERY DOC SITE, IN EVERY SPELLING. Named individually rather than counted: a count passes while
+# the one file that matters is untouched, which is the exact failure mode this whole item is about.
+docs_stale=""
+for f in candor-spec/README.md candor-spec/AGENTS.md \
+         candor-rust/README.md candor-rust/AGENTS.md \
+         candor-rust/crates/candor-query/AGENTS.md candor-rust/crates/candor-scan/AGENTS.md \
+         candor-java/README.md candor-java/AGENTS.md candor-java/src/main/resources/AGENTS.md \
+         candor-java/jbang-catalog.json \
+         candor-ts/README.md candor-ts/AGENTS.md candor-ts/package.json \
+         candor-swift/README.md candor-swift/AGENTS.md candor-swift/SPEC-EXTENSION-privacy.md \
+         candor-swift/Sources/candor-swift/AgentsDoc.swift \
+         candor-agents/pyproject.toml candor-agents/candor_agents/__init__.py; do
+  grep -q '0\.28' "$SB/$f" || docs_stale="$docs_stale $f"
+done
+is "1b moves every doc + packaging literal (prose, JSON, hyphenated, ALIGNED-JSON, markdown-link)" '' "$docs_stale"
+# …and the two spellings a `{1,4}` grammar cannot reach, asserted BY NAME. Without these two rows the
+# row above passes on a narrowed grammar, because both files also carry a spelling it can still see.
+grep -q '"spec":    "0.28"' "$SB/candor-java/README.md" \
+  && ok "…including the ALIGNED envelope column (six separators — invisible to a {1,4} grammar)" \
+  || bad "the aligned \`\"spec\":    \"X.Y\"\` form was left behind: $(grep -o '"spec":[^,]*' "$SB/candor-java/README.md")"
+grep -q 'candor-spec) 0.28' "$SB/candor-swift/README.md" \
+  && ok "…and the markdown-link form \`[candor-spec](…) 0.28\` (the live claim in swift's real README)" \
+  || bad "the markdown-link form was left behind: $(sed -n 1p "$SB/candor-swift/README.md")"
+# THE OTHER DIRECTION, and it is the one a sweep gets wrong: a note naming the rung a feature arrived at
+# is TRUE ABOUT THE PAST. `release-stage.sh`'s sibling lesson — the fixture reports built at the previous
+# spec as INPUTS — is why this script lists rather than sweeps, and the `, informative)` marker is the
+# same argument inside a file it DOES rewrite.
+grep -q 'spec 0.7, informative' "$SB/candor-rust/AGENTS.md" \
+  && ok "an \`(spec X.Y, informative)\` historical marker is NOT swept" \
+  || bad "1b rewrote a historical marker — a true statement about a past rung now claims the new floor"
+grep -q 'spec 0.8, informative' "$SB/candor-agents/README.md" \
+  && ok "…and a file whose ONLY claim is an annotated one is left entirely alone (0 claims is legal)" \
+  || bad "1b rewrote the annotated-only file"
+# SPEC.md is JSON-ONLY on purpose: its prose is dense with true statements about past rungs.
+is "1b moves SPEC.md's plain envelope fence"   '1' "$(grep -c '{ "candor": { "spec": "0.28" }' "$SB/candor-spec/SPEC.md" | tr -d ' ')"
+is "…and its ALIGNED fence"                    '1' "$(grep -c '"spec":    "0.28"' "$SB/candor-spec/SPEC.md" | tr -d ' ')"
+is "…and leaves the \`, informative)\` fence at its own rung" '1' "$(grep -c '{ "spec": "0.20" }' "$SB/candor-spec/SPEC.md" | tr -d ' ')"
+# THE MIRRORS. A doc rewrite is precisely what breaks byte-equality between a canonical document and its
+# shipped copy, so 1b re-checks it rather than leaving it to a red engine suite ten minutes later.
+cmp -s "$SB/candor-java/AGENTS.md" "$SB/candor-java/src/main/resources/AGENTS.md" \
+  && ok "the mirror copies stay byte-identical through the rewrite" \
+  || bad "the jar-resource mirror diverged from AGENTS.md during 1b"
+
+# 1c — THE CANARIES ARE NAMED AND NOT TOUCHED. Both halves matter: rewriting them silently would delete
+# the only in-tree pins on the VALUE (everything else derives it, which checks agreement and not value),
+# and NOT naming them is the [P2] this closes — they used to fire serially through CI, a round trip each.
+canary_untouched=""
+grep -q 'assert_eq!(SPEC_VERSION, "0.27")' "$SB/candor-rust/crates/candor-report/src/lib.rs" || canary_untouched="$canary_untouched rust-floor-pin"
+grep -q 'spec\\":\\"0.27' "$SB/candor-rust/crates/candor-report/src/lib.rs" || canary_untouched="$canary_untouched rust-envelope"
+grep -q 'declaredSpec(), "0.27"' "$SB/candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift" || canary_untouched="$canary_untouched swift-floor-pin"
+is "1c does NOT rewrite the deliberate pins (their teeth are the point)" '' "$canary_untouched"
+canary_named=""
+for lbl in 'rust floor pin' 'rust envelope' 'swift floor pin'; do
+  printf '%s' "$bumpout" | grep -q "$lbl" || canary_named="$canary_named [$lbl]"
+done
+is "1c NAMES every deliberate pin up front, with its before→after" '' "$canary_named"
+printf '%s' "$bumpout" | grep -q 'assert_eq!(SPEC_VERSION, "0.27")  →  assert_eq!(SPEC_VERSION, "0.28")' \
+  && ok "…and prints the exact edit, so it is a hand-edit LIST and not a hint" \
+  || bad "1c named a pin without printing the substitution to make"
+
+# THE ACCEPTANCE TEST. Apply EXACTLY the three edits 1c printed — nothing else — and require that no
+# declaration, no gated document and no pin is left at the old floor. An incomplete list is the defect
+# this step exists to fix, so completeness has to be the assertion, not a by-product of one.
+sed -i.bak 's/"0\.27"/"0.28"/g; s/spec\\":\\"0\.27\\"/spec\\":\\"0.28\\"/g' \
+  "$SB/candor-rust/crates/candor-report/src/lib.rs" "$SB/candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift"
+rm -f "$SB"/candor-rust/crates/candor-report/src/lib.rs.bak "$SB"/candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift.bak
+leftover="$(grep -rl --exclude-dir=.git 'spec[-: "*)]\{1,8\}0\.27\|"0\.27"' "$SB" 2>/dev/null | sed "s|$SB/||" | tr '\n' ' ')"
+is "ACCEPTANCE: after 1b + exactly the 1c list, NOTHING in the tree is left at the old floor" '' "$leftover"
+
+# TEETH ON THE LISTS THEMSELVES. Both are hand-maintained tables, and a table that silently stops
+# covering a site is the failure this whole section is about — one layer up.
+sbfix; rm -f "$SB/candor-ts/package.json"; sbcommit
+CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only >/dev/null 2>&1 \
+  && bad "a DOCS site that no longer exists was skipped and the run still exited 0 — a document this script has quietly stopped bumping" \
+  || ok "a moved/deleted DOCS site fails the run"
+sbfix; printf 'drifted\n' >> "$SB/candor-java/src/main/resources/AGENTS.md"; sbcommit
+CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only >/dev/null 2>&1 \
+  && bad "a BROKEN mirror passed 1b — the rewrite reached one copy and not the other, silently" \
+  || ok "a broken mirror fails the run"
+sbfix; mkb candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift 'the pin was refactored away'; sbcommit
+canout="$(CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only 2>&1)"; canrc=$?
+{ [ "$canrc" != 0 ] && printf '%s' "$canout" | grep -q 'not pinning the floor'; } \
+  && ok "a canary that cannot be LOCATED fails the run (a missing pin reads exactly like a satisfied one)" \
+  || bad "a vanished deliberate pin exited $canrc without a word — the acknowledgement is gone and nothing said so"
 rm -rf "$SB"
 
 say "6. release.sh gates on preflight in PINS_ADVISORY mode"

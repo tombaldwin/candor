@@ -3,23 +3,79 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
-## **`[P0]` A GATE THAT ONLY RUNS AT RELEASE TIME CANNOT PROTECT THE RELEASE** (filed 2026-08-25)
+## ~~**`[P0]` A GATE THAT ONLY RUNS AT RELEASE TIME CANNOT PROTECT THE RELEASE**~~ **CLOSED 2026-08-25 — both movable gates moved, the whole inventory taken, and the moved gate falsified.**
 
-candor-java's `native` workflow triggers on `release:published`. So its parity check — native
-report vs jar report — runs only AFTER the artifacts are public. On 0.32.0 it did its job and
-withheld two binaries that reported an EMPTY scan at exit 0, but by then the release existed
-without them, and the fix cost a second full family cut (0.32.1: five engines republished with no
-functional change).
+**What moved.**
 
-Had that check run on `main`, the defect would have been caught before the cut and 0.32.1 would
-never have existed.
+- **candor-java `native.yml`** (`ebe40af`) — was `release: published` + dispatch, now also `push:
+  branches: [main]` and `pull_request`. The build and the whole-envelope parity check run on every
+  trigger; the **upload is now the only release-only step in the file**, because it is the only one
+  that cannot happen before there is a release to upload to. Measured cost on `main`: **2m21s
+  (macos-arm64) / 2m40s (linux-x64)**, in parallel, free public-repo runners — so no schedule, no
+  dispatch-only positioning and **no `paths:` filter**, that last one deliberately: the ⟨0.32⟩ defect
+  was a MISSING RESOURCE FILE, and a path filter that failed to name
+  `src/main/resources/META-INF/native-image/**` would skip exactly the gate that catches it.
+- **candor-swift `ci.yml`** (`8c62b5a`) — found while taking the inventory, and the same defect shape.
+  Every `swift build` in the repo was a **debug** build; nothing compiled `-c release` until
+  `release.yml` did, on a pushed `v*` tag. So `candor-swift-macos-arm64` — the artifact a user
+  downloads, the only install route not needing a Swift toolchain — was **first compiled after the
+  tag existed**. A new `release-build` job does the release compile on `main`/PRs and asserts the
+  binary's own `--version` names `main.swift`'s declared `engineVersion`; that is `release.yml`'s
+  artifact-level assertion, anchored to the constant instead of the tag (which is what the tag is
+  itself checked against). Its own job, not a step in `test`, so it cannot spend `test`'s 20-minute
+  hang-detector budget.
 
-**Fix:** build the native image on `main` (and on PRs touching the engine), attach on release. The
-release step becomes an upload of something already proven, not the first time anyone looks.
+**FALSIFIED, so the moved gate is known to bite.** PR #2 on candor-java reverted both halves of
+`e3e0097` — deleted `reflect-config.json` and removed `outputFields()`'s empty-set refusal — which is
+exactly the v0.32.0 state: the native binary exits 0 with an empty report and nothing on stderr. The
+`native` workflow ran **on the `pull_request` event** and went red on **both** legs at the parity
+step: `PARITY FAILED: native report differs from jar on ['analyzed', 'coverage', 'functions']`,
+`functions: jar 542 vs native 0`. `Build native image` SUCCEEDED, so the parity comparison is what
+caught it, not a crash; `Stage binary`, `Smoke-test` and both uploads were skipped. Green control on
+`main` at `ebe40af`: `parity OK: native report == jar, whole envelope (542 functions, 1329 analyzed)`
+— clearing the non-vacuousness floor (100 functions / 500 analyzed) by a wide margin. PR closed
+unmerged.
 
-**Generalise it:** enumerate every check that runs only on a release trigger and move each one
-earlier, or say why it cannot move. A gate positioned after the irreversible step grades the
-release; it does not guard it.
+**THE FULL INVENTORY — every check on a release trigger, across all seven repos.** No release script
+calls `gh workflow run` at all (`release.sh`/`release-preflight.sh` only ever *poll* via `gh run
+list`), so "a dispatch the ladder invokes" is the empty set and the release-triggered surface is
+exactly three workflows:
+
+| Repo / workflow | Trigger | Check | Verdict |
+|---|---|---|---|
+| candor-java `native.yml` | `release: published` | native≡jar whole-envelope parity, + binary smoke | **MOVED** → `main` + PRs |
+| candor-swift `release.yml` | `push: tags: ['v*']` | `swift build -c release`, binary `--version` ≡ tag | **MOVED** → new `release-build` job on `main` + PRs (tag comparison necessarily stays) |
+| candor-swift `release.yml` | `push: tags: ['v*']` | tag ≡ `engineVersion` constant | **CANNOT MOVE — and no gap.** It needs a tag. Its earlier equivalent already exists: `release-preflight.sh` `grabver` reads the same constant and compares it to the version being cut, before any tag is pushed. |
+| candor-swift `release.yml` | `push: tags: ['v*']` | build / unit tests / smoke | **ALREADY RUN EARLIER** — `ci.yml` runs the identical battery on every `main` push and PR against the same spec pin. Tag-time rerun is redundancy, not a gap. |
+| candor-ts `publish.yml` | `push: tags: ['v*']` | full `npm test` battery | **NOTHING TO MOVE — it is already the fallback shape.** It runs *only when* `ci.yml` did NOT go green on that exact SHA (fail-closed); the primary run is on `main`/PRs. |
+| candor-ts `publish.yml` | `push: tags: ['v*']` | "already on npm?" | **CANNOT MOVE, correctly.** An idempotency guard about registry state at publish time, not a correctness gate. |
+
+**Adjacent class, checked and left alone: schedule-only jobs that also never see a push or PR.** None
+is release-triggered, and each is already positioned right:
+
+- `candor/release-audit.yml` (weekly `release-verify.sh`) — verifies that **already-published**
+  artifacts still resolve. There is nothing to verify before publishing; the pre-release counterpart
+  is `release-preflight.sh`. Post-hoc by definition.
+- `candor-spec/conformance.yml` `released-floor` — conformance against the latest **released** jar +
+  crates. Its subject is released artifacts. The check *class* is guarded earlier by the
+  `four-engine-differential` job in the same file, which runs on every `main` push and PR.
+- `candor/jetbrains.yml` `plugin-verifier` — **already an instance of this fix.** Its own comment says
+  it is "the pre-publish gate the Marketplace runs, on our schedule instead of on upload day"; it was
+  deliberately moved off upload day. The IDE plugins are not published by the ladder anyway
+  (`release-verify.sh` says so explicitly).
+- `candor-swift/ci.yml`'s disclosure-recall calibration step, `candor-java/soundness-weekly.yml`,
+  `candor/corpus.yml`, `candor-rust/{confirmatory-corpus,nightly-bump,re-baseline}.yml`,
+  `candor-swift/confirmatory-corpus.yml` — weekly soundness monitors and maintenance dispatches, not
+  release gates and not on the cut path.
+
+**The ladder still holds, and got stronger for free.** `release-preflight` [10] matches every run on
+the released commit's SHA by *SHA*, not by workflow name — so the moment `native` runs on `main`, [10]
+requires a green native parity check **on the very commit being cut**, before the tag. That is the
+guard this item asked for, and it needed no new code. `release-verify.sh` is untouched and still
+resolves `candor-linux-x64` + `candor-macos-arm64` on the published release, which still holds because
+the upload still happens on `release: published`. [10] now also waits on `native`'s release-event run
+(~4 min at the tail of a cut) — comment updated in `release-preflight.sh`, which previously named only
+candor-ts's `publish` and candor-swift's `release` as the tag-started workflows.
 
 ## **`[P1]` THE SPEC VERSION IS WRITTEN BY HAND IN MANY PLACES, IN THREE SPELLINGS** (filed 2026-08-25)
 

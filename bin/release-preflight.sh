@@ -290,6 +290,35 @@ checkpin "jetbrains ts" "candor/integrations/jetbrains/gradle.properties" 'cando
 # the fix for a sibling-route problem, found by review. The plugin downloads and ships this jar for its
 # post-build hook, so a stale pin here runs a twelve-rung-old ENGINE against the user's build.
 checkpin "jetbrains jvm" "candor/integrations/jetbrains/gradle.properties" 'candorJavaVersion='
+# ⟨2026-08-25⟩ …AND THE PER-ENGINE FRONT-DOOR PINS BESIDE ENGINE_PIN. These cannot go through `checkpin`:
+# it asks "does the matched LINE contain $VER", and the correct value of an untouched per-engine pin is
+# the EMPTY STRING (follow the family). So they are asserted on the RESOLVED version instead — what
+# `candor update` would actually fetch — by the same rule release.sh step 7 refuses on, so the gate before
+# the cut and the gate during it cannot disagree. Anything else is how a release passes preflight and dies
+# at step 7, or worse, passes both while the front door names a release nobody made.
+_DISP="$ROOT/candor/bin/candor"
+if [ ! -f "$_DISP" ]; then
+  bad "front door: no candor/bin/candor — the version \`candor update\` installs is unverifiable"
+elif ! rs_in_set candor; then
+  for _e in $RS_PIN_ENGINES; do
+    oos "engine pin $_e: $(rs_engine_pin "$_e" "$_DISP") — the umbrella is not in this cut, so the front door does not move"
+  done
+else
+  for _e in $RS_PIN_ENGINES; do
+    _repo="$(rs_pin_repo "$_e")"; _p="$(rs_engine_pin "$_e" "$_DISP")"
+    if rs_in_set "$_repo"; then
+      if [ -z "$WANT_VER" ] || [ "$_p" = "$WANT_VER" ]; then note "engine pin $_e: $_p"
+      elif [ -n "${PINS_ADVISORY:-}" ]; then info "engine pin $_e: still $_p — expected pre-publish, must be $WANT_VER after"
+      else bad "engine pin $_e: $_p, not $WANT_VER — \`candor update\` would keep installing $_p for $_repo (update AFTER the release is published)"; fi
+    elif [ -n "$WANT_VER" ] && [ "$_p" = "$WANT_VER" ]; then
+      # NOT advisory-exempt, in either direction. A pin naming a version its repo is not publishing is
+      # wrong BEFORE the cut and wrong after it — there is no moment at which that release appears.
+      bad "engine pin $_e: names $WANT_VER, but $_repo is not in this cut — that release will never exist, so \`candor update\` would 404"
+    else
+      note "engine pin $_e: $_p (follows the family line; $_repo is not in this cut)"
+    fi
+  done
+fi
 
 # --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
 # The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant
@@ -648,6 +677,14 @@ print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status
     # start candor-ts's OIDC `publish` and candor-swift's `release` — so the very next invocation of this
     # script, which is the one that resumes at step 7, is GUARANTEED to see its own workflows running and
     # fail. Measured on 0.28.1: a whole cycle spent re-running the release for that.
+    #
+    # …and since 2026-08-25 candor-java's `native` too, which fires on `release: published`. That is a
+    # THIRD run this check will wait on at the tail of a cut, ~4 minutes, and it is the cheap half of a
+    # good trade: `native` ALSO runs on every push to `main` now, so by the time this step runs in RELEASE
+    # mode it has already had to see a green native parity check on the very commit being cut. Before that
+    # move the native/jar parity gate ran only after the release was published — on v0.32.0 it correctly
+    # withheld two binaries that reported an empty scan at exit 0, but only once v0.32.0 was public, and
+    # repairing it cost a whole second family cut. This step is where that now gets caught instead.
     #
     # WAITING, not ignoring. Those runs are the npm publish and the swift release build: cutting the
     # umbrella before they finish would point the front door at artifacts that may not exist, which is

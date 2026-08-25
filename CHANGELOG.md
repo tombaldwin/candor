@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — the gates that only ran at release time now run on `main`
+
+- **candor-java's native/jar parity gate and candor-swift's release-configuration build moved off the
+  release trigger.** Both are engine-repo changes (candor-java `ebe40af`, candor-swift `8c62b5a`); what
+  lands here is the inventory and the ladder's side of it. A gate positioned after the irreversible step
+  grades the release, it does not guard it: on v0.32.0 the parity gate correctly withheld two native
+  binaries that reported an empty scan at exit 0, but only once v0.32.0 was public, and the repair cost a
+  second family cut. Full moved/cannot-move verdict for every release-triggered check across all seven
+  repos — three workflows, six checks — in `BACKLOG.md`, along with the falsification (PR #2 on
+  candor-java reintroduced the defect; the parity step went red on both legs on a `pull_request` event).
+- **`release-preflight` [10] gained the guard for free and its comment now says so.** [10] matches runs
+  on the released commit by SHA, not by workflow name, so a `native` run on `main` means [10] already has
+  to see a green native parity check on the very commit being cut, before the tag is pushed. It also now
+  waits on `native`'s release-event run at the tail of a cut (~4 min); the comment previously named only
+  candor-ts's `publish` and candor-swift's `release` as the workflows a tag starts. `release-verify.sh`
+  is untouched and still resolves `candor-linux-x64` + `candor-macos-arm64` on the published release —
+  the upload still happens on `release: published`, only the *proving* moved.
+
 ## 2026-08-25 — release tooling: the only cut it could express, and the notes it published (released 2026-08-25 as 0.32.1)
 
 - **Front-door pins → 0.32.1.** `ENGINE_PIN`, both `adopt/` workflows and the two IDE pins now

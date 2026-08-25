@@ -3,7 +3,11 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
-## **`[P2]` `ENGINE_PIN` IS ONE VALUE FOR THE WHOLE FAMILY, SO NO PATCH CAN MOVE THE FRONT DOOR** (filed 2026-08-25)
+<!-- RAISED P2 -> P0 on 2026-08-25 (Tom): the 0.32.1 cut republished five engines with no
+     functional change to deliver a one-engine fix. This is the last place the lockstep
+     assumption lives, and it is the next thing done. -->
+
+## **`[P0]` `ENGINE_PIN` IS ONE VALUE FOR THE WHOLE FAMILY, SO NO PATCH CAN MOVE THE FRONT DOOR** (filed 2026-08-25)
 
 `--only <repos>` now makes a single-engine cut expressible end to end (stage → preflight → release →
 verify; `bin/_release_set.sh`). **The umbrella cannot ride one, and that is a real limit, not a

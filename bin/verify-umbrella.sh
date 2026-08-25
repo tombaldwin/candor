@@ -312,6 +312,10 @@ else
 fi
 [ -n "$MISSING_TOOLS" ] && echo "    ✘ NOT AVAILABLE LOCALLY:$MISSING_TOOLS — steps needing these can only be trusted from CI or --docker"
 echo
+echo "  ONE DELIBERATE DIVERGENCE FROM GITHUB: a real job STOPS at its first failed step. This runs every"
+echo "    step of the job anyway, because the point is N problems in one pass — so a ✘ below may be a"
+echo "    CONSEQUENCE of a ✘ above it (a failed build makes the assertion on its artifact fail too)."
+echo
 echo "  WHAT A LOCAL RUN CANNOT ANSWER, whatever it prints:"
 echo "    · the runner IMAGE — preinstalled tool versions on ubuntu-24.04 differ from anything here"
 echo "    · anything needing repository secrets, an OIDC token, or \`gh\` auth as the workflow's identity"

@@ -8,6 +8,46 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — the jar was written as the OTHER platform's branch, so it could never be a fallback
+
+`candor update` fetched this platform's native binary and, on failure, printed
+`✘ download failed` and stopped. The jar branch was the `else` for platforms with **no**
+native asset, so it was unreachable on the two platforms that have one. At
+`ENGINE_PIN=0.32.0` — a release that published the jar and neither native binary, because
+the native workflow's parity gate correctly refused an image that reported an empty scan —
+that meant `candor update` could not install the JVM engine at all on macOS-arm64 or
+linux-x64, and still exited 0.
+
+A native-asset 404 now falls back to the jar for the same tag: same engine, same version,
+and it **says so** — that it is not the no-JVM install, that `java` must be on PATH, and it
+warns when there is none. Silence there is the worse outcome of the two: a user who
+believes they have a no-JVM install and does not finds out on a machine without a JDK.
+
+Three things the fallback deliberately does not do:
+
+- **It does not paper over a corrupt download.** The binary must pass `--version` before it
+  is installed at all (`curl -f` only says the bytes arrived; a truncated or wrong-arch
+  file arrives with a 200 and then fails to exec, and `run_java` prefers
+  `~/.candor/bin/candor-java` over every later tier, so an unusable file installed there
+  takes the engine down for every subsequent command). An asset that downloads and will not
+  run is a **published, broken** asset — substituting the jar would hide that behind an
+  install that looks healthy on every machine of that platform. It stops, names the
+  artifact, installs and removes nothing, and prints the flag that takes the jar
+  deliberately: `CANDOR_NO_NATIVE=1 candor update jvm`.
+- **It does not leave a stale native binary in place.** One from an earlier pin outranks the
+  jar in `run_java`, so a fallback that left it would report `$ENGINE_PIN` while every later
+  command ran the old engine. Measured on a real 0.31.0 install, not assumed. It is removed
+  (and said out loud) unless it is already at the pin.
+- **It does not exit 0 on a total failure.** If both routes fail, both causes are named and
+  the exit is 1 — an `✘` that scrolls past above a green `doctor` summary is exactly how a
+  failed install gets read as a successful one in a script or a CI step.
+
+`bin/candor.test.sh` gained 19 rows covering all four outcomes, network-free:
+`CANDOR_JAVA_RELEASE_BASE` serves a fake release over `file://`. Two mutations confirm the
+rows discriminate the behaviour rather than the seam — removing the fallback reddens only
+the absent-asset and stale-binary rows, removing the `--version` proof reddens only the
+unusable-asset ones.
+
 ## 2026-08-25 — ⟨0.32⟩ CUT: the floor moves to 0.32
 
 Engines published at 0.32.0 (four rust crates on crates.io, candor-ts on npm with

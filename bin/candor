@@ -1030,30 +1030,117 @@ PY
     echo "candor: fetching from package registries only (github.com · crates.io · npm) — no candor server, no telemetry, no version-check ping."
     tag="v$ENGINE_PIN"
     base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
+    # CANDOR_JAVA_RELEASE_BASE points the JVM fetch at somewhere else (a `file://` dir works, curl reads
+    # it). It exists so the four JVM-install outcomes below — native ok / asset absent / asset present but
+    # unusable / both gone — are assertable in bin/candor.test.sh WITHOUT a network, which is the only way
+    # they become standing rows rather than something re-measured by hand after each release.
+    base="${CANDOR_JAVA_RELEASE_BASE:-$base}"
     # the native asset for this platform (GraalVM binaries: macos-arm64, linux-x64), else fall to the jar
     os=$(uname -s); arch=$(uname -m); asset=""
     case "$os:$arch" in
       Darwin:arm64)          asset="candor-macos-arm64" ;;
       Linux:x86_64|Linux:amd64) asset="candor-linux-x64" ;;
     esac
+    # CANDOR_NO_NATIVE=1 takes the jar route on a platform that HAS a native asset. Two uses: it is the
+    # remedy printed when a native binary downloads but will not run (see below), and it is how the jar
+    # route is exercised on a developer machine that would otherwise always take the native one.
+    if [ -n "${CANDOR_NO_NATIVE:-}" ] && [ -n "$asset" ]; then
+      echo "candor: CANDOR_NO_NATIVE set — skipping the native binary, taking the jar (needs a JVM at runtime)"
+      asset=""
+    fi
     echo "candor: syncing engines to $ENGINE_PIN (the pinned engine line)"
     # --- JVM engine (flagship) ---
     if want jvm; then
+    jvm_rc=0
+    # fetch the portable jar for the pinned tag. Used by BOTH routes: the platforms that have no native
+    # binary at all, and as the fallback when this platform's native asset is not published for this tag.
+    jarf="$HOME/.candor/candor-java-$ENGINE_PIN-all.jar"
+    fetch_jvm_jar() {
+      if curl -fsSL -o "$jarf.tmp" "$base/candor-java-$ENGINE_PIN-all.jar"; then
+        mv "$jarf.tmp" "$jarf"; return 0
+      fi
+      rm -f "$jarf.tmp"; return 1
+    }
     if [ -n "$asset" ]; then
       echo "  jvm    → native binary ($asset), no JVM required"
-      if curl -fsSL -o "$CDBIN/candor-java.tmp" "$base/$asset"; then
-        chmod +x "$CDBIN/candor-java.tmp" && mv "$CDBIN/candor-java.tmp" "$CDBIN/candor-java"
-        echo "         ✔ $("$CDBIN/candor-java" --version 2>/dev/null | head -1)"
+      native_fail=""
+      # curl's own stderr is dropped HERE only: a 404 on this probe is a handled, expected outcome now
+      # that it falls back, and `curl: (56) ... error: 404` landing between the "→" and "✘" lines reads
+      # as a crash. We name the exact URL ourselves below. The JAR fetch keeps curl's stderr, because
+      # that one is the last resort and its cause (DNS, TLS, proxy, 404) is not otherwise diagnosable.
+      if curl -fsSL -o "$CDBIN/candor-java.tmp" "$base/$asset" 2>/dev/null; then
+        chmod +x "$CDBIN/candor-java.tmp"
+        # Prove it RUNS before installing it. `curl -f` only says the bytes arrived; a truncated or
+        # wrong-arch binary arrives with a 200 and then fails to exec, and `run_java` prefers
+        # $CDBIN/candor-java over every other tier — so an unusable file installed here takes the whole
+        # JVM engine down for every later command, not just this one.
+        if "$CDBIN/candor-java.tmp" --version >/dev/null 2>&1; then
+          mv "$CDBIN/candor-java.tmp" "$CDBIN/candor-java"
+          echo "         ✔ $("$CDBIN/candor-java" --version 2>/dev/null | head -1)"
+        else
+          rm -f "$CDBIN/candor-java.tmp"; native_fail=unusable
+        fi
       else
-        rm -f "$CDBIN/candor-java.tmp"; echo "         ✘ download failed ($base/$asset)"
+        rm -f "$CDBIN/candor-java.tmp"; native_fail=absent
+      fi
+      # THE TWO FAILURES ARE NOT THE SAME FAILURE, and only one of them may fall back.
+      #
+      #   absent   — the asset is not published under this tag (404), or the network never reached it.
+      #              The jar under the SAME tag is the same engine at the same version, built from the
+      #              same commit; taking it is a downgrade in convenience (it needs a JVM), not in
+      #              analysis. So fall back — but SAY SO, because a user who believes they have a
+      #              no-JVM install and does not will hit it on a machine with no `java`, at the worst
+      #              possible moment. This is not hypothetical: v0.32.0 published neither native asset
+      #              (the native workflow's parity gate correctly refused an image that reported an
+      #              EMPTY scan), and before this fallback existed `candor update` left both main
+      #              platforms with no JVM engine at all.
+      #
+      #   unusable — the asset EXISTS and does not run. Substituting the jar here would hide a broken
+      #              release behind an install that looks healthy, on every machine of that platform,
+      #              which is the same shape of silence the release gates exist to prevent. So it stops,
+      #              names the artifact, and prints the flag that takes the jar DELIBERATELY. Nothing
+      #              was installed, so whatever engine was already in place is untouched.
+      if [ "$native_fail" = unusable ]; then
+        echo "         ✘ $asset downloaded but does not run (corrupt, truncated, or built for another"
+        echo "           machine). NOT falling back to the jar: this asset is published and broken, and a"
+        echo "           quiet substitution would hide that. Nothing was installed or removed."
+        echo "           Report it, and to proceed on the jar meanwhile:  CANDOR_NO_NATIVE=1 candor update jvm"
+        jvm_rc=1
+      elif [ "$native_fail" = absent ]; then
+        echo "         ✘ no native binary published at v$ENGINE_PIN ($base/$asset)"
+        echo "  jvm    → falling back to the jar for the same tag — SAME engine, SAME version, but it"
+        echo "           NEEDS A JVM at runtime. This is not the no-JVM install."
+        if fetch_jvm_jar; then
+          echo "         ✔ jar stashed in ~/.candor/ (candor-java-$ENGINE_PIN-all.jar) — requires \`java\` on PATH"
+          have java || echo "         ! no \`java\` on PATH — install a JDK 17+ or the JVM engine cannot run"
+          # A native binary left over from an EARLIER pin outranks this jar in run_java, so leaving it
+          # would mean `update` reports $ENGINE_PIN while every later command runs the old engine — a
+          # silent version split across the family. Only remove one that is NOT already at the pin.
+          if [ -x "$CDBIN/candor-java" ]; then
+            nv=$("$CDBIN/candor-java" --version 2>/dev/null | head -1 | awk '{print $2}')
+            if [ "$nv" = "$ENGINE_PIN" ]; then
+              echo "         • the installed native binary is already $ENGINE_PIN — keeping it (it outranks the jar)"
+            else
+              rm -f "$CDBIN/candor-java"
+              echo "         • removed the stale native binary (${nv:-unknown version}) — it outranks the jar and would have run instead"
+            fi
+          fi
+        else
+          # BOTH routes failed: name both causes, because "download failed" alone sends people to check
+          # the wrong one.
+          echo "         ✘ the jar failed too ($base/candor-java-$ENGINE_PIN-all.jar)"
+          echo "         ✘ no JVM engine installed: native $asset unavailable AND the jar unavailable at v$ENGINE_PIN."
+          echo "           Check the release exists: https://github.com/tombaldwin/candor-java/releases/tag/$tag"
+          jvm_rc=1
+        fi
       fi
     else
       echo "  jvm    → no native binary for $os/$arch; fetching the jar (needs a JVM at runtime)"
-      if curl -fsSL -o "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp" "$base/candor-java-$ENGINE_PIN-all.jar"; then
-        mv "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp" "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar"
+      if fetch_jvm_jar; then
         echo "         ✔ jar stashed in ~/.candor/"
       else
-        rm -f "$HOME/.candor/candor-java-$ENGINE_PIN-all.jar.tmp"; echo "         ✘ jar download failed"
+        echo "         ✘ jar download failed ($base/candor-java-$ENGINE_PIN-all.jar)"
+        jvm_rc=1
       fi
     fi
     fi
@@ -1102,18 +1189,25 @@ PY
     fi
     # We're already online — refresh the version cache and report any release beyond the pin (a point
     # release is spec-compatible; a new line moves the family). Adopt either by moving the umbrella.
-    refresh_update_cache
-    newest=$(newest_beyond_pin)
-    if [ -n "$newest" ]; then
-      echo ""
-      echo "  ↑ $(newer_kind "$newest") is available on the channel, beyond the pinned $ENGINE_PIN."
-      echo "    Adopt it by moving the whole family together: brew upgrade candor"
+    # Skipped when the JVM fetch was redirected: this asks the GitHub RELEASE CHANNEL what is newest, and
+    # the answer is meaningless (and the call unwanted) when we were deliberately pointed elsewhere.
+    if [ -z "${CANDOR_JAVA_RELEASE_BASE:-}" ]; then
+      refresh_update_cache
+      newest=$(newest_beyond_pin)
+      if [ -n "$newest" ]; then
+        echo ""
+        echo "  ↑ $(newer_kind "$newest") is available on the channel, beyond the pinned $ENGINE_PIN."
+        echo "    Adopt it by moving the whole family together: brew upgrade candor"
+      fi
     fi
     echo ""
     # doctor as an informational summary — but update must NOT inherit its exit 1 for a merely-absent
     # OPTIONAL engine (rust/swift needing a toolchain). A real download failure already printed "✘".
     "$0" doctor || true
-    exit 0;;
+    # …the FLAGSHIP engine is a different matter. If `update` was asked for the JVM engine and finished
+    # with none installed by either route, exit 1 — an ✘ that scrolls past above a green doctor summary
+    # is exactly how a failed install gets read as a successful one in a script or a CI step.
+    exit "${jvm_rc:-0}";;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).

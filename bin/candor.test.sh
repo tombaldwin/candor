@@ -466,4 +466,161 @@ saw    "stale native → removed so it cannot shadow the jar"  "removed the stal
 unseen "stale native → the old binary is gone"               "INSTALLED:/.candor/bin/candor-java"
 
 echo
+echo "PER-ENGINE PINS (a one-engine patch must reach the front door, and reach nothing else):"
+# WHY. ENGINE_PIN was ONE value for the whole family — the java release tag, `cargo install --version`,
+# `npx candor-ts@…` and the swift tag alike — so a one-engine fix could only reach `candor update` and
+# Homebrew by republishing every engine. 0.32.1 did exactly that for a single candor-java native-image
+# fix. `bin/candor` now carries a per-engine pin beside the family one, defaulting to it.
+#
+# THE ROWS BELOW USE THE ENV SEAM (CANDOR_ENGINE_PIN_<E>), which resolves through the same expression as
+# the shipped constant. Network-free: the jvm arm is redirected by CANDOR_JAVA_RELEASE_BASE and the other
+# three are read out of what `update` SAYS it will install, since neither cargo nor a github download can
+# run here.
+JPIN=9.9.9
+mkdir -p "$REL/p"; cp "$REL/jar" "$REL/p/candor-java-$JPIN-all.jar"   # a release that exists ONLY at the java pin
+# 1. THE DOWNLOAD. With java pinned away from the family line, the jar `update` fetches is the java one.
+jvmrun perengine "$REL/p" "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+saw    "java pin → the jar fetched is the JAVA pin's"        "INSTALLED:/.candor/candor-java-$JPIN-all.jar"
+unseen "java pin → nothing at the family pin is fetched"     "candor-java-$PIN-all.jar"
+# 2. THE CONTROL FOR ROW 1. The same release dir with NO override must NOT find a jar — proving row 1
+# measured the pin rather than "whatever single jar happens to be in the directory".
+jvmrun perengine_ctl "$REL/p"
+unseen "CONTROL: no override → the $JPIN jar is NOT taken"   "INSTALLED:"
+saw    "CONTROL: …it looks for the FAMILY pin's jar instead" "candor-java-$PIN-all.jar"
+# 3. THE VERSION CHECK MOVES WITH THE DOWNLOAD. `update`'s stale-native guard compares the installed
+# binary against the pin; if the download moved and the comparison did not, `update` would DELETE a
+# correctly-installed patched engine as "stale". That is the worse half of a half-applied pin.
+printf '#!/bin/sh\necho "candor-java %s (spec 9.9)"\n' "$JPIN" > "$REL/native-jpin"; chmod +x "$REL/native-jpin"
+JPRESEED="$REL/native-jpin" jvmrun keepnative "$REL/p" "CANDOR_ENGINE_PIN_JAVA=$JPIN"; unset JPRESEED
+saw    "java pin → an installed binary AT the java pin is kept" "is already $JPIN — keeping it"
+JPRESEED="$REL/native-jpin" jvmrun dropnative "$REL/b"; unset JPRESEED
+saw    "CONTROL: …and without the override the same binary is stale" "removed the stale native binary ($JPIN)"
+# 4. THE OTHER THREE ENGINES DO NOT MOVE. One pin must not drag the family.
+# NO NETWORK, and the failure branches are the ones that name a version: a `curl`/`cargo` that always
+# fails makes `update rust|swift` print the URL/command it WOULD have used, which is the pin under test.
+# Without the stubs these two rows reach crates.io and github for real — a test that installs software.
+mkdir -p "$T/nonet"
+printf '#!/bin/sh\nexit 1\n' > "$T/nonet/curl";  chmod +x "$T/nonet/curl"
+printf '#!/bin/sh\nexit 1\n' > "$T/nonet/cargo"; chmod +x "$T/nonet/cargo"
+pinsay() { # $1 label ; $2 want ; $3 engine ; rest: env — what `update <engine>` says it will install
+  local h; h="$(mktemp -d "$T/psay.XXXXXX")"
+  local got; got="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$h" CANDOR_CACHE="$h/.candor" CANDOR_DISPATCH_DRYRUN= "${@:4}" bash "$D" update "$3" 2>&1)"
+  if [[ "$got" == *"$2"* ]]; then echo "  ok   $1"; else echo "  FAIL $1"; echo "       want: *$2*"; echo "       got:  $got"; fails=$((fails+1)); fi
+}
+pinsay "java pin leaves rust on the family line"  "cargo install --version $PIN" rust  "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+pinsay "java pin leaves swift on the family line" "no published binary for v$PIN"  swift "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+pinsay "…and a rust pin moves rust, alone"        "cargo install --version $JPIN" rust  "CANDOR_ENGINE_PIN_RUST=$JPIN"
+pinsay "…and a swift pin moves swift, alone"      "no published binary for v$JPIN"  swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+# 5. THE ts PIN reaches the npx route the dispatcher takes for every ts verb.
+# The npx route fires only when candor-ts-query is NOT on PATH and node IS — this harness's fakebin has
+# the former, so these rows need a PATH of their own or they measure the installed-engine branch.
+mkdir -p "$T/tspin/.candor" "$T/tsbin"; : > "$T/tspin/.candor/report.pkg.JS.json"
+printf '#!/bin/sh\n' > "$T/tsbin/node"; chmod +x "$T/tsbin/node"
+TSENV="PATH=$T/tsbin:/usr/bin:/bin"
+ok "ts pin → the query npx invocation"  "candor-ts@$JPIN" \
+   bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_TS=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
+no "…and the family pin is not used"    "candor-ts@$PIN" \
+   bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_TS=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
+ok "CONTROL: no ts override → the family pin" "candor-ts@$PIN" \
+   bash -c "cd '$T/tspin' && env $TSENV CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
+ok "…and a JAVA pin does not touch the ts route" "candor-ts@$PIN" \
+   bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
+# 6. DISCLOSURE. Divergence is expressible, so an operator must be able to SEE it — and must see nothing
+# when there is nothing, which is what keeps the default output identical to the single-pin dispatcher.
+dochome="$(mktemp -d "$T/doc.XXXXXX")"
+ok "doctor discloses the divergence"    "pinned separately: java $JPIN" \
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash '$D' doctor"
+no "CONTROL: doctor says nothing when nothing diverges" "pinned separately" \
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_DISPATCH_DRYRUN= bash '$D' doctor"
+ok "engines discloses it too"           "pinned separately: java $JPIN" \
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash '$D' engines"
+no "CONTROL: …and nothing when nothing diverges"        "pinned separately" \
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_DISPATCH_DRYRUN= bash '$D' engines"
+# 7. THE UPDATE NOTICE compares each CHANNEL to its own pin. Against the family line alone it would nag
+# about the very release the machine is pinned to, which is how a real notice stops being read.
+nhome="$(mktemp -d "$T/note.XXXXXX")"; mkdir -p "$nhome/.candor"
+printf 'update-check=on\n' > "$nhome/.candor/settings"
+printf 'checked=%s\njvm=%s\n' "$(date +%s)" "$JPIN" > "$nhome/.candor/update-check"
+no "notice is silent about a version this machine is pinned to" "is available" \
+   bash -c "env HOME='$nhome' CANDOR_CACHE='$nhome/.candor' CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash '$D' --version"
+ok "CONTROL: …and still fires when the channel is genuinely ahead of that pin" "is available" \
+   bash -c "env HOME='$nhome' CANDOR_CACHE='$nhome/.candor' CANDOR_DISPATCH_DRYRUN= bash '$D' --version"
+# 8. WHICH STASHED JAR RUNS. Every reader used `ls … | head -1`, and `ls` sorts ASCENDING — so with two
+# jars in ~/.candor the dispatcher ran the OLDEST while `update` reported the newest. Per-engine pins
+# make two jars an ordinary state, so the choice is now the pinned one, else the newest by version.
+jhome="$(mktemp -d "$T/jar.XXXXXX")"; mkdir -p "$jhome/.candor" "$jhome/nobin"
+: > "$jhome/.candor/candor-java-0.9.0-all.jar"; : > "$jhome/.candor/candor-java-0.31.0-all.jar"; : > "$jhome/.candor/candor-java-$JPIN-all.jar"
+: > "$jhome/rep.pkg.jvm.json"
+# A jvm report routes to run_java; a PATH with no candor-java and a CANDOR_CACHE with no native binary
+# make it fall through to the jar tier, which is the one that chooses.
+JARENV="PATH=$jhome/nobin:/usr/bin:/bin HOME=$jhome CANDOR_CACHE=$jhome/.candor CANDOR_DISPATCH_DRYRUN=1"
+ok "two stashed jars → the PINNED one runs, not the alphabetically-first" "candor-java-$JPIN-all.jar" \
+   bash -c "env $JARENV CANDOR_ENGINE_PIN_JAVA=$JPIN bash '$D' where Net --report '$jhome/rep.pkg.jvm.json'"
+no "…and never the 0.9.0 jar the old ls-head-1 pick returned"  "candor-java-0.9.0-all.jar" \
+   bash -c "env $JARENV CANDOR_ENGINE_PIN_JAVA=$JPIN bash '$D' where Net --report '$jhome/rep.pkg.jvm.json'"
+# …and with NO jar at the pin, the NEWEST by version — not the first ls returns.
+jhome2="$(mktemp -d "$T/jar2.XXXXXX")"; mkdir -p "$jhome2/.candor" "$jhome2/nobin"
+: > "$jhome2/.candor/candor-java-0.9.0-all.jar"; : > "$jhome2/.candor/candor-java-0.31.0-all.jar"
+: > "$jhome2/rep.pkg.jvm.json"
+ok "no jar at the pin → the NEWEST by version, not the first" "candor-java-0.31.0-all.jar" \
+   bash -c "env PATH='$jhome2/nobin:/usr/bin:/bin' HOME='$jhome2' CANDOR_CACHE='$jhome2/.candor' CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net --report '$jhome2/rep.pkg.jvm.json'"
+# …and THE PIN OUTRANKS THE NEWEST, which the two rows above cannot tell apart: in both of them the
+# pinned jar IS the newest, so removing the pinned-jar shortcut left them green. Found by mutation.
+# Here the pin names the OLDER jar — the state a machine is in after a one-engine patch is rolled back —
+# and the pinned one must still win, because the pin is what `update` fetched and reported.
+jhome3="$(mktemp -d "$T/jar3.XXXXXX")"; mkdir -p "$jhome3/.candor" "$jhome3/nobin"
+: > "$jhome3/.candor/candor-java-0.31.0-all.jar"; : > "$jhome3/.candor/candor-java-$JPIN-all.jar"
+: > "$jhome3/rep.pkg.jvm.json"
+ok "the PINNED jar wins even when a newer one is stashed" "candor-java-0.31.0-all.jar" \
+   bash -c "env PATH='$jhome3/nobin:/usr/bin:/bin' HOME='$jhome3' CANDOR_CACHE='$jhome3/.candor' CANDOR_ENGINE_PIN_JAVA=0.31.0 CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net --report '$jhome3/rep.pkg.jvm.json'"
+
+# 9. THE RELEASE TAG in the both-routes-failed message. Every row above redirects the fetch with
+# CANDOR_JAVA_RELEASE_BASE, so none of them can see the URL built from the pin — the one place the real
+# tag survives that redirection is the "check the release exists" remedy, which is also the line a user
+# follows when an install fails. Without this row the tag could silently stay on the family line.
+jvmrun tagline "$REL/d" "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+saw    "java pin → the remedy names the JAVA tag"            "releases/tag/v$JPIN"
+jvmrun tagline_ctl "$REL/d"
+saw    "CONTROL: …and the family tag without the override"   "releases/tag/v$PIN"
+
+# 10. THE CI WORKFLOW `candor init` GENERATES restates the engine pin in YAML, and it must be the pin for
+# THAT project's language — a repo gated by the engine a one-engine patch fixed must not have its CI
+# install the unfixed one. The INLINE arm is the one carrying the version, and it fires only when
+# `adopt/candor-run` is not beside the dispatcher, so this runs an isolated COPY. Without that, init
+# writes `- run: .candor/run` and the row is vacuously silent.
+mkdir -p "$T/iso" "$T/initbin"; cp "$D" "$T/iso/candor"
+for e in candor-scan candor-ts candor-java candor-swift; do
+  cat > "$T/initbin/$e" <<INITSTUB
+#!/bin/sh
+case "\$1" in --version) echo "$e 0.0.0 (spec 0.32)"; exit 0;; esac
+out=""; prev=""; for a in "\$@"; do [ "\$prev" = --json ] && out="\$a"; prev="\$a"; done
+[ -n "\$out" ] || out=.candor/report.TOKEN.json
+mkdir -p "\$(dirname "\$out")"
+printf '{"candor":{"version":"stub","toolchain":"stable","spec":"0.32"},"functions":[]}' > "\$out"
+exit 0
+INITSTUB
+  chmod +x "$T/initbin/$e"
+done
+printf '#!/bin/sh\nexit 1\n' > "$T/initbin/curl"; chmod +x "$T/initbin/curl"   # the swift arm probes a URL
+# The MANIFEST names the language — detect_langs is what init reads, so passing a language token beside
+# it would be a second source of truth for the same fact (and an unused one).
+initwf() { # $1 label ; $2 manifest ; $3 expected substring ; rest: env
+  local label="$1" man="$2" want="$3"; shift 3
+  local d; d="$(mktemp -d "$T/iw.XXXXXX")"; : > "$d/$man"
+  ( cd "$d" && env PATH="$T/initbin:/usr/bin:/bin" HOME="$d/home" CANDOR_CACHE="$d/home/.candor" \
+      CANDOR_NO_AUTOFETCH=1 CANDOR_DISPATCH_DRYRUN= "$@" bash "$T/iso/candor" init . ) >/dev/null 2>&1
+  local got; got="$(cat "$d"/.github/workflows/*.yml 2>/dev/null)"
+  # FAIL LOUDLY WHEN NO WORKFLOW WAS WRITTEN. An empty `got` never contains `$want`, so this would read
+  # as a correct refusal rather than as a fixture that never reached the code being measured.
+  if [ -z "$got" ]; then echo "  FAIL $label — no workflow was generated; the row measured nothing"; fails=$((fails+1)); return; fi
+  if [[ "$got" == *"$want"* ]]; then echo "  ok   $label"; else echo "  FAIL $label"; echo "       want: *$want*"; echo "       got:  $(printf '%s' "$got" | grep -E 'candor|curl' | head -4)"; fails=$((fails+1)); fi
+}
+initwf "init's java workflow curls the JAVA pin"      pom.xml       "download/v$JPIN/candor-linux-x64" "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+initwf "CONTROL: …the family pin without the override" pom.xml       "download/v$PIN/candor-linux-x64"
+initwf "…and a java pin does not move the ts workflow" package.json  "candor-ts@$PIN"                   "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+initwf "init's ts workflow npx's the TS pin"           package.json  "candor-ts@$JPIN"                  "CANDOR_ENGINE_PIN_TS=$JPIN"
+initwf "init's rust workflow installs the RUST pin"    Cargo.toml    "--version '=$JPIN'"               "CANDOR_ENGINE_PIN_RUST=$JPIN"
+initwf "init's swift workflow curls the SWIFT pin"     Package.swift "download/v$JPIN/candor-swift"    "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+
+echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

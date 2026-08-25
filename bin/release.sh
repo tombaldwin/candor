@@ -204,9 +204,19 @@ if rs_is_full; then
   echo "    · candor/adopt/               java + agents pins"
   echo "    · candor-java/jbang-catalog.json"
 else
-  echo "    · candor/bin/candor           ENGINE_PIN — NOT moved by a scoped cut (one value for the whole"
-  echo "      family: the java tag, cargo install --version, npx candor-ts@…, the swift tag). \`candor update\`"
-  echo "      keeps installing the family line until the family moves."
+  # THE FRONT DOOR, PER ENGINE. `bin/candor` carries a family pin plus one optional pin per engine, so a
+  # scoped cut that INCLUDES the umbrella moves exactly the pins of the engines it published and leaves
+  # ENGINE_PIN on the family line. A cut without the umbrella cannot move the front door at all — it is
+  # a different repo, with its own release, tag and brew formula.
+  if rs_in_set candor; then
+    for _e in $RS_PIN_ENGINES; do
+      rs_in_set "$(rs_pin_repo "$_e")" && echo "    · candor/bin/candor           ENGINE_PIN_$(printf '%s' "$_e" | tr '[:lower:]' '[:upper:]')=\"$VER\"   (leave ENGINE_PIN on the family line)"
+    done
+  else
+    echo "    · candor/bin/candor           NOT in this cut, so the front door does not move: \`candor update\`"
+    echo "      and Homebrew keep installing the family line. To move them, re-cut with the umbrella in the"
+    echo "      set:  --only $(printf '%s' "$RS_SET" | tr ' ' ','),candor"
+  fi
   rs_in_set candor-java   && echo "    · candor/adopt/candor.yml     CANDOR_JAVA_VERSION"
   rs_in_set candor-agents && echo "    · candor/adopt/candor-digest.yml  candor-agents@v"
   rs_in_set candor-java   && echo "    · candor-java/jbang-catalog.json  (the TAG and the asset FILENAME both)"
@@ -227,26 +237,33 @@ fi
 #
 # The guard is a CHECK, not a comment: the pin must already name this version or this step refuses.
 #
-# A SCOPED CUT STOPS BEFORE THIS STEP, and that is the honest limit rather than an omission. The tarball
-# this step tags carries ENGINE_PIN, which is ONE value for the whole family — so there is no umbrella
-# tarball that says "java 0.32.1, everything else 0.32.0". A subset cut therefore publishes engines and
-# per-engine pins and leaves the front door where it is; `candor update` and Homebrew keep installing the
-# family line. Making that expressible needs a per-engine pin in `bin/candor`, which is a change to the
-# FRONT DOOR, not to the release scripts, and is filed rather than smuggled in here.
+# A SCOPED CUT CAN NOW REACH THIS STEP, and the guard is what makes that safe. `bin/candor` carries a
+# family pin plus one optional pin per engine, so the tarball tagged here CAN say "java 0.32.1,
+# everything else 0.32.0" — but only if the pins in it name releases that exist. That is one rule over
+# four engines (rs_pin_violations in bin/_release_set.sh): every engine this cut publishes must be pinned
+# to $VER, and every engine it does NOT publish must be pinned to something else, because $VER was never
+# cut for it and a pin naming a release nobody made 404s on the user's machine. Family-wide the rule
+# reduces to the ENGINE_PIN == $VER check that has always been here.
 say "7. umbrella release + tag + Homebrew tap (AFTER the pins)"
+PINNED=$(rs_family_pin "$ROOT/candor/bin/candor")
 if ! rs_in_set candor; then
-  skip "the umbrella is not in this cut — ENGINE_PIN stays at $(grep -oE 'ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor/bin/candor" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'), so \`candor update\`/brew keep installing the family line"
+  skip "the umbrella is not in this cut — the front door stays at $PINNED, so \`candor update\`/brew keep installing the family line"
 fi
-PINNED=$(grep -oE 'ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor/bin/candor" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-# The ENGINE_PIN guard is asserted for a FAMILY-WIDE cut only. An umbrella-only CLI patch (`--only
-# candor`, the case `bin/candor`'s own UMBRELLA_VERSION comment anticipates) bumps the umbrella while the
-# engine line legitimately stays where it is — demanding ENGINE_PIN == the umbrella's version there would
-# point the front door at four engine releases that were never cut.
-if rs_is_full && [ "$PINNED" != "$VER" ]; then
-  die "ENGINE_PIN is ${PINNED:-unset}, not $VER — the umbrella tarball carries that pin and brew hashes it,
-     so cutting the umbrella now ships a $VER front door that fetches ${PINNED:-the wrong} engines.
-     Do step 6 first (bump ENGINE_PIN + the adopt/jbang pins, commit, push), then re-run this script:
-     steps 1-3 skip what already exists and this step will proceed.
+# An umbrella-only CLI patch (`--only candor`, the case `bin/candor`'s own UMBRELLA_VERSION comment
+# anticipates) bumps the umbrella while the engine line legitimately stays where it is: no engine repo is
+# in the set, so every engine takes the "must NOT name $VER" arm and a front door left where it is passes.
+PINVIOL=""
+rs_in_set candor && PINVIOL="$(rs_pin_violations "$ROOT/candor/bin/candor" "$VER")"
+# Formatted BEFORE the die, never inside it: `release-test.sh` re-renders this die string through a
+# heredoc to prove its backticks are escaped, and a command substitution in there would execute during
+# that check rather than being inspected by it.
+PINMSG="$(printf '%s' "$PINVIOL" | sed 's/^/       · /')"
+if [ -n "$PINVIOL" ]; then
+  die "ENGINE_PIN mismatch — the umbrella tarball carries the front door's pins and brew hashes it:
+$PINMSG
+     Cutting the umbrella now ships a $VER front door that installs the wrong engines.
+     Do step 6 first (bump the pins in bin/candor + the adopt/jbang pins, commit, push), then re-run
+     this script: steps 1-3 skip what already exists and this step will proceed.
 
      THE PIN-BUMP COMMIT MUST ALSO TOUCH THAT REPO'S CHANGELOG. \`bin/candor\`, \`adopt/*.yml\` and
      jbang-catalog.json all count as SOURCE to preflight [5b] (changelog-lag), which step 0 of this

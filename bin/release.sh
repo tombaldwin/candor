@@ -95,43 +95,29 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
   if ! rs_in_set "$repo"; then skip "$repo is not in this cut — no release cut"; return 0; fi
   if gh release view "$tag" -R "tombaldwin/$repo" >/dev/null 2>&1; then skip "$repo $tag already released"
   else
-    # THE BODY IS THE NEWEST ENTRY, NOT THE WHOLE CHANGELOG. GitHub caps a release body at 125000
-    # characters and candor-swift's CHANGELOG is 154KB, so `-F CHANGELOG.md` 422'd mid-release on 0.25
-    # ("body is too long") and left that repo TAGGED WITH NO RELEASE — the state that broke `candor
-    # update` at 0.24. Every other changelog is growing the same way, so this was a deadline, not a one-off.
-    # SELECT BY VERSION, NOT BY POSITION. This read "the first `## ` section", which was correct only
-    # while the newest entry happened to be first. `release-stage.sh` opens a FRESH EMPTY `## Unreleased`
-    # above the entry it just cut, so on 0.26 — the first release where the two scripts ran together —
-    # this extracted two blank lines and would have published EMPTY notes for all five engines. Anchoring
-    # on `## [$VER]` cannot drift that way, and an empty result is now fatal rather than silent.
-    awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' \
-        "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
-    # THE UMBRELLA'S CHANGELOG IS DATED, NOT VERSIONED, AND SAYS SO IN ITS OWN HEADER: "not a versioned
-    # release artifact — it pins the engine versions it targets, so this changelog is DATED". So it has no
-    # `## [X.Y.Z]` heading and never should. Fall back to the newest section for that shape — but only as a
-    # FALLBACK, so the five engines still get the version-anchored selection that stops the empty-notes bug,
-    # and an empty result stays fatal either way.
-    # candor-spec's headings are FLOOR-shaped (`## 0.27 — …`), not `## [0.27.0]`, so the version anchor
-    # above misses it. Try the floor before falling back to position.
-    if [ ! -s "/tmp/rel-body-$repo.md" ]; then
-      awk -v v="## $SPEC " 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' \
-          "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
-    fi
-    if [ ! -s "/tmp/rel-body-$repo.md" ]; then
-      # SKIP A FRESH EMPTY `## Unreleased`. Staging opens one at the top, so "the newest section" is now
-      # that heading and its single line of body — which passes the empty-file and whitespace-only guards
-      # below and would publish a release whose notes read, in full, `## Unreleased`. That is the 0.26
-      # empty-notes defect with one line of camouflage; it did not fire then only because no empty
-      # Unreleased sat on top yet. Found by a release-mechanics review, 2026-08-08.
-      # `\[?…\]?`: the bracketed `## [Unreleased]` is the other spelling this family writes, and the first
-      # version of this skip matched only the bare one — an empty bracketed heading published as a
-      # one-line body. Unreachable for 0.27.0 (only the umbrella reaches this fallback and it has no
-      # Unreleased heading) but a one-spelling guard is how the defect it fixes got in.
-      awk '/^## \[?[Uu]nreleased\]?/{skip=1;next} /^## /{if(skip){skip=0;n++} else n++} n==1&&!skip{print} n==2{exit}' \
-          "$ROOT/$repo/CHANGELOG.md" | head -80 > "/tmp/rel-body-$repo.md"
-      skip "$repo: no '## [$VER]' heading (dated changelog) — using the newest non-empty section"
-    fi
-    [ -s "/tmp/rel-body-$repo.md" ] || die "$repo: CHANGELOG yields no release notes — refusing to publish an empty release"
+    # SELECTION LIVES IN `bin/_release_notes.sh`, AND IT REFUSES RATHER THAN GUESSES.
+    #
+    # What used to be here ended in a silent FALL-THROUGH: no `## [$VER]` section → publish "the newest
+    # non-empty section", which is THE PREVIOUS VERSION'S NOTES, under the new tag, announced by a yellow
+    # `•` at the end of a long release. `_stage_changelogs.py` produces that state as a matter of course —
+    # it skips an EMPTY `## Unreleased`, and a repo with nothing to say is exactly what a family build
+    # bump is. Hit at 0.29.1 (two repos hand-wrote "Family build bump only" entries to dodge it), hit
+    # again twice on 2026-08-25. Publishing the wrong notes is silent and reaches users; refusing is loud
+    # and reaches one operator with a one-command remedy, so the fall-through is gone — see that file's
+    # header for the umbrella's dated arm and the fence on it.
+    #
+    # The helper is a SEPARATE PROGRAM so `release-test.sh` drives the code that publishes rather than a
+    # copy of it: the harness re-implemented this awk inline for three releases, which is the "a test that
+    # bypasses the integration point is a test of the wrong thing" note two comments down in this file.
+    # REDIRECTED STRAIGHT TO THE FILE, never through `notes="$(…)"`. Command substitution strips trailing
+    # newlines, so a variable round-trip here silently changes the bytes published — the identical trap
+    # this file's helper carries a comment about, one process boundary up. The helper writes NOTHING to
+    # stdout when it refuses, so an empty file cannot be created by the failing branch either.
+    if bash "$HERE_R/_release_notes.sh" "$repo" "$SPEC" "$VER" "$ROOT/$repo/CHANGELOG.md" \
+         > "/tmp/rel-body-$repo.md" 2>"/tmp/rel-notes-$repo.err"; then :
+    else die "$(cat "/tmp/rel-notes-$repo.err")"; fi
+    # Belt and braces at the call site: the helper cannot return blank on exit 0, and if it ever did,
+    # `gh release create -F` would happily publish an empty body.
     grep -q '[^[:space:]]' "/tmp/rel-body-$repo.md" || die "$repo: release notes are whitespace only — refusing"
     gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag"
   fi

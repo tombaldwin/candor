@@ -570,6 +570,43 @@ for r in $RS_SET; do
 done
 [ "$u_any" = 0 ] && [ -n "$WANT_VER" ] && ok "no CHANGELOG has content stranded under \`## Unreleased\`"
 
+# ── [9b] …AND THE VERSION BEING CUT MUST HAVE A SECTION OF ITS OWN ────────────────────────────────
+# [9] above is only HALF the question. It asks whether anything is stranded UNDER `## Unreleased`; it has
+# nothing to say about the case where that section is EMPTY — which it reads as fine, because nothing
+# unlabelled ships. But an empty section meant `_stage_changelogs.py` produced NO `## [$VER]` heading,
+# and `release.sh` then fell through to "the newest non-empty section" — i.e. published THE PREVIOUS
+# VERSION'S NOTES under the new tag, silently. So the state [9] certifies as clean was the exact state
+# that mis-published. Both halves of the release tooling went green over it.
+#
+# MEASURED THREE TIMES. candor-swift's and candor-agents' `## [0.29.1]` entries read, verbatim, "**Family
+# build bump only — no engine changes in this repo**" and say in the entry itself that they were
+# hand-written only because an empty section would otherwise republish the previous notes. It was hit
+# again twice on 2026-08-25 — once before the 0.32.0 cut, and once after it, when all seven repos sat
+# with an empty `## Unreleased` and a family-wide 0.32.1 would have republished 0.32.0's notes in six.
+#
+# THE QUESTION IS THE PUBLISHER'S, BYTE FOR BYTE. This check calls `bin/_release_notes.sh` — the same
+# program `release.sh` uses to pick the body — rather than re-deriving "does a heading exist". A gate
+# that asks its own version of the publisher's question is a gate that can go green on a cut that then
+# refuses (or, worse, green on one that publishes something else). It also means the umbrella's dated
+# arm, candor-spec's floor-shaped headings and the `(released … as $VER)` stamp are all covered here
+# without this file knowing about any of them.
+echo "[9b] the version being cut has release notes of its own${WANT_VER:+ ($WANT_VER)}"
+if [ -z "$WANT_VER" ]; then
+  note "— skipped: no version argument. Nothing is being cut, so no version needs a section yet"
+else
+  n_any=0
+  for r in $RS_SET; do
+    f="$ROOT/$r/CHANGELOG.md"
+    [ -f "$f" ] || { bad "$r: no CHANGELOG.md — release.sh will refuse to publish it with no notes"; n_any=1; continue; }
+    if nerr="$(bash "$HERE/_release_notes.sh" "$r" "${WANT_SPEC:-${SPEC_FLOOR:-}}" "$WANT_VER" "$f" 2>&1 >/dev/null)"; then :
+    else
+      n_any=1
+      bad "$r: $nerr"
+    fi
+  done
+  [ "$n_any" = 0 ] && ok "every repo in the cut has a \`$WANT_VER\` section — release.sh will publish ITS notes, not the last release's"
+fi
+
 # ── [10] EVERY REPO'S CI MUST BE GREEN ON THE COMMIT BEING RELEASED ────────────────────────────────
 # Nothing in the release path looked at CI. You could publish a commit whose own build was red — and that
 # is not hypothetical: on 2026-08-03 candor-rust and candor-swift both went red on pushed HEADs, and the

@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-08-25 — release tooling: the only cut it could express, and the notes it published (released 2026-08-25 as 0.32.1)
 
+- **Front-door pins → 0.32.1.** `ENGINE_PIN`, both `adopt/` workflows and the two IDE pins now
+  name the release carrying candor-java's native binaries, so `candor update` and Homebrew reach them
+  rather than the jar fallback.
+
 candor versions on three axes — the **spec** (a cross-engine contract), the **build id** (per engine),
 and crate semver — and SPEC.md's *Versioning policy* says the family moves as a **ladder, not a lockstep
 stamp**. `release-preflight.sh` [4] says the same in its own comment: *"a build id is PER-ENGINE by

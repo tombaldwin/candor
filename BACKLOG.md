@@ -3,6 +3,65 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
+## **`[P0]` A GATE THAT ONLY RUNS AT RELEASE TIME CANNOT PROTECT THE RELEASE** (filed 2026-08-25)
+
+candor-java's `native` workflow triggers on `release:published`. So its parity check — native
+report vs jar report — runs only AFTER the artifacts are public. On 0.32.0 it did its job and
+withheld two binaries that reported an EMPTY scan at exit 0, but by then the release existed
+without them, and the fix cost a second full family cut (0.32.1: five engines republished with no
+functional change).
+
+Had that check run on `main`, the defect would have been caught before the cut and 0.32.1 would
+never have existed.
+
+**Fix:** build the native image on `main` (and on PRs touching the engine), attach on release. The
+release step becomes an upload of something already proven, not the first time anyone looks.
+
+**Generalise it:** enumerate every check that runs only on a release trigger and move each one
+earlier, or say why it cannot move. A gate positioned after the irreversible step grades the
+release; it does not guard it.
+
+## **`[P1]` THE SPEC VERSION IS WRITTEN BY HAND IN MANY PLACES, IN THREE SPELLINGS** (filed 2026-08-25)
+
+Measured on the 0.32 bump: `spec-bump.sh` rewrites seven declaration sites, and the version ALSO
+appears in READMEs, AGENTS docs, `package.json`, `pyproject.toml`, embedded AGENTS copies, jbang's
+description, and SPEC.md's own envelope examples — in three spellings: `spec-0.31`,
+`"spec": "0.31"` and `(spec 0.31)` inside prose.
+
+Every hand-edit pass caught the two that LOOK LIKE DECLARATIONS and missed the one that LOOKS LIKE
+PROSE. That happened in candor-swift (the embedded doc), candor-rust and candor-java (JSON examples
+in READMEs), and SPEC.md itself carried three envelope fences saying 0.31 under a `**Version 0.32**`
+header. The drift gates that DERIVE from the engine's own constant never failed; only literals did.
+
+**Fix, in order of preference:** (a) derive everywhere a gate can, so there is nothing to rewrite;
+(b) teach `spec-bump.sh` all three spellings; (c) at minimum, have it PRINT the complete hand-edit
+list up front — including the deliberate literal canaries — so they are done in one pass instead of
+discovered one CI round at a time.
+
+## **`[P1]` NO PRE-CUT DRESS REHEARSAL, SO FAILURES ARE DISCOVERED SERIALLY** (filed 2026-08-25)
+
+The 0.32.0 cut went: rust CI red → fix → push → wait → swift red → fix → push → wait → spec red →
+fix → wait, then preflight failures in three more rounds. Each loop is ~10 minutes of CI.
+
+`spec-bump.sh` already does the right thing — it runs every engine suite and reports all failures
+together. The pieces for the rest now exist (`--only`, `bin/_release_set.sh`, `release-test.sh`'s
+publish stubs, `_release_notes.sh`) but nothing composes them into one command that does everything
+the ladder does EXCEPT publishing, and reports every failure at once.
+
+**Fix:** a rehearsal mode that runs the whole ladder against stubs and reports the complete failure
+set. The goal is one report with N problems, not N reports with one problem each.
+
+## **`[P2]` THE DELIBERATE CANARIES ARE RIGHT, BUT THEY ARE DISCOVERED ONE CI ROUND AT A TIME** (filed 2026-08-25)
+
+Three literal assertions exist on purpose, each with a comment saying deriving them from the
+constant would make them vacuous: candor-report's `SPEC_VERSION` + envelope assertion, and swift's
+`AgentsDocDriftTests` floor. They force a human to acknowledge a floor bump, which is correct and
+should stay.
+
+But they fired serially through CI, one round trip each. **Fix:** `spec-bump.sh` should NAME them
+when it runs, so they are edited in the same pass as everything else. Keep the teeth, lose the
+round trips.
+
 <!-- RAISED P2 -> P0 on 2026-08-25 (Tom): the 0.32.1 cut republished five engines with no
      functional change to deliver a one-engine fix. This is the last place the lockstep
      assumption lives, and it is the next thing done. -->

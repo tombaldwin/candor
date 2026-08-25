@@ -49,14 +49,28 @@ jobs:
 
       # Cheap, and it has already paid: a heredoc nested inside `$(...)` was one of the 0.25 defects, and
       # `bash -n` catches exactly that shape before anyone runs the script for real.
+      #
+      # AND IT WAS VACUOUS UNTIL 2026-08-25 — MEASURED, not suspected. The loop body was
+      # `bash -n "$f" && echo "  ok  $f"`, and `set -e` (GitHub's default shell is `bash -e {0}`)
+      # explicitly does NOT fire for a command on the LEFT of `&&`. So a parse error printed its message,
+      # the loop carried on, and the step's exit status was the LAST command's — the python3 line, which
+      # passed. An unterminated `if` planted in `bin/changelog-lag.sh` produced
+      # `syntax error: unexpected end of file` on stdout and STEP EXIT CODE: 0. The one gate whose whole
+      # job is to notice a parse error could not fail on one.
+      #
+      # It now collects every failure and exits on the count, so N broken scripts are one run, not N.
       - name: parse every release script
         run: |
           # `bin/changelog-lag.sh` and `adopt/candor-run` are named explicitly: neither matches
           # `bin/release*.sh`, and `adopt/candor-run` is a TEMPLATE shipped into consumer repos, so a
           # parse error in it breaks someone else's CI rather than ours. It carries @KIND@ placeholders,
           # which are inert to the parser (they sit inside double quotes).
+          bad=0
           for f in bin/release*.sh bin/changelog-lag.sh scripts/update-candor.sh bin/candor adopt/candor-run; do
             [ -f "$f" ] || continue
-            bash -n "$f" && echo "  ok  $f"
+            if bash -n "$f"; then echo "  ok  $f"; else echo "  ✘ PARSE ERROR  $f"; bad=$((bad + 1)); fi
           done
-          python3 -c "import ast,sys; ast.parse(open('bin/_stage_changelogs.py').read())" && echo "  ok  bin/_stage_changelogs.py"
+          if python3 -c "import ast,sys; ast.parse(open('bin/_stage_changelogs.py').read())"
+          then echo "  ok  bin/_stage_changelogs.py"
+          else echo "  ✘ PARSE ERROR  bin/_stage_changelogs.py"; bad=$((bad + 1)); fi
+          [ "$bad" = 0 ] || { echo "parse: $bad file(s) do not parse"; exit 1; }

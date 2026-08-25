@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-25 — release tooling: the only cut it could express, and the notes it published (unreleased)
+## 2026-08-25 — release tooling: the only cut it could express, and the notes it published (released 2026-08-25 as 0.32.1)
 
 candor versions on three axes — the **spec** (a cross-engine contract), the **build id** (per engine),
 and crate semver — and SPEC.md's *Versioning policy* says the family moves as a **ladder, not a lockstep
@@ -192,7 +192,7 @@ the VS Code and JetBrains integration pins, and jbang's script-ref.
 jbang's script-ref carried the tag AND the asset filename; bumping only the tag would
 have pinned a URL that 404s. Both moved.
 
-## 2026-08-25 — a night log is a dated record, not a shipped claim (unreleased)
+## 2026-08-25 — a night log is a dated record, not a shipped claim (released 2026-08-25 as 0.32.1)
 
 `release-preflight.sh`'s stale-spec-string scan flagged two lines of
 `NIGHT-2026-08-21.md`: the engine used that night, and the releases cut that night.

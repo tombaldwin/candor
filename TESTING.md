@@ -90,9 +90,10 @@ to make every contract's regression un-shippable — not to maximize a coverage 
   as "covered" — the worst state.
 - Every suite prints a final pass/fail count; CI gates on exit codes, not output scraping.
 
-## 5b. Working discipline — three rules, each written after breaking it
+## 5b. Working discipline — four rules, each written after breaking it
 
-These are process, not tooling, and they are here because each one cost real time on 2026-08-04.
+These are process, not tooling, and they are here because each one cost real time (the first three on
+2026-08-04, the fourth on 2026-08-25).
 
 - **Never combine a test run and a push in one command.** `swift test … && git push` reports
   "1 failure" and pushes anyway if you read the count instead of the exit code; a doc edit made after
@@ -106,6 +107,16 @@ These are process, not tooling, and they are here because each one cost real tim
   `fsDirect` comment — `fsDirect` is the INPUT to a fixpoint, not its output — and the misreading reached
   three engines and three CHANGELOGs before PART 31 caught it on its first run. Writing the row first
   would have caught it before the first engine.
+
+- **Never hand-write "what CI runs". Derive it, in the two commands that exist for it.** `bin/verify-local.sh`
+  runs each ENGINE repo's own gate; `bin/verify-umbrella.sh` runs the UMBRELLA's, enumerated out of
+  `.github/workflows/*.yml` by `bin/wf-steps.py`. On 2026-08-25 a four-command list was called "the union
+  of what the three workflows run" — `integrations.yml` runs nine steps and exactly one of those four
+  commands is one of them, so main went red. The same day, `release-test.sh` said 148/148 against a WORKING TREE while CI said 8 FAILED on the
+  commit (`verify-umbrella` validates a commit in a throwaway worktree and prints the sha), and an **arm64**
+  Linux reproduction reported 18 failures where CI reported 2 (`--docker` is `--platform linux/amd64`, and
+  reproduces CI's 2 exactly). A hand-kept list drifts silently in the direction of running LESS, and its
+  shortfall looks exactly like a pass.
 
 - **Port a guard when you find one engine has it and another does not.** Each engine has good guards the
   others lack, and the gap is invisible until the day it matters: candor-swift's `NameKeyedStateTests`

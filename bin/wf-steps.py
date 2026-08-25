@@ -4,8 +4,7 @@
 WHY THIS EXISTS (2026-08-25). `bin/verify-local.sh` walks the ENGINE repos; nothing ran the UMBRELLA's
 own workflows. So an agent ran `release-test.sh`, `candor.test.sh`, `shellcheck` and `bash -n` in a clean
 worktree and called that "the union of what the three workflows run". It was not — `integrations.yml`
-runs nine steps and that list has five of them, missing (among others) the dispatcher routing contract.
-main went red on the push.
+runs NINE steps, and of that list only `candor.test.sh` is one of them. main went red on the push.
 
 The lesson is not "that list was wrong". It is that a HAND-KEPT list of what CI runs drifts from CI by
 construction, silently, in the direction of running less. So nothing here is transcribed: the workflow

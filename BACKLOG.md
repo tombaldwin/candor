@@ -94,18 +94,141 @@ header. The drift gates that DERIVE from the engine's own constant never failed;
 list up front — including the deliberate literal canaries — so they are done in one pass instead of
 discovered one CI round at a time.
 
-## **`[P1]` NO PRE-CUT DRESS REHEARSAL, SO FAILURES ARE DISCOVERED SERIALLY** (filed 2026-08-25)
+## ~~**`[P1]` NOTHING RAN THE UMBRELLA'S OWN WORKFLOWS**~~ / ~~**`[P1]` NO PRE-CUT DRESS REHEARSAL**~~ **BOTH CLOSED 2026-08-25 — same gap, two ends**
 
-The 0.32.0 cut went: rust CI red → fix → push → wait → swift red → fix → push → wait → spec red →
-fix → wait, then preflight failures in three more rounds. Each loop is ~10 minutes of CI.
+`bin/verify-local.sh` walked the ENGINE repos. Nothing ran candor's own workflows, and nothing ran the
+release ladder end to end without publishing. Two entries, one shape: **a gate that exists only where you
+cannot cheaply reach it discovers its findings one round trip at a time.**
 
-`spec-bump.sh` already does the right thing — it runs every engine suite and reports all failures
-together. The pieces for the rest now exist (`--only`, `bin/_release_set.sh`, `release-test.sh`'s
-publish stubs, `_release_notes.sh`) but nothing composes them into one command that does everything
-the ladder does EXCEPT publishing, and reports every failure at once.
+**THE FIRST END — what CI runs here, measured three times in one day.** (1) An agent ran
+`release-test.sh`, `candor.test.sh`, `shellcheck` and `bash -n` in a clean worktree and called it "the
+union of what the three workflows run". `integrations.yml` runs **nine** steps, and exactly one of those
+four commands is one of them. main went red. (2) `release-test.sh` said **148/148** locally while
+CI said **8 FAILED** on the same script — local ran a WORKING TREE that CI never checks out. (3) A
+reproduction on **arm64** Linux reported 18 failures where CI reported 2.
 
-**Fix:** a rehearsal mode that runs the whole ladder against stubs and reports the complete failure
-set. The goal is one report with N problems, not N reports with one problem each.
+**`bin/verify-umbrella.sh` + `bin/wf-steps.py`.** The step list is read out of `.github/workflows/*.yml`,
+never transcribed — a hand-kept list drifts from CI by construction, silently, in the direction of running
+less, and its shortfall looks exactly like a pass. It runs a COMMIT in a throwaway worktree, prints the
+sha, and reports what it did NOT run with a reason each. `--docker` runs the ubuntu jobs on
+`--platform linux/amd64`. Whether GitHub would *trigger* a workflow stays `wf-expected.py`'s question.
+
+**THE SECOND END — `bin/release-rehearsal.sh <spec> <version>`.** Four arms, concurrent, none
+short-circuiting another, ending in one numbered list: tree state for every repo (`release.sh` step 0
+without its `die` on the first), engine suites (`verify-local.sh`), the umbrella workflows, and
+`release-preflight`. It refuses without both arguments — a bare `release-preflight.sh` is health mode and
+its `OK` has been quoted as a release gate.
+
+### WHAT THE PROOFS FOUND — the interesting part
+
+**One pre-existing defect in a workflow, and six in the new tooling — every one caught by a CONTROL
+rather than by reading.** The three that generalise are first; the rest are listed after.
+
+1. **The runner's FIRST GREEN CONTROL printed `verify-umbrella: OK` having run 2 steps of 23**, silently
+   dropping `integrations`, `release-scripts` and `vscode` — all three triggered by that very commit's
+   paths. `rev-parse --abbrev-ref HEAD` answers the literal string `"HEAD"` in the detached worktree the
+   runner validates in: not empty, so `wf-expected.py`'s `or "main"` fallback never fired, and matching no
+   `branches:` filter. **A skip that reads as a pass, in the one tool written to stop exactly that.**
+   `wf-expected.py` now takes the branch as `argv[3]` and REFUSES on a detached HEAD rather than answering
+   "nothing is required"; the caller no longer sends that call's stderr to `/dev/null`.
+
+2. **`release-scripts.yml`'s `parse every release script` step was VACUOUS — measured, not suspected.**
+   An unterminated `if` planted in `bin/changelog-lag.sh` printed `syntax error: unexpected end of file`
+   on stdout and gave **STEP EXIT CODE: 0**. `set -e` — GitHub's default `run:` shell is `bash -e {0}` —
+   does not fire for a command on the LEFT of `&&`, so `bash -n "$f" && echo "  ok  $f"` printed the error,
+   the loop carried on, and the step's status was the last command's. The one gate whose whole job is to
+   notice a parse error could not fail on one, under a comment saying it "has already paid". Fixed to
+   collect every failure and exit on the count.
+
+3. **A bash trap worth remembering: TAB IS IFS WHITESPACE.** `IFS=$'\t' read` COLLAPSES runs of tabs, so
+   every empty field vanishes and every later column shifts left. An empty `working-directory` arrived as
+   the shell name and two passing steps reported as failures. The record separator is 0x1f.
+
+**And four more in the harness, each of the same family — a harness failure wearing the code's clothes.**
+The container probe spliced tool names into a `for` list where a NEWLINE is a statement break, so the
+container's bash died on a syntax error, the empty output read as "absent", and it reported `node` missing
+from an image literally named `node:22-bookworm-slim` — *a probe whose failure mode is a plausible answer
+is worse than one that crashes*. The image lacked `cargo`, which the GitHub runner PREINSTALLS and no
+`uses:` step names, so `release-test.sh`'s Cargo.lock arm called `note_skip`, which that script turns into
+a failure under CI — one red on a commit CI had just passed. A job needing a tool the image lacks
+(`jetbrains` needs a JDK) is now a NAMED SKIP rather than a `command not found`. And a run that executed
+nothing said `OK`; it now says `NOTHING RAN — 0 of N`, because zero-and-green is the exact shape of the
+failure the script exists for.
+
+### THE PLATFORM QUESTION, ANSWERED RATHER THAN INHERITED
+
+The brief said `candor.test.sh` is the only platform-sensitive step of `integrations.yml`'s nine, and
+asked whether that is still true. **It was true this morning and is not true now** — `0382c91` fixed it
+hours earlier. At HEAD all nine agree across darwin/arm64 and linux/amd64.
+
+**The check that proves the docker arm has teeth is the PARENT commit, and it matches real CI exactly:**
+
+| run | `candor dispatcher routing contract` |
+|---|---|
+| `--rev 0382c91^` native, darwin/arm64 | ✔ (all nine pass) |
+| `--rev 0382c91^` `--docker`, linux/amd64 | ✘ `FAIL java pin leaves swift on the family line` / `FAIL …and a swift pin moves swift, alone` / `candor-dispatch: 2 FAILED` |
+| **GitHub `integrations` on 05fef4d (= `0382c91^`)** | ✘ **the same two FAIL lines, `candor-dispatch: 2 FAILED`** |
+
+Two, the same two, not the eighteen an arm64 run produced. `--platform linux/amd64` is not optional in
+that reproduction; a faithless one manufactures work.
+
+### THE MUTATIONS — one per push/PR workflow, each with a green control
+
+| workflow | mutation | caught by | exit |
+|---|---|---|---|
+| `shell-lint` | `for _f in $(ls bin)` in `bin/changelog-lag.sh` (SC2045) | `lint bin/` | 1 |
+| `integrations` | `ENGINE_PIN` → a stale `0.9.0` | **`candor dispatcher routing contract`** — the step the hand list omitted | 1 |
+| `release-scripts` | unterminated `if` in `bin/changelog-lag.sh` | `release-test` AND, after the fix above, `parse every release script` | 1 |
+| `vscode` | extension version stops tracking the engine pin | `test-vscode.sh` gate 4 | 1 |
+| `jetbrains` | Java syntax error in `CandorBuildListener.java` | `buildPlugin` | 1 |
+
+Green control at each: 13 steps of the 3 triggered workflows in 88s; `--all` adds vscode (5s, npm from
+cache + network) and jetbrains (73s, IntelliJ SDK already cached on this box). **No workflow's check
+turned out to be locally irreproducible** — the two that looked likeliest to be, `vscode` and
+`jetbrains`, both run. And the push at `810c31d` came back green on all three by SHA, event and branch.
+
+**One deliberate divergence, now printed on every run:** GitHub stops a job at its first failed step; this
+runs every step of the job. The jetbrains mutation showed why that matters — the build failed and the
+step asserting on its artifact failed too, which on GitHub would never have run.
+
+### THE REHEARSAL, RUN TWICE
+
+**Against the real family, `0.32 0.32.1`.** Arms [1] tree state, [2] engine suites and [3] umbrella
+workflows all green. Arm [4] returned **four preflight findings, every one a true positive**, and they are
+worth listing because they are what a live tree actually looks like: candor-java and candor-swift each
+carrying an 11-line **non-empty `## Unreleased`** (another agent's in-flight work — a 0.32.1 cut would ship
+it unlabelled); the umbrella's newest dated section carrying no `(released … as 0.32.1)` stamp; and
+`changelog-lag` naming **two of my own commits** that shipped behaviour with no changelog line. Zero false
+positives. That is better evidence than a green would have been — a rehearsal that finds nothing on a tree
+with in-flight work is a rehearsal with no teeth.
+
+**Against a known-bad state, `0.32 0.32.9` — a version nothing has staged, with an uncommitted file.**
+**`21 problem(s) across arm(s) [1][4] — ALL of them, in one pass`, exit 1.** Every class at once, and
+arms [2] (`verify-local: OK`) and [3] (`verify-umbrella: OK — 16 step(s) ran`) still ran to completion
+rather than being short-circuited by the failing ones — which is the property the whole script is for:
+
+| finding | check | detail |
+|---|---|---|
+| dirty + unpushed tree | `[1]` | `candor  1 uncommitted file(s); 1 unpushed commit(s)` — `release.sh` step 0 `die`s on the first of these; this lists all seven repos |
+| stale version constants | `[4]` | every engine declares 0.32.1, `a build version != requested 0.32.9` |
+| sibling crate deps | `[6]` | seven `Cargo.toml` rows: `requires a candor sibling at 0.32.1 … cargo publish resolves this from crates.io and dies MID-SEQUENCE` |
+| **missing jar** | `[7]` | `candor-java-0.32.9-all.jar is NOT built — release.sh needs it at step 3, AFTER crates.io (unyankable)` |
+| **the empty-`## Unreleased` trap** | `[9b]` | all seven repos: `no ## [0.32.9] section — REFUSING to publish` |
+| **stale pins** | `[3]` | all seven pins plus the four per-engine front-door pins, each named with its current and required value |
+| CI never asked | `[10]` | `candor: HEAD … is NOT PUSHED — nothing could have run` |
+
+**The pin rows are `•` advisories, not failures, and that is deliberate** — `release.sh` step 0 sets
+`PINS_ADVISORY=1` for the same reason, because a pin cannot name a version that has not been published and
+strict there is a deadlock rather than a safeguard. The rehearsal sets it identically: a rehearsal red where
+the ladder is green is how a gate gets ignored. The pin state is still *reported*, with its required value.
+
+### WHAT THE REHEARSAL CANNOT PROVE, and says so on every run
+
+CI on a pushed commit (`release-preflight [10]` asks GitHub about each repo's HEAD; an unpushed commit has
+not been asked about). Registry state — crates.io, npm, an existing tag or Release. The publish calls'
+network half: `release-test.sh` drives `release.sh` against STUBS, which covers sequencing and arguments,
+not the remote's answer. And anything downstream of the release existing — `native.yml`'s release-event
+upload, the brew formula's hash of an uncut tarball, `candor update` fetching an unpublished engine.
 
 ## **`[P2]` THE DELIBERATE CANARIES ARE RIGHT, BUT THEY ARE DISCOVERED ONE CI ROUND AT A TIME** (filed 2026-08-25)
 

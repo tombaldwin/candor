@@ -7,7 +7,7 @@
 #
 #   1. An agent ran `release-test.sh`, `candor.test.sh`, `shellcheck` and `bash -n` in a clean worktree and
 #      called it "the union of what the three workflows run". It was not: `integrations.yml` runs NINE
-#      steps and four of them were not in that list. main went red on the push.
+#      steps, and exactly one of those four commands is one of them. main went red on the push.
 #   2. `release-test.sh` said 148/148 locally while CI said 8 FAILED on the same script — because local ran
 #      against a WORKING TREE that CI never checks out.
 #   3. A reproduction attempt on arm64 Linux reported 18 failures where CI reported 2. Twelve were pure

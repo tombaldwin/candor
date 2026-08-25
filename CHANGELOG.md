@@ -13,8 +13,8 @@ keeps its own.
 - **`bin/verify-umbrella.sh` — what `bin/verify-local.sh` is for the engines, for this repo.**
   `verify-local.sh` walks the engine repos; nothing ran candor's own three push-triggered workflows, and
   that gap showed three times in one day. An agent ran four commands in a clean worktree and called them
-  "the union of what the three workflows run" — `integrations.yml` runs **nine** steps and four were
-  missing, so main went red on the push. `release-test.sh` said 148/148 locally while CI said 8 FAILED,
+  "the union of what the three workflows run" — `integrations.yml` runs **nine** steps and exactly one of
+  those four commands is one of them, so main went red on the push. `release-test.sh` said 148/148 locally while CI said 8 FAILED,
   because local ran against a working tree CI never checks out. And a reproduction on **arm64** Linux
   reported 18 failures where CI reported 2.
 

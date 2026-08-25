@@ -3,6 +3,36 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
+## **`[P1]` THE SARIF FALLBACK PIN STILL SERVES THE REPORTER SPEC §2 NAMES** (measured 2026-08-25)
+
+`adopt/candor.yml:99` falls back to a SHA-pinned raw URL when a repo has no vendored `.candor/candor-sarif`:
+
+```
+curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/6e61e0afba8e90b4ada1ef0038ba56dbeb8b22a5/integrations/github/candor-sarif
+```
+
+**That SHA is `6e61e0a`, 2026-07-09.** It predates BOTH ⟨0.32⟩ identity fixes — the one that stopped the
+reporter fingerprinting on the bare NAME (`b91e297`, 2026-08-24) and the one that stopped it
+fingerprinting on ts's non-unique `hash` (2026-08-25). An adopter on the fallback path is running the
+exact reporter SPEC §2 ⟨0.32⟩ names as the consumer that "silently hides one finding behind another",
+downstream of a red gate where the reviewer never learns the second finding exists.
+
+**The pin itself is right and must stay a pin** — a floating `main` would mean an upstream push changes
+what a third party's CI runs, which is the failure the pin exists to prevent. What is wrong is that
+nothing moves it when the pinned file is fixed: two consecutive commits repaired `candor-sarif` and
+neither touched line 99, because the fix and the distribution point are in the same repo but not in the
+same reflex.
+
+**NOT BUMPED HERE, DELIBERATELY.** The correct value is a commit that is not yet pushed, and a pin to an
+unpushed SHA is a landmine if that commit is amended or rebased before it lands. The bump belongs to
+whoever pushes — and the durable fix is the one that makes this not need remembering: a preflight row
+that FAILS when `adopt/candor.yml`'s pinned SHA does not name the newest commit touching
+`integrations/github/candor-sarif`. Without that row this recurs on the next repair, silently, in the
+direction of serving a known-defective reporter.
+
+Swept: this is the ONLY SHA-pinned raw URL under `adopt/`, `integrations/` and `.github/`, so the
+preflight row above has exactly one thing to check and no others are hiding behind it.
+
 ## CLOSED 2026-08-20 — an fd/stream write through a helper was charged `Net` (R54, candor-ts)
 
 **FIXED.** The carve-out now decides from the receiver's TYPE rather than its spelling, as a denylist:

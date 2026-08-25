@@ -397,4 +397,73 @@ STUB
 fi
 
 echo
+echo "jvm install routes (v0.32.0: a published release with NO native assets):"
+# WHY THESE ROWS EXIST. `candor update` fetched this platform's native binary and, on failure, printed
+# "✘ download failed" and stopped — the jar branch was the `else` for platforms with NO native asset, so
+# it could never act as a fallback. v0.32.0's native workflow correctly refused to publish an image that
+# reported an EMPTY scan, and the consequence was that `candor update` at ENGINE_PIN=0.32.0 could not
+# install the JVM engine at all on either main platform. Asserted here rather than re-measured by hand
+# after each release: CANDOR_JAVA_RELEASE_BASE serves a fake release over file://, so there is no network.
+PIN="$(grep -m1 -oE '^ENGINE_PIN="[0-9][0-9.]*"' "$D" | grep -oE '[0-9][0-9.]*')"
+REL="$T/rel"; mkdir -p "$REL"
+printf '#!/bin/sh\necho "candor-java 9.9.9 (spec 9.9)"\n' > "$REL/native-ok"; chmod +x "$REL/native-ok"
+printf 'this is not a mach-o binary\n'                    > "$REL/native-broken"
+printf 'not-really-a-jar\n'                               > "$REL/jar"
+# lay out four fake releases, one per outcome. (b) is v0.32.0's real shape: jar published, natives absent.
+mkdir -p "$REL/a" "$REL/b" "$REL/c" "$REL/d"
+for n in candor-macos-arm64 candor-linux-x64; do
+  cp "$REL/native-ok"     "$REL/a/$n"
+  cp "$REL/native-broken" "$REL/c/$n"
+done
+for r in a b c; do cp "$REL/jar" "$REL/$r/candor-java-$PIN-all.jar"; done   # d: nothing published at all
+jvmrun() { # $1 label ; $2 release dir ; rest: env assignments — `update jvm` into a FRESH fake HOME.
+  local dir="$2"; shift 2                     # JPRESEED=<file>: plant it as an already-installed native binary
+  local h; h="$(mktemp -d "$T/jhome.XXXXXX")"
+  if [ -n "${JPRESEED:-}" ]; then mkdir -p "$h/.candor/bin"; cp "$JPRESEED" "$h/.candor/bin/candor-java"; chmod +x "$h/.candor/bin/candor-java"; fi
+  JOUT="$( env HOME="$h" CANDOR_CACHE="$h/.candor" CANDOR_JAVA_RELEASE_BASE="file://$dir" \
+               CANDOR_DISPATCH_DRYRUN= "$@" bash "$D" update jvm 2>&1; echo "RC=$?" )"
+  # what actually LANDED, on its own marker line, so a row can assert absence without matching prose
+  JOUT="$JOUT
+$(find "$h" -type f -name 'candor-java*' | sed "s#^$h#INSTALLED:#")"
+}
+saw() { # $1 label ; $2 substring that must be present in the last jvmrun
+  if [[ "$JOUT" == *"$2"* ]]; then echo "  ok   $1"; else echo "  FAIL $1"; echo "       want: *$2*"; echo "       got:  $JOUT"; fails=$((fails+1)); fi
+}
+unseen() { # $1 label ; $2 substring that must be ABSENT
+  if [[ "$JOUT" != *"$2"* ]]; then echo "  ok   $1"; else echo "  FAIL $1"; echo "       must NOT contain: *$2*"; echo "       got:  $JOUT"; fails=$((fails+1)); fi
+}
+jvmrun a "$REL/a"
+saw    "native present → installs the native binary"        "INSTALLED:/.candor/bin/candor-java"
+unseen "native present → no jar fetched"                    "all.jar"
+saw    "native present → rc 0"                              "RC=0"
+jvmrun b "$REL/b"
+saw    "native absent → falls back to the jar"              "INSTALLED:/.candor/candor-java-$PIN-all.jar"
+saw    "native absent → says the binary is not published"   "no native binary published"
+saw    "native absent → DISCLOSES the JVM requirement"      "NEEDS A JVM"
+saw    "native absent → rc 0 (an engine WAS installed)"     "RC=0"
+# (c) the asset downloads but will NOT run. NOT a fallback: substituting the jar would hide a broken
+# published asset behind an install that looks healthy, on every machine of that platform.
+jvmrun c "$REL/c"
+saw    "native unusable → says so"                          "downloaded but does not run"
+unseen "native unusable → installs NOTHING"                 "INSTALLED:"
+saw    "native unusable → rc 1"                             "RC=1"
+saw    "native unusable → carries the remedy"               "CANDOR_NO_NATIVE=1"
+# (d) both gone → loud, BOTH causes named, non-zero exit so a script cannot read it as success
+jvmrun d "$REL/d"
+saw    "both gone → names the native cause"                 "no native binary published"
+saw    "both gone → names the jar cause too"                "the jar failed too"
+unseen "both gone → installs NOTHING"                       "INSTALLED:"
+saw    "both gone → rc 1, not a quiet 0"                    "RC=1"
+# (e) CANDOR_NO_NATIVE takes the jar route on a platform that HAS a working native asset — both the
+# remedy printed by (c) and the way the no-native-PLATFORM branch is exercised on a machine that has one.
+jvmrun e "$REL/a" CANDOR_NO_NATIVE=1
+saw    "CANDOR_NO_NATIVE → the jar route"                   "no native binary for"
+saw    "CANDOR_NO_NATIVE → the jar lands"                   "INSTALLED:/.candor/candor-java-$PIN-all.jar"
+# A native binary left from an EARLIER pin OUTRANKS the jar in run_java, so a fallback that leaves it in
+# place reports $ENGINE_PIN while every later command runs the old engine. Measured, not assumed.
+JPRESEED="$REL/native-ok" jvmrun stale "$REL/b"; unset JPRESEED
+saw    "stale native → removed so it cannot shadow the jar"  "removed the stale native binary"
+unseen "stale native → the old binary is gone"               "INSTALLED:/.candor/bin/candor-java"
+
+echo
 if [ "$fails" -eq 0 ]; then echo "candor-dispatch: OK"; else echo "candor-dispatch: $fails FAILED"; exit 1; fi

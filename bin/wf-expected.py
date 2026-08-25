@@ -15,7 +15,9 @@ Nothing about that needs GitHub to answer. The workflow files declare their own 
 reads them and the commit's changed files and says which runs are REQUIRED. ci-watch.sh then treats a
 required-and-absent run as red and a not-required absence as green, with the reason printed either way.
 
-Usage:  python3 wf-expected.py <repo-dir> [<git-rev>]
+Usage:  python3 wf-expected.py <repo-dir> [<git-rev>] [<branch>]
+The branch defaults to the repo's current one; pass it when that repo is a DETACHED checkout, where
+`rev-parse --abbrev-ref HEAD` says "HEAD" and every `branches:` filter would read as unmatched.
 Prints one line per workflow:  <workflow display name>\\t<required|not-required>\\t<why>
 Exit 0 always unless the repo cannot be read; an unparseable workflow is REQUIRED, because the
 conservative answer to "I could not tell whether this must have run" is to make someone look.
@@ -236,8 +238,21 @@ def main():
     if not os.path.isdir(wfdir):
         return 0
     files = changed_files(repo, rev)
-    branch = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
-                            capture_output=True, text=True).stdout.strip() or "main"
+    # THE BRANCH CAN BE PASSED IN, and it has to be. `rev-parse --abbrev-ref HEAD` answers the literal
+    # string "HEAD" in a DETACHED checkout — which is neither empty (so the `or "main"` fallback below
+    # never fires) nor any branch a `branches:` filter names, so every branch-filtered workflow read as
+    # NOT REQUIRED. `verify-umbrella.sh` validates commits in exactly such a worktree, and on its first
+    # green control that silently dropped `integrations`, `release-scripts` and `vscode` from a push
+    # that touches all three. A skip that looks like a pass is the failure this whole family of checks
+    # exists to prevent, so the caller that knows the answer says it.
+    branch = sys.argv[3] if len(sys.argv) > 3 else ""
+    if not branch:
+        branch = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "HEAD"],
+                                capture_output=True, text=True).stdout.strip() or "main"
+    if branch == "HEAD":
+        sys.stderr.write("wf-expected: detached HEAD and no branch argument — every `branches:` filter "
+                         "would read as unmatched. Pass the target branch as argv[3].\n")
+        return 2
 
     for fn in sorted(os.listdir(wfdir)):
         if not fn.endswith((".yml", ".yaml")):

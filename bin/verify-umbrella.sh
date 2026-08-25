@@ -98,6 +98,15 @@ python3 "$HERE/wf-steps.py" "$WT" --event push --os "$TARGET_OS" > "$STEPS" || {
 # union of its commits' files, not on the tip's alone).
 REQUIRED="$TMP/required"; : > "$REQUIRED"
 RANGE_DESC="commit $SHORT alone"
+# THE BRANCH THE PUSH WILL LAND ON, stated rather than discovered. The worktree is DETACHED by
+# construction, so asking git inside it returns the literal "HEAD" — which matches no `branches:` filter
+# and silently dropped three of the five push-triggered workflows on this script's own first green
+# control. Ask the real repo; fall back to main when that is detached too, and print whichever it was.
+BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+BRANCH_NOTE=""
+if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
+  BRANCH=main; BRANCH_NOTE=" (assumed — $REPO is on a detached HEAD)"
+fi
 if [ "$ALL" = 0 ]; then
   base=""
   if up="$(git -C "$REPO" rev-parse --verify --quiet "$SHA@{u}" 2>/dev/null)"; then base="$up"; fi
@@ -113,8 +122,14 @@ if [ "$ALL" = 0 ]; then
     fi
   fi
   for r in $revs; do
-    python3 "$HERE/wf-expected.py" "$WT" "$r" 2>/dev/null \
-      | awk -F'\t' '$2=="required"{print $1}' >> "$REQUIRED"
+    # NOT `2>/dev/null`: this call's only failure mode is one that makes it answer "nothing is
+    # required", and swallowing that turns a broken selector into a silent, plausible-looking pass.
+    if ! python3 "$HERE/wf-expected.py" "$WT" "$r" "$BRANCH" > "$TMP/exp.$$" 2>"$TMP/experr.$$"; then
+      echo "verify-umbrella: wf-expected.py failed for $r — the selection cannot be trusted:"
+      sed 's/^/    /' "$TMP/experr.$$"
+      exit 2
+    fi
+    awk -F'\t' '$2=="required"{print $1}' "$TMP/exp.$$" >> "$REQUIRED"
   done
   sort -u -o "$REQUIRED" "$REQUIRED"
 fi
@@ -253,6 +268,7 @@ echo "  commit under test : $SHORT  ($(git -C "$REPO" log -1 --format=%s "$SHA" 
 echo "  tree              : a throwaway worktree — your uncommitted changes are NOT in this run"
 echo "  platform          : $( [ "$DOCKER" = 1 ] && echo "docker linux/amd64 ($IMAGE)" || echo "$HOST_OS/$HOST_ARCH, native")"
 echo "  selection         : $( [ "$ALL" = 1 ] && echo "--all (every push/PR workflow, path filters ignored)" || echo "what GitHub would trigger for $RANGE_DESC")"
+[ "$ALL" = 0 ] && echo "  target branch     : $BRANCH$BRANCH_NOTE  — \`branches:\` filters are judged against this"
 [ -n "$ONLY_WF" ] && echo "  filter            : --workflow $ONLY_WF"
 echo
 

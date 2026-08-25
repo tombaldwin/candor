@@ -14,7 +14,7 @@ It never changes the pass/fail decision — the engine's exit code stays the sou
 | File | What it is |
 |------|------------|
 | [`candor-sarif`](./candor-sarif) | The reporter: `report.json` + `gate.json` → `candor.sarif`. Python 3, stdlib only. |
-| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (44 assertions — no engine, no network). |
+| [`test-candor-sarif.sh`](./test-candor-sarif.sh) | Hermetic contract test (45 assertions — no engine, no network; 44 where `jsonschema` is absent and the schema row skips). |
 | [`PR-GATE-DESIGN.md`](./PR-GATE-DESIGN.md) | The design + scope. |
 
 The GitHub Action wiring lives in [`../../adopt/candor.yml`](../../adopt/candor.yml) (copy-paste starter).

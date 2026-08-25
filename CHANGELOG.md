@@ -8,6 +8,16 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — ⟨0.32⟩ CUT: the floor moves to 0.32
+
+Engines published at 0.32.0 (four rust crates on crates.io, candor-ts on npm with
+provenance, GitHub releases for java/swift/agents/rust/ts and candor-spec v0.32).
+The front-door pins move with them: `bin/candor` ENGINE_PIN, both adopt/ workflows,
+the VS Code and JetBrains integration pins, and jbang's script-ref.
+
+jbang's script-ref carried the tag AND the asset filename; bumping only the tag would
+have pinned a URL that 404s. Both moved.
+
 ## 2026-08-25 — a night log is a dated record, not a shipped claim (unreleased)
 
 `release-preflight.sh`'s stale-spec-string scan flagged two lines of

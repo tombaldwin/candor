@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-25 — the release tooling could express exactly one release: the whole family (unreleased)
+## 2026-08-25 — release tooling: the only cut it could express, and the notes it published (unreleased)
 
 candor versions on three axes — the **spec** (a cross-engine contract), the **build id** (per engine),
 and crate semver — and SPEC.md's *Versioning policy* says the family moves as a **ladder, not a lockstep
@@ -82,6 +82,59 @@ Four defects found while proving it, three of them in this work:
 - **a row's own label executed.** `ok "…keeps its \`## Unreleased\`…"` — backticks inside a
   double-quoted string are live command substitution, which is [7c]'s defect class occurring inside the
   harness that gates it. The label printed with the filename deleted.
+
+### …and an EMPTY `## Unreleased` published the PREVIOUS version's notes under the new tag
+
+`_stage_changelogs.py` skips an empty `## Unreleased` — deliberately, so nothing ships unlabelled — so a
+repo with nothing to say got no `## [VERSION]` heading. `release.sh` then fell through to *"the newest
+non-empty section"*, which is the previous release's notes, published under the new tag and announced by
+a yellow `•` at the end of a long release. The state that reaches it is the ordinary one: a repo with
+nothing to say is exactly what a family BUILD BUMP is.
+
+**Measured three times, and papered over each time.** candor-swift's and candor-agents' `## [0.29.1]`
+entries read, verbatim, *"Family build bump only — no engine changes in this repo"*, and say in the entry
+itself that they were hand-written only because an empty section would otherwise republish the previous
+notes. candor-agents hit it again before the 0.32.0 cut, caught by a reviewer reading the script. And
+after that cut all seven repos sat with an empty `## Unreleased`, so a family-wide 0.32.1 would have
+published 0.32.0's notes under v0.32.1 in **six of them**. The workaround was known, performed by hand,
+and undocumented anywhere a script could enforce it — which is the shape that gets skipped at the end of
+a long day.
+
+**The asymmetry decides the fix.** Publishing the wrong notes is silent and reaches users, permanently.
+Refusing to publish is loud, reaches one operator mid-run, and costs a re-run — `release.sh` steps 1-3
+skip whatever already exists. So the fall-through is gone rather than made less likely:
+
+- **`bin/_release_notes.sh`** is now the one program that decides a release body, and it REFUSES rather
+  than guesses. `release.sh` calls it; so does preflight, so the gate and the publisher cannot ask
+  different questions. Its own header carries the reasoning.
+- **The positional "newest section" arm survives for the umbrella alone** — this changelog is dated, not
+  versioned, so its notes genuinely are its newest section — and it is fenced a second time: the selected
+  heading must carry the stager's `(released … as $VER)` stamp. Without that fence the umbrella keeps the
+  whole defect in its own spelling, which nothing had noticed. Naming one repo is an allowlist, and the
+  right shape here only because its omissions fail by REFUSING.
+- **A version heading with no body is refused too.** GitHub takes the body verbatim, so `## [0.32.1]` and
+  nothing else publishes a release whose notes are one line — and for candor-spec a bodyless patch heading
+  used to slide onto the floor section below and publish the floor's notes under a patch tag.
+- **`release-stage.sh` now STUBS an empty section instead of skipping it**, opening `## [VERSION]` with a
+  one-line *"build bump only — no changes recorded in this repo"* entry, and re-prints every stub it wrote
+  under its summary because that sentence is a CLAIM and not a version number. The original concern is
+  intact — nothing ships unlabelled — but it is answered with a label instead of with silence. The
+  umbrella gets the same treatment in its dated spelling. `release-preflight.sh` [5b] remains the check
+  that asks whether source moved without the changelog; a stub does not answer it.
+- **`release-preflight.sh` [9b]** asserts the complement of [9]: [9] asks whether anything is stranded
+  UNDER `## Unreleased`, and certified as clean the exact tree that mis-published. [9b] asks whether the
+  version being cut has notes at all.
+
+`bin/release-test.sh` gains **33 rows**. Twelve are MUST-REJECT and six MUST-ACCEPT; every one was pointed
+at the pre-fix logic first, where all twelve reject rows went green and five published the literal stale
+body, while all six accept rows still passed — which is what says the battery discriminates rather than
+merely refuses. A refusal is additionally asserted to write **nothing** to stdout, because `gh release
+create -F` reads the file it is handed whatever the exit code said.
+
+One defect found while proving it, and it was in the harness rather than the scripts: **rows 1b staged a
+different version into the SHARED fixture and left two repos dirty**, so groups 2 and 3 inherited them.
+That was invisible while an empty section was silently skipped and surfaced the moment it was stubbed —
+the hazard row 1b2 exists to record, in the rows immediately above it. They now work on their own copy.
 
 ## 2026-08-25 — the jar was written as the OTHER platform's branch, so it could never be a fallback
 

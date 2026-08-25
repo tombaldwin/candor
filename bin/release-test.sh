@@ -143,7 +143,8 @@ done
 # relative to its OWN directory, so a fixture bin/ without it makes every row in section 1 fail as
 # "stage did not run" — a setup failure wearing a behaviour failure's clothes. Copy what the script
 # needs, not just the script.
-cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" "$FIX/candor/bin/"
+cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" \
+   "$UMBRELLA/bin/_release_notes.sh" "$FIX/candor/bin/"
 # candor-spec IS A REPO IN THE FIXTURE, not a bare directory conjured mid-test. `_stage_changelogs.py`
 # edits it, and `release-stage.sh` now refuses a dirty tree across all SEVEN repos it touches — so a
 # fixture that carried candor-spec as a loose folder was missing the one repo whose CHANGELOG has the
@@ -210,13 +211,21 @@ nb="$(awk '/^## 2026-08-02/{getline; if (length($0)) print "NONBLANK"}' "$FIX/ca
 # tooling's own workflow produces. Found by a release-mechanics review; the only route left was
 # hand-editing six changelogs, which is what lost three steps on 0.24.
 say "1b. release-stage.sh FOLDS into an existing version heading instead of skipping"
-FOLD="$FIX/candor-swift/CHANGELOG.md"
+# ON ITS OWN COPY, for the reason row 1b2 states twelve lines down and this row did not honour: it
+# stages a DIFFERENT version (0.27.0) into two repos of the SHARED fixture and leaves them uncommitted,
+# so groups 2 and 3 inherit a candor-swift and a candor-spec whose newest heading is 0.27.0 and whose
+# trees are dirty. That was invisible while an empty `## Unreleased` was SKIPPED; now that it is STUBBED,
+# group 2's "second run makes zero edits" saw two real edits and its dirty-tree rows refused on the wrong
+# repo. Neither is a defect in the code under test — both are this row reaching forward into its
+# neighbours, which is exactly the lesson 1b2 was written to record.
+BFIX="$(mktemp -d)"; cp -R "$FIX/." "$BFIX/"
+FOLD="$BFIX/candor-swift/CHANGELOG.md"
 printf '# Changelog\n\n## Unreleased\n\n- **stranded work** that landed after the heading was drafted.\n\n## [0.27.0] — 2026-08-07\n\n- the entry that was already written.\n' > "$FOLD"
 # `-c user.email/-c user.name`, like every other commit in this file: a CI runner has NO git identity,
 # so a bare `git commit` FAILS there and silently leaves the tree dirty. Green locally, red in CI — the
 # exact class this project keeps a checklist for, and I reintroduced it twice in one commit.
-(cd "$FIX/candor-swift" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "fold fixture" 2>/dev/null)
-ROOT="$FIX" VER=0.27.0 DATE=2026-08-08 python3 "$FIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
+(cd "$BFIX/candor-swift" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "fold fixture" 2>/dev/null)
+ROOT="$BFIX" VER=0.27.0 DATE=2026-08-08 python3 "$BFIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
 grep -qE '^## Unreleased$' "$FOLD" && [ -z "$(awk '/^## Unreleased$/{f=1;next} /^## /{f=0} f && NF' "$FOLD")" ] \
   && ok "Unreleased is left EMPTY, so preflight [9] can go green" \
   || { bad "work is still stranded under Unreleased — the deadlock"; sed -n '1,12p' "$FOLD"; }
@@ -226,11 +235,12 @@ awk '/^## \[0\.27\.0\]/{f=1;next} /^## /{f=0} f' "$FOLD" | grep -q "already writ
   && ok "…and the entry that was already there survived" || bad "folding overwrote the existing entry"
 # candor-spec was not in the stager's loop at all while preflight [9] checked it — the repo the rung is
 # AUTHORED in was the one repo staging could not stage. Its headings are floor-shaped, not `## [x.y.z]`.
-mkdir -p "$FIX/candor-spec"
-printf '# Changelog\n\n## Unreleased\n\n- **spec work** that landed after the floor heading.\n\n## 0.27 — current floor (a thing)\n\n- the floor entry.\n' > "$FIX/candor-spec/CHANGELOG.md"
-ROOT="$FIX" VER=0.27.0 DATE=2026-08-08 python3 "$FIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
-awk '/^## 0\.27 —/{f=1;next} /^## /{f=0} f' "$FIX/candor-spec/CHANGELOG.md" | grep -q "spec work" \
+mkdir -p "$BFIX/candor-spec"
+printf '# Changelog\n\n## Unreleased\n\n- **spec work** that landed after the floor heading.\n\n## 0.27 — current floor (a thing)\n\n- the floor entry.\n' > "$BFIX/candor-spec/CHANGELOG.md"
+ROOT="$BFIX" VER=0.27.0 DATE=2026-08-08 python3 "$BFIX/candor/bin/_stage_changelogs.py" >/dev/null 2>&1
+awk '/^## 0\.27 —/{f=1;next} /^## /{f=0} f' "$BFIX/candor-spec/CHANGELOG.md" | grep -q "spec work" \
   && ok "candor-spec folds too, into its FLOOR-shaped heading" || bad "candor-spec still unstaged"
+rm -rf "$BFIX"
 
 # ── 2026-08-08: the umbrella tarball carries ENGINE_PIN, and brew hashes that tarball. Cutting the
 # umbrella before the pin moves ships a $VER front door that fetches the PREVIOUS line's engines.
@@ -437,11 +447,273 @@ bypos="$(awk '/^## /{n++} n==1{print} n==2{exit}' "$FIX/candor-rust/CHANGELOG.md
 [ "$byver" -gt 3 ] && ok "version-anchored notes are non-empty ($byver lines)" || bad "version-anchored notes are empty ($byver lines)"
 [ "$bypos" -le 2 ] && ok "position-anchored notes WOULD have been empty ($bypos lines) — the defect is reproduced" \
                    || bad "position-anchored extraction no longer reproduces the defect; this test has stopped discriminating"
-# the umbrella has no version heading at all — release.sh must fall back, not die
+# the umbrella has no version heading at all — release.sh must fall back, not die.
+# DRIVEN THROUGH THE REAL SELECTOR, not a copy of it. The two rows here re-implemented release.sh's awk,
+# so they went on measuring the old inline logic after selection moved to `bin/_release_notes.sh` — the
+# "a test that bypasses the integration point is a test of the wrong thing" note in row 1b2, at the one
+# site where it decides what gets published.
 uver="$(awk -v v='## [0.26.0]' 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' "$FIX/candor/CHANGELOG.md" | wc -l | tr -d ' ')"
-ufall="$(awk '/^## /{n++} n==1{print} n==2{exit}' "$FIX/candor/CHANGELOG.md" | wc -l | tr -d ' ')"
 is "umbrella has no version-anchored section" '0' "$uver"
+ufall="$(bash "$UMBRELLA/bin/_release_notes.sh" candor 0.26 0.26.0 "$FIX/candor/CHANGELOG.md" 2>/dev/null | wc -l | tr -d ' ')"
 [ "$ufall" -gt 2 ] && ok "umbrella falls back to its newest dated section ($ufall lines)" || bad "umbrella fallback is empty"
+
+# ── 2026-08-25: THE EMPTY `## Unreleased` REPUBLISHED THE PREVIOUS VERSION'S NOTES ────────────────
+# `_stage_changelogs.py` SKIPPED an empty `## Unreleased` (deliberately — nothing should ship
+# unlabelled), so a repo with nothing to say got no `## [VERSION]` heading; `release.sh` then fell
+# through to "the newest non-empty section", i.e. the PREVIOUS release's notes, under the new tag, with
+# a yellow `•` at the end of a long release. Hit at 0.29.1 — candor-swift's and candor-agents' entries
+# there read, verbatim, "**Family build bump only — no engine changes in this repo**", hand-written for
+# exactly this reason — and twice on 2026-08-25, the second time with all seven repos empty.
+#
+# Every row here was written by pointing it at the PRE-FIX logic first and watching it fail: 12 of the
+# 12 REJECT rows went green on the old code, five of them publishing the literal stale body. The ACCEPT
+# rows passed on both, which is what says this battery discriminates rather than just refusing things.
+say "3b. release.sh REFUSES notes it cannot tie to the version being cut"
+NOTES="$UMBRELLA/bin/_release_notes.sh"
+NW="$(mktemp -d)"
+PREVMARK='STALE-PREVIOUS-NOTES'
+nrow() { # $1 label ; $2 repo ; $3 want-exit ; $4 changelog (MISSING = no file) ; $5 must-appear on stdout
+  local label="$1" repo="$2" want="$3" content="$4" need="${5:-}" d out err rc why=""
+  d="$NW/r$((RANDOM))$((RANDOM))"; mkdir -p "$d"; out="$d/out"; err="$d/err"
+  [ "$content" = MISSING ] || printf '%s' "$content" > "$d/CHANGELOG.md"
+  bash "$NOTES" "$repo" 0.32 0.32.1 "$d/CHANGELOG.md" > "$out" 2> "$err"; rc=$?
+  [ "$rc" = "$want" ] || why="exit $rc, wanted $want"
+  # A REFUSAL MUST PUBLISH NOTHING. `gh release create -F` reads whatever file it is handed, so a
+  # caller that ignores the exit code must still be unable to publish a diagnostic — or, far worse,
+  # the stale body the refusal exists to stop. Both are asserted, because they fail differently.
+  if [ "$want" = 3 ]; then
+    [ -s "$out" ] && why="${why:+$why; }refused but wrote $(wc -c <"$out" | tr -d ' ') bytes to stdout"
+    grep -q "$PREVMARK" "$out" 2>/dev/null && why="${why:+$why; }THE STALE NOTES WERE PUBLISHED ANYWAY"
+    grep -q 'Remedy\|refusing\|REFUSING' "$err" || why="${why:+$why; }refused with no remedy on stderr"
+  fi
+  [ -z "$need" ] || grep -qF "$need" "$out" || why="${why:+$why; }stdout lacks '$need'"
+  [ -z "$why" ] && ok "$label" || bad "$label — $why"
+}
+# MUST REJECT ────────────────────────────────────────────────────────────────────────────────────
+nrow "empty Unreleased above the previous version" candor-rust 3 \
+"# CL
+
+## Unreleased
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+"
+nrow "…the bracketed [Unreleased] spelling too" candor-rust 3 \
+"# CL
+
+## [Unreleased]
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+"
+nrow "…and an Unreleased carrying only a rung marker" candor-swift 3 \
+"# CL
+
+## Unreleased — ⟨spec 0.33⟩
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+"
+nrow "no Unreleased at all — just the previous version" candor-ts 3 \
+"# CL
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+"
+# A HEADING IS NOT NOTES. `## [0.32.1]` with nothing under it publishes a release whose body reads, in
+# full, as that one line — and for candor-spec it used to slide onto the FLOOR section below and publish
+# the floor's notes under a patch tag, which is the same wrong-notes defect through the fallback.
+nrow "a version heading with no body under it" candor-java 3 \
+"# CL
+
+## [0.32.1] — 2026-08-25
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+"
+nrow "…and a bodyless one must not slide onto the floor section" candor-spec 3 \
+"# CL
+
+## [0.32.1] — 2026-08-25
+
+## 0.32 — the floor
+
+$PREVMARK
+"
+nrow "no CHANGELOG.md at all" candor-agents 3 MISSING
+nrow "a file containing nothing but an empty Unreleased" candor-rust 3 \
+"# CL
+
+## Unreleased
+"
+# THE UMBRELLA HAS THE SAME DEFECT IN ITS OWN SPELLING, and the brief that found this one did not name
+# it. Its changelog is DATED, so the notes are picked by POSITION — and with no `(unreleased)` heading to
+# stamp, "the newest section" is the previous release's. The `(released … as $VER)` stamp the stager
+# writes is the only thing tying a dated section to a version, so the publisher now demands it.
+nrow "umbrella: newest dated section stamped as the PREVIOUS version" candor 3 \
+"# CL
+
+## 2026-08-25 — the 0.32.0 cut (released 2026-08-25 as 0.32.0)
+
+$PREVMARK
+"
+nrow "umbrella: newest dated section never staged (still '(unreleased)')" candor 3 \
+"# CL
+
+## 2026-08-25 — a cut in progress (unreleased)
+
+body
+
+## 2026-08-02 — older (released 2026-08-02 as 0.32.0)
+
+$PREVMARK
+"
+nrow "umbrella: stamped for a LATER version than the one being cut" candor 3 \
+"# CL
+
+## 2026-08-26 — next (released 2026-08-26 as 0.33.0)
+
+body
+
+## 2026-08-25 — this one (released 2026-08-25 as 0.32.1)
+
+$PREVMARK
+"
+# THE FENCE ON THE POSITIONAL ARM IS AN ALLOWLIST NAMING ONE REPO, and this row is why that shape is
+# safe here: its omissions fail by REFUSING (loud, operator-only, one re-run), not by guessing.
+nrow "a dated changelog in a repo that is not the umbrella" candor-umbrella 3 \
+"# CL
+
+## 2026-08-25 — dated (released 2026-08-25 as 0.32.1)
+
+$PREVMARK
+"
+# MUST ACCEPT ────────────────────────────────────────────────────────────────────────────────────
+# Without these the whole group is satisfied by a program that refuses everything.
+nrow "[0.32.1] with a body, under the fresh empty Unreleased staging opens" candor-rust 0 \
+"# CL
+
+## Unreleased
+
+## [0.32.1] — 2026-08-25
+
+THE NEW NOTES
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+" "THE NEW NOTES"
+nrow "…even when Unreleased above it has content for the NEXT release" candor-ts 0 \
+"# CL
+
+## Unreleased
+
+- work for the next rung
+
+## [0.32.1] — 2026-08-25
+
+THE NEW NOTES
+
+## [0.32.0] — 2026-08-25
+
+$PREVMARK
+" "THE NEW NOTES"
+nrow "…and when the heading carries no date suffix" candor-swift 0 \
+"# CL
+
+## [0.32.1]
+
+THE NEW NOTES
+" "THE NEW NOTES"
+nrow "candor-spec's FLOOR-shaped heading when no patch section exists" candor-spec 0 \
+"# CL
+
+## Unreleased
+
+## 0.32 — current floor
+
+THE NEW NOTES
+" "THE NEW NOTES"
+nrow "umbrella: newest dated section stamped as THIS version" candor 0 \
+"# CL
+
+## 2026-08-25 — this cut (released 2026-08-25 as 0.32.1)
+
+THE NEW NOTES
+
+## 2026-08-02 — older (released 2026-08-02 as 0.32.0)
+
+$PREVMARK
+" "THE NEW NOTES"
+nrow "umbrella: …with the empty Unreleased staging leaves above it" candor 0 \
+"# CL
+
+## Unreleased
+
+## 2026-08-25 — this cut (released 2026-08-25 as 0.32.1)
+
+THE NEW NOTES
+" "THE NEW NOTES"
+
+# THE OTHER HALF OF THE FIX: staging must be able to REACH the accepted state without a human writing a
+# changelog entry by hand on release day. That is what turned this into folklore twice — the workaround
+# was known, performed by hand, and skipped at the end of a long day.
+say "3c. an EMPTY \`## Unreleased\` is STUBBED, not skipped"
+SW="$(mktemp -d)"
+for r in candor-rust candor-spec; do mkdir -p "$SW/$r"; done
+mkdir -p "$SW/candor"
+printf '# CL\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\n%s\n' "$PREVMARK" > "$SW/candor-rust/CHANGELOG.md"
+# candor-spec: an empty Unreleased ABOVE an already-written section for the version being cut. Nothing is
+# stranded and the version has its notes, so this must stay SAME — stubbing here would staple "no changes
+# recorded" on top of a section full of them.
+printf '# CL\n\n## Unreleased\n\n## [0.32.1] — 2026-08-25\n\nreal notes already written.\n' > "$SW/candor-spec/CHANGELOG.md"
+printf '# CL — umbrella\n\ndated, most recent first.\n\n## 2026-08-25 — the floor cut (released 2026-08-25 as 0.32.0)\n\n%s\n' "$PREVMARK" > "$SW/candor/CHANGELOG.md"
+sout="$(ROOT="$SW" VER=0.32.1 DATE=2026-08-25 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
+printf '%s' "$sout" | grep -q '^STUB candor-rust:' \
+  && ok "an empty \`## Unreleased\` becomes a \`## [0.32.1]\` build-bump entry" \
+  || { bad "the empty section was skipped — the state that republished stale notes"; printf '%s\n' "$sout" | head -4; }
+printf '%s' "$sout" | grep -q '^SAME candor-spec:' \
+  && ok "…but NOT when that version already has a section of its own (no stub over real notes)" \
+  || { bad "the stager stubbed a version that already had its notes"; printf '%s' "$sout" | grep candor-spec; }
+printf '%s' "$sout" | grep -q '^STUB candor:' \
+  && ok "…and the umbrella's dated changelog gets a stamped dated section" \
+  || { bad "the umbrella was left with only the PREVIOUS release's dated section"; printf '%s' "$sout" | grep '^\w* candor:'; }
+grep -q '^## Unreleased$' "$SW/candor-rust/CHANGELOG.md" \
+  && ok "…and a fresh empty \`## Unreleased\` is still opened above it" || bad "no fresh Unreleased after a stub"
+# THE POSTCONDITION, ASSERTED THROUGH THE PUBLISHER. This is the row that ties the two halves together:
+# whatever the stager did, `release.sh` must now be able to name notes for the version being cut.
+for r in candor-rust candor-spec candor; do
+  bash "$NOTES" "$r" 0.32 0.32.1 "$SW/$r/CHANGELOG.md" > "$SW/$r.notes" 2>"$SW/$r.err"; nrc=$?
+  if [ "$nrc" = 0 ] && ! grep -q "$PREVMARK" "$SW/$r.notes"; then
+    ok "after staging, release.sh publishes $r's OWN 0.32.1 notes"
+  else
+    bad "$r: exit $nrc, and $( grep -q "$PREVMARK" "$SW/$r.notes" 2>/dev/null && echo 'THE PREVIOUS NOTES WERE SELECTED' || echo 'no notes at all')"
+  fi
+done
+# CONTROL: staging is a NO-OP on the second run. A stub that re-stubbed would grow a section per run.
+sout2="$(ROOT="$SW" VER=0.32.1 DATE=2026-08-25 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
+printf '%s' "$sout2" | grep -q '^STUB' \
+  && { bad "re-running the stager stubbed again — the file grows a section per run"; printf '%s' "$sout2" | grep '^STUB'; } \
+  || ok "CONTROL: re-running the stager stubs nothing (it is a no-op, as its header promises)"
+is "…and the umbrella has exactly one 0.32.1 dated section" '1' \
+   "$(grep -c 'as 0.32.1)' "$SW/candor/CHANGELOG.md" | tr -d ' ')"
+# CONTROL: the stub is a CLAIM, so `release-stage.sh` must surface it rather than bury it in ~19 edits.
+grep -q 'GENERATED CHANGELOG STUBS — READ THESE BEFORE COMMITTING' "$UMBRELLA/bin/release-stage.sh" \
+  && ok "CONTROL: release-stage.sh re-prints generated stubs under its summary" \
+  || bad "a generated \"no changes recorded\" claim is reported once, mid-run, and scrolled past"
+rm -rf "$NW" "$SW"
+
+# THE GATE MUST ASK THE PUBLISHER'S QUESTION, NOT ITS OWN VERSION OF IT. preflight [9] certified a tree
+# with an empty `## Unreleased` as clean — which was the exact tree that mis-published. [9b] closes it by
+# CALLING `_release_notes.sh`, so the gate and the publisher cannot disagree.
+grep -q '_release_notes.sh' "$UMBRELLA/bin/release-preflight.sh" \
+  && ok "preflight [9b] asks the publisher's own selection program" \
+  || bad "preflight re-derives 'is there a heading' — a gate that can go green on a cut that then refuses"
 
 say "4. release.sh hands update-candor.sh a TAG, not a bare version"
 # DEFECT 7 (0.26): passing $VER made update-candor.sh create a SECOND tag beside v$VER.
@@ -918,6 +1190,8 @@ candorTsVersion=0.32.0
 ## Unreleased
 
 ## 0.32 — current floor
+
+the floor rung.
 '
   csmk candor/CHANGELOG.md '# Changelog — candor (umbrella)
 
@@ -952,19 +1226,28 @@ the floor cut.
 
 - work in progress for the next rung, deliberately not released.
 
+## [0.32.1] — 2026-08-25
+
+the patch.
+
 ## [0.32.0] — 2026-08-25
 
 the floor cut.
 '
+  # STAGED AT 0.32.1 TOO, and that is not fixture padding. The family-wide CONTROL run at the bottom of
+  # this group cuts 0.32.1 across all seven, and `rel()` now REFUSES a repo with no section for the
+  # version being cut rather than publishing the previous release's notes under it. A fixture left at
+  # 0.32.0 would make that control die at step 3 for a reason that is not the ENGINE_PIN guard it exists
+  # to hold — a green row measuring the wrong refusal.
   for r in candor-ts candor-swift candor-agents; do
-    printf '# Changelog\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\nthe floor cut.\n' > "$F/$r/CHANGELOG.md"
+    printf '# Changelog\n\n## Unreleased\n\n## [0.32.1] — 2026-08-25\n\nthe patch.\n\n## [0.32.0] — 2026-08-25\n\nthe floor cut.\n' > "$F/$r/CHANGELOG.md"
   done
   mkdir -p "$F/candor-spec/conformance"
   printf '#!/usr/bin/env bash\necho "conformance: OK (stub) MATCH"\n' > "$F/candor-spec/conformance/run.sh"
   chmod +x "$F/candor-spec/conformance/run.sh"
   cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" \
      "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/release-verify.sh" "$UMBRELLA/bin/release-preflight.sh" \
-     "$UMBRELLA/bin/changelog-lag.sh" "$F/candor/bin/"
+     "$UMBRELLA/bin/changelog-lag.sh" "$UMBRELLA/bin/_release_notes.sh" "$F/candor/bin/"
   mkdir -p "$F/remotes"
   for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
     ( cd "$F/$r" && /usr/bin/git init -q && /usr/bin/git add -A \
@@ -1028,6 +1311,21 @@ red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CAND
 printf '%s' "$red" | grep -q "is NOT built" \
   && ok "CONTROL: …and when the jar release.sh uploads was never built" \
   || bad "[7] passed a java cut with no jar — release.sh would die after the earlier steps"
+# CONTROL FOR [9b]: the check that stands between an empty `## Unreleased` and a release carrying the
+# PREVIOUS version's notes. [9] certified this tree as clean — it asks only whether anything is stranded
+# UNDER the heading, and an empty one strands nothing — so without teeth here the two halves of the
+# release tooling go green over the state that mis-published.
+csfix "$CSF"
+printf '# Changelog\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\nthe floor cut.\n' > "$CSF/candor-java/CHANGELOG.md"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q 'has no `## \[0.32.1\]` section' \
+  && ok "CONTROL: …and when the version being cut has no notes of its own (an empty \`## Unreleased\`)" \
+  || { bad "[9b] passed a cut that would publish the PREVIOUS version's notes under the new tag"
+       printf '%s' "$red" | grep -E '^\s*(✔|✘) \[?9' | head -3; }
+printf '%s' "$red" | grep -q '\[9\] ' && printf '%s' "$red" | grep -q 'no CHANGELOG has content stranded' \
+  && ok "…and [9] still calls that same tree CLEAN, which is why [9b] had to exist" \
+  || bad "[9] no longer passes the empty-section tree — this control has stopped showing why [9b] is separate"
 csfix "$CSF"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$CSF/candor-spec/conformance/run.sh"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
@@ -1047,6 +1345,15 @@ printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
 printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-rust" \
   && bad "release.sh cut candor-rust for a java-only patch" \
   || ok "…and cuts NO release for a repo outside the cut"
+# THE FILE `gh release create -F` IS ACTUALLY HANDED, end to end. Every other row about notes reads a
+# changelog or drives the selector; this one reads the artifact release.sh produced during a real run of
+# its own sequence, which is where a variable round-trip or a redirection mistake would show up.
+[ -s "/tmp/rel-body-candor-java.md" ] && grep -q "republish the two native binaries" "/tmp/rel-body-candor-java.md" \
+  && ok "…and the body it hands \`gh\` is candor-java's OWN 0.32.1 section" \
+  || bad "the release body release.sh wrote is not the version's section: '$(head -1 /tmp/rel-body-candor-java.md 2>/dev/null)'"
+grep -q "the floor cut" "/tmp/rel-body-candor-java.md" 2>/dev/null \
+  && bad "the body carries 0.32.0's notes — the republish defect, at the artifact" \
+  || ok "…and carries nothing from the 0.32.0 section below it"
 printf '%s' "$relout" | grep -q "STUB cargo publish" \
   && bad "release.sh published crates for a cut that does not include candor-rust" \
   || ok "…and publishes no crate"

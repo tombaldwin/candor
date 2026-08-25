@@ -105,6 +105,10 @@ PY
 # the same distinction `sub()`'s SAME branch exists to draw, one level up.
 oosn=0
 oos() { printf '  \033[33m⊘\033[0m %s\n' "$*"; oosn=$((oosn+1)); }
+# Generated changelog stubs, re-printed at the end. A line in the middle of ~19 edits is a line that gets
+# scrolled past, and these are the only edits that assert something about a repo rather than moving a
+# version string — "no changes recorded here" is a claim, and it has to be read before it is committed.
+stubs=""
 bump() { # $1 label ; $2 file ; $3 regex with (?P<v>) ; $4 replacement template ; $5 owning repo
   if [ "$#" -ge 5 ] && ! rs_in_set "$5"; then oos "$1: $5 is not in this cut — left at the version it last published   ($2)"; return; fi
   local out; out="$(sub "$2" "$3" "$4")"
@@ -208,6 +212,14 @@ while IFS= read -r line; do
     # The 55-assertion harness could not see it: its fold rows invoke `_stage_changelogs.py` directly and
     # never this wrapper. A test that bypasses the integration point is a test of the wrong thing.
     FOLD*)    ok "${line#FOLD }";;
+    # `STUB` is what the helper prints when `## Unreleased` was EMPTY and the version has no section of
+    # its own: it writes a "build bump only — no changes recorded" entry rather than leaving the version
+    # unlabelled, because an absent section used to make `release.sh` republish the PREVIOUS version's
+    # notes under the new tag. Counted as an EDIT (it is one) and re-printed below the summary, because
+    # it is the one edit in this script that makes a CLAIM about the repo rather than moving a number.
+    # Adding a verb here without adding it to the `case` is how the 0.27 staging run exited RED over
+    # edits already correctly on disk — the `*) die` arm below is not a hypothetical.
+    STUB*)    ok "${line#STUB }"; stubs="$stubs${stubs:+$'\n'}  ${line#STUB }";;
     SAME*)    same "${line#SAME }";;
     "")       ;;
     *)        die "changelog: $line";;
@@ -217,6 +229,15 @@ done <<< "$cl_out"
 echo
 if rs_is_full; then echo "release-stage: $changed edit(s), $skipped already-current."
 else echo "release-stage: $changed edit(s), $skipped already-current, $oosn out of scope (cut set: $RS_SET)."; fi
+if [ -n "$stubs" ]; then
+  printf '\n\033[1m  GENERATED CHANGELOG STUBS — READ THESE BEFORE COMMITTING\033[0m\n'
+  printf '%s\n' "$stubs"
+  echo "  Each says \"no changes recorded in this repo for this release\". That is the honest reading of an"
+  echo "  empty \`## Unreleased\`, and it is what makes a version-only bump publishable — but it is a CLAIM."
+  echo "  Rewrite each in its repo's own voice, or, if the repo really did change, write the entry the"
+  echo "  release deserves. (\`release-preflight.sh\` [5b] is the check that asks whether source moved"
+  echo "  without the changelog; a stub does not answer it.)"
+fi
 echo "NOTHING is committed, tagged or pushed — review the diffs, then:"
 if rs_is_full; then echo "    bash bin/release-preflight.sh <spec> $VER      # judges what this staged"
 else echo "    bash bin/release-preflight.sh <spec> $VER --only $(printf '%s' "$RS_SET" | tr ' ' ',')   # judges what this staged"; fi

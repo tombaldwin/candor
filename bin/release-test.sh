@@ -139,7 +139,11 @@ It is **not a versioned release artifact**, so this changelog is **dated**.
 for r in candor-rust candor-java candor-ts candor-swift candor-agents; do
   printf '%s' "$CHLOG" > "$FIX/$r/CHANGELOG.md"
 done
-cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$FIX/candor/bin/"
+# `_release_set.sh` IS A DEPENDENCY OF THE STAGER, not an optional extra: release-stage.sh sources it
+# relative to its OWN directory, so a fixture bin/ without it makes every row in section 1 fail as
+# "stage did not run" — a setup failure wearing a behaviour failure's clothes. Copy what the script
+# needs, not just the script.
+cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" "$FIX/candor/bin/"
 # candor-spec IS A REPO IN THE FIXTURE, not a bare directory conjured mid-test. `_stage_changelogs.py`
 # edits it, and `release-stage.sh` now refuses a dirty tree across all SEVEN repos it touches — so a
 # fixture that carried candor-spec as a loose folder was missing the one repo whose CHANGELOG has the
@@ -791,6 +795,289 @@ clrun candor-ts candor-spec >/dev/null 2>&1 \
   && bad "a MISSING repo passed — an unmeasured repo must never read as a clean bill" \
   || ok "a repo that cannot be checked FAILS rather than vanishing"
 rm -rf "$CL"
+
+# ---------------------------------------------------------------------------------------------------
+say "8. the CUT SET — a scoped patch publishes a SUBSET, and the family form is untouched"
+# ---------------------------------------------------------------------------------------------------
+# WHAT THIS SECTION IS FOR. The release scripts could express exactly one release: the whole family at
+# one version. That contradicts the project's own three-axis model (SPEC.md "Versioning policy" and
+# preflight [4]'s own note: "a build id is PER-ENGINE by design … demanding equality DESTROYS the
+# information the build id exists to carry"), and the record shows the tooling rather than a decision
+# is what enforced it — candor-swift's and candor-agents' `## [0.29.1]` entries read "Family build bump
+# only — no engine changes in this repo", two repos republished to say they had not changed.
+#
+# `--only <repos>` makes a subset expressible. The rows below assert the three things that must hold:
+# the flag REFUSES a set it cannot mean, a scoped run publishes the subset AND NOTHING ELSE, and the
+# guards that existed before still fire — a gate relaxed for a new mode is a gate removed.
+#
+# THE PUBLISH CALLS ARE STUBBED. This file's own header says the network half "cannot be exercised
+# without either a dry-run mode or stubs, and neither exists yet"; these rows are the stubs. `cargo`,
+# `gh`, `npx`, `npm` and `git push` are shimmed on PATH, so release.sh runs its real sequence end to end
+# and nothing leaves the machine.
+CS="$(mktemp -d)"; mkdir -p "$CS/bin"
+cat > "$CS/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+# STDOUT, not stderr: release.sh runs `cargo publish -p X 2>/tmp/rel-X.txt`, so a stub that
+# wrote to stderr was invisible to every assertion about it — both the scoped "publishes no crate"
+# row and its family-wide control passed over text that could never have been printed.
+case "${1:-}" in publish) echo "STUB cargo publish $*" ;; search) echo "candor-query stub" ;; esac
+exit 0
+EOF
+cat > "$CS/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 ${2:-}" in
+  "auth status")    exit 0 ;;
+  "release view")   exit 1 ;;
+  "release create") echo "STUB-CREATE $*"; exit 0 ;;
+  "run list")       printf '%s\n' "${GH_RUNS:-[]}" ;;
+esac
+exit 0
+EOF
+printf '#!/usr/bin/env bash\necho "candor-ts stub"\n' > "$CS/bin/npx"
+printf '#!/usr/bin/env bash\nexit 1\n'                > "$CS/bin/npm"
+# git: the REAL git for every read, a no-op for `push` alone. A stub that faked `status`/`rev-parse`
+# too would make the clean-tree and pushed-ness guards untestable, and those are two of the guards
+# these rows exist to hold.
+cat > "$CS/bin/git" <<'EOF'
+#!/usr/bin/env bash
+a=("$@"); i=0
+while [ $i -lt ${#a[@]} ]; do
+  case "${a[$i]}" in
+    -C|-c) i=$((i+2)); continue ;;
+    push)  echo "STUB-PUSH ${a[*]}"; exit 0 ;;
+    *) break ;;
+  esac
+done
+exec /usr/bin/git "$@"
+EOF
+printf '#!/usr/bin/env bash\necho "STUB preflight $*"\nexit 0\n' > "$CS/bin/release-preflight-stub.sh"
+chmod +x "$CS"/bin/*
+
+# --- the flag refuses what it cannot mean ----------------------------------------------------------
+# BOTH FAILURE MODES OF A SET SELECTOR ARE WIDE-OPEN ONES, which is why they are gated rather than
+# assumed: a mistyped repo that resolved to the empty set would cut NOTHING while reporting success,
+# and a bare `--only` that defaulted to "" would mean the WHOLE FAMILY — the widest possible action,
+# chosen by a typo, on the scripts that publish.
+for s in release-stage.sh release-preflight.sh release-verify.sh release.sh; do
+  ( CANDOR_ROOT="$CS" bash "$UMBRELLA/bin/$s" 0.99 0.99.0 --only jva ) >/dev/null 2>&1
+  [ "$?" = 2 ] && ok "$s: --only rejects an unknown repo name (exit 2)" \
+                || bad "$s: --only jva did not exit 2 — a typo would silently choose a set"
+done
+( CANDOR_ROOT="$CS" bash "$UMBRELLA/bin/release.sh" 0.99 0.99.0 --only ) >/dev/null 2>&1
+[ "$?" = 2 ] && ok "--only with no value is an error, not an empty set meaning 'everything'" \
+             || bad "a bare --only did not exit 2 — the widest action, chosen by a typo"
+
+# --- the fixture: a family at 0.32.0 with candor-java staged at 0.32.1 -----------------------------
+csfix() { # $1 = target dir. Rebuilt per row: preflight [11] writes a stamp into candor-spec.
+  local F="$1"; rm -rf "$F"; mkdir -p "$F"
+  csmk() { mkdir -p "$(dirname "$F/$1")"; printf '%s' "$2" > "$F/$1"; }
+  csmk candor-agents/candor_agents/scan.py 'SPEC = "0.32"
+VERSION = "agents-0.32.0"
+'
+  csmk candor-agents/pyproject.toml 'version = "0.32.0"
+'
+  csmk candor-swift/Sources/candor-swift/main.swift 'let specVersion = "0.32"
+let engineVersion = "candor-swift-0.32.0"
+'
+  csmk candor-ts/package.json '{ "version": "0.32.0" }
+'
+  csmk candor-ts/query.mjs 'const SPEC_VERSION = "0.32";
+'
+  csmk candor-ts/scan.mjs  'const SPEC_VERSION = "0.32";
+'
+  csmk candor-java/src/main/java/io/poly/candor/Candor.java 'static final String SPEC_VERSION = "0.32";
+'
+  csmk candor-rust/Cargo.toml '[workspace]
+members = ["crates/candor-report"]
+resolver = "2"
+'
+  csmk candor-rust/crates/candor-report/Cargo.toml '[package]
+name = "candor-report"
+version = "0.32.0"
+edition = "2021"
+'
+  csmk candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.32";
+'
+  csmk candor/bin/candor 'UMBRELLA_VERSION="0.32.0"
+ENGINE_PIN="0.32.0"
+'
+  csmk candor/adopt/candor.yml '          CANDOR_JAVA_VERSION: 0.32.0
+'
+  csmk candor/adopt/candor-digest.yml '        run: pipx install "git+https://github.com/tombaldwin/candor-agents@v0.32.0"
+'
+  csmk candor/integrations/vscode/package.json '{ "candorTsVersion": "0.32.0" }
+'
+  csmk candor/integrations/jetbrains/gradle.properties 'candorJavaVersion=0.32.0
+candorTsVersion=0.32.0
+'
+  csmk candor-spec/SPEC.md '**Version 0.32**
+⟨0.32⟩ a rung marker.
+'
+  csmk candor-spec/CHANGELOG.md '# Changelog
+
+## Unreleased
+
+## 0.32 — current floor
+'
+  csmk candor/CHANGELOG.md '# Changelog — candor (umbrella)
+
+## 2026-08-25 — the floor cut (released 2026-08-25 as 0.32.0)
+'
+  # candor-java, STAGED at 0.32.1 — the patch under preparation.
+  csmk candor-java/build.gradle.kts 'version = "0.32.1"
+'
+  csmk candor-java/README.md '## Status: beta (v0.32.1, spec 0.32)
+'
+  csmk candor-java/jbang-catalog.json '{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v0.32.0/candor-java-0.32.0-all.jar"}
+'
+  csmk candor-java/build/libs/candor-java-0.32.1-all.jar 'stub-jar
+'
+  csmk candor-java/CHANGELOG.md '# Changelog
+
+## Unreleased
+
+## [0.32.1] — 2026-08-25
+
+republish the two native binaries the 0.32.0 parity gate withheld.
+
+## [0.32.0] — 2026-08-25
+
+the floor cut.
+'
+  # …and candor-rust carries PENDING work under `## Unreleased`. THIS IS THE POINT OF THE FIXTURE: it
+  # is the ordinary state between rungs, and preflight [9] must not hold a java patch hostage to it.
+  csmk candor-rust/CHANGELOG.md '# Changelog
+
+## Unreleased
+
+- work in progress for the next rung, deliberately not released.
+
+## [0.32.0] — 2026-08-25
+
+the floor cut.
+'
+  for r in candor-ts candor-swift candor-agents; do
+    printf '# Changelog\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\nthe floor cut.\n' > "$F/$r/CHANGELOG.md"
+  done
+  mkdir -p "$F/candor-spec/conformance"
+  printf '#!/usr/bin/env bash\necho "conformance: OK (stub) MATCH"\n' > "$F/candor-spec/conformance/run.sh"
+  chmod +x "$F/candor-spec/conformance/run.sh"
+  cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" \
+     "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/release-verify.sh" "$UMBRELLA/bin/release-preflight.sh" \
+     "$UMBRELLA/bin/changelog-lag.sh" "$F/candor/bin/"
+  mkdir -p "$F/remotes"
+  for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
+    ( cd "$F/$r" && /usr/bin/git init -q && /usr/bin/git add -A \
+      && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm init ) >/dev/null 2>&1
+    /usr/bin/git init -q --bare "$F/remotes/$r.git"
+    ( cd "$F/$r" && /usr/bin/git remote add origin "$F/remotes/$r.git" && /usr/bin/git push -q -u origin HEAD ) >/dev/null 2>&1
+  done
+}
+CSF="$CS/fix"
+GHGREEN='[{"headSha":"none","conclusion":"success","status":"completed","workflowName":"ci"}]'
+
+# --- the stager stages the SUBSET, and only the subset ---------------------------------------------
+csfix "$CSF"
+CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release-stage.sh" 0.32.2 --only candor-java >/dev/null 2>&1
+is "scoped stage moves java's gradle version" '0.32.2' \
+   "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$CSF/candor-java/build.gradle.kts" | head -1)"
+is "…and leaves candor-ts where it was"       '0.32.0' \
+   "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$CSF/candor-ts/package.json" | head -1)"
+is "…and leaves the umbrella's own version"   '0.32.0' \
+   "$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' "$CSF/candor/bin/candor")"
+# A repo outside the cut must keep its `## Unreleased` heading: that work ships on the NEXT release of
+# that repo, and renaming it here would label it as part of a version it is not in.
+grep -qE '^## Unreleased$' "$CSF/candor-rust/CHANGELOG.md" \
+  && ok "a repo outside the cut keeps its \`## Unreleased\` (its pending work is not relabelled)" \
+  || bad "the scoped stage renamed an out-of-cut repo's Unreleased heading"
+
+# --- preflight judges the subset, and stays family-wide where the claim is family-wide -------------
+csfix "$CSF"
+pfout="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+        bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$pfout" | grep -q "release-preflight: OK" \
+  && ok "[scoped] a java-only 0.32.1 passes preflight while the family stays at 0.32.0" \
+  || { bad "a correct java-only cut did not pass preflight"; printf '%s' "$pfout" | grep '✘' | head -4; }
+printf '%s' "$pfout" | grep -q "SCOPED CUT: candor-java only" \
+  && ok "…and the verdict says which set it judged (an OK over one repo is not the family's OK)" \
+  || bad "the scoped verdict is worded like the family-wide one"
+printf '%s' "$pfout" | grep -q "jetbrains jvm" \
+  && ok "[3] still asks for the java-owned pins" || bad "[3] stopped asking for a pin this cut moves"
+printf '%s' "$pfout" | grep -qE "⊘ (vscode ts|jetbrains ts)" \
+  && ok "…and reports the candor-ts pins OUT OF SCOPE rather than demanding a version ts never published" \
+  || bad "[3] still demands a pin naming an engine this cut does not publish"
+printf '%s' "$pfout" | grep -q "⊘ engine pin" \
+  && ok "…and says ENGINE_PIN is the one pin no subset can move" \
+  || bad "[3] did not report ENGINE_PIN as unmovable by a scoped cut"
+printf '%s' "$pfout" | grep -q "conformance OK" \
+  && ok "[11] four-way conformance still RUNS for a one-engine patch (the floor claim is cross-engine)" \
+  || bad "[11] was scoped away — the cheapest release became the least checked"
+# THE CONTROL FOR EVERY ROW ABOVE: the same invocation must still go RED on the things it exists to
+# catch. Without these, "a java-only cut passes" is satisfied by a preflight that passes everything.
+csfix "$CSF"
+printf 'version = "0.32.0"\n' > "$CSF/candor-java/build.gradle.kts"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "gradle version is 0.32.0, not 0.32.1" \
+  && ok "CONTROL: a scoped cut still FAILS when java's own version lagged" \
+  || bad "[7] passed a java cut whose gradle version is not the version being cut"
+csfix "$CSF"
+rm -f "$CSF/candor-java/build/libs/candor-java-0.32.1-all.jar"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "is NOT built" \
+  && ok "CONTROL: …and when the jar release.sh uploads was never built" \
+  || bad "[7] passed a java cut with no jar — release.sh would die after the earlier steps"
+csfix "$CSF"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$CSF/candor-spec/conformance/run.sh"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "conformance FAILED" \
+  && ok "CONTROL: …and when four-way conformance is RED, even though only one engine is moving" \
+  || bad "a scoped cut published over a red conformance suite"
+
+# --- release.sh publishes the subset, and stops before the umbrella --------------------------------
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+relout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
+  && ok "[scoped] release.sh cuts the candor-java release" || bad "release.sh did not cut the one repo in the cut"
+printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-rust" \
+  && bad "release.sh cut candor-rust for a java-only patch" \
+  || ok "…and cuts NO release for a repo outside the cut"
+printf '%s' "$relout" | grep -q "STUB cargo publish" \
+  && bad "release.sh published crates for a cut that does not include candor-rust" \
+  || ok "…and publishes no crate"
+printf '%s' "$relout" | grep -q "STUB-PUSH.*v0.32.1" \
+  && bad "release.sh pushed a tag (npm/umbrella) for a java-only cut" \
+  || ok "…and pushes no npm or umbrella tag"
+printf '%s' "$relout" | grep -q "the umbrella is not in this cut" \
+  && ok "…and says the umbrella and ENGINE_PIN stay on the family line" \
+  || bad "release.sh did not state the umbrella limit of a scoped cut"
+printf '%s' "$relout" | grep -q "candor/integrations/jetbrains/gradle.properties  candorJavaVersion" \
+  && ok "…and step 6 lists exactly the pins this cut moves" || bad "step 6's pin list is not scoped to the cut"
+# THE INSTRUCTION LINES, NOT THE WORD. A bare `candorTsVersion` also appears in step 6's own SKIP
+# message ("…and neither candorTsVersion pin moves"), which is the opposite of what this row is about —
+# so the loose pattern reported a correct run as a defect. Anchor on the `    · <file>` list entry.
+printf '%s' "$relout" | grep -qE '^ +· candor/integrations/(vscode|jetbrains)/[a-z.]+ +candorTsVersion' \
+  && bad "step 6 told the operator to bump a candor-ts pin in a java-only cut — a pin naming a release nobody made" \
+  || ok "…and does not name a pin for an engine this cut never published"
+# CONTROL: the ENGINE_PIN guard is NOT disarmed. Family-wide, a lagging pin must still refuse the
+# umbrella — the guard that stops brew hashing a tarball whose `candor update` fetches the old engines.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+famout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 2>&1)"
+printf '%s' "$famout" | grep -q "ENGINE_PIN is 0.32.0, not 0.32.1" \
+  && ok "CONTROL: family-wide, the step-7 ENGINE_PIN guard still refuses a lagging pin" \
+  || bad "the ENGINE_PIN guard was disarmed by the cut-set change"
+printf '%s' "$famout" | grep -q "STUB cargo publish" \
+  && ok "CONTROL: …and a family-wide cut still publishes the crates" \
+  || bad "the default cut stopped publishing crates — the subset scoping leaked into the family form"
+rm -rf "$CS"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

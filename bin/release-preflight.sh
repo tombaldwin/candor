@@ -10,6 +10,14 @@
 #
 #   bash bin/release-preflight.sh            # derive the floor from the engines, check consistency
 #   bash bin/release-preflight.sh 0.10 0.10.0  # also assert the floor spec / release version explicitly
+#   bash bin/release-preflight.sh 0.32 0.32.1 --only candor-java   # a SCOPED cut: judge only that repo
+#
+# `--only <repos>` (comma- or space-separated; short forms spec/rust/java/ts/swift/agents/umbrella) says
+# which repos the release covers. Without it the set is the whole family and every check is unchanged.
+# With it, the version-shaped checks — [3] pins, [4] build constants, [6] crate deps, [7] the java jar,
+# [9] `## Unreleased`, [10] CI — are asked of the cut set and reported `⊘ out of scope` for the rest;
+# [1] the declared spec, [2] stale spec strings, [5]/[5b] the changelogs, [8] the script repo lists and
+# [11] four-way conformance stay FAMILY-WIDE, because those are claims a one-engine patch still makes.
 set -u
 # CANDOR_ROOT lets the test harness point these at a FIXTURE tree instead of the real siblings.
 # Without it neither script can be exercised without editing six live repos, which is why nine
@@ -23,6 +31,14 @@ ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # t
 # class this project already has a rule about; deriving the name from the root keeps a sandbox in its lane.
 CONF_LOG="${TMPDIR:-/tmp}/rel-conformance-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1).txt"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"                        # this script's own bin/
+# THE CUT SET. `--only candor-java` scopes the version-shaped checks to the repos a patch actually
+# publishes; with no flag the set is the whole family and every check is exactly the one it was. See
+# bin/_release_set.sh for why a scoped cut cannot move ENGINE_PIN.
+# shellcheck source=bin/_release_set.sh
+. "$HERE/_release_set.sh"
+rs_split_args "$@"
+set -- "${RS_ARGS[@]+"${RS_ARGS[@]}"}"
+rs_init
 WANT_SPEC="${1:-}"     # optional: assert the floor is exactly this (e.g. 0.10)
 WANT_VER="${2:-}"      # optional: assert the release version is this (e.g. 0.10.0) for the cross-repo pins
 fail=0
@@ -34,6 +50,11 @@ note() { echo "  $*"; }
 bad()  { echo "  ✘ $*"; fail=$((fail + 1)); }
 ok()   { echo "  ✔ $*"; }
 info() { echo "  • $*"; }   # a pass that is worth explaining rather than just ticking
+# OUT OF SCOPE is its own verb, and it is neither a pass nor a failure. A scoped cut must never print a
+# ✔ for a question it did not ask — that is how "release-preflight: OK" would come to cover things it
+# never looked at. `⊘` says the check exists, names its subject, and says which invocation asserts it.
+oos()  { echo "  ⊘ $*"; }
+rs_banner note
 
 # --- 1. every engine DECLARES the same spec (the contract floor) ----------------------------------------
 echo "[1] declared spec is uniform across engines"
@@ -221,6 +242,18 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
   local f="$ROOT/$2"; [ -f "$f" ] || { note "$1: (no $2)"; return; }
   local line; line="$(grep -nE "$3" "$f" | head -1)"
   [ -n "$line" ] && note "$1: $line" || note "$1: (pin not found)"
+  # WHOSE VERSION DOES THIS PIN NAME? Each of these names exactly ONE engine's release, so a cut moves
+  # the pins whose owner it publishes and no others — demanding $VER from a pin naming an engine this
+  # cut is not touching asks for a version that will never exist. (Family-wide: every owner is in the
+  # set, so every pin is asserted, exactly as before.) ENGINE_PIN is the exception and the reason the
+  # umbrella cannot ride a subset cut: it is a single value used for the java tag, `cargo install
+  # --version`, `npx candor-ts@…` and the swift tag alike, so no subset can move it.
+  local pin_owner; pin_owner="$(rs_pin_owner "$1")"
+  if [ "$pin_owner" = '*family*' ]; then
+    rs_is_full || { oos "$1: not moved by a scoped cut — it names the FAMILY line, which only a family-wide release can move"; return; }
+  else
+    rs_in_set "$pin_owner" || { oos "$1: not moved by this cut (it names $pin_owner, which is not being published)"; return; }
+  fi
   if [ -n "$WANT_VER" ] && [ -n "$line" ] && ! echo "$line" | grep -qF "$WANT_VER"; then
     # PRE-PUBLISH THIS IS EXPECTED, AND UNTIL NOW IT DEADLOCKED THE RELEASE. [3]'s own message says the
     # pins move AFTER the release exists — while `release.sh` step 0 refuses to publish unless preflight
@@ -264,17 +297,21 @@ checkpin "jetbrains jvm" "candor/integrations/jetbrains/gradle.properties" 'cand
 # same shape. These aren't derived from the manifest, so a bump has to touch each — assert they all agree.
 echo "[4] self-declared build versions agree (hand-maintained constants vs the manifest)"
 declare -a builds=()
-grabver() { # $1 label ; $2 file ; $3 regex
+# …and the subset of those that THIS CUT is publishing. The equality arm below asserts against the
+# requested version, and a repo the cut does not touch legitimately stays on the previous one — asking
+# it to carry $VER is asking for the lockstep this project's own §2.1 note says is not required.
+declare -a set_builds=()
+grabver() { # $1 label ; $2 file ; $3 regex ; $4 owning repo
   local f="$ROOT/$2"; [ -f "$f" ] || return
   local v; v="$(grep -oE "$3" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  [ -n "$v" ] && { note "$1: $v"; builds+=("$v"); }
+  [ -n "$v" ] && { note "$1: $v"; builds+=("$v"); rs_in_set "$4" && set_builds+=("$v"); }
 }
-grabver "agents VERSION" "candor-agents/candor_agents/scan.py"            'VERSION *= *"agents-[0-9.]+'
-grabver "agents pyproj " "candor-agents/pyproject.toml"                   'version *= *"[0-9.]+'
-grabver "swift engine  " "candor-swift/Sources/candor-swift/main.swift"   'engineVersion *= *"candor-swift-[0-9.]+'
-grabver "ts package    " "candor-ts/package.json"                         '"version": *"[0-9.]+'
-grabver "rust crate    " "candor-rust/crates/candor-query/Cargo.toml"     'version = "[0-9.]+'
-grabver "umbrella      " "candor/bin/candor"                             'UMBRELLA_VERSION="[0-9.]+'
+grabver "agents VERSION" "candor-agents/candor_agents/scan.py"            'VERSION *= *"agents-[0-9.]+'     candor-agents
+grabver "agents pyproj " "candor-agents/pyproject.toml"                   'version *= *"[0-9.]+'            candor-agents
+grabver "swift engine  " "candor-swift/Sources/candor-swift/main.swift"   'engineVersion *= *"candor-swift-[0-9.]+' candor-swift
+grabver "ts package    " "candor-ts/package.json"                         '"version": *"[0-9.]+'           candor-ts
+grabver "rust crate    " "candor-rust/crates/candor-query/Cargo.toml"     'version = "[0-9.]+'              candor-rust
+grabver "umbrella      " "candor/bin/candor"                             'UMBRELLA_VERSION="[0-9.]+'       candor
 # candor-java is DELIBERATELY absent, and saying so is the point: its build id is GENERATED at build time
 # into `candor/build-info.properties` (build.gradle.kts) from the git hash, so it is not a hand-maintained
 # constant and cannot LAG the way this check exists to catch. What it also means is that this check — and
@@ -296,7 +333,24 @@ if [ "${#builds[@]}" -gt 0 ]; then
   if [ "$(printf '%s\n' "$u" | grep -c .)" -eq 1 ]; then ok "all self-declared build versions agree ($u)"
   else note "build versions differ: $(echo $u) — legitimate when one engine bumped alone (a wire-key change arms §2.1); pass a version to assert the release set"; fi
 fi
-[ -n "$WANT_VER" ] && { printf '%s\n' "${builds[@]}" | grep -qxv "$WANT_VER" && bad "a build version != requested $WANT_VER" || ok "build versions == requested $WANT_VER"; }
+if [ -n "$WANT_VER" ]; then
+  if [ "${#set_builds[@]}" -gt 0 ]; then
+    # The suffixes are EMPTY family-wide, so a full cut's output is byte-identical to what this check
+    # has always printed. A scoped run says which set it judged, because "build versions == 0.32.1" over
+    # one repo and over seven are different claims and must not read the same.
+    _sfx_bad=""; _sfx_ok=""
+    rs_is_full || { _sfx_bad=" in the cut set"; _sfx_ok=" (cut set: $RS_SET)"; }
+    printf '%s\n' "${set_builds[@]}" | grep -qxv "$WANT_VER" \
+      && bad "a build version$_sfx_bad != requested $WANT_VER" \
+      || ok "build versions == requested $WANT_VER$_sfx_ok"
+  else
+    # A CUT WHOSE REPOS HAVE NO HAND-MAINTAINED CONSTANT, which is the ordinary case for a candor-java
+    # patch: java's build id is generated from the git hash (see the note above), so this check has
+    # nothing to assert and must SAY so rather than print a ✔ over an empty comparison. [7] is where
+    # java's version is actually gated.
+    oos "no hand-maintained build constant in the cut set ($RS_SET) — nothing for this check to assert; [7] gates candor-java's"
+  fi
+fi
 
 # --- 5. every CHANGELOG mentions the floor being cut -----------------------------------------------------
 # Checks 2 and 3 EXCLUDE CHANGELOG from the stale-string sweep, and rightly so: a changelog is a history, so
@@ -346,7 +400,12 @@ fi
 # crates; `cargo test` caught it locally, but only because a human ran the tests before the publish. This
 # makes it a preflight failure, where the cost is a message instead of a half-published floor.
 echo "[6] no crate requires a sibling at a prior version"
-if [ -n "$WANT_VER" ]; then
+if [ -n "$WANT_VER" ] && ! rs_in_set candor-rust; then
+  # The failure this exists to stop is `cargo publish` dying mid-sequence. A cut that publishes no crate
+  # never runs that sequence, and candor-rust's manifests correctly still require the version it last
+  # shipped — asserting $WANT_VER here would demand a crates.io version this cut is not creating.
+  oos "candor-rust is not in this cut — no crate is published, so there is no publish sequence to protect"
+elif [ -n "$WANT_VER" ]; then
   bad_dep=0
   while IFS= read -r f; do
     while IFS= read -r line; do
@@ -368,7 +427,11 @@ fi
 # blind spot is still a blind spot.
 echo "[7] candor-java's gradle version names the jar the release will look for"
 JGRADLE="$(grep -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor-java/build.gradle.kts" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-if [ -z "$JGRADLE" ]; then bad "candor-java/build.gradle.kts: no top-level version found"
+if ! rs_in_set candor-java; then
+  # `release.sh` step 3 only demands the jar for a cut that publishes candor-java. Outside the set the
+  # gradle version legitimately names the last release, and the jar for THIS version was never built.
+  oos "candor-java is not in this cut — its gradle version (${JGRADLE:-unreadable}) names the release it last shipped"
+elif [ -z "$JGRADLE" ]; then bad "candor-java/build.gradle.kts: no top-level version found"
 elif [ -n "$WANT_VER" ] && [ "$JGRADLE" != "$WANT_VER" ]; then
   bad "candor-java gradle version is $JGRADLE, not $WANT_VER — release.sh needs candor-java-$WANT_VER-all.jar and dies without it"
 else ok "gradle version $JGRADLE"; fi
@@ -377,7 +440,7 @@ else ok "gradle version $JGRADLE"; fi
 # jar therefore kills the publish PART-WAY, with the earlier artifacts already out. That is the same
 # distinction release-verify.sh's own header is about: a pin naming a URL is not the URL existing, and a
 # version naming a jar is not the jar existing.
-if [ -n "$WANT_VER" ]; then
+if [ -n "$WANT_VER" ] && rs_in_set candor-java; then
   JJAR="$ROOT/candor-java/build/libs/candor-java-$WANT_VER-all.jar"
   if [ -f "$JJAR" ]; then ok "the jar release.sh will upload exists ($(du -h "$JJAR" | cut -f1))"
   else bad "candor-java-$WANT_VER-all.jar is NOT built — release.sh needs it at step 3, AFTER crates.io (unyankable) and the npm tag; build it first: (cd candor-java && ./gradlew shadowJar)"; fi
@@ -487,7 +550,10 @@ if [ -z "$WANT_VER" ]; then
   note "— skipped: no version argument. Content under \`## Unreleased\` is the normal staged state; pass a version to check it"
 fi
 u_any=0
-for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+# THE CUT SET, not the family. Content under `## Unreleased` in a repo this cut is NOT publishing is the
+# normal staged state — the very thing the WANT_VER guard above exists to tolerate in health mode. A
+# java-only patch must not be blocked by pending rust work that is going out on the next family rung.
+for r in $RS_SET; do
   [ -n "$WANT_VER" ] || continue
   f="$ROOT/$r/CHANGELOG.md"
   [ -f "$f" ] || continue
@@ -523,7 +589,11 @@ else
   CI_WAIT_BUDGET="${CI_WAIT_BUDGET:-1200}"   # ONE budget for the whole check, not one per repo
   CI_WAIT_LEFT="$CI_WAIT_BUDGET"
   waited_any=0
-  for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+  # THE CUT SET. The question is "may I publish THIS commit of THIS repo", so a red CI in a repo the cut
+  # does not publish is a real problem and someone else's — blocking a candor-java patch on candor-swift's
+  # build would make the patch hostage to work it does not ship. Family-wide this is the same seven repos
+  # it always was.
+  for r in $RS_SET; do
     [ -d "$ROOT/$r/.git" ] || continue
     head_sha="$(git -C "$ROOT/$r" rev-parse HEAD 2>/dev/null)"
     verdicts="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status,workflowName 2>/dev/null \
@@ -624,7 +694,10 @@ print('%s %s' % (done[0]['headSha'][:7], done[0]['conclusion']) if done else 'no
       BAD*) ci_bad=1; bad "$r: ${verdicts#BAD }";;
     esac
   done
-  [ "$ci_bad" = 0 ] && ok "all 7 repos green on HEAD"
+  # …and the count is DERIVED. It said "all 7" while the loop walked a hard-coded seven; with a cut set
+  # the number changes, and a summary that names a count the run did not check is the shape this file's
+  # own ⟨0.24⟩ note calls load-bearing.
+  [ "$ci_bad" = 0 ] && ok "all $(rs_count) repos green on HEAD"
 fi
 
 # ── [11] THE FOUR-WAY CONFORMANCE SUITE MUST PASS ──────────────────────────────────────────────────
@@ -632,6 +705,11 @@ fi
 # been run publishes an unbacked claim. The standing checklist said "run it"; nothing enforced it, and a
 # checklist step that is not a gate is a step that gets skipped on a busy day. Release mode only — the
 # suite takes minutes, which is right for a publish and wrong for an everyday health check.
+# DELIBERATELY NOT SCOPED BY `--only`. The floor is a CROSS-ENGINE claim: publishing one engine at a new
+# build id still asserts that engine agrees with the other three at the floor, and a one-engine patch is
+# exactly where a divergence gets introduced (it is the only change in the tree). Scoping this to the cut
+# would make the cheapest release the least checked one. The reuse stamp already makes the common case
+# free, and it keys on all seven repos.
 echo "[11] four-way conformance suite${WANT_VER:+ (releasing $WANT_VER)}"
 if [ -z "$WANT_VER" ]; then
   note "— skipped: no version argument; run it explicitly with conformance/run.sh"
@@ -762,7 +840,11 @@ fi
 
 echo
 if [ "$fail" = 0 ]; then
-  echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"
+  # The scope is part of the verdict, not a decoration. `release-preflight: OK` over one repo and over
+  # seven are different statements; printing the same words for both is how the bare-invocation `OK` came
+  # to be quoted as a release gate six times while nothing was staged.
+  if rs_is_full; then echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)}"
+  else echo "release-preflight: OK${FLOOR:+ (floor $FLOOR)} — SCOPED CUT: $RS_SET only; the rest of the family was not judged"; fi
 else
   echo "release-preflight: $fail check(s) FAILED — resolve before publishing"
 fi

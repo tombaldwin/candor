@@ -2,27 +2,54 @@
 # release-verify — the post-publish smoke: confirm the PUBLISHED artifacts (crates.io, npm, GitHub releases)
 # actually carry the version just shipped, and that a fresh `npx` of the published package reports the spec.
 # Run AFTER publishing.   bash bin/release-verify.sh 0.10 0.10.0
+#
+# `--only <repos>` verifies a SCOPED cut: exactly the artifacts that cut published, and nothing else.
+#   bash bin/release-verify.sh 0.32 0.32.1 --only candor-java
+# A check whose subject is outside the set prints `⊘` and is neither passed nor failed — it is NOT
+# weakened for the family form, which is unchanged and remains the standing front-door audit that
+# `.github/workflows/release-audit.yml` runs weekly against ENGINE_PIN. The distinction matters: the two
+# invocations answer different questions, and only the bare one may ever print "live everywhere".
 set -u
-SPEC="${1:?usage: release-verify.sh <spec> <ver>   e.g. 0.10 0.10.0}"
-VER="${2:?usage: release-verify.sh <spec> <ver>}"
-ROOT_C="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the dir holding candor-* siblings
+HERE_V="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/_release_set.sh
+. "$HERE_V/_release_set.sh"
+rs_split_args "$@"
+set -- "${RS_ARGS[@]+"${RS_ARGS[@]}"}"
+rs_init
+SPEC="${1:?usage: release-verify.sh <spec> <ver> [--only repos]   e.g. 0.10 0.10.0}"
+VER="${2:?usage: release-verify.sh <spec> <ver> [--only repos]}"
+# CANDOR_ROOT, like the other three release scripts. This was the only one of the four that could not be
+# pointed at a FIXTURE tree, so the pin-reading half of it — which is where the 0.24 failure lived, a pin
+# naming a release that did not exist — could only ever be exercised by publishing. The default is
+# unchanged (the sibling directory this script sits in), and nothing in production sets the variable:
+# `.github/workflows/release-audit.yml` runs the bare form against real checkouts.
+ROOT_C="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"   # the dir holding candor-* siblings
 UA="candor-release-verify (tom@polymorphism.co.uk)"   # crates.io 403s a UA-less request
 fail=0; ok() { echo "  ✔ $*"; }
+# OUT OF SCOPE — counted separately, and printed in the verdict. A scoped run that reported plain "OK"
+# would be claiming the family form's answer while having asked a fraction of it.
+oos_n=0; oos() { echo "  ⊘ $*"; oos_n=$((oos_n + 1)); }
 # INCREMENT, do not assign — this was `fail=1`, so the summary reported one failure no matter how many
 # fired. Same defect release-preflight carried. The number is what tells you whether the last fix helped.
 bad() { echo "  ✘ $*"; fail=$((fail + 1)); }
 note() { echo "  · $*"; }
 
 echo "[crates.io] the four crates at $VER"
+if ! rs_in_set candor-rust; then oos "candor-rust is not in this cut — no crate was published at $VER"
+else
 for c in candor-report candor-classify candor-query candor-scan; do
   v=$(curl -sSL -H "User-Agent: $UA" "https://crates.io/api/v1/crates/$c" 2>/dev/null \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["crate"]["max_version"])' 2>/dev/null)
   [ "$v" = "$VER" ] && ok "$c $v" || bad "$c: max_version '${v:-?}' != $VER"
 done
+fi
 
 echo "[npm] candor-ts at $VER"
+if ! rs_in_set candor-ts; then oos "candor-ts is not in this cut — npm still serves the version it last published"
+else
 v=$(npm view candor-ts version 2>/dev/null)
 [ "$v" = "$VER" ] && ok "candor-ts $v" || bad "candor-ts: npm version '${v:-?}' != $VER"
+fi
 
 echo "[gh releases] spec v$SPEC · engines v$VER"
 # candor-ts and the umbrella were MISSING from this list until 2026-08-01 — so a release could be declared
@@ -32,9 +59,18 @@ echo "[gh releases] spec v$SPEC · engines v$VER"
 # so the VERIFIER and the PUBLISHER disagreed on the tag name. It never surfaced at 0.24 only because the
 # 0.24 cleanup hand-created a `v0.24.0` spec tag — the very thing the verifier was looking for — which
 # masked the mismatch and left two tag schemes in the history (v0.25, v0.24.0, v0.23, v0.21.0 …).
+# THE LITERAL LIST STAYS LITERAL. preflight [8] derives this script's repo set by grepping exactly the
+# quoted repo:tag strings below and comparing them with `release.sh`'s `rel` lines — the check that caught
+# …and it is greppable enough to be tripped by PROSE: the first draft of this very comment spelled an
+# example `"candor-x:v` + `$VER"`, which [8] read as an eighth repo the verifier checks and the publisher
+# does not. Left recorded rather than tidied away, because it is the same lesson one level up: the check
+# is a text derivation, so anything shaped like the text is part of the list.
+# the publisher cutting four releases while the verifier checked seven. Filtering at loop time keeps that
+# derivation intact; rebuilding the list from a variable would empty it.
 for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-swift:v$VER" \
          "candor-agents:v$VER" "candor-ts:v$VER" "candor:v$VER"; do
   repo="${r%%:*}"; tag="${r##*:}"
+  rs_in_set "$repo" || { oos "$repo: not in this cut — no $tag release was created"; continue; }
   got=$(gh release view "$tag" -R "tombaldwin/$repo" --json tagName -q .tagName 2>/dev/null)
   [ "$got" = "$tag" ] && ok "$repo $got" || bad "$repo: release '${got:-missing}' != $tag"
 done
@@ -47,9 +83,16 @@ done
 # A pin naming a URL is not the URL existing. Resolve the artifact, never just the string.
 echo "[artifacts] the pinned download URLs resolve"
 declare -a urls=()
+# URLs whose OWNING pin this cut did not move. They are printed, never asserted and never resolved: they
+# are the family form's subject, and this run is not the family form. Empty for a family-wide cut.
+declare -a oos_urls=()
 # derive from the pin files rather than hardcoding, so this tracks the pins instead of drifting beside them
 jb="$ROOT_C/candor-java/jbang-catalog.json"
-[ -f "$jb" ] && while read -r u; do urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
+if rs_in_set candor-java; then
+  [ -f "$jb" ] && while read -r u; do urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
+else
+  [ -f "$jb" ] && while read -r u; do oos_urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
+fi
 # what `candor update` fetches for the JVM front door. THE VERSION IS READ FROM `bin/candor`'s
 # ENGINE_PIN, NOT FROM $VER — and that distinction is the whole point. Building these from $VER asks
 # "does v$VER have assets?", which is not the question a consumer's machine asks: `candor update` fetches
@@ -59,24 +102,54 @@ jb="$ROOT_C/candor-java/jbang-catalog.json"
 # something only a strict re-run of preflight [3] would catch, and the documented post-publish path says
 # "run release-verify", not "re-run preflight".
 EPIN="$(grep -oE '^ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT_C/candor/bin/candor" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+#
+# ENGINE_PIN IS THE ONE PIN NO SUBSET CUT CAN MOVE — it is a single value used for the java release tag,
+# `cargo install --version`, `npx candor-ts@…` and the swift tag alike, so there is no value of it that
+# says "java 0.32.1, everything else 0.32.0". A scoped cut therefore leaves it on the family line by
+# construction, and asserting `EPIN == $VER` here would fail every scoped cut for doing the only correct
+# thing available to it. Reading it stays UNCONDITIONAL: an unreadable pin is a fact about the file, not
+# about the cut, and it is the one state in which nothing downstream can be trusted.
 if [ -z "$EPIN" ]; then bad "could not read ENGINE_PIN from candor/bin/candor — the front door's version is unverifiable"
-elif [ "$EPIN" != "$VER" ]; then
+elif [ "$EPIN" != "$VER" ] && rs_is_full; then
   bad "ENGINE_PIN is $EPIN, not $VER — \`candor update\` and \`candor init\` still install the OLD engine, whatever this release published"
+elif [ "$EPIN" != "$VER" ]; then
+  oos "ENGINE_PIN is $EPIN — a scoped cut cannot move it (one value for the whole family), so \`candor update\` and \`candor init\` keep installing the $EPIN line. Assert the front door with: release-verify.sh ${EPIN%.*} $EPIN"
 fi
 for a in "candor-java-${EPIN:-$VER}-all.jar" candor-linux-x64 candor-macos-arm64; do
-  urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a")
+  if rs_is_full; then urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a")
+  else oos_urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${EPIN:-$VER}/$a"); fi
 done
+# …and for a SCOPED java cut, the release's OWN assets at $VER, which nothing else here would reach. The
+# jbang pin names only the jar, so without this the two native binaries — the entire reason a java-only
+# patch gets cut — would go unverified while the run printed OK. Added only when scoped: family-wide,
+# ENGINE_PIN == $VER makes these the same three strings the loop above already built, and a full cut's
+# output must stay exactly what it was.
+if ! rs_is_full && rs_in_set candor-java; then
+  for a in "candor-java-$VER-all.jar" candor-linux-x64 candor-macos-arm64; do
+    urls+=("https://github.com/tombaldwin/candor-java/releases/download/v$VER/$a")
+  done
+fi
 # THE adopt/ PINS ARE A CONSUMER-FACING SURFACE TOO, and nothing verified them at all: a repo that ran
 # `candor init` gets these workflows committed, so a stale pin there installs the old engine in THEIR CI
 # forever. Same question as ENGINE_PIN, different file.
-for pf in "candor/adopt/candor.yml:CANDOR_JAVA_VERSION" "candor/adopt/candor-digest.yml:candor-agents@v"; do
-  f="$ROOT_C/${pf%%:*}"; key="${pf##*:}"
+# EACH adopt/ PIN NAMES ONE ENGINE, so the owner column decides whether this cut is answerable for it.
+# `candor.yml`'s CANDOR_JAVA_VERSION is candor-java's; `candor-digest.yml`'s `candor-agents@v` is
+# candor-agents'. A java-only patch moves the first and must not be asked about the second — demanding
+# $VER there asks for an agents release that was never cut.
+for pf in "candor/adopt/candor.yml:CANDOR_JAVA_VERSION:candor-java" "candor/adopt/candor-digest.yml:candor-agents@v:candor-agents"; do
+  f="$ROOT_C/${pf%%:*}"; rest="${pf#*:}"; key="${rest%%:*}"; pin_repo="${rest##*:}"
   [ -f "$f" ] || continue
   pv="$(grep -oE "$key *:? *v?[0-9]+\.[0-9]+\.[0-9]+" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  if [ -z "$pv" ]; then bad "${pf%%:*}: no $key pin found — a consumer-facing pin nothing verifies"
+  if ! rs_in_set "$pin_repo"; then oos "${pf%%:*} pins ${pv:-?} — names $pin_repo, which is not in this cut"
+  elif [ -z "$pv" ]; then bad "${pf%%:*}: no $key pin found — a consumer-facing pin nothing verifies"
   elif [ "$pv" != "$VER" ]; then bad "${pf%%:*} pins $pv, not $VER — every repo that ran \`candor init\` keeps installing $pv"
   else ok "${pf%%:*} pins $VER"; fi
 done
+# NOT CHECKED HERE, AND SAYING SO IS THE POINT: the two IDE plugin pins (`candorTsVersion`,
+# `candorJavaVersion`) are gated by preflight [3] BEFORE a cut and by nothing after one — in either mode,
+# family-wide or scoped. That asymmetry predates the cut set and is left alone deliberately: closing it
+# adds ✔ lines to the family form, and a change that alters what "release-verify: OK" covers for everyone
+# does not belong inside a change whose whole contract is that the default is untouched.
 # candor-swift's binary. THE GAP THIS CLOSES: every candor-swift release through v0.26.0 had ZERO assets
 # — the workflow built, tested, smoked and cut the release, then attached nothing — and this verifier
 # passed every one of them, because the release loop above only asks whether the RELEASE EXISTS. That is
@@ -84,11 +157,31 @@ done
 # installable artifact. The visible cost was `candor update` telling a Mac user to install a Swift
 # toolchain and build from source, for the engine that owns the privacy manifest. Assets begin at 0.27;
 # below that their absence is history rather than a regression, so it is noted and not failed.
+# WHICH CUTS OWE A DOWNLOADABLE ARTIFACT AT ALL. Family-wide, always — that is the guard below as it has
+# always stood. Scoped, it depends on the set: candor-java publishes a jar and two native binaries and
+# candor-swift a binary, while candor-rust ships to crates.io, candor-ts to npm and candor-agents through
+# `pipx install git+…@vX` — none of which is a release download this loop can resolve. Asserting "at
+# least one URL" over an agents-only cut would fail it for a fact about the delivery channel, and a gate
+# that fires on a correct state is one that gets waved through.
+EXPECT_URLS=0
+rs_is_full && EXPECT_URLS=1
+rs_in_set candor-java && EXPECT_URLS=1
+if ! rs_in_set candor-swift; then oos "candor-swift is not in this cut — no v$VER binary was published"
+else
 case "$VER" in
   0.1?.*|0.2[0-6].*) note "candor-swift: no binary asset expected before 0.27 (its workflow attached none)";;
-  *) urls+=("https://github.com/tombaldwin/candor-swift/releases/download/v$VER/candor-swift-macos-arm64");;
+  *) urls+=("https://github.com/tombaldwin/candor-swift/releases/download/v$VER/candor-swift-macos-arm64"); EXPECT_URLS=1;;
 esac
-if [ "${#urls[@]}" -eq 0 ]; then bad "no pinned download URLs found — the check cannot have passed"; fi
+fi
+# THE EMPTINESS GUARD IS NOT WEAKENED FOR A SCOPED CUT THAT OWES AN ARTIFACT. "No URL to check" must stay
+# a FAILURE for those, not a quiet pass: a `--only candor-java` that resolved nothing would otherwise
+# print a clean OK having resolved nothing, which is precisely the shape this line was added to refuse.
+if [ "$EXPECT_URLS" = 1 ] && [ "${#urls[@]}" -eq 0 ]; then bad "no pinned download URLs found — the check cannot have passed"; fi
+if [ "${#oos_urls[@]}" -gt 0 ]; then
+  for u in $(printf '%s\n' "${oos_urls[@]}" | sort -u); do
+    oos "not this cut's artifact — ${u##*/} at $(printf '%s' "$u" | grep -oE '/v[0-9]+\.[0-9]+\.[0-9]+/' | tr -d /)"
+  done
+fi
 for u in $(printf '%s\n' "${urls[@]}" | sort -u); do
   # A URL derived from a pin file must ALSO name the version under verification. Checking only that it
   # RESOLVES lets a stale pin pass green: verifying 0.99.0 while jbang still points at v0.24.0 fetches a
@@ -103,10 +196,22 @@ for u in $(printf '%s\n' "${urls[@]}" | sort -u); do
 done
 
 echo "[live smoke] npx candor-ts@$VER --version reports spec $SPEC"
+if ! rs_in_set candor-ts; then oos "candor-ts is not in this cut — there is no candor-ts@$VER to smoke"
+else
 out=$(npx -y "candor-ts@$VER" --version 2>/dev/null | head -1)
 echo "$out" | grep -q "spec $SPEC" && ok "$out" || bad "npx reported '${out:-<none>}' (expected spec $SPEC)"
+fi
 
 echo
-[ "$fail" = 0 ] && echo "release-verify: OK — spec $SPEC / v$VER is live everywhere" || echo "release-verify: $fail check(s) FAILED"
+# "LIVE EVERYWHERE" IS THE FAMILY FORM'S SENTENCE AND ONLY ITS SENTENCE. A scoped run has not looked at
+# most of "everywhere", so it says what it did look at, how many questions it declined, and which
+# invocation answers them — otherwise a green line from a one-repo run reads exactly like the release
+# gate that stands behind a whole floor.
+if [ "$fail" = 0 ] && rs_is_full; then echo "release-verify: OK — spec $SPEC / v$VER is live everywhere"
+elif [ "$fail" = 0 ]; then
+  echo "release-verify: OK — v$VER is live for: $RS_SET (spec floor $SPEC unchanged)."
+  echo "  $oos_n check(s) OUT OF SCOPE — the rest of the family and the ENGINE_PIN front door were NOT verified."
+  echo "  The front door is asserted by the family form: bash bin/release-verify.sh <spec> <ENGINE_PIN version>"
+else echo "release-verify: $fail check(s) FAILED"; fi
 [ "$fail" = 0 ] || exit 1   # NOT `exit "$fail"` — 256 failures would exit 0, a wrap to green
 exit 0

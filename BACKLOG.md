@@ -3,6 +3,32 @@
 _Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
 
 
+## **`[P2]` `ENGINE_PIN` IS ONE VALUE FOR THE WHOLE FAMILY, SO NO PATCH CAN MOVE THE FRONT DOOR** (filed 2026-08-25)
+
+`--only <repos>` now makes a single-engine cut expressible end to end (stage → preflight → release →
+verify; `bin/_release_set.sh`). **The umbrella cannot ride one, and that is a real limit, not a
+rounding error.** `bin/candor` carries a single `ENGINE_PIN`, read for the candor-java release tag,
+`cargo install --version "$ENGINE_PIN"`, `npx candor-ts@$ENGINE_PIN` AND the candor-swift binary's
+tag — so there is no value of it that says "java 0.32.1, everything else 0.32.0", and moving it for a
+one-engine patch would point three engines at releases that do not exist.
+
+**What it costs, concretely.** A candor-java-only 0.32.1 reaches jbang, `adopt/candor.yml`'s CI path and
+the JetBrains plugin — all of which have per-engine pins already. It does **not** reach `candor update`
+or Homebrew: those install `v$ENGINE_PIN`, which stays on the family line. Live example: v0.32.0 shipped
+the jar and **neither native binary** (the native workflow's parity gate correctly refused an image
+reporting an empty scan), so `bash bin/release-verify.sh 0.32 0.32.0` is RED today on two 404s — and a
+java-only 0.32.1 that republishes them cannot clear it, because the front door still names 0.32.0.
+
+**The fix is a change to the FRONT DOOR, not to the release scripts**: a per-engine override beside the
+family pin (`ENGINE_PIN_JAVA`, defaulting to `ENGINE_PIN`), which touches `run_java`, `update`, `doctor`,
+`init`'s written pins and the status dashboard — five consumers with their own rows in
+`bin/candor.test.sh`. Deliberately NOT smuggled into the release-tooling change: it alters what a user's
+machine installs, which deserves its own diff and its own review.
+
+**Until it exists, the honest sequence for a native-binary republish is a FAMILY patch** (`0.32.1`
+across the seven), which is what the ladder has done to date — or a scoped java cut that reaches jbang
+and CI adopters only, stated as such in its changelog.
+
 ## **`[P1]` THE SARIF FALLBACK PIN STILL SERVES THE REPORTER SPEC §2 NAMES** (measured 2026-08-25)
 
 `adopt/candor.yml:99` falls back to a SHA-pinned raw URL when a repo has no vendored `.candor/candor-sarif`:

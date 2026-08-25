@@ -2,6 +2,12 @@
 # release-stage.sh — perform the MECHANICAL half of staging a release, so a human does not.
 #
 #   bash bin/release-stage.sh 0.26.0
+#   bash bin/release-stage.sh 0.32.1 --only candor-java     # a SCOPED patch: stage that repo alone
+#
+# `--only <repos>` stages a SUBSET. Every site belongs to exactly one repo, so a scoped run edits the
+# sites of the repos being cut and leaves the rest on the version they last published — which is what
+# the three-axis model says a build id is for. Without the flag nothing changes: the set is the family
+# and all ~19 sites move, exactly as before.
 #
 # WHY THIS EXISTS. `release-preflight.sh` DETECTS that the build versions, the inter-crate deps, the
 # gradle version and the `## Unreleased` sections are stale; nothing PERFORMED the bump, so a person
@@ -23,7 +29,13 @@
 # Verify with `bash bin/release-preflight.sh <spec> <version>` afterwards — this script stages, that one
 # judges, and they are deliberately separate programs.
 set -uo pipefail
-VER="${1:?usage: release-stage.sh <version e.g. 0.26.0>}"
+HERE_S="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/_release_set.sh
+. "$HERE_S/_release_set.sh"
+rs_split_args "$@"
+set -- "${RS_ARGS[@]+"${RS_ARGS[@]}"}"
+rs_init
+VER="${1:?usage: release-stage.sh <version e.g. 0.26.0> [--only repos]}"
 case "$VER" in
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) echo "release-stage: '$VER' is not an X.Y.Z version" >&2; exit 2;;
@@ -58,10 +70,14 @@ note(){ printf '  \033[33m•\033[0m %s\n' "$*"; }
 # interrupted run there left exactly the unreviewable mixture this refusal exists to prevent. The sibling
 # check four lines away in `release-preflight.sh` has always looped all seven. `_stage_changelogs.py`'s own
 # header says it: "the one repo the run is being made FROM is the one you forget to treat as a repo".
-for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
+# THE CUT SET — the repos this run will actually WRITE TO. A scoped run does not open the others, and
+# refusing over uncommitted work in a repo it never touches would make an unrelated work-in-progress
+# block a patch. Family-wide this is all seven, as it has always been.
+for r in $RS_SET; do
   [ -d "$ROOT/$r" ] || continue
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit or stash first"
 done
+rs_is_full || printf '  \033[33m•\033[0m %s\n' "SCOPED: staging $RS_SET only — every other repo keeps the version it last published"
 
 # sub <file> <python-regex> <replacement>  — exactly one match required, else fail loudly.
 sub() {
@@ -84,7 +100,13 @@ if new == s:
 open(f, "w").write(new); print("OK %d" % n)
 PY
 }
-bump() { # $1 label ; $2 file ; $3 regex with (?P<v>) ; $4 replacement template
+# OUT OF SCOPE is neither an edit nor an already-current skip, so it gets its own verb and its own
+# counter. Folding it into `same` would inflate "already-current" with sites this run never looked at —
+# the same distinction `sub()`'s SAME branch exists to draw, one level up.
+oosn=0
+oos() { printf '  \033[33m⊘\033[0m %s\n' "$*"; oosn=$((oosn+1)); }
+bump() { # $1 label ; $2 file ; $3 regex with (?P<v>) ; $4 replacement template ; $5 owning repo
+  if [ "$#" -ge 5 ] && ! rs_in_set "$5"; then oos "$1: $5 is not in this cut — left at the version it last published   ($2)"; return; fi
   local out; out="$(sub "$2" "$3" "$4")"
   case "$out" in
     OK*)      ok "$1 → $VER   ($2)";;
@@ -95,17 +117,17 @@ bump() { # $1 label ; $2 file ; $3 regex with (?P<v>) ; $4 replacement template
 }
 
 say "1. self-declared build versions"
-bump "agents VERSION" "candor-agents/candor_agents/scan.py"          'VERSION = "agents-[0-9]+\.[0-9]+\.[0-9]+"'   "VERSION = \"agents-$VER\""
-bump "agents pyproject" "candor-agents/pyproject.toml"               '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'     "version = \"$VER\""
-bump "swift engine" "candor-swift/Sources/candor-swift/main.swift"   'engineVersion = "candor-swift-[0-9]+\.[0-9]+\.[0-9]+"' "engineVersion = \"candor-swift-$VER\""
-bump "ts package.json" "candor-ts/package.json"                      '"version": "[0-9]+\.[0-9]+\.[0-9]+"'        "\"version\": \"$VER\""
-bump "java gradle" "candor-java/build.gradle.kts"                        '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'    "version = \"$VER\""
+bump "agents VERSION" "candor-agents/candor_agents/scan.py"          'VERSION = "agents-[0-9]+\.[0-9]+\.[0-9]+"'   "VERSION = \"agents-$VER\"" candor-agents
+bump "agents pyproject" "candor-agents/pyproject.toml"               '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'     "version = \"$VER\"" candor-agents
+bump "swift engine" "candor-swift/Sources/candor-swift/main.swift"   'engineVersion = "candor-swift-[0-9]+\.[0-9]+\.[0-9]+"' "engineVersion = \"candor-swift-$VER\"" candor-swift
+bump "ts package.json" "candor-ts/package.json"                      '"version": "[0-9]+\.[0-9]+\.[0-9]+"'        "\"version\": \"$VER\"" candor-ts
+bump "java gradle" "candor-java/build.gradle.kts"                        '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'    "version = \"$VER\"" candor-java
 # candor-java's README repeats the build version in its `## Status` line, and nothing staged it: every
 # bump edited the SPEC number on that line and left the version, so it read `v0.19.x` for NINE releases
 # before a review noticed. candor-java/test/smoke.sh now GATES it (derived from build.gradle.kts), which
 # is what turns forgetting it into a red CI rather than a lie in the README — but the gate fired on this
 # script's own output first, so stage it here too.
-bump "java README status" "candor-java/README.md"                    '## Status: beta \(v[0-9]+\.[0-9]+\.[0-9]+'  "## Status: beta (v$VER"
+bump "java README status" "candor-java/README.md"                    '## Status: beta \(v[0-9]+\.[0-9]+\.[0-9]+'  "## Status: beta (v$VER" candor-java
 # THE UMBRELLA IS THE SEVENTH REPO AND THIS SCRIPT KEPT FORGETTING IT. `UMBRELLA_VERSION` was staged by
 # nothing and checked by preflight [4] not at all, so on 0.26 the umbrella declared 0.25.0 while everything
 # around it moved — caught only by `update-candor.sh` refusing the Homebrew step. Not cosmetic: the tap
@@ -115,18 +137,18 @@ bump "java README status" "candor-java/README.md"                    '## Status:
 #
 # ENGINE_PIN is deliberately NOT bumped here: it names a PUBLISHED release, so it moves after one exists
 # (release.sh step 6). UMBRELLA_VERSION names THIS commit, so it moves with the bump.
-bump "umbrella version" "candor/bin/candor"                             '(?m)^UMBRELLA_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' "UMBRELLA_VERSION=\"$VER\""
+bump "umbrella version" "candor/bin/candor"                             '(?m)^UMBRELLA_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' "UMBRELLA_VERSION=\"$VER\"" candor
 
 say "2. rust crate versions"
 for c in candor-report candor-classify candor-scan candor-query; do
-  bump "$c" "candor-rust/crates/$c/Cargo.toml" '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"' "version = \"$VER\""
+  bump "$c" "candor-rust/crates/$c/Cargo.toml" '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"' "version = \"$VER\"" candor-rust
 done
 
 say "3. rust INTER-CRATE deps (the 0.25 failure: cargo resolves these from crates.io and dies mid-sequence)"
 for f in candor-rust/Cargo.toml candor-rust/crates/candor-classify/Cargo.toml \
          candor-rust/crates/candor-scan/Cargo.toml candor-rust/crates/candor-query/Cargo.toml; do
   bump "$(basename "$(dirname "$f")")/$(basename "$f")" "$f" \
-    '(candor-(?:report|classify|scan|query) = \{ path = "[^"]+", version = ")[0-9]+\.[0-9]+\.[0-9]+(")' "\\g<1>$VER\\g<2>"
+    '(candor-(?:report|classify|scan|query) = \{ path = "[^"]+", version = ")[0-9]+\.[0-9]+\.[0-9]+(")' "\\g<1>$VER\\g<2>" candor-rust
 done
 
 # ── 3b. Cargo.lock — it records the workspace members' versions, so bumping the manifests without it
@@ -141,7 +163,9 @@ done
 # same version is a no-op" promise and erases exactly the distinction `sub()`'s SAME branch was added to
 # draw: "a run that reports 18 edits when nothing moved hides the one release where something did".
 LOCK="$ROOT/candor-rust/Cargo.lock"
-if ! command -v cargo >/dev/null 2>&1; then
+if ! rs_in_set candor-rust; then
+  oos "rust Cargo.lock: candor-rust is not in this cut — no manifest moved, so the lock is already current"
+elif ! command -v cargo >/dev/null 2>&1; then
   note "cargo not on PATH — Cargo.lock not refreshed; run \`cargo update --workspace\` in candor-rust before committing, or step 0 of release.sh will refuse on a dirty lock"
 elif [ ! -f "$ROOT/candor-rust/Cargo.toml" ]; then
   note "no candor-rust/Cargo.toml — Cargo.lock not refreshed"
@@ -169,11 +193,14 @@ say "4. CHANGELOGs — rename the bare Unreleased heading to the version being c
 # reads more clearly on the python side anyway.
 # shellcheck disable=SC2097,SC2098  # these are ENV for the python3 child, not assignments this shell
 # reads back — which is exactly the intent.
-cl_out="$(ROOT="$ROOT" VER="$VER" DATE="$DATE" python3 "$ROOT/candor/bin/_stage_changelogs.py")" \
+cl_out="$(ROOT="$ROOT" VER="$VER" DATE="$DATE" RS_SET="$RS_SET" python3 "$ROOT/candor/bin/_stage_changelogs.py")" \
   || die "changelog staging failed: $cl_out"
 while IFS= read -r line; do
   case "$line" in
     OK*)      ok "${line#OK }";;
+    # OOS — a repo outside the cut set. Its `## Unreleased` is staged work for the NEXT release of that
+    # repo, and renaming it to this version would label work as shipped that this cut does not publish.
+    OOS*)     oos "${line#OOS }";;
     # `FOLD` is what the helper prints when a version heading ALREADY EXISTS and the stranded
     # `## Unreleased` body is folded into it. Adding that verb to the helper without adding it here made
     # the FIRST fold line hit the `die` arm below — so the canonical staging run for 0.27 exited RED over
@@ -188,9 +215,11 @@ while IFS= read -r line; do
 done <<< "$cl_out"
 
 echo
-echo "release-stage: $changed edit(s), $skipped already-current."
+if rs_is_full; then echo "release-stage: $changed edit(s), $skipped already-current."
+else echo "release-stage: $changed edit(s), $skipped already-current, $oosn out of scope (cut set: $RS_SET)."; fi
 echo "NOTHING is committed, tagged or pushed — review the diffs, then:"
-echo "    bash bin/release-preflight.sh <spec> $VER      # judges what this staged"
+if rs_is_full; then echo "    bash bin/release-preflight.sh <spec> $VER      # judges what this staged"
+else echo "    bash bin/release-preflight.sh <spec> $VER --only $(printf '%s' "$RS_SET" | tr ' ' ',')   # judges what this staged"; fi
 echo '  spec DECLARATIONS are deliberately untouched (a floor bump is a separate, earlier decision).'
 # ⟨0.29⟩ the two IDE pins joined preflight [3] and this line did not move with them, so the operator
 # instruction enumerated a SUBSET of what the gate now blocks on — the reader follows this, the gate

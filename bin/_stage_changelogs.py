@@ -11,12 +11,20 @@ import os, re, sys
 
 ROOT, VER, DATE = os.environ["ROOT"], os.environ["VER"], os.environ["DATE"]
 
+# THE CUT SET (bin/_release_set.sh). A scoped patch stages only the changelogs of the repos it
+# publishes: renaming another repo's `## Unreleased` to this version would label pending work as
+# shipped in a release that does not contain it — the 0.25 defect this file exists to fix, pointing the
+# other way. Absent or empty means the whole family, which is what every unscoped run passes.
+RS_SET = os.environ.get("RS_SET", "").split() or None
+
 # candor-spec IS IN THE LOOP. It was not, while preflight [9] checked it — so the one repo the rung is
 # AUTHORED in was the one repo staging could not stage, and the only way to clear the gate was by hand.
 # Its headings are floor-shaped (`## 0.27 — …`) rather than `## [0.27.0]`, which is why `fold_into`
 # below matches either spelling. Same class of miss as the 0.24 release forgetting to TAG candor-spec:
 # the repo you work IN is the one you forget to treat as a repo.
 for repo in ("candor-spec", "candor-rust", "candor-java", "candor-ts", "candor-swift", "candor-agents"):
+    if RS_SET is not None and repo not in RS_SET:
+        print("OOS %s: not in this cut — its `## Unreleased` stays unreleased" % repo); continue
     f = os.path.join(ROOT, repo, "CHANGELOG.md")
     if not os.path.isfile(f):
         continue
@@ -78,7 +86,11 @@ for repo in ("candor-spec", "candor-rust", "candor-java", "candor-ts", "candor-s
 # second run mutated the file again although the contract says re-running is a no-op. Found by a
 # release-mechanics review, 2026-08-08.
 u = os.path.join(ROOT, "candor", "CHANGELOG.md")
-if os.path.exists(u):
+if RS_SET is not None and "candor" not in RS_SET:
+    # A scoped cut that is not publishing the umbrella must not stamp its dated headings "released as
+    # <ver>": the umbrella is not released at that version, and the heading would say it was.
+    print("OOS candor: not in this cut — its dated headings stay `(unreleased)`")
+elif os.path.exists(u):
     t = open(u).read()
     # `[ \t]*`, NOT `\s*`: `\s` matches newlines, so with re.M the trailing-whitespace class swallowed the
     # BLANK LINE after the heading and silently reflowed the file. Caught by a one-line diff in the commit

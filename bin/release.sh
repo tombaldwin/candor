@@ -4,13 +4,25 @@
 # (that is `bin/release-preflight.sh`'s job); this script only PUBLISHES, in the order that has bitten us before.
 #
 #   bash bin/release.sh 0.22 0.22.0
+#   bash bin/release.sh 0.32 0.32.1 --only candor-java     # a SCOPED cut — one engine, same spec floor
+#
+# `--only <repos>` publishes a SUBSET. The spec axis is untouched by it (a patch keeps the floor), no
+# crate/npm/GitHub artifact is produced for a repo outside the set, and — see bin/_release_set.sh — the
+# UMBRELLA cannot ride a subset cut, because ENGINE_PIN is one value for the whole family. So a scoped
+# cut stops after step 6: the per-engine pins move, `candor update` keeps installing the family line.
 #
 # Idempotent-ish: a crate/release that already exists is skipped with a note, so a re-run after a mid-way failure
 # resumes cleanly. Stops on the first UNexpected error. Needs: crates.io token (~/.cargo/credentials.toml), gh auth,
 # and push access. npm needs NO local token — the candor-ts tag triggers the OIDC publish.yml (SLSA provenance).
 set -uo pipefail
-SPEC="${1:?usage: release.sh <spec e.g. 0.22> <version e.g. 0.22.0>}"
-VER="${2:?usage: release.sh <spec> <version>}"
+HERE_R="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/_release_set.sh
+. "$HERE_R/_release_set.sh"
+rs_split_args "$@"
+set -- "${RS_ARGS[@]+"${RS_ARGS[@]}"}"
+rs_init
+SPEC="${1:?usage: release.sh <spec e.g. 0.22> <version e.g. 0.22.0> [--only repos]}"
+VER="${2:?usage: release.sh <spec> <version> [--only repos]}"
 # CANDOR_ROOT lets the test harness point these at a FIXTURE tree instead of the real siblings.
 # Without it neither script can be exercised without editing six live repos, which is why nine
 # defects across 0.25 and 0.26 were found by publishing rather than by testing.
@@ -22,13 +34,23 @@ die() { printf '  \033[31m✘ %s\033[0m\n' "$*"; exit 1; }
 
 # --- 0. gate: preflight must be green + every main pushed ------------------------------------------------
 say "0. preflight ($SPEC / $VER)"
+rs_is_full || skip "SCOPED CUT: $RS_SET — no other repo is published, ENGINE_PIN and the umbrella stay on the family line"
 # PINS_ADVISORY: check [3] asserts the cross-repo pins name $VER, and they cannot until this script has
 # published $VER. Strict here is a deadlock, not a safeguard — see the note in release-preflight.sh. The
 # pins are updated in step 6 below and then RESOLVED by release-verify.sh, which is the check that matters.
+# CANDOR_ONLY is EXPORTED by rs_split_args, so preflight inherits the same set without this line having
+# to reconstruct the flag — and a child that derived a DIFFERENT set from the parent is precisely the
+# publisher/verifier disagreement check [8] exists for, one process boundary further down.
 PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh" "$SPEC" "$VER" >/tmp/rel-preflight.txt 2>&1 \
   && ok "release-preflight OK (cross-repo pins advisory — they move in step 6)" \
   || die "release-preflight FAILED — see /tmp/rel-preflight.txt"
-for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+# THE CUT SET, PLUS THE UMBRELLA — and the umbrella is not there out of habit. Step 6 edits pins that
+# live in `candor/adopt/` and `candor/integrations/`, and step 7 may tag it, so it is a repo this run
+# WRITES TO whatever the set says. Every other repo is untouched by a scoped cut, and demanding a clean
+# tree in a repo the release never opens is the lockstep this flag exists to remove.
+CLEAN_REPOS="$RS_SET"
+case " $RS_SET " in *" candor "*) ;; *) CLEAN_REPOS="$RS_SET candor" ;; esac
+for r in $CLEAN_REPOS; do
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit + push first"
   [ "$(git -C "$ROOT/$r" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" = "0" ] || die "$r has unpushed commits — push main first"
 done
@@ -38,25 +60,39 @@ ok "all mains clean + pushed"
 # cargo publish waits for index propagation of each dep before the next resolves. A crate already at $VER on
 # crates.io errors "already uploaded" → we treat that as a skip and continue.
 say "1. crates.io (dep order)"
+if ! rs_in_set candor-rust; then skip "candor-rust is not in this cut — no crate is published"
+else
 cd "$ROOT/candor-rust" || die "cannot cd to $ROOT/candor-rust"
 for crate in candor-report candor-classify candor-scan candor-query; do
   if cargo publish -p "$crate" 2>/tmp/rel-$crate.txt; then ok "published $crate@$VER"
   elif grep -qiE "already (uploaded|exists)|crate version .* is already" /tmp/rel-$crate.txt; then skip "$crate@$VER already on crates.io"
   else cat /tmp/rel-$crate.txt; die "cargo publish -p $crate failed"; fi
 done
+fi
 
 # --- 2. candor-ts → npm via the tag-triggered OIDC action (never manual npm publish) ---------------------
 say "2. candor-ts npm (via v$VER tag → OIDC publish.yml)"
+if ! rs_in_set candor-ts; then skip "candor-ts is not in this cut — nothing is tagged, so nothing publishes to npm"
+else
 cd "$ROOT/candor-ts" || die "cannot cd to $ROOT/candor-ts"
 if git rev-parse "v$VER" >/dev/null 2>&1; then skip "tag v$VER already exists"
 else git tag "v$VER" && git push origin "v$VER" && ok "tagged + pushed v$VER (OIDC action publishes candor-ts@$VER with provenance)"; fi
+fi
 
 # --- 3. GitHub releases (java release triggers native.yml + needs the jar asset) -------------------------
 say "3. GitHub releases"
-JAR="$(ls "$ROOT"/candor-java/build/libs/candor-java-"$VER"-all.jar 2>/dev/null || true)"
-[ -n "$JAR" ] || die "candor-java-$VER-all.jar not built — run ./gradlew shadowJar in candor-java first"
+JAR=""
+if rs_in_set candor-java; then
+  JAR="$(ls "$ROOT"/candor-java/build/libs/candor-java-"$VER"-all.jar 2>/dev/null || true)"
+  [ -n "$JAR" ] || die "candor-java-$VER-all.jar not built — run ./gradlew shadowJar in candor-java first"
+fi
 rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
   local repo="$1" tag="$2" title="$3"; shift 3
+  # THE SET IS ENFORCED HERE, NOT AT THE CALL SITES, and that is deliberate: preflight [8] derives the
+  # published-repo list by grepping `^rel candor…` out of this file and compares it with the verifier's,
+  # so wrapping the calls in `if` blocks would indent them out of that grep and silently empty the one
+  # check that keeps the publisher and the verifier naming the same repos.
+  if ! rs_in_set "$repo"; then skip "$repo is not in this cut — no release cut"; return 0; fi
   if gh release view "$tag" -R "tombaldwin/$repo" >/dev/null 2>&1; then skip "$repo $tag already released"
   else
     # THE BODY IS THE NEWEST ENTRY, NOT THE WHOLE CHANGELOG. GitHub caps a release body at 125000
@@ -118,9 +154,9 @@ rel candor-spec   "v$SPEC" "candor-spec $SPEC"
 
 # --- 5. release-verify ----------------------------------------------------------------------------------
 say "5. release-verify (allow a minute for npm/crates/gh to propagate)"
-printf '  npx candor-ts@%s : ' "$VER"; npx -y "candor-ts@$VER" --version 2>/dev/null | grep -o "spec $SPEC" || echo "(not yet on npm — OIDC action still running)"
-printf '  cargo query %s   : ' "$VER"; (cargo search candor-query 2>/dev/null | grep -o "$VER") || echo "(propagating)"
-echo "  jbang / brew: run \`jbang candor@tombaldwin/candor-java --version\` and \`brew upgrade candor && candor doctor\` once the java release build finishes."
+rs_in_set candor-ts && { printf '  npx candor-ts@%s : ' "$VER"; npx -y "candor-ts@$VER" --version 2>/dev/null | grep -o "spec $SPEC" || echo "(not yet on npm — OIDC action still running)"; }
+rs_in_set candor-rust && { printf '  cargo query %s   : ' "$VER"; (cargo search candor-query 2>/dev/null | grep -o "$VER") || echo "(propagating)"; }
+rs_in_set candor-java && echo "  jbang / brew: run \`jbang candor@tombaldwin/candor-java --version\` and \`brew upgrade candor && candor doctor\` once the java release build finishes."
 # --- 6. cross-repo pins, now that the releases they name EXIST ------------------------------------------
 say "6. cross-repo pins → $VER"
 # NPM_SETTLED: WAIT FOR npm BEFORE THE PINS MOVE, BECAUSE THE PIN-BUMP PUSH IS WHAT STARTS THE CONSUMERS.
@@ -140,7 +176,12 @@ say "6. cross-repo pins → $VER"
 # It DIES rather than warns on timeout: the next action this step tells you to take is the push that
 # starts those jobs, and doing it against an unpublished version is the failure this exists to stop. A
 # genuine publish failure must stop the release, not decorate it.
-if [ "${NPM_NO_WAIT:-}" = "1" ] || [ -n "${CANDOR_ROOT:-}" ]; then
+if ! rs_in_set candor-ts; then
+  # The wait exists because the pin bump STARTS the two IDE jobs, which `npm install` candor-ts@$VER. A
+  # cut that does not publish candor-ts moves neither IDE ts pin (preflight [3] reports them out of
+  # scope), so there is no job to race and no registry to wait for.
+  skip "candor-ts is not in this cut — no npm publish to wait for, and neither candorTsVersion pin moves"
+elif [ "${NPM_NO_WAIT:-}" = "1" ] || [ -n "${CANDOR_ROOT:-}" ]; then
   # CANDOR_ROOT means a FIXTURE tree (see the header): its "candor-ts" was never published and never
   # will be, so waiting on the real registry for it would hang every harness run for ten minutes.
   skip "npm propagation wait skipped (fixture tree, or NPM_NO_WAIT=1)"
@@ -167,10 +208,28 @@ fi
 echo "  The pins are deliberately NOT moved automatically: each names a published artifact, and 0.24 shipped"
 echo "  a jbang pin to a release that did not exist. Update these, commit, push, then run release-verify.sh"
 echo "  — which RESOLVES each pinned URL rather than matching the string:"
-grep -rn "0\.[0-9]*\.[0-9]*" "$ROOT/candor/bin/candor" 2>/dev/null | grep ENGINE_PIN | head -1
-echo "    · candor/bin/candor           ENGINE_PIN"
-echo "    · candor/adopt/               java + agents pins"
-echo "    · candor-java/jbang-catalog.json"
+# ONLY THE PINS THIS CUT MOVES. Each names ONE engine's version, so listing all of them for a one-engine
+# patch would instruct the operator to write a version three of the four engines never published — the
+# 0.24 failure (a pin naming a release that does not exist) with the operator following the script.
+# Enumerated per owner, so this list and preflight [3]'s scoping answer the same question.
+if rs_is_full; then
+  grep -rn "0\.[0-9]*\.[0-9]*" "$ROOT/candor/bin/candor" 2>/dev/null | grep ENGINE_PIN | head -1
+  echo "    · candor/bin/candor           ENGINE_PIN"
+  echo "    · candor/adopt/               java + agents pins"
+  echo "    · candor-java/jbang-catalog.json"
+else
+  echo "    · candor/bin/candor           ENGINE_PIN — NOT moved by a scoped cut (one value for the whole"
+  echo "      family: the java tag, cargo install --version, npx candor-ts@…, the swift tag). \`candor update\`"
+  echo "      keeps installing the family line until the family moves."
+  rs_in_set candor-java   && echo "    · candor/adopt/candor.yml     CANDOR_JAVA_VERSION"
+  rs_in_set candor-agents && echo "    · candor/adopt/candor-digest.yml  candor-agents@v"
+  rs_in_set candor-java   && echo "    · candor-java/jbang-catalog.json  (the TAG and the asset FILENAME both)"
+  rs_in_set candor-ts     && echo "    · candor/integrations/vscode/package.json          candorTsVersion"
+  rs_in_set candor-ts     && echo "    · candor/integrations/jetbrains/gradle.properties  candorTsVersion"
+  rs_in_set candor-java   && echo "    · candor/integrations/jetbrains/gradle.properties  candorJavaVersion"
+  echo "  THE PIN-BUMP COMMIT MUST ALSO TOUCH THAT REPO'S CHANGELOG — preflight [5b] counts these as SOURCE."
+  echo "  Then: bash bin/release-verify.sh $SPEC $VER --only $(printf '%s' "$RS_SET" | tr ' ' ',')"
+fi
 
 # --- 7. THE UMBRELLA, LAST, BECAUSE ITS TARBALL CARRIES THE PIN ----------------------------------------
 # The umbrella release used to be cut in step 3 and its tag + brew formula in step 4 — both BEFORE step 6
@@ -181,9 +240,23 @@ echo "    · candor-java/jbang-catalog.json"
 # recording it. Found by a release-mechanics review, 2026-08-08.
 #
 # The guard is a CHECK, not a comment: the pin must already name this version or this step refuses.
+#
+# A SCOPED CUT STOPS BEFORE THIS STEP, and that is the honest limit rather than an omission. The tarball
+# this step tags carries ENGINE_PIN, which is ONE value for the whole family — so there is no umbrella
+# tarball that says "java 0.32.1, everything else 0.32.0". A subset cut therefore publishes engines and
+# per-engine pins and leaves the front door where it is; `candor update` and Homebrew keep installing the
+# family line. Making that expressible needs a per-engine pin in `bin/candor`, which is a change to the
+# FRONT DOOR, not to the release scripts, and is filed rather than smuggled in here.
 say "7. umbrella release + tag + Homebrew tap (AFTER the pins)"
+if ! rs_in_set candor; then
+  skip "the umbrella is not in this cut — ENGINE_PIN stays at $(grep -oE 'ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor/bin/candor" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'), so \`candor update\`/brew keep installing the family line"
+fi
 PINNED=$(grep -oE 'ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor/bin/candor" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-if [ "$PINNED" != "$VER" ]; then
+# The ENGINE_PIN guard is asserted for a FAMILY-WIDE cut only. An umbrella-only CLI patch (`--only
+# candor`, the case `bin/candor`'s own UMBRELLA_VERSION comment anticipates) bumps the umbrella while the
+# engine line legitimately stays where it is — demanding ENGINE_PIN == the umbrella's version there would
+# point the front door at four engine releases that were never cut.
+if rs_is_full && [ "$PINNED" != "$VER" ]; then
   die "ENGINE_PIN is ${PINNED:-unset}, not $VER — the umbrella tarball carries that pin and brew hashes it,
      so cutting the umbrella now ships a $VER front door that fetches ${PINNED:-the wrong} engines.
      Do step 6 first (bump ENGINE_PIN + the adopt/jbang pins, commit, push), then re-run this script:
@@ -198,13 +271,20 @@ if [ "$PINNED" != "$VER" ]; then
      [10] WAITS for a pending run (20m across all repos) — it only refuses if one is still unfinished
      when that budget runs out, which is the case worth stopping for."
 fi
-cd "$ROOT/candor" || die "cannot cd to $ROOT/candor"
+rs_in_set candor && { cd "$ROOT/candor" || die "cannot cd to $ROOT/candor"; }
 rel candor "v$VER" "candor v$VER"
+if rs_in_set candor; then
 git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
 # PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line
 # asks for `v0.16.0`; this passed `$VER`, so every release grew a SECOND umbrella tag and a second GitHub
 # release beside `v$VER` — 0.25 and 0.26 both carry the pair. Harmless (both resolve) and untidy, and the
 # tap formula ended up pointing at the odd one out.
 if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "v$VER" && ok "brew tap → v$VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
+fi
 
+if rs_is_full; then
 say "DONE — $SPEC / $VER published. Verify each channel reports spec $SPEC, then run release-verify.sh."
+else
+say "DONE — $VER published for: $RS_SET (spec floor stays $SPEC). The rest of the family is unchanged.
+   Verify exactly what this cut claims:  bash bin/release-verify.sh $SPEC $VER --only $(printf '%s' "$RS_SET" | tr ' ' ',')"
+fi

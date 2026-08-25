@@ -8,6 +8,81 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-25 — the release tooling could express exactly one release: the whole family (unreleased)
+
+candor versions on three axes — the **spec** (a cross-engine contract), the **build id** (per engine),
+and crate semver — and SPEC.md's *Versioning policy* says the family moves as a **ladder, not a lockstep
+stamp**. `release-preflight.sh` [4] says the same in its own comment: *"a build id is PER-ENGINE by
+design … demanding equality DESTROYS the information the build id exists to carry"*.
+
+The scripts said the opposite. `release-verify.sh` demanded a v`$VER` release on **all seven** repos,
+`max_version` = `$VER` on four crates and npm at `$VER`; preflight [3] demanded **all seven** cross-repo
+pins at `$VER`, including two `candorTsVersion` pins and `candor-agents@v`; `release.sh` published four
+crates, tagged npm and cut six GitHub releases unconditionally. Measured against a candor-java-only
+0.32.1 tree, `release-verify` reported **19 failures** for a cut that was entirely correct.
+
+That was tooling, not a ruling: candor-swift's and candor-agents' `## [0.29.1]` entries read, verbatim,
+**"Family build bump only — no engine changes in this repo"** — two repos republished to say they had
+not changed, written by hand only because an empty `## Unreleased` would otherwise have made `release.sh`
+publish 0.29.0's notes under a 0.29.1 tag.
+
+**`--only <repos>`** now names the cut set, on all four scripts (`bin/_release_set.sh` is the single
+list they share, which is also the root fix for the drift preflight [8] exists to catch). Short forms
+`java`/`ts`/`rust`/`swift`/`agents`/`spec`/`umbrella` are accepted; an unknown name and a valueless
+`--only` are both **exit 2**, because the two failure modes of a set selector are "cut nothing while
+reporting success" and "cut everything, chosen by a typo".
+
+Scoped, the version-shaped checks follow the cut — [3]'s pins by **owner** (each names one engine's
+version), [4]'s build constants, [6]'s crate deps, [7]'s java jar, [9]'s `## Unreleased`, [10]'s CI,
+and every publish step. Family-wide claims stay family-wide: [1] the declared spec, [2] stale spec
+strings, [5]/[5b] the changelogs, [8] the script repo lists, [12] the rung marker, and — deliberately —
+**[11] four-way conformance**, because publishing one engine still asserts it agrees with the other
+three at the floor, and a one-engine patch is exactly where a divergence gets introduced. Scoping that
+would make the cheapest release the least checked.
+
+Out-of-scope checks print `⊘` and are counted separately: a scoped `release-verify` never says "live
+everywhere", it names the set, the number of questions it declined and the invocation that answers
+them. The bare form is byte-for-byte what it was, which is what `release-audit.yml` runs weekly.
+
+**WHAT A SCOPED CUT STILL CANNOT DO, and it is a real limit.** `bin/candor`'s `ENGINE_PIN` is **one
+value for the whole family** — the java release tag, `cargo install --version`, `npx candor-ts@…` and
+the swift tag all read it — so no value of it says "java 0.32.1, everything else 0.32.0". A subset cut
+therefore publishes engine releases and moves the **per-engine** pins (adopt's `CANDOR_JAVA_VERSION`
+and `candor-agents@v`, jbang's script-ref, the IDE plugins' `candorJavaVersion`/`candorTsVersion`) and
+leaves the front door alone: `candor update` and Homebrew keep installing the family line until the
+family moves. Making that expressible needs a per-engine pin in `bin/candor`, which is a change to the
+FRONT DOOR rather than to the release scripts, and is left filed rather than smuggled in here.
+
+`release-verify.sh` also gained `CANDOR_ROOT`, the fixture hook the other three release scripts have
+had all along — it was the only one of the four that could not be run against anything but the live
+sibling checkouts, so its pin-reading half (where the 0.24 failure lived: a pin naming a release that
+did not exist) could only ever be exercised by publishing.
+
+`bin/release-test.sh` gains **27 rows** (section 8) with the publish calls stubbed — `cargo`, `gh`,
+`npx`, `npm` and `git push` shimmed on PATH, so `release.sh` runs its real sequence end to end and
+nothing leaves the machine. That closes the gap this harness's own header records: *"the publish calls
+themselves … cannot be exercised without either a dry-run mode or stubs, and neither exists yet"*.
+Every scoped row is paired with a CONTROL proving the check still fails: java's version lagging, the
+jar unbuilt, conformance red, and — family-wide — the step-7 `ENGINE_PIN` guard still refusing a
+lagging pin and the crates still being published.
+
+Four defects found while proving it, three of them in this work:
+
+- **preflight [8] caught a phantom eighth repo that a COMMENT introduced.** [8] derives the verifier's
+  repo list by grepping the quoted `repo:tag` strings out of `release-verify.sh`; a comment I wrote
+  containing an example of that exact shape was read as a repo the verifier checks and the publisher
+  does not. The check is a text derivation, so anything shaped like the text is part of the list.
+- **the emptiness guard would have failed an agents-only cut for being correct.** "No pinned download
+  URL" is a failure for a cut that owes an artifact (java, swift); candor-agents ships through
+  `pipx install git+…@vX` and candor-rust/candor-ts through crates.io and npm, so an agents-only cut
+  resolves nothing by design. A gate that fires on a correct state is one that gets waved through.
+- **two of the new harness rows could not fail.** The stub `cargo` wrote to stderr, which `release.sh`
+  redirects into a file — so "publishes no crate" and its family-wide control were both asserting over
+  text that could never appear. Found by mutating the guard and watching the row stay green.
+- **a row's own label executed.** `ok "…keeps its \`## Unreleased\`…"` — backticks inside a
+  double-quoted string are live command substitution, which is [7c]'s defect class occurring inside the
+  harness that gates it. The label printed with the filename deleted.
+
 ## 2026-08-25 — the jar was written as the OTHER platform's branch, so it could never be a fallback
 
 `candor update` fetched this platform's native binary and, on failure, printed

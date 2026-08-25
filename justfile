@@ -80,8 +80,11 @@ bootstrap *flags:
     bash {{root}}/candor/bin/bootstrap-dev.sh {{flags}}
 
 # Release gates (read-only — publishing is deliberately NOT a recipe).
-preflight spec version:
-    cd {{root}}/candor && bash bin/release-preflight.sh {{spec}} {{version}}
+# `*flags` carries `--only <repos>` through for a SCOPED cut (one engine at a patch version, the rest of
+# the family unmoved): `just preflight 0.32 0.32.1 --only candor-java`. With no flag both behave exactly
+# as before and judge the whole family.
+preflight spec version *flags:
+    cd {{root}}/candor && bash bin/release-preflight.sh {{spec}} {{version}} {{flags}}
 
-verify spec version:
-    cd {{root}}/candor && bash bin/release-verify.sh {{spec}} {{version}}
+verify spec version *flags:
+    cd {{root}}/candor && bash bin/release-verify.sh {{spec}} {{version}} {{flags}}

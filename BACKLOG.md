@@ -4671,3 +4671,42 @@ have written. The defect is that the PREFIX was derived from a token that was ne
 fix: resolve the target BEFORE arming the refusal sink, and refuse without writing when the target does
 not exist. Compare the ⟨0.28⟩ ruling that arming a DEFAULT prefix is not licensed — a convention does
 not license creating a file, and a mistyped verb licenses even less.
+
+## [P1] THE ⟨0.33⟩/⟨0.30⟩ EMISSION SPLIT — 2 of 4 engines contradict shipping normative text
+
+**MEASURED four-way 2026-08-26**, over a policy-scanned tree with NO exclusions:
+
+    java 0.33.0 jar, rust HEAD   ->  outOfScope: []  +  scannedUnder: {deny:[...]}
+    ts HEAD, swift HEAD          ->  NEITHER key
+
+SPEC's ⟨0.33⟩ text ships saying the key is PRESENT iff a policy was CONFIGURED and HONOURED, and that
+**present-and-empty is a claim — the two states must not collapse**. ts and swift collapse them on day
+one. swift's changelog claims it follows "`outOfScope`'s own emission rule" while doing the opposite of
+the reference engine.
+
+**Not fail-open** — an absent key reads as the empty deny set and fails closed, and a no-exclusion report
+has no peeked class so a gate never consults it. But it is a false statement about what was asked, which
+is the ⟨0.26⟩ partial-manifest collapse this format exists to prevent.
+
+**No conformance row pins it**: PART 69's `ck69` checks tree D only for `excluded`. Found by the 0.33.0
+release panel, which also established it was recorded NOWHERE — not here, not FILE-SET-DESIGN.md, not
+either changelog. Filed at the cut so it ships known.
+
+Fix: emit both keys in ts and swift, plus a row asserting the present-and-empty state on a
+no-exclusion policy-scanned tree in all four.
+
+## [P1] `whatif`'s MCP AND LSP SURFACES ARE UNTESTED IN ts
+
+`ae70ce4` fixed the ⟨0.30⟩/⟨0.32⟩/⟨0.33⟩ `ok`-withdrawal on CLI + MCP `candor_whatif` + LSP
+`candor.whatif` — and added **zero** tests. **PART 70 pins the CLI only.** The MCP tool description now
+PROMISES "`ok` is ABSENT…", a contract claim no gate reads — the same shape candor-java's `0a5fc2f` just
+fixed for its jbang catalog.
+
+This is the exact condition that produced the day's biggest finding: ts's MCP and LSP `whatif` had
+accumulated **ZERO of four** incompleteness causes across four rungs — not even ⟨0.21⟩ `unanalyzed` —
+while the CLI accumulated all four and every rung's row confirmed the CLI and looked closed.
+
+**The durable question, which belongs on every fix from here: does a ROW watch the surface I just fixed,
+or only the surface the row already knew about?**
+
+Fix: rows (or engine tests) pinning MCP and LSP `whatif` withdrawal, both polarities.

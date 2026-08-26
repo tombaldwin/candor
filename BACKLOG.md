@@ -1,6 +1,185 @@
 # candor (umbrella) backlog
 
-_Last reviewed 2026-08-09 (**floor 0.27 PUBLISHED** — `release-verify: OK`, every artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file `candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites; when you close a channel ask what OTHER spelling reaches it.) Per-engine detail: `candor-java/BACKLOG.md`, `candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
+_Last reviewed 2026-08-26 (**floor 0.33 PUBLISHED** — ⟨0.33⟩ CROSS-POLICY shipped four-way,
+`release-verify: OK`; tags run v0.29…v0.33.0). This review closed 9 stale entries against the repos
+(6 flagged for verification, 3 found while sweeping — see the PRIORITY ORDER section immediately below
+for the list and the evidence) and filed 7 new ones. Per-engine detail: `candor-java/BACKLOG.md`,
+`candor-rust/BACKLOG.md`, and `candor-spec/SCAN-BOUNDARY-WORK-QUEUE.md`._
+
+_Prior review, kept for history (2026-08-09, floor 0.27 PUBLISHED — `release-verify: OK`, every
+artifact resolved: 4 crates, npm, 7 GitHub releases, brew tap, every pinned URL. The 0.27 cut also
+closed both data-destroying gate-sink bugs — the `deps` separator mismatch and the dep-DIRECTORY sink
+guard, each of which overwrote an operator's dep report and exited 0 with `ok: true` in all four
+engines — and took PART 36 from 3 stream rows to 17. Process lessons in the memory file
+`candor-027-release-lessons`: rows beat review panels; enumerate TRIGGERABLE causes, not exit sites;
+when you close a channel ask what OTHER spelling reaches it.)_
+
+## PRIORITY ORDER (this review, 2026-08-26)
+
+**Criteria, Tom's steer, applied in this order:** (1) fail-open — a false all-clear — outranks
+everything; (2) a gate that cannot fail, or that passes by not looking; (3) correctness visible to
+users; (4) noise and ergonomics. This is a priority order over the items this review touched or found
+open while sweeping — it is NOT a re-audit of all ~4750 lines below; older sections may hold their own
+open items this pass did not re-verify.
+
+**CLOSED this review (evidence inline at each entry; not re-litigated here):**
+THE ⟨0.33⟩/⟨0.30⟩ EMISSION SPLIT · `whatif`'s MCP/LSP surfaces untested · ⟨0.31⟩ IS BUILT AND HELD
+(released, superseded) · the unevaluable-target convention question (⟨0.31⟩ ruled it) · ⟨0.32⟩
+REMAINING GAPS (rust/ts/swift unread-half) · ⟨0.32⟩ UNREAD CODE MAKES INCOMPLETE (same, java-only
+version) · R54/R55 (§B1 below covers the one open question R55 leaves) · netPartners "three ports open"
+(already superseded in-doc, verified via PART 57) · **two found stale while sweeping, not on the
+filing list**: the ambiguous-edge false-green pair (a genuine fail-open, PART 63 now green four-way)
+and the policy-scope exact-segment matcher (PART 64, four-way fix same commit). candor-swift's PART 69
+tree-D claim also checked: `conformance/part.sh 69` is clean four-way, confirming candor-spec `f9ec992`
+already closed it — nothing to file.
+
+**1. Fail-open / cannot-fail / passes-by-not-looking (highest):**
+  1. `[NEW, B2 below]` a refusal's remedy is version-blind, and a version-derived message is a route-
+     equality hazard if built carelessly — ⟨0.34⟩ design, not yet implemented.
+  2. `[NEW, B4 below]` `candor-rust/ci.yml`'s `stable-crates-macos` has no `timeout-minutes` — a release
+     gate can go dark for up to 6 hours looking like a slow job, not a stuck one.
+  3. `swift's PLATFORM-PRUNED files never enter excluded[] at all` (§"⟨0.32⟩ THE PORTS", still open
+     after this review closed its two siblings) — genuinely unread code disclosed only in prose, sitting
+     directly beside the rung built to close exactly this class.
+  4. `N3 IS STILL NOT COVERED, in any of the four` (inside the B1 state-by-engine entry) — a shell
+     script doing `curl | sh` under the scan root is invisible to every engine's file-set accounting.
+  5. `[P1]` A NEW EXIT-2 CAUSE MUST FAIL LOUDLY IF THE ADVISORY SIBLINGS DO NOT SHARE IT (2026-08-22,
+     still open) — no mechanism yet; caught 4 quiet divergences once already and the R11 row only
+     catches the next one "by luck of the matrix".
+  6. `[P1]` A CI GATE CAN PASS BECAUSE THE ANALYSIS NEVER RAN — ship `gate --ci` (2026-08-23, still
+     open) — a gate that passes when the lint didn't run, or ran on cached output.
+
+**2. Correctness visible to users:**
+  7. `[NEW, B1 below]` `[DECISION]` receipt's TSV caveat shape — needs the SPEC-vs-engine-local ruling
+     recorded (or SPEC §3.1 confirmed to already cover the principle).
+  8. `[P1]` THE SARIF FALLBACK PIN STILL SERVES THE REPORTER SPEC §2 NAMES (2026-08-25, still open,
+     confirmed still pinned at `6e61e0a` — pre-dates both ⟨0.32⟩ identity fixes).
+  9. `[NEW, B6 below]` `fix` diverges across engines on disclosure shape — not a soundness bug, but the
+     reference engine is the odd one out.
+  10. `[NEW, B3 below]` opt-in `min-report-spec` — a ⟨0.34⟩ config rung, not yet implemented.
+
+**3. Noise / ergonomics / process:**
+  11. `[NEW, B5 below]` SPEC §2's emission wording invited the same wrong guard into two engines
+      independently — a wording fix, not a behaviour fix (behaviour already closed this review).
+  12. `[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT (still open, field-reported).
+
+## `[DECISION]` `receipt`'s TSV CAVEAT SHAPE NEEDS A SPEC RULING OR REJECTION (filed 2026-08-26)
+
+R55 is closed in **rust only** — the only engine with the `receipt` verb. The shape was decided
+empirically against the real pinned consumer (`candor-rust/integrations/claude-code/candor-run.sh:252`,
+`while IFS=$'\t' read -r k v; … done`, stdout only, `2>/dev/null`): an **extra column** corrupts the
+row it rides on (`read -r k v` folds field 3 into `v`); **stderr alone** is discarded by `2>/dev/null`
+— *literally the failure R55 exists to close*; **chosen: a new `incomplete\ttrue` ROW**, which the
+consumer's `case` falls through untouched, with detail additionally on stderr, never solely.
+
+SOUNDNESS.md's R55 says *rule the shape in SPEC before touching an engine*. My view checking that
+instruction against SPEC.md: **the SPELLING doesn't belong in SPEC** (one engine, one consumer, not
+interchange) **but the PRINCIPLE does** — *a disclosure must ride the channel the consumer parses;
+`2>/dev/null` makes stderr-only disclosure equivalent to silence*.
+
+**Checked whether SPEC §3.1 already forbids stderr-only disclosure in general terms: it does not, yet.**
+SPEC.md carries the principle only as three SPECIFIC instances, all about the JSON envelope: ⟨0.21⟩'s
+`outOfScope` clause ("exit 2 with a silent document is the stderr-only disclosure ⟨0.21⟩ exists to
+close", line ~3712) and ⟨0.27⟩'s `zeroMatch` clause ("measured on all FIVE engines the list was
+stderr-only… the very blindness this clause exists to close", line ~3363) both state the rule for ONE
+named envelope key each, not as a standalone general principle covering arbitrary consumer formats
+(TSV, or any future non-JSON output). So R55's TSV row was consistent with the SPEC's existing
+directional stance but is not itself licensed or forbidden by a general clause — it is genuinely a
+one-engine, one-consumer decision as SOUNDNESS.md's own note ("rust is the only engine that ships a
+`receipt` verb at all… so this closes the vein rather than leaving three siblings to port") already
+concludes.
+
+**Ruling needed:** either (a) accept R55 as closed rust-local, with no SPEC change, because there is
+only one engine/consumer pair to bind — or (b) generalise the JSON-envelope-specific wording at ⟨0.21⟩/
+⟨0.27⟩ into a standalone principle ("a disclosure MUST ride a channel the documented consumer actually
+reads; a channel that consumer discards does not count") so the next non-JSON verb doesn't re-derive it
+from scratch. Recorded now because it will be re-proposed otherwise, and because a principle that keeps
+getting independently re-derived is a sign the text should just say it once (see the `[P2]` SPEC-wording
+entry below — the same shape hit ⟨0.33⟩'s emission guard from two engines this same week).
+
+## `[P1]` ⟨0.34⟩ — THE REFUSAL MESSAGE SHOULD NAME THE PRODUCER'S SPEC VERSION (filed 2026-08-26)
+
+Design doc: `/private/tmp/claude-501/-Users-tom-git-candor/1159adb6-0e5b-4af9-8bf9-84f657d061df/scratchpad/034-report-trust-design.md`
+(scratchpad, not durable — content copied in below).
+
+Approved by Tom 2026-08-26, queued behind the 0.33.0 cut. **The version CANNOT license certification**:
+a 0.32 producer's peek was still bounded by a policy we cannot see, so the refusal is correct either
+way (checked during the ⟨0.33⟩ ship decision — this is why no cheaper design exists and the 76% cost is
+intrinsic). What it CAN do is improve the remedy, naming the actual cause instead of a generic one:
+
+    today:  the peek was bounded by a deny set that does not cover yours
+    after:  this report was produced at spec 0.32, before producers recorded their deny set —
+            re-scan with a 0.33+ engine under the SAME policy
+
+Same verdict, same exit, no over-charge change. Remedy must say **the SAME policy**, not "a policy" —
+the loose wording is what produced the hole ⟨0.33⟩ closes.
+
+**HAZARD: §3.1 ROUTE EQUALITY.** `gate --report R --policy P` must stay byte-equal to `scan --policy
+P`'s `--gate-json`. On the scan route the producer IS the running engine, so a version-derived sentence
+differs across routes. **Put it on stderr / the human channel only, or derive it identically on both —
+decide before implementing.** This is exactly what killed the `net-partner` disclosure attempt
+([[candor-031-rung]]): a disclosure feature is constrained by route equality, not just by what the scan
+route can see.
+
+Sequencing: this is ⟨0.34⟩ item 1, ahead of the `min-report-spec` item below (no schema change, improves
+the remedy for the cost 0.33.0 is about to impose).
+
+## `[P1]` ⟨0.34⟩ — OPT-IN `min-report-spec` IN `.candor/config` (filed 2026-08-26)
+
+Same design doc as above. Operator declares "refuse any report whose envelope `spec` is below X".
+**Defaults OFF** — their risk call, their blast radius: gives the blunt regenerate-everything tool to a
+supply-chain context where stale reports are genuinely suspect, without imposing it on someone whose
+reports are fine.
+
+**Explicitly RULED OUT: a blanket version floor.** It deletes the control that makes ⟨0.33⟩ affordable
+— MEASURED: reports WITH a `peeked:true` class refuse 202/202; reports WITHOUT one pass **63/63**, and
+that 63 is why the cost is 76% and not 100%. A version floor refuses them too, trading a measured,
+explainable cost for a blunt one, in the direction SPEC calls the cardinal-sin mirror: refusing what you
+can actually answer. It also refuses TRUE, version-independent statements (a ⟨0.21⟩-era report of a
+fully-analyzed tree with no exclusions is a true statement about what those functions do) and
+contradicts SPEC §2's forward-compat MUST-tolerate rule (a consumer MUST tolerate fields it does not
+recognize — a trust floor is the opposite policy on the same document).
+
+**Record the rejection with its reasoning — it will be re-proposed otherwise.** And: ***"your report is
+old" is not a finding.***
+
+If built: SPEC §3.4 config clause + PART, following the existing config contract
+([[candor-config-file]] — relative/absolute values anchor to the config's HOME dir, `CANDOR_CONFIG`
+reserved); refusal shape is the established `{ok:false, incomplete:true}` exit 2, naming the report's
+spec, the configured floor, and the remedy; controls are the deliverable (unset ⇒ byte-identical to
+today on every route, written FIRST; set BELOW the report's spec ⇒ no refusal; set ABOVE ⇒ refuse
+naming both versions); **not a MUST-refuse by default** — every non-additive rung so far had a SPECIFIC
+reason old reports cannot answer, and stating that reason is what makes the remedy actionable.
+
+Sequenced behind the item above (a config-surface rung needing a spec clause + four engines + a
+conformance PART, vs. the message-only fix). **Route inventory is mandatory for both items** — every
+surface that can refuse over a report; ts's ran to 38 surfaces last time and its MCP + LSP `whatif` had
+accumulated ZERO of four causes across four rungs (see the closed entry above).
+
+## `[P2]` `candor-rust/ci.yml`'s `stable-crates-macos` JOB HAS NO `timeout-minutes` (filed 2026-08-26)
+
+Pre-existing; surfaced only because `release-preflight [7b]` was tightened tonight to check each JOB
+rather than `grep` the FILE (it had been passing because a *sibling* job in the same file declared one).
+With no timeout GitHub's 6-hour default applies, and a stuck runner blocks the release gate while
+looking like a slow job rather than a stuck one — measured twice at 3h45m and 54m. Fix is a one-line
+`timeout-minutes:` addition in `candor-rust/ci.yml`, not this repo's file to edit.
+
+## `[P2]` SPEC §2's EMISSION WORDING INVITED TWO INDEPENDENT ENGINES INTO THE SAME WRONG GUARD (filed 2026-08-26)
+
+ts and swift each added a clause meaning "…and there is something to exclude", reasoning that nothing
+excluded ⇒ nothing to say (see the closed ⟨0.33⟩/⟨0.30⟩ EMISSION SPLIT entry above — this is that
+defect's root cause, recorded here as the wording lesson rather than the fix). When two independent
+implementations make the identical wrong assumption, the text is inviting it. Proposal: state
+explicitly that **present-and-empty is the answer when there was nothing to exclude**, rather than
+leaving it inferable from "present iff configured and honoured".
+
+## `[P2]` THE `fix` VERB DIVERGES ACROSS ENGINES ON DISCLOSURE (filed 2026-08-26)
+
+java's `fix` carries neither ⟨0.32⟩'s nor ⟨0.33⟩'s cause; rust and swift carry a disclosure-only cause;
+ts's `fix` answers `{crossing,…}` with no `ok` at all. **Not a soundness bug** — ⟨0.24⟩'s advisory law
+binds verbs that answer `ok`, and `fix` doesn't — but the reference engine being the odd one out is the
+wrong way round. Decide one way and make it uniform.
+
 
 
 ## ~~**`[P0]` A GATE THAT ONLY RUNS AT RELEASE TIME CANNOT PROTECT THE RELEASE**~~ **CLOSED 2026-08-25 — both movable gates moved, the whole inventory taken, and the moved gate falsified.**
@@ -556,7 +735,19 @@ today had the same shape — `cargo build` reporting success without rebuilding,
 zero tests, `cargo test -q` running 51 of 106, a glob matching nothing read as a scan producing
 nothing. All of them looked like clean answers.
 
-## **`[P1]` A POLICY SCOPE HAS NO WAY TO SAY "EXACTLY THIS SEGMENT"** — reported from the field, reproduced
+## ~~`[P1]` A POLICY SCOPE HAS NO WAY TO SAY "EXACTLY THIS SEGMENT"~~ **CLOSED 2026-08-26 — found stale, not in tonight's filing list**
+
+**FIXED four-way, same commit message across all four repos**: a trailing `::` now anchors a scope to
+an exact segment while a bare scope still matches by prefix — rust `a7f0113`, java `a2a5292`, ts
+`a2a5292`, swift `645d457`. **Pinned by conformance PART 64** (SPEC §6.2): asserts on rust (the only
+engine that can read the Rust fixture) with the control row (`dep::`, an exact scope that DOES exist,
+must still fire) proving the fix did not become "refuse every `::` scope"; the other three carry the
+identical matcher fixed in the identical commit and are recorded as unexercised-by-this-row rather than
+implying coverage they don't have. `conformance/part.sh 64` verified green. This was the field-reported
+cardinal-sin-adjacent item (a rule that cries wolf gets deleted, leaving a silently-unchecked boundary)
+— worth flagging as high-value now closed even though it wasn't on tonight's filing list.
+
+Original filing — reported from the field, reproduced
 
 Routed in from the ebman CI adoption (candor-scan 0.26.0, tombaldwin/ebman @ 8ca6e31) and REPRODUCED
 here on a three-line fixture with **no `app` module in the tree at all**:
@@ -601,7 +792,16 @@ which is what the reporter already tried, and is the spelling everyone will gues
 Four-way: the same prefix rule is in java's `Policy.scopeMatches` (measured earlier today at
 Policy.java:1645). Whatever is decided binds all four.
 
-## ⟨0.32⟩ REMAINING GAPS — the rust unread half, with its plumbing MEASURED (2026-08-23)
+## ~~⟨0.32⟩ REMAINING GAPS — the rust unread half, with its plumbing MEASURED (2026-08-23)~~ **CLOSED 2026-08-26 — all three shipped**
+
+**VERIFIED against HEAD**, all three gaps below are closed: candor-rust has `GATE_UNPEEKED` +
+`record_gate_unpeeked` (`crates/candor-scan/src/gate.rs:700,714`, called from `scan.rs:3293`) feeding
+the verdict document exactly as this entry specified. candor-ts computes `unreadClasses` and the exit
+arm reads it (`scan.mjs:7975,8101`) rather than recomputing at the exit site. candor-swift's
+`mergeGateReport` unions its members' unread classes the way it unions their manifests
+(`GateReportCLI.swift:71`). All three released as part of ⟨0.32⟩ (candor-spec CHANGELOG `[0.32.0] —
+2026-08-25`); floor has since moved to 0.33. Kept below for the mechanical detail, in case a future
+port needs the same plumbing shape.
 
 **rust's unread half: the verdict change is trivial, the plumbing is the work, and I twice guessed the
 plumbing wrong before looking.** Recorded so the next attempt is mechanical.
@@ -771,7 +971,20 @@ scanner and safe-direction, but it makes "the test harness reaches no clipboard 
 network" unusable on any codebase using cfg(test) stubs to hold that boundary — which is the standard
 way to hold it. A cfg-aware mode or a documented line would save the next person the dead end.
 
-## **`[P1]` SETTLED: THE AMBIGUOUS-EDGE RULE TRADED ONE FALSE GREEN FOR ANOTHER** (2026-08-22)
+## ~~`[P1]` SETTLED: THE AMBIGUOUS-EDGE RULE TRADED ONE FALSE GREEN FOR ANOTHER~~ **CLOSED 2026-08-26 — found stale, not in tonight's filing list**
+
+**A CARDINAL-SIN-CLASS FAIL-OPEN, confirmed fixed four-way.** `conformance/part.sh 63` now shows
+`java a=2 b-alone=0 a+b=2 amb=1/1 OK`, `ts a=2 b-alone=0 a+b=2 amb=1/1 OK`, `swift … OK`, matching
+rust's `amb-ctrl=1 amb-both=1 OK (an ambiguous callee contributes Unknown[dispatch], it does not
+vanish)` — all four now MATCH, where java/ts previously answered `a+b=0` (the false green: a sibling
+report turning a red verdict green). Commits: candor-rust `bc270ee` (the entry-contribution rule this
+section specifies); candor-java `199db54` + `a967893` (key→name map, then the hash-keyed merge);
+candor-ts `abd8c33` + `c3a4734` (same two-step recipe, unit identity then hash-keyed merge). This
+closes both this entry and the one below it (`THE FALSE GREEN IS LIVE IN java AND ts`). Neither was on
+tonight's filing list — found while building the priority order below and worth surfacing since it was
+the highest-severity class (fail-open) still reading as open.
+
+Original filing (2026-08-22):
 
 **MY WORRY WAS THE WRONG CHANNEL, AND THE PREMISE WAS FALSE.** `gate --report` never propagates
 EFFECTS: `inferred` is taken off the wire per entry (gate.rs:443) and the only fixpoint is
@@ -834,7 +1047,7 @@ If it IS wrong, the answer the argument actually implies is: union the EFFECTS, 
 REASONS. That is not what is implemented, and it must be settled BEFORE three engines copy it —
 finding it after the ports costs four fixes instead of one.
 
-## **`[P1]` THE FALSE GREEN IS LIVE IN java AND ts — CONFIRMED, SITES LOCATED** (2026-08-22)
+## ~~`[P1]` THE FALSE GREEN IS LIVE IN java AND ts — CONFIRMED, SITES LOCATED~~ **CLOSED 2026-08-26 — see the entry above**
 
 Measured against conformance PART 63's own fixture, and it reproduces CROSS-ENGINE (rust-shaped
 reports gated by java and ts, which §3.1 puts in contract):
@@ -864,7 +1077,16 @@ verbs (`unverified --strict` exited 0 over a report the gate refused at 2). Expe
 **Acceptance is already written**: PART 63 asserts rust and MEASURES java and ts, so a correct port
 flips its own row from CONFIRMED DEFECTIVE to OK, and the two skip-baseline lines come out.
 
-## ⟨0.32⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22)
+## ⟨0.32⟩ THE PORTS — TWO SWIFT HAZARDS AND THE JAVA CLOSER (reviewed 2026-08-22) — **2 OF 3 CLOSED 2026-08-26, ONE STILL OPEN**
+
+**VERIFIED against HEAD:** swift's `build-output` carries `judgedElsewhere`
+(`main.swift:1810`, `DERIVED_EXCLUSIONS: Set<String> = ["build-output"]`) — the first `[P1]` below is
+closed. Java's source-peek closer is shipped (`Candor.java:774-798`, `compileSourcesForPeek` +
+`source-without-class`/`source-newer-than-class` handling, with the undrivable-class withdrawal for
+non-`.java` members of the same class) — the `[P2]` below is closed. **Swift's platform-pruned files
+are STILL open** — confirmed still absent from `excluded[]` (`main.swift:969-972` still only appends to
+the human-readable `note`, never to `excludedFiles`); nothing else in the repo adds a `platform-pruned`
+class. Promoted to its own dated entry below rather than left buried in this superseded cluster.
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**
 MEASURED: candor-ts and candor-rust PEEK their excluded sources — ts builds a child tsconfig listing
@@ -905,7 +1127,12 @@ content of a file nobody read. An operator-vs-build distinction fails (the motiv
 operator-chosen), scope-covered-unread fails (a global `deny` covers everything), and any ratio that
 tolerates candor-java's own 71 strays tolerates one hostile file 71 times over.
 
-## ⟨0.32⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN
+## ~~⟨0.32⟩ UNREAD CODE MAKES THE VERDICT INCOMPLETE — java DONE, and the REVIEW MOVED THE DESIGN~~ **CLOSED 2026-08-26 — rust/ts/swift shipped too**
+
+**VERIFIED: rust/ts/swift now carry the document-carried field this entry called for** (see the
+"REMAINING GAPS" entry above, closed the same review — `GATE_UNPEEKED`/`unreadClasses`/
+`mergeGateReport`'s union). Released as part of ⟨0.32⟩; floor has since moved to 0.33. `STATE:` line
+below is superseded — it is no longer a one-engine rung.
 
 Tom's ruling (2026-08-21): code the engine admits it never READ must make the gate INCOMPLETE (exit
 2), not pass. Closes B1 and the execa/axios item together — both were `excluded[].peeked == false`
@@ -4641,12 +4868,18 @@ caught before it shipped. Reverted.
 exactly like a real defect — check which side the contract is on FIRST.* I checked the engines against each
 other and never checked either against the spec.
 
-### What IS open, and it is a spec question
+### What IS open, and it is a spec question — ~~RESOLVED~~ **CLOSED 2026-08-26**
 
 ts and swift REFUSE this shape (exit 2, declining to produce a judgement at all — as rust does for a target
 that does not EXIST); candor-rust judges nothing and discloses (exit 0). Both are defensible under
 different clauses, and they are not the same answer. Which convention the family wants is Tom's ruling to
 make; PART 56 NAMES the divergence on every run until it is made.
+
+**Tom's ruling was refuse, not disclose** — this is ⟨0.31⟩'s unevaluable-target cause (§3.3's fourth),
+shipped and released (v0.31, 2026-08-21; see the entry above). VERIFIED: `conformance/part.sh 56` now
+shows rust, ts and swift all `OK` with the SAME shape — `clean: exit 2 + 0 named` — i.e. rust was
+brought into line with ts/swift's original refusal rather than the other way round. No divergence
+remains.
 
 The original text follows, for the record.
 
@@ -4675,7 +4908,12 @@ be written before the next attempt.
 
 Until then PART 56 NAMES this divergence on every run rather than asserting it away.
 
-## ⟨0.31⟩ IS BUILT AND HELD — do not publish any engine under `spec: "0.30"`
+## ~~⟨0.31⟩ IS BUILT AND HELD — do not publish any engine under `spec: "0.30"`~~ **STALE, CLOSED 2026-08-26 — released and superseded**
+
+**Verified against `git tag` in candor-spec: v0.31 released 2026-08-21 (`gh release view v0.31`: published,
+not a draft), v0.32 released 2026-08-25, and ⟨0.33⟩ CROSS-POLICY has since shipped — floor is now 0.33.**
+The hold below did its job (no engine published a changed verdict under `spec: "0.30"`); it is now
+history, not a live constraint. Kept for the record.
 
 **Landed 2026-08-20 at HEAD, deliberately NOT released.** The unevaluable-target cause (§3.3's fourth):
 a target that exists but holds no file the engine can read is a refusal, exit 2, no report. candor-rust
@@ -4711,7 +4949,7 @@ fix: resolve the target BEFORE arming the refusal sink, and refuse without writi
 not exist. Compare the ⟨0.28⟩ ruling that arming a DEFAULT prefix is not licensed — a convention does
 not license creating a file, and a mistyped verb licenses even less.
 
-## [P1] THE ⟨0.33⟩/⟨0.30⟩ EMISSION SPLIT — 2 of 4 engines contradict shipping normative text
+## ~~[P1] THE ⟨0.33⟩/⟨0.30⟩ EMISSION SPLIT — 2 of 4 engines contradict shipping normative text~~ **CLOSED 2026-08-26**
 
 **MEASURED four-way 2026-08-26**, over a policy-scanned tree with NO exclusions:
 
@@ -4731,10 +4969,23 @@ is the ⟨0.26⟩ partial-manifest collapse this format exists to prevent.
 release panel, which also established it was recorded NOWHERE — not here, not FILE-SET-DESIGN.md, not
 either changelog. Filed at the cut so it ships known.
 
-Fix: emit both keys in ts and swift, plus a row asserting the present-and-empty state on a
-no-exclusion policy-scanned tree in all four.
+**ROOT CAUSE, corrected on close — this was a CODE DEFECT in two engines, not a fixture or coverage
+gap.** Both independently gated the emission block on an extra clause with no basis in SPEC: swift's
+outer condition was `!peekRules.isEmpty && !peekable.isEmpty` (the second conjunct is the bug — it
+collapses "asked and clear" into "never asked" whenever there is nothing TO peek); ts's was
+`policyPath && excludedFiles.length` (gating on there being something excluded, rather than on a
+policy having been configured and honoured). Both read as "nothing excluded ⇒ nothing to say" — a
+reasonable-sounding inference the SPEC text does not actually license (see the new `[P2]` entry below
+about why two independent engines made the identical wrong assumption).
 
-## [P1] `whatif`'s MCP AND LSP SURFACES ARE UNTESTED IN ts
+**FIXED:** candor-swift `5f5240b` drops the `!peekable.isEmpty` conjunct; candor-ts `a34b273` stops
+conditioning the peek trigger on `excludedFiles.length` (the subprocess spawn itself stays conditioned
+on it, only the key-emission decision changed). **Pinned by conformance PART 71** (candor-spec
+`e1c359f`) — present-and-empty over a no-exclusion policy-scanned tree, plus the two controls (no
+policy at all; a policy the engine cannot read) that must still omit both keys. Falsified against the
+pre-fix worktrees (candor-swift `bf6fbd1`, candor-ts `f19aa66`): both SKIP there, both score on HEAD.
+
+## ~~[P1] `whatif`'s MCP AND LSP SURFACES ARE UNTESTED IN ts~~ **CLOSED 2026-08-26**
 
 `ae70ce4` fixed the ⟨0.30⟩/⟨0.32⟩/⟨0.33⟩ `ok`-withdrawal on CLI + MCP `candor_whatif` + LSP
 `candor.whatif` — and added **zero** tests. **PART 70 pins the CLI only.** The MCP tool description now
@@ -4748,4 +4999,11 @@ while the CLI accumulated all four and every rung's row confirmed the CLI and lo
 **The durable question, which belongs on every fix from here: does a ROW watch the surface I just fixed,
 or only the surface the row already knew about?**
 
-Fix: rows (or engine tests) pinning MCP and LSP `whatif` withdrawal, both polarities.
+**FIXED: candor-ts `397c581`** — 9 new tests across `test-mcp.mjs` and `test-lsp.mjs`, pinning all three
+later causes (⟨0.30⟩ `outOfScope`, ⟨0.32⟩ unread-class, ⟨0.33⟩ cross-policy) plus both over-charge
+controls in both polarities, on a synthetic load/top report fixture reproducing PART 70's own shape as
+raw report mutations. Falsified against `ae70ce4`'s parent commit on both files (red on the three cause
+cells, controls unaffected) and restored. **Note for future reference:** LSP `runWhatif`
+(`workspace/executeCommand candor.whatif`) is a *different call site* from the `diagnosticsFor` path the
+⟨0.32⟩ tests drive — nothing had ever exercised it before this fix, which is how ts's MCP/LSP surfaces
+carried zero of four causes while the CLI carried all four undetected.

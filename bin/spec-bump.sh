@@ -237,9 +237,9 @@ root = os.environ["CB_ROOT"].rstrip("/") + "/"
 # ONE GRAMMAR FOR THE REWRITER AND THE CHECKERS, deliberately. If the bump could rewrite a spelling the
 # gates cannot see, a stale claim would ship silently; if the gates could see one the bump cannot
 # rewrite, the gate's remedy would be a hand edit — which is this whole item. Eight rather than four
-# because SPEC.md's own aligned `"spec":    "0.32"` needs six separators; `)` and `]` because
-# candor-swift's README says `[candor-spec](…) 0.32`. Both were live in shipped documents at ⟨0.32⟩ and
-# every gate in the family read clean over them.
+# because SPEC.md's own aligned `"spec":    "0.32"` needs six separators (spec 0.32, informative);
+# `)` and `]` because candor-swift's README says `[candor-spec](…) 0.32`. Both were live in shipped
+# documents at ⟨0.32⟩ and every gate in the family read clean over them.
 claim = re.compile(r'spec[-: "*)\]]{1,8}(\d+\.\d+)')
 
 for p in paths:

@@ -139,12 +139,34 @@ PRIORS="$(printf '%s' "$PRIORS" | tr -s ' ')"
 # assertions at the current floor, of which the path form would have called **12 advisory**. So an
 # ASSERTION is loud wherever it lives; only a line that CONSTRUCTS a document is advisory. That is a
 # denylist over the advisory bucket, which is the direction this family's own rule requires.
-ASSERTION_RE='(want|assert|assert_eq|expect|check|XCTAssert|toBe|toEqual|deepEqual|should)'
+# `[0-9]:ok "` IS THIS FAMILY'S OWN ASSERTION VERB, and the list of ENGLISH WORDS could not see it. The
+# umbrella's shell harnesses assert with a helper literally named `ok` — `ok "two units, one name" '[ … ]'`
+# — so a row PINNING the prior floor read as prose. Anchored on `<lineno>:ok "` rather than the bare word,
+# because `ok` as a substring is in `token`, `look` and `broken`: unanchored it would call almost every
+# line an assertion. MEASURED over the family at this cut: it reclassifies NOTHING today (the shape does
+# not currently exist), so it is a hole closed before it is stepped in rather than a fix for a live miss —
+# and its direction is advisory→LOUD, which costs noise and never silence.
+ASSERTION_RE='([0-9]:ok "|want|assert|assert_eq|expect|check|XCTAssert|toBe|toEqual|deepEqual|should)'
 # The SUFFIX form was missing: this matched `test-foo.sh` but not `foo-test.sh`, so `bin/release-test.sh`
 # — a file whose entire job is to BUILD a fixture changelog at the prior version — was reported as a
 # shipped-source bump-miss on every cut. A fixture flagged as a defect trains the reader to skim the list
 # that exists to be read.
-FIXTURE_PATH_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?[.]|test[-_.][a-z]*[.](mjs|py|sh|rs|js)|[-_.]test[.](mjs|py|sh|rs|js)|src/tests[.]rs|[.]test[.]'
+#
+# `[a-z-]*`, NOT `[a-z]*` — ONE HYPHEN, and it split one file's fixtures down the middle. The prefix form
+# reached `test-foo.sh` and stopped at the SECOND hyphen, so `integrations/github/test-candor-sarif.sh`
+# was not a fixture path. That file builds two kinds of document side by side: report envelopes, which
+# CONSTRUCT_RE below recognises (`{"candor":`) and correctly called advisory, and GATE VERDICTS, which it
+# does not (`{"spec":"0.32","ok":false,…`). Same file, same purpose, same deliberateness — 9 lines
+# reported as a bump-miss and 35 beside them not, decided by which envelope shape a regex happened to
+# know. Its `"spec":"0.7"` and `"spec":"0.8"` fixtures have ridden out every bump since 2026-07 unflagged,
+# which is the control: they are only quiet because they are not the IMMEDIATELY-prior floor.
+#
+# WIDENING THIS IS THE SILENCING DIRECTION, so it was measured rather than argued. Over all seven repos at
+# the 0.33 cut it moves exactly those 9 lines from loud to advisory and nothing else, and the fence still
+# holds: ADVISORY requires fixture-path AND NOT an assertion, so an `assert_eq … "0.32"` (or, now, an
+# `ok "…" '[ … "0.32" … ]'`) in that very file stays LOUD — falsified against both spellings, plus a
+# shipped constant, a README claim and an adopt/ pin, all of which stay loud.
+FIXTURE_PATH_RE='(^|/)(tests?|fixtures?|conformance)/|/tests?[.]|test[-_.][a-z-]*[.](mjs|py|sh|rs|js)|[-_.]test[.](mjs|py|sh|rs|js)|src/tests[.]rs|[.]test[.]'
 # Two content rules that override the assertion verb, because the verb list is made of ENGLISH WORDS and
 # fires on prose. Both were found by running this against a clean tree and reading the 15 false positives:
 #   COMMENT_RE  — `check`/`expect`/`should` in a doc comment EXPLAINING the defect. Scoped to fixture paths

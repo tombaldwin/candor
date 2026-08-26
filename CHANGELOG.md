@@ -8,6 +8,49 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective
+
+The 0.33.0 cut took **three aborted `release.sh` runs**; every abort was a gate correctly catching a
+change made mid-cut by someone who didn't know that gate's contract. Four fixes, no engine or spec
+change:
+
+- **`just preflight-cut`.** `bin/release-preflight.sh` check `[3]` (cross-repo pins) is strict by
+  default and honours `PINS_ADVISORY=1` — `release.sh` step 0 and `just rehearse` already set it, but
+  `just preflight` did not, so on a family cut it ALWAYS exited 1 pre-publish with ~11 pin rows whose
+  own remedy text says "update AFTER the release is published." A gate that always fails before the
+  thing it gates trains an operator to read past a red result; it cost a reviewer's whole pass to find
+  the env var. New recipe sets `PINS_ADVISORY=1`; `preflight`'s own comment now says which one to use
+  before a cut. The strict default is unchanged — still right post-publish and for health checks.
+
+- **`bin/AGENT-RELEASE-BRIEF.md`.** A short, paste-able brief for any agent working during or near a
+  release: CHANGELOG lines go into the version section that's ALREADY open, never a new `## Unreleased`
+  (an empty one makes `release.sh` publish the previous version's notes — this aborted run one of
+  three); report findings immediately, never poll CI; verify after the last edit, not before
+  (`spec-bump.sh` rewrites SPEC.md, and the MUST ledger is keyed by statement SHA); one owner per repo
+  and per shared file. Linked from `TESTING.md`.
+
+- **`release.sh` now runs `release-verify.sh` itself**, as step 8, scoped identically to the cut.
+  `release-verify.sh` is the only step in the ladder that RESOLVES a pinned URL and a GitHub Release
+  rather than string-matching it — on 0.33.0 it was the only thing that caught candor-swift's release
+  sitting in DRAFT state, serving 404 on every asset while the API reported the asset itself
+  `state=uploaded`. Until now it was a separate command an operator had to remember to run after
+  "DONE." A verify failure now surfaces with release-verify's OWN exit code and output (never folded
+  into a generic `die`), because the publish already happened and that fact matters to whatever calls
+  this script.
+
+- **Draft-release detection, in `release-verify.sh`'s `[gh releases]` check.** Deleting a git tag
+  silently converts its GitHub Release to a draft, and a draft 404s on every asset URL regardless of
+  what the API reports about the asset's own state (`state=uploaded` and all) — measured exactly on
+  0.33.0's candor-swift release, whose tag was deleted and re-pushed to recover an orphaned workflow
+  run. `gh release view --json isDraft` is now checked alongside `tagName`; a draft fails the run
+  naming the cause and the remedy (`gh release edit <tag> --draft=false`) instead of leaving the 404 to
+  be diagnosed cold, later, by whoever's `candor update` breaks.
+
+All four are covered by `bin/release-test.sh` (`release-test: OK — 193 assertions`, up from 188): each
+new check has a fixture proving it fails before the fix and passes after, including release.sh
+preserving release-verify's own exit code on a simulated failure and a simulated draft release being
+caught and named.
+
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
 - **`release-preflight` [10] now takes the LATEST run per workflow, not every run.** A superseded

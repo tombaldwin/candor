@@ -10,6 +10,11 @@ The one-sentence philosophy: **the exit code is the product.** candor is a gate;
 claims are behavioral contracts (exit codes, disclosures, report bytes), and the test suite's job is
 to make every contract's regression un-shippable — not to maximize a coverage number.
 
+**Working during or near a release?** Read [`bin/AGENT-RELEASE-BRIEF.md`](bin/AGENT-RELEASE-BRIEF.md)
+first — four rules, each written after a release-day abort cost real time (CHANGELOG discipline mid-cut,
+report-don't-poll, verify-after-not-before, one owner per repo/file). It is written to be pasted whole
+into an agent's prompt.
+
 ## 1. Two layers, and what each owns
 
 - **The unit layer** owns pure logic: parsers, scope/literal matchers, classifier table lookups, set

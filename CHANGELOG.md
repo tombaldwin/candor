@@ -8,7 +8,58 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-25 — the umbrella's own workflows can be run locally, and the ladder has a dress rehearsal
+## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (unreleased)
+
+- **THE FLOOR MOVES TO 0.33 — `scannedUnder`, and a gate that refuses a peek it did not commission.**
+  `excluded[].peeked: true` was only ever true *relative to the deny set the producer held* — ⟨0.29⟩
+  bounds the peek to effects that policy DENIES — and the report never recorded what that set was. A
+  consumer gating with a different deny set therefore got a definite answer to a question nobody asked,
+  and it failed OPEN on `gate --report`: the supply-chain route, past every ⟨0.32⟩ control, because the
+  class really was read. The envelope now carries `scannedUnder: { "deny": [ … ] }` under exactly
+  `outOfScope`'s emission rule, and a gate whose own expanded deny set is not a subset of it, over a
+  report carrying any `peeked: true` class, answers `ok: false`, `incomplete: true`, exit 2. Built
+  four-way; conformance PART 69 (and PART 70 for the ⟨0.24⟩ advisory verbs). Contract detail in
+  [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md).
+
+- **MIGRATION — ⟨0.33⟩ IS NOT ADDITIVE, and the cost is measured, not estimated.** If you gate a
+  **STORED** report that a pre-0.33 engine produced — committed to a repo, cached between CI jobs, or
+  published by a dependency and gated downstream — expect exit 2. Measured over **32 real third-party
+  projects, 67 reports, 402 report×policy pairs, all four engines**, published **0.32.1** binaries as the
+  producer against **0.33** HEAD as the consumer: **202 of the 265 pairs that pass today — 76.2% — flip
+  to exit 2** with the policy unchanged. It is deterministic rather than statistical: a report carrying
+  any `peeked: true` class refuses **202 of 202**, a report carrying none passes **63 of 63**, and **26
+  of the 32 projects** have at least one.
+
+  **THE REMEDY: re-scan with a 0.33 engine under the SAME policy the gate applies** — not merely *a*
+  policy, which is the loose reading this rung exists to close. It discharges the cost in full: **265 of
+  265** pairs green again, no residual tax and nothing to suppress. `adopt/candor.yml` and the digest
+  workflow already scan and gate in ONE run under ONE policy, so a repo that adopted candor through
+  those is **unaffected** — producer and consumer are the same run, so `P ⊆ P` holds by construction.
+  What is affected is the shape `gate --report` exists for: a report produced once and gated later, or
+  elsewhere. Legitimate narrowing is not over-charged either — **62 pairs** whose producer's deny set
+  genuinely covers the gate's took **0 refusals**, and over the full cross-policy sweep of **918
+  gates**, **529 refuse correctly and none fails open**.
+
+  **The operators this hits are the ones who followed ⟨0.32⟩'s own remedy** — *scan with the policy* —
+  because that is exactly what puts a `peeked: true` class into a report. They migrated one rung ago and
+  are being asked to migrate again, for a hole that remedy did not close. The wording was the defect and
+  the wording is the fix. It fails **CLOSED**.
+
+- **`bin/spec-bump.sh` now rewrites the doc and packaging literals by machine, and NAMES the pins it
+  must not touch.** The spec version was written by hand in 35 claim occurrences across 19 documents in
+  the seven repos, in what turned out to be FOUR spellings — the fourth, a version behind a markdown
+  link, put candor-swift's README headline outside its own drift gate. Step 1b rewrites them over an
+  explicit ALLOWLIST of 21 documents plus SPEC.md's JSON fences (an allowlist because the 0.27 bump
+  proved a blanket sweep destructive — candor-rust's `tests.rs` builds fixture reports at the PREVIOUS
+  spec as INPUTS — and because an allowlist under-reaches in the safe direction: a doc it forgets is a
+  doc the derived gates redden on). Step 1c prints the three deliberate pins with their exact
+  before → after and refuses to edit them, and now FAILS when it cannot locate one, because a missing
+  pin reads exactly like a satisfied one. Verified by running the bump for real in a disposable clone of
+  all seven repos: an independent oracle written from the grammar rather than imported from any engine
+  found every declaration and every gated document at 0.33, nothing left at 0.32, and no fixture or
+  backward-compatibility input swept.
+
+## 2026-08-25 — the umbrella's own workflows can be run locally, and the ladder has a dress rehearsal (unreleased)
 
 - **`bin/verify-umbrella.sh` — what `bin/verify-local.sh` is for the engines, for this repo.**
   `verify-local.sh` walks the engine repos; nothing ran candor's own three push-triggered workflows, and
@@ -66,7 +117,7 @@ keeps its own.
 - **`just verify-umbrella`, `just verify-engines`, `just rehearse`** — the recipes, so the commands are
   discoverable rather than remembered.
 
-## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door
+## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door (unreleased)
 
 - **`bin/candor` now carries a per-engine pin beside the family one.** `ENGINE_PIN` was a single value
   read for the candor-java release tag, `cargo install --version`, `npx candor-ts@…` AND the candor-swift
@@ -164,7 +215,7 @@ keeps its own.
   since GitHub releases are checked per tag), but per-engine pins make the case likelier and it should
   move to a per-engine comparison next.
 
-## 2026-08-25 — the gates that only ran at release time now run on `main`
+## 2026-08-25 — the gates that only ran at release time now run on `main` (unreleased)
 
 - **candor-java's native/jar parity gate and candor-swift's release-configuration build moved off the
   release trigger.** Both are engine-repo changes (candor-java `ebe40af`, candor-swift `8c62b5a`); what

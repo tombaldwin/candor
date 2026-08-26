@@ -1029,6 +1029,68 @@ grep -q 'PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh"' "$UMBRELL
 grep -q 'PINS_ADVISORY' "$UMBRELLA/bin/release-preflight.sh" \
   && ok "preflight honours PINS_ADVISORY" || bad "preflight has no advisory mode"
 
+say "6b. release-preflight.sh [7b] — a per-job timeout, not a per-file one"
+# DEFECT (2026-08-26 code review): candor's own jetbrains.yml has two jobs, `build` (timeout-minutes: 30)
+# and `plugin-verifier` (none) — and [7b] used to be `grep -q timeout-minutes "$wf"`, a STRING search over
+# the whole file. `build`'s line satisfied it and `plugin-verifier` was never looked at, so a real missing
+# deadline sat behind a green check for as long as any OTHER job in the same file declared one. Fixed by
+# parsing each workflow's `jobs:` map and checking every job individually.
+T7B="$(mktemp -d)"; mkdir -p "$T7B/candor/.github/workflows"
+git -C "$T7B/candor" init -q
+t7brun() { CANDOR_ROOT="$T7B" bash "$UMBRELLA/bin/release-preflight.sh" 2>&1 | grep -A3 '\[7b\]'; }
+
+# RED: reproduce the exact jetbrains.yml shape — one job with a timeout, one without.
+cat > "$T7B/candor/.github/workflows/two-job.yml" <<'EOF'
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps: [{run: echo hi}]
+  plugin-verifier:
+    runs-on: ubuntu-latest
+    steps: [{run: echo hi}]
+EOF
+git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf -q
+red7b="$(t7brun)"
+printf '%s' "$red7b" | grep -q 'two-job.yml:plugin-verifier' \
+  && ok "[7b] catches the job WITHOUT a timeout even though its sibling job in the same file has one" \
+  || bad "[7b] missed a bare job beside a timed one — the per-file blind spot is back: $red7b"
+
+# GREEN: give the second job a timeout too — the whole repo must go clean.
+cat > "$T7B/candor/.github/workflows/two-job.yml" <<'EOF'
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps: [{run: echo hi}]
+  plugin-verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps: [{run: echo hi}]
+EOF
+git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf2 -q
+green7b="$(t7brun)"
+printf '%s' "$green7b" | grep -q 'every job in every workflow' \
+  && ok "[7b] GREEN once every job in the file declares a timeout" \
+  || bad "[7b] still red after both jobs got a timeout: $green7b"
+
+# CONTROL: a job that calls a reusable workflow (`uses:` at job level) must NOT be flagged — GitHub does
+# not accept `timeout-minutes` there, so demanding one would be asking for a key that cannot be set.
+cat > "$T7B/candor/.github/workflows/reusable.yml" <<'EOF'
+on: push
+jobs:
+  call-it:
+    uses: ./.github/workflows/two-job.yml
+EOF
+git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf3 -q
+ctrl7b="$(t7brun)"
+printf '%s' "$ctrl7b" | grep -q 'reusable.yml' \
+  && bad "[7b] flagged a reusable-workflow call job, which cannot carry timeout-minutes at all: $ctrl7b" \
+  || ok "[7b] CONTROL: a reusable-workflow call job is exempt, not flagged"
+rm -rf "$T7B"
+
 say "7b. release-preflight.sh [10] — the CI verdict cannot be self-contradictory"
 # WHY THIS SECTION EXISTS. `release-preflight.sh` carries eleven checks and took FOUR fixes in this
 # release, and until now the harness touched it only through two `grep -q` string-presence checks — the
@@ -1131,6 +1193,54 @@ printf '%s' "$multi" | grep -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: two distinct workflows, both green, stays green" \
   || bad "[10] dedupe CONTROL: distinct (non-duplicate) workflow names broke the verdict"
 rm -rf "$PF"
+
+# THE THIRD SIBLING (2026-08-26 code review): the NONE branch — a commit that triggered no workflow at
+# all (docs-only, path-filtered) — used to answer "what is this repo's last known CI state" by taking
+# element 0 of `gh run list`, unfiltered by workflow. A repo carries several workflows on different
+# triggers; whichever one happened to finish most recently decided the verdict for ALL of them. This
+# fixture is the shape that broke it: an unrelated cron-ish workflow ("nightly-bump") completed most
+# recently and GREEN, while the real gate ("ci") last completed EARLIER and RED. Needs a properly
+# upstream-tracked repo (unlike $PF above) so the NOT-PUSHED branch does not fire instead.
+N=$(mktemp -d); mkdir -p "$N/bin" "$N/root/candor"
+cat > "$N/bin/gh" <<'GHEOF'
+#!/bin/bash
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "run list")    printf '%s\n' "$GH_RUNS" ;;
+  *)             exit 0 ;;
+esac
+GHEOF
+chmod +x "$N/bin/gh"
+git -C "$N/root/candor" init -q
+git -C "$N/root/candor" branch -m main 2>/dev/null
+printf 'docs only\n' > "$N/root/candor/f.txt"
+git -C "$N/root/candor" add -A
+git -C "$N/root/candor" -c user.email=t@e -c user.name=t commit -qm init -q
+git init -q --bare "$N/bare.git"
+git -C "$N/root/candor" remote add origin "$N/bare.git"
+git -C "$N/root/candor" push -q origin main
+git -C "$N/root/candor" branch --set-upstream-to=origin/main main >/dev/null
+nonerun() { GH_RUNS="$1" PATH="$N/bin:$PATH" CANDOR_ROOT="$N/root" CI_NO_WAIT=1 PINS_ADVISORY=1 \
+    bash "$UMBRELLA/bin/release-preflight.sh" 0.99 0.99.0 2>&1; }
+
+# RED-shaped fixture: neither run's headSha matches this HEAD (fake shas), so the primary read is NONE
+# and this branch is what answers. "nightly-bump" is freshest and green; "ci" is the real gate and is
+# the one that failed, earlier.
+mixed="$(nonerun '[{"headSha":"aaa1111aaa1111aaa1111aaa1111aaa1111aaaa","conclusion":"success","status":"completed","workflowName":"nightly-bump","createdAt":"2026-08-26T10:00:00Z"},{"headSha":"bbb2222bbb2222bbb2222bbb2222bbb2222bbbb","conclusion":"failure","status":"completed","workflowName":"ci","createdAt":"2026-08-26T08:00:00Z"}]')"
+printf '%s' "$mixed" | grep -q "ci:failure" \
+  && ok "[10] NONE branch: a stale failing workflow is NOT masked by an unrelated fresher green one" \
+  || bad "[10] NONE branch: the real gate's failure did not surface — false clear reproduced: $mixed"
+printf '%s' "$mixed" | grep -q "repos green on HEAD" \
+  && bad "[10] NONE branch: printed the all-green summary over a genuinely failing workflow" \
+  || ok "[10] NONE branch: …and no all-green summary alongside the failure"
+
+# CONTROL: every workflow this repo has actually completed is green — must still pass and inform, not
+# gate. This is the ordinary docs-only-commit shape and must read exactly as it always has.
+allgreen="$(nonerun '[{"headSha":"aaa1111aaa1111aaa1111aaa1111aaa1111aaaa","conclusion":"success","status":"completed","workflowName":"nightly-bump","createdAt":"2026-08-26T10:00:00Z"},{"headSha":"bbb2222bbb2222bbb2222bbb2222bbb2222bbbb","conclusion":"success","status":"completed","workflowName":"ci","createdAt":"2026-08-26T08:00:00Z"}]')"
+printf '%s' "$allgreen" | grep -q "last known CI state (aaa1111) is green across every workflow" \
+  && ok "[10] NONE branch CONTROL: every workflow actually green — informational pass, names the anchor sha" \
+  || bad "[10] NONE branch CONTROL: an all-green repo did not pass cleanly: $allgreen"
+rm -rf "$N"
 
 say "7c. release-preflight.sh [11] — the conformance REUSE stamp cannot outrun the tree"
 # The stamp says "conformance was green at these SHAs", and a later run skips the 330-second suite when

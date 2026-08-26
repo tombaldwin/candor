@@ -60,6 +60,11 @@ jobs:
   plugin-verifier:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Downloads whole IDEs to verify against, so it is naturally slower than `build` — but it still
+    # needs a deadline of its own. Found missing by code review: release-preflight [7b] checked the
+    # FILE, not the job, and `build`'s timeout-minutes was enough to satisfy a file-level grep while
+    # this job had none. [7b] now checks per job; this is the timeout that check was blind to.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

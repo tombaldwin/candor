@@ -538,24 +538,53 @@ else
   ok "no commit in the release range shows substitution damage"
 fi
 
-echo "[7b] every CI workflow declares a timeout"
+echo "[7b] every job in every CI workflow declares a timeout"
 # A workflow with no `timeout-minutes` inherits GitHub's SIX-HOUR default. On 2026-08-19 two hung for
 # 3h45m with no log output and were given a deadline — and their four siblings were not, so `ci.yml`
 # then hung for 54 minutes against an ~11-minute median, stalling this very gate ([10] reads CI green on
 # HEAD) while looking indistinguishable from a slow job. Fixing the workflows that failed and not the
 # ones beside them is the habit this family keeps finding in its own engines; this makes the omission
 # impossible to leave behind, because it asks EVERY file in EVERY repo rather than the ones that broke.
+#
+# PER JOB, not per file. The original check was `grep -q timeout-minutes "$wf"` — a STRING search over
+# the whole file, which is satisfied by ANY job declaring one. That is exactly the shape it missed:
+# candor's own jetbrains.yml has two jobs, `build` (timeout-minutes: 30) and `plugin-verifier` (none),
+# and the file-level grep matched on the first and never looked at the second. Found by code review, not
+# by this gate, on 2026-08-26. Reusable-workflow call jobs (a job whose body is `uses: ...`) are exempt:
+# GitHub does not accept `timeout-minutes` there — the deadline lives in the CALLED workflow instead.
 MISSING=""
-for r in $WFREPOS; do
-  for wf in "$ROOT/$r"/.github/workflows/*.yml; do
-    [ -e "$wf" ] || continue
-    grep -q "timeout-minutes" "$wf" || MISSING="$MISSING $r/$(basename "$wf")"
+if command -v python3 >/dev/null 2>&1; then
+  for r in $WFREPOS; do
+    for wf in "$ROOT/$r"/.github/workflows/*.yml "$ROOT/$r"/.github/workflows/*.yaml; do
+      [ -e "$wf" ] || continue
+      m="$(python3 - "$wf" <<'PYEOF' 2>/dev/null
+import sys, yaml
+path = sys.argv[1]
+try:
+    doc = yaml.safe_load(open(path)) or {}
+except Exception as e:
+    print("PARSE_ERROR: " + str(e))
+    sys.exit(0)
+jobs = doc.get("jobs") or {}
+missing = [name for name, job in jobs.items()
+           if isinstance(job, dict) and "uses" not in job and "timeout-minutes" not in job]
+print(" ".join(missing))
+PYEOF
+)"
+      case "$m" in
+        PARSE_ERROR:*) MISSING="$MISSING $r/$(basename "$wf")[unparseable — ${m#PARSE_ERROR: }]" ;;
+        "") : ;;
+        *) for j in $m; do MISSING="$MISSING $r/$(basename "$wf"):$j"; done ;;
+      esac
+    done
   done
-done
-if [ -n "$MISSING" ]; then
-  bad "workflow(s) with no \`timeout-minutes\` — a hang there blocks a release for up to 6 hours and reads as slow:$MISSING"
 else
-  ok "every workflow in every released repo declares a timeout"
+  MISSING="(skipped — no python3 on PATH, cannot parse job-level YAML)"
+fi
+if [ -n "$MISSING" ]; then
+  bad "job(s) with no \`timeout-minutes\` — a hang there blocks a release for up to 6 hours and reads as slow:$MISSING"
+else
+  ok "every job in every workflow in every released repo declares a timeout"
 fi
 
 echo "[8] release.sh and release-verify.sh name the same repos"
@@ -765,18 +794,32 @@ else
         if ! git -C "$ROOT/$r" merge-base --is-ancestor HEAD "@{u}" 2>/dev/null; then
           ci_bad=1; bad "$r: HEAD ($head_sha) is NOT PUSHED — nothing could have run"
         else
-          last="$(cd "$ROOT/$r" && gh run list --limit 15 --json headSha,conclusion,status \
-            | python3 -c "
-import json,sys
-runs=json.load(sys.stdin)
-done=[x for x in runs if x['conclusion']]
-print('%s %s' % (done[0]['headSha'][:7], done[0]['conclusion']) if done else 'none none')" 2>/dev/null)"
-          set -- $last
-          if [ "${2:-none}" = "success" ]; then
-            info "$r: HEAD matched no workflow path filter (pushed, docs-only); last CI run $1 green"
-          else
-            ci_bad=1; bad "$r: HEAD triggered no workflow AND the last completed run ($1) was ${2:-unknown}"
-          fi
+          # THIRD SIBLING OF THE SAME FILTER, so it now shares bin/_ci_verdict.py too rather than
+          # re-deriving a third `gh run list` reading — but the QUESTION differs from the other two call
+          # sites, which is why it passes "" instead of $head_sha. The other two ask "is THIS commit's
+          # own CI green"; there is no such commit here — HEAD triggered nothing — so this asks the
+          # informational fallback instead: "is this repo's last known CI state green at all". The old
+          # version answered that by taking element 0 of `gh run list` unfiltered — the single freshest
+          # completed run, of WHATEVER workflow happened to finish most recently. That mixes unrelated
+          # signals across a repo's several workflows (push CI, weekly cron, nightly bump): a stale,
+          # unrelated workflow finishing green after the real CI workflow broke would report "last CI run
+          # green" over a genuinely broken build. `_ci_verdict.py` with an empty head dedupes every
+          # workflow's own latest completed run instead, so one green straggler cannot stand in for a red
+          # one elsewhere. See _ci_verdict.py's header for the full argument.
+          raw="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null)"
+          verdict="$(printf '%s' "$raw" | python3 "$HERE/_ci_verdict.py" "" 2>/dev/null)"
+          # The anchor sha is DISPLAY ONLY — which commit was freshest overall, so the message still names
+          # something concrete. It plays no part in the verdict above, which judges every workflow.
+          anchor="$(printf '%s' "$raw" | python3 -c "
+import json, sys
+runs = json.load(sys.stdin)
+print(runs[0]['headSha'][:7] if runs else 'none')" 2>/dev/null)"
+          case "$verdict" in
+            OK) info "$r: HEAD matched no workflow path filter (pushed, docs-only); last known CI state ($anchor) is green across every workflow" ;;
+            NONE) ci_bad=1; bad "$r: HEAD triggered no workflow, and this repo has no completed CI run to fall back on at all" ;;
+            ERR|"") ci_bad=1; bad "$r: HEAD triggered no workflow, and CI status could not be read" ;;
+            BAD*) ci_bad=1; bad "$r: HEAD triggered no workflow AND the last known state is not all green — ${verdict#BAD }" ;;
+          esac
         fi
         ;;
       ERR|"") ci_bad=1; bad "$r: could not read CI status — treat as NOT verified";;

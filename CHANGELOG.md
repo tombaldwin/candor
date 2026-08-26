@@ -83,6 +83,44 @@ check reporting success while the thing it checks did not happen:
 the third is exercised by hand (RED then GREEN transcripts), since this repo owns no fixture harness for
 GitHub Actions trigger/ref logic.
 
+A second code-review pass, over the umbrella specifically, found three more:
+
+- **`release-preflight [7b]` ("every CI workflow declares a timeout") checked the FILE, not the job.**
+  It was `grep -q timeout-minutes "$wf"` — a string search over the whole workflow — so a file with TWO
+  jobs, one carrying `timeout-minutes` and one not, matched on the first and never looked at the second.
+  `.github/workflows/jetbrains.yml`'s `plugin-verifier` job had no timeout while `build` did, and [7b]
+  reported the file clean the whole time — exactly the class of hang [7b] exists to catch, sitting
+  behind the gate meant to catch it. `plugin-verifier` now has `timeout-minutes: 60`. [7b] now parses
+  each workflow's `jobs:` map (`yaml.safe_load`) and checks every job individually, exempting jobs that
+  call a reusable workflow (`uses:` at job level), which GitHub does not accept `timeout-minutes` on.
+  Re-running the tightened check against the family as it stands surfaced the same gap in candor-rust's
+  `ci.yml` (`stable-crates-macos`, no timeout) — not this repo's to fix, flagged for its own release.
+
+- **`release-verify.sh` printed `urls[@]: unbound variable` to stderr on a scoped cut whose artifact-URL
+  array is legitimately empty** (`--only candor-spec`, `--only candor-ts`, `--only candor-agents`, or
+  `--only candor-rust` alone). macOS ships bash 3.2.57, where `set -u` treats expanding every element of
+  a truly empty array (`"${urls[@]}"`) as unbound; bash 4.4+ does not. The exit code was already correct
+  — this was pure noise, on the one script whose whole job is deciding whether a release reached users.
+  Fixed with the portable `"${urls[@]:-}"` form already used elsewhere in this family (`changelog-lag.sh`).
+  Swept the rest of `bin/` for the same unguarded pattern: every other `${arr[@]}` site either uses a
+  fixed non-empty literal or is already behind a `${#arr[@]} -gt 0` guard.
+
+- **`release-preflight [10]`'s NONE branch — the docs-only, no-workflow-triggered path — took the single
+  freshest completed run across ALL of a repo's workflows as its informational fallback, unfiltered by
+  workflow name.** That mixes unrelated signals: a repo carries workflows on different triggers (push,
+  weekly cron, nightly), and whichever one happened to finish most recently decided the verdict for every
+  other one too. A stale, unrelated workflow finishing green after the real CI workflow broke would report
+  "last CI run green" over a genuinely broken build. `bin/_ci_verdict.py` (the shared dedupe already
+  built for [10]'s other two call sites) now accepts an empty head SHA to mean "no commit to match — judge
+  every workflow's own latest completed run instead," so one green straggler can no longer stand in for a
+  red one elsewhere; the anchor commit shown in the message is still the single freshest run, but display
+  only, playing no part in the verdict.
+
+`bin/release-test.sh` gained 6 more assertions for these (`release-test: OK — 211 assertions`), including
+a fixture reproducing the exact jetbrains.yml two-job shape and one reproducing a stale-failure-masked-by-
+a-fresher-unrelated-success NONE-branch verdict, each shown failing against the pre-fix script and passing
+after.
+
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
 - **`release-preflight` [10] now takes the LATEST run per workflow, not every run.** A superseded

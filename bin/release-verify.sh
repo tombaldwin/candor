@@ -230,7 +230,14 @@ if [ "${#oos_urls[@]}" -gt 0 ]; then
     oos "not this cut's artifact — ${u##*/} at $(printf '%s' "$u" | grep -oE '/v[0-9]+\.[0-9]+\.[0-9]+/' | tr -d /)"
   done
 fi
-for u in $(printf '%s\n' "${urls[@]}" | sort -u); do
+# `${urls[@]:-}` and not `${urls[@]}`: on a scoped cut (`--only candor-spec`, `--only candor-ts`,
+# `--only candor-agents`, or `--only candor-rust` alone) EXPECT_URLS stays 0 and this array is legitimately
+# never appended to. macOS ships bash 3.2.57, where `set -u` treats expanding ALL elements of a truly
+# empty array as an unbound variable (bash 4.4+ does not) — `urls[@]: unbound variable` on stderr, on the
+# one script whose whole job is deciding whether a release reached users. The exit code was already
+# correct; this was pure noise that trains an operator to stop reading this script's stderr. `:-` makes
+# an empty array expand to nothing, on every bash this project runs on.
+for u in $(printf '%s\n' "${urls[@]:-}" | sort -u); do
   # A URL derived from a pin file must ALSO name the version under verification. Checking only that it
   # RESOLVES lets a stale pin pass green: verifying 0.99.0 while jbang still points at v0.24.0 fetches a
   # real, downloadable, WRONG jar. Resolving is necessary, not sufficient — the artifact has to be the one

@@ -10,6 +10,12 @@ keeps its own.
 
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
+- **Cross-repo pins move to 0.33.0.** Until they do the release is inert: `candor update` fetches
+  `releases/download/v$ENGINE_PIN_*`, `cargo install --version`, and `npx candor-ts@$ENGINE_PIN_TS`,
+  so brew, jbang, `adopt/` and both IDE plugins keep serving the previous line however many
+  artifacts are published. `release.sh` step 7 refuses to cut the umbrella until `ENGINE_PIN`
+  names this version, because the brew tarball carries the pin.
+
 - **THE FLOOR MOVES TO 0.33 — `scannedUnder`, and a gate that refuses a peek it did not commission.**
   `excluded[].peeked: true` was only ever true *relative to the deny set the producer held* — ⟨0.29⟩
   bounds the peek to effects that policy DENIES — and the report never recorded what that set was. A

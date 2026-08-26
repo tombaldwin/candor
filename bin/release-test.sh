@@ -1085,6 +1085,51 @@ printf '%s' "$green" | grep -q "repos green on HEAD" \
 printf '%s' "$green" | grep -q "CI still unfinished" \
   && bad "[10] CONTROL: reported a completed success as unfinished" \
   || ok "[10] CONTROL: …and no spurious unfinished line"
+
+# DEFECT (2026-08-26 code review): [10]'s per-workflow dedupe sorted duplicate runs by `createdAt`, which
+# `gh` reports at WHOLE-SECOND granularity. Python's stable sort left same-second ties in `gh`'s own
+# (newest-first) order, and the "last write wins" merge that followed then picked whichever of the tied
+# pair `gh` listed SECOND — not whichever was newest. Swapping the two objects in the input flipped the
+# verdict over identical facts. None of the assertions above exercise two runs sharing a workflowName at
+# all, so this had zero coverage. Fixed by adopting bin/ci-watch.sh's proven rule instead of re-deriving
+# one: never re-sort, trust `gh`'s own order, keep the FIRST occurrence per workflow (bin/_ci_verdict.py).
+#
+# Distinct timestamps: two `ci` runs, no tie. The genuinely latest one (listed first, per gh's contract)
+# is green; a stale duplicate behind it failed. The stale one must not resurrect a red verdict.
+distinct="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
+printf '%s' "$distinct" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe: distinct timestamps — the latest (listed-first) run wins over a stale duplicate" \
+  || bad "[10] dedupe: a stale duplicate behind the real latest run poisoned the verdict"
+printf '%s' "$distinct" | grep -q "ci:failure" \
+  && bad "[10] dedupe: the stale duplicate's failure leaked into the verdict" \
+  || ok "[10] dedupe: …and the stale duplicate's failure did not leak through"
+
+# Same-second tie, order 1: the genuinely-newest run (a failure) is listed FIRST, as gh would list it.
+# This is the exact repro: both runs share one createdAt second. The failure must be reported — this is
+# the "genuinely-latest FAILURE hidden" shape from the defect report.
+tie1="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$tie1" | grep -q "ci:failure" \
+  && ok "[10] dedupe: same-second tie, failure-first order — the failure is caught, not hidden" \
+  || bad "[10] dedupe: same-second tie hid a genuinely-latest failure (order: failure, success)"
+printf '%s' "$tie1" | grep -q "repos green on HEAD" \
+  && bad "[10] dedupe: same-second tie printed the all-green summary over a real failure" \
+  || ok "[10] dedupe: …and no all-green summary alongside it"
+# Same-second tie, order 2: the SAME two facts, objects swapped. The genuinely-newest run (now success,
+# listed first) must produce green — proving the verdict follows gh's listed order in BOTH directions
+# rather than a fixed "whichever is second" bug that reports the same wrong answer regardless of order.
+tie2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$tie2" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe: same-second tie, swapped order — success-first now reports green" \
+  || bad "[10] dedupe: swapping the tied objects did not flip the verdict with the facts"
+printf '%s' "$tie2" | grep -q "ci:failure" \
+  && bad "[10] dedupe: swapped order still reported the superseded failure" \
+  || ok "[10] dedupe: …and the superseded failure does not leak through"
+
+# CONTROL: distinct workflow NAMES (no duplicates at all) must not be merged or dropped by the dedupe.
+multi="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"nightly\"}]")"
+printf '%s' "$multi" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe CONTROL: two distinct workflows, both green, stays green" \
+  || bad "[10] dedupe CONTROL: distinct (non-duplicate) workflow names broke the verdict"
 rm -rf "$PF"
 
 say "7c. release-preflight.sh [11] — the conformance REUSE stamp cannot outrun the tree"
@@ -1169,12 +1214,17 @@ say "7d. release-verify.sh — a DRAFT release must be caught, not just a missin
 # Real `release-verify.sh` run directly here — `--only candor-spec` reaches the check with a single stubbed
 # `gh` and no real network call (crates.io/npm/artifact-curl are all out of scope for that one repo).
 PV="$(mktemp -d)"; mkdir -p "$PV/bin" "$PV/root/candor/bin"
+# ONE combined `gh release view --json tagName,isDraft -q '...'` call now, not two adjacent ones (see
+# release-verify.sh). The stub does not run real jq — it emits exactly the shape the real -q filter
+# produces ("tagName|true" / "tagName|false"), so the test is over release-verify.sh's OWN branching, not
+# over jq. GH_FAIL simulates the call failing OUTRIGHT (network blip / secondary rate limit / 409 / 403 —
+# the incident that motivated the draft check in the first place) rather than returning a value.
 cat > "$PV/bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then
-  tag="$3"; json=""; prev=""
-  for a in "$@"; do [ "$prev" = "--json" ] && json="$a"; prev="$a"; done
-  case "$json" in tagName) echo "$tag" ;; isDraft) echo "${GH_DRAFT:-false}" ;; esac
+  [ "${GH_FAIL:-}" = "1" ] && exit 1
+  tag="$3"
+  echo "${tag}|${GH_DRAFT:-false}"
   exit 0
 fi
 [ "$1" = "auth" ] && exit 0
@@ -1182,7 +1232,7 @@ exit 1
 GHEOF
 chmod +x "$PV/bin/gh"
 printf 'ENGINE_PIN="0.33.0"\n' > "$PV/root/candor/bin/candor"
-pvrun() { GH_DRAFT="$1" PATH="$PV/bin:$PATH" CANDOR_ROOT="$PV/root" \
+pvrun() { GH_DRAFT="$1" GH_FAIL="${2:-}" PATH="$PV/bin:$PATH" CANDOR_ROOT="$PV/root" \
             bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-spec 2>&1; }
 green="$(pvrun false)"
 printf '%s' "$green" | grep -q "✔ candor-spec v0.33" \
@@ -1199,6 +1249,32 @@ printf '%s' "$red" | grep -q "gh release edit v0.33 -R tombaldwin/candor-spec --
 printf '%s' "$red" | grep -q "release-verify: 1 check(s) FAILED" \
   && ok "…and the run as a whole is RED, not a note beside a green verdict" \
   || bad "a draft release did not fail the run"
+
+# DEFECT (code review, 2026-08-26): the OLD code read tagName and isDraft as two separate gh calls. If
+# the second one failed, `draft` came back empty — empty is not "true" — so the `else` branch fired and
+# printed `ok`. A transient failure on the call that exists to catch drafts was read as "confirmed not a
+# draft". Proven here by making the gh call fail OUTRIGHT (exit 1, no output) rather than by disagreeing
+# about a value — the shape a real 409/403 takes.
+failed="$(pvrun false 1)"
+printf '%s' "$failed" | grep -q "release-verify: OK" \
+  && bad "[gh releases] a FAILED gh call was read as a confirmed non-draft release — the exact defect" \
+  || ok "a gh call that fails outright does NOT silently pass as a confirmed non-draft"
+printf '%s' "$failed" | grep -q "could not read release info for v0.33" \
+  && ok "…and says WHY: the call itself failed, not that anything was confirmed" \
+  || bad "a failed gh call produced no diagnostic naming the cause"
+printf '%s' "$failed" | grep -q "release-verify: 1 check(s) FAILED" \
+  && ok "…and the run as a whole is RED over the failed call, not a note beside a green verdict" \
+  || bad "a failed gh call did not fail the run"
+
+# THE THIRD STATE: the call SUCCEEDS (tagName matches) but isDraft itself resolves to neither true nor
+# false — kept distinct from "the call failed outright" above, so the diagnostic names the right cause.
+unreadable="$(pvrun bogus)"
+printf '%s' "$unreadable" | grep -q "release-verify: OK" \
+  && bad "an unreadable isDraft value was read as a confirmed non-draft release" \
+  || ok "an unreadable isDraft value does NOT silently pass as a confirmed non-draft"
+printf '%s' "$unreadable" | grep -q "draft status is UNREADABLE" \
+  && ok "…and is named as UNREADABLE, distinct from a failed call or a real draft" \
+  || bad "an unreadable isDraft value produced no distinct diagnostic"
 rm -rf "$PV"
 
 say "7. changelog-lag.sh — preflight [5b]"
@@ -1459,9 +1535,15 @@ the floor cut.
   mkdir -p "$F/candor-spec/conformance"
   printf '#!/usr/bin/env bash\necho "conformance: OK (stub) MATCH"\n' > "$F/candor-spec/conformance/run.sh"
   chmod +x "$F/candor-spec/conformance/run.sh"
+  # _ci_verdict.py MUST travel with release-preflight.sh: [10] execs it as "$HERE/_ci_verdict.py" (this
+  # fixture's OWN bin/, not the real one), so leaving it out doesn't skip the CI check quietly — it makes
+  # every verdict read ERR ("could not read CI status — treat as NOT verified") and fails the whole cut.
+  # That is a real defect this harness caught on itself the first time this file changed: a missing
+  # sibling script reads exactly like "CI status unknown", not like "test fixture incomplete".
   cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" \
      "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/release-verify.sh" "$UMBRELLA/bin/release-preflight.sh" \
-     "$UMBRELLA/bin/changelog-lag.sh" "$UMBRELLA/bin/_release_notes.sh" "$F/candor/bin/"
+     "$UMBRELLA/bin/changelog-lag.sh" "$UMBRELLA/bin/_release_notes.sh" "$UMBRELLA/bin/_ci_verdict.py" \
+     "$F/candor/bin/"
   mkdir -p "$F/remotes"
   for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
     ( cd "$F/$r" && /usr/bin/git init -q && /usr/bin/git add -A \

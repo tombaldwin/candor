@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
+- **`release-preflight` [10] now takes the LATEST run per workflow, not every run.** A superseded
+  run was outvoting its own successor. A GitHub Actions stall during this cut created three
+  tag-triggered runs and never expanded them into jobs — zero jobs, `updated_at` equal to
+  `created_at`, uncancellable (cancel *and* force-cancel return 409 "has not been queued yet")
+  and undeletable (403; the API will not delete a run that is not completed). candor-ts's publish
+  was re-run via `workflow_dispatch` and succeeded — npm had 0.33.0 — yet [10] read the corpse
+  beside it and blocked the umbrella cut with no way to clear it. Both copies of the filter carry
+  the fix: the initial read and the post-wait re-check.
+
 - **Cross-repo pins move to 0.33.0.** Until they do the release is inert: `candor update` fetches
   `releases/download/v$ENGINE_PIN_*`, `cargo install --version`, and `npx candor-ts@$ENGINE_PIN_TS`,
   so brew, jbang, `adopt/` and both IDE plugins keep serving the previous line however many

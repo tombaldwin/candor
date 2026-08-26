@@ -121,6 +121,19 @@ a fixture reproducing the exact jetbrains.yml two-job shape and one reproducing 
 a-fresher-unrelated-success NONE-branch verdict, each shown failing against the pre-fix script and passing
 after.
 
+- **`BACKLOG.md` curated against the ⟨0.33⟩ cut.** Closed 9 stale entries against the repos — the
+  ⟨0.33⟩/⟨0.30⟩ emission split (root cause corrected: a code defect in two engines, not a fixture gap),
+  `whatif`'s untested MCP/LSP surfaces, the ⟨0.31⟩ release hold (superseded — v0.31/v0.32 both released,
+  ⟨0.33⟩ shipped), the unevaluable-target convention question (⟨0.31⟩ ruled it), the ⟨0.32⟩ unread-code
+  rung (rust/ts/swift now shipped, not just java), R54/R55, and netPartners' stale "three ports open"
+  note — plus two found stale while sweeping and not on the filing list: a genuine fail-open (the
+  ambiguous-edge false green, now fixed four-way and PART-63-pinned) and the policy-scope exact-segment
+  matcher (PART 64). Filed 7 new items, incl. a `[DECISION]` on `receipt`'s TSV caveat shape and the
+  ⟨0.34⟩ report-trust design (refusal message names the producer's spec version; opt-in
+  `min-report-spec`, with a blanket version floor explicitly ruled out). Re-prioritised by: fail-open
+  first, then a gate that cannot fail or passes by not looking, then user-visible correctness, then
+  noise/ergonomics.
+
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
 - **`release-preflight` [10] now takes the LATEST run per workflow, not every run.** A superseded

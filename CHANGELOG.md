@@ -32,13 +32,14 @@ keeps its own.
 
   **THE REMEDY: re-scan with a 0.33 engine under the SAME policy the gate applies** — not merely *a*
   policy, which is the loose reading this rung exists to close. It discharges the cost in full: **265 of
-  265** pairs green again, no residual tax and nothing to suppress. `adopt/candor.yml` and the digest
-  workflow already scan and gate in ONE run under ONE policy, so a repo that adopted candor through
-  those is **unaffected** — producer and consumer are the same run, so `P ⊆ P` holds by construction.
-  What is affected is the shape `gate --report` exists for: a report produced once and gated later, or
-  elsewhere. Legitimate narrowing is not over-charged either — **62 pairs** whose producer's deny set
-  genuinely covers the gate's took **0 refusals**, and over the full cross-policy sweep of **918
-  gates**, **529 refuse correctly and none fails open**.
+  265** pairs green again, no residual tax and nothing to suppress. `adopt/candor.yml` scans, writes
+  `--gate-json` and enforces the policy in ONE run — its own comment says so in as many words — so a
+  repo that adopted candor through the drop-in workflow is **unaffected**: producer and consumer are
+  the same run, so `P ⊆ P` holds by construction. What is affected is the shape `gate --report` exists
+  for: a report produced once and gated later, or elsewhere, which is the supply-chain route this rung
+  found failing open. Legitimate narrowing is not over-charged either — **62 pairs** whose producer's
+  deny set genuinely covers the gate's took **0 refusals**, and over the full cross-policy sweep of
+  **918 gates**, **529 refuse correctly and none fails open**.
 
   **The operators this hits are the ones who followed ⟨0.32⟩'s own remedy** — *scan with the policy* —
   because that is exactly what puts a `peeked: true` class into a report. They migrated one rung ago and

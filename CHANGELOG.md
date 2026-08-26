@@ -46,6 +46,33 @@ keeps its own.
   are being asked to migrate again, for a hole that remedy did not close. The wording was the defect and
   the wording is the fix. It fails **CLOSED**.
 
+- **`release-preflight` [2]: the rung you just shipped is the next cut's PRIOR FLOOR.** Staging 0.33.0
+  turned [2]/[2b] red on 13 lines and not one was a bump-miss — every one was written *during* the ⟨0.32⟩
+  rung (the ts measurement notes, the SARIF identity fixtures, the two comments quoting the aligned
+  spelling the grammar was widened for). That is structural rather than bad luck: a rung's own
+  measurement notes and fixtures name the floor they were taken at, and one release later that floor is
+  the one [2] hunts for. So the check that exists to catch a bump-miss greets every cut with a pile of
+  correct history — the "a fixture flagged as a defect trains the reader to skim the list" failure its
+  own comment already names.
+
+  Two classifier gaps, both MEASURED over all seven repos rather than argued. **`FIXTURE_PATH_RE` reached
+  `test-foo.sh` and stopped at the SECOND hyphen**, so `integrations/github/test-candor-sarif.sh` was not
+  a fixture path. That file builds report envelopes *and* gate verdicts side by side; `CONSTRUCT_RE` knows
+  the report shape (`{"candor":`) and not the verdict shape (`{"spec":"0.32","ok":false`), so 9 lines were
+  called a bump-miss and 35 beside them were not — decided by which envelope a regex happened to know. Its
+  `"spec":"0.7"` and `"spec":"0.8"` fixtures have ridden out every bump since July unflagged, which is the
+  control: they are quiet only because they are not the *immediately*-prior floor. Widening is the
+  SILENCING direction, so it was measured — exactly those 9 lines move, in that one file, nothing else
+  family-wide — and the fence still holds, since ADVISORY requires NOT an assertion. Falsified against
+  `assert_eq` and the `ok` helper in that same file, plus a shipped constant, a README claim and an
+  `adopt/` pin, all of which stay loud. **And `ASSERTION_RE` could not see this family's OWN assertion
+  verb**: the umbrella's shell harnesses assert with a helper named `ok`, anchored here as `<lineno>:ok "`
+  because bare `ok` is a substring of `token`, `look` and `broken`. It reclassifies nothing today — a hole
+  closed before it is stepped in, in the advisory→LOUD direction, which costs noise and never silence.
+
+  The four remaining lines were the artifact's to fix rather than the check's, using the marker the family
+  already has: `(spec X.Y, informative)`. After both halves: 0 loud, 45 advisory.
+
 - **`bin/spec-bump.sh` now rewrites the doc and packaging literals by machine, and NAMES the pins it
   must not touch.** The spec version was written by hand in 35 claim occurrences across 19 documents in
   the seven repos, in what turned out to be FOUR spellings — the fourth, a version behind a markdown

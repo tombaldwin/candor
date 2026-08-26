@@ -3168,7 +3168,46 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   third door on the candor index; label `gains-waitlist` on tombaldwin/candor = the count). **GATE 1 NOW
   OPEN (Tom's, evidence-based):** do waitlist issues arrive, and are they JVM/enterprise (defensible →
   build P2) or npm-only (wedge only → stop)? **P2** (only past Gate 1) the live runner + continuous-
-  monitoring service on the already-accruing corpus → GATE 2 (the commercial decision, priced to pull).
+  monitoring service on the already-accruing corpus → GATE 2 (the commercial decision, priced to pull). **GATE 1 MEASURED 2026-08-26 (from `~/git/web`): 0 issues on label `gains-waitlist`, 6 weeks after P1 shipped — no signal either way yet, and the honest read is that the site's external traffic (~6 arrivals/day) is too thin to have TESTED the question rather than answered it. Distribution, not the probe, is the confound.**
+
+- **Reachability triage for known vulnerabilities (OSV × the callgraph).** Not CVE matching (commodity:
+  Dependabot/Trivy/Grype/`npm audit` all do inventory→OSV free, and shipping that would drag candor into a
+  saturated market) — the differentiated half is **"and nothing you write reaches it."** Structurally this is
+  the *existing* engine with the sink set swapped: candor already computes transitive reach to
+  Net/Fs/Db/Proc sinks through dependency bytecode (`--deps` classpath walking), so `reachable`/`callers`/
+  `impact` are reused largely as-is with "the vulnerable library" as the sink. Adjacent to but distinct from
+  `gains` above: `gains` diffs effects across a version PAIR (what a bump added); this maps a PUBLISHED
+  ADVISORY onto the callgraph (what you can ignore). Shared substrate — same corpus/cache, same JVM-first
+  no-incumbent thesis. Output framed as **prioritisation, never a safety verdict**: "13 CVEs, 9 unreached."
+  **Evidence gathered 2026-08-26 (in `~/git/web`, from the java-analyzer spec work):** (1) OSV.dev
+  `POST /v1/querybatch` resolves a whole estate in ONE call, no key/limit/cost — 41 Maven coordinates from
+  a 618k-line Spring system returned 7 vulnerable in ~1s; free at the point of use, so the tool keeps zero
+  marginal run cost. (2) **THE CONSTRAINT — Maven advisories carry no symbol data.** Go's do
+  (`GO-2022-0969` → `ecosystem_specific.imports[].symbols` names the exact vulnerable functions, which is
+  how govulncheck is precise); three Maven GHSAs checked (`GHSA-5mg8-w23w-74h3`, `GHSA-4265-ccf5-phj5`,
+  `GHSA-2rmj-mq67-h97g`) carry only `source`. So *"do you call the vulnerable METHOD"* is unanswerable on
+  the JVM today — the upstream data does not exist. What IS answerable from the graph we already build:
+  **package/class-level reach** — "does anything you write reach this library at all", which still kills the
+  common false positives (test-only classpath, transitive deps nothing calls). Weaker than Go-grade,
+  materially better than "you have Guava 31, panic." Revisit if Maven advisories ever gain symbols.
+  **(3) The honesty problem is already solved by doctrine.** Static callgraphs miss reflection, DI, Spring
+  proxies, ServiceLoader, deserialization — and Spring is MADE of those, so "no static call path" must never
+  be reported as "not exploitable." candor-spec **§3.2** already governs exactly this: *an advisory verb may
+  be LESS certain than the gate, never MORE.* This ships as an advisory verb under the existing disclosure
+  rules, or it does not ship. Unknown-heavy scans must disclose, as elsewhere.
+  **Why candor and not a script:** the free tools structurally cannot copy this — they have no callgraph.
+  Of the three JVM legs (effect gate / migration analysis / this), it is the only one with no free
+  equivalent. **STATUS: unbuilt, unapproved — idea + verified feasibility only.** Open questions for a
+  decision: does it dilute the "architectural boundaries" positioning by wandering into security-scanner
+  territory, or does it widen the JVM wedge with a capability nobody else has? Is it a candor verb, a
+  candor-gains sibling (shared corpus), or an input to the migration report (`~/git/web
+  docs/java-analyzer-spec.md`), where "which CVEs actually matter" sharpens the effort gate?
+  **Sequencing caveat (2026-08-26):** `gains` Gate 1 above is still open and measured **0**
+  waitlist issues today, 6 weeks in — so do not read this as demand evidence. The asks differ
+  (gains = details up front for a thing that does not exist; this = value first, contact after),
+  but the shared bottleneck is DISTRIBUTION, not funnel design. The one real argument for
+  building it: unlike a waitlist page, a working analyzer is postable — it is the first candor
+  surface that is itself distribution.
 
 ### Disclosure-refinement track (opened 2026-07-16 — from the academic referee pass)
 

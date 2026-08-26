@@ -26,8 +26,20 @@
 # ones that could drift.
 #
 # INPUT (stdin): a JSON array from `gh run list --json headSha,conclusion,status,workflowName,createdAt`.
-# ARGV[1]: the head SHA being judged.
+# ARGV[1]: the head SHA being judged, or "" (see below).
 # OUTPUT (one line): ERR | NONE | OK | BAD <workflow:conclusion-or-status>[, ...]
+#
+# ARGV[1] == "" — THE THIRD CALL SITE (2026-08-26 code review): [10]'s NONE branch (a docs-only commit
+# that triggered no workflow at all) used to ask a DIFFERENT question with its own inline python: not
+# "did HEAD's own CI pass" but "what is this repo's last known CI state", by grepping `gh run list` and
+# taking element 0 — the single freshest completed run, of WHATEVER workflow happened to finish most
+# recently, unfiltered by workflow name. That mixes unrelated signals: a repo carries several workflows
+# on different triggers (push, weekly cron, nightly), and whichever one happens to have completed most
+# recently decides the verdict for ALL of them. A stale, unrelated workflow finishing green after the
+# real CI workflow broke would report "last CI run green" over a genuinely broken build — a false clear
+# in exactly the direction this family's own rule calls the cardinal sin. An empty head means "no commit
+# to match against" — skip the headSha filter and dedupe every workflow's own latest completed run
+# instead, same rule as a real commit, so ONE straggler cannot stand in for the whole repo either way.
 import json
 import sys
 
@@ -39,7 +51,7 @@ except Exception:
     print("ERR")
     raise SystemExit
 
-mine = [x for x in runs if x.get("headSha") == head]
+mine = runs if head == "" else [x for x in runs if x.get("headSha") == head]
 if not mine:
     print("NONE")
     raise SystemExit

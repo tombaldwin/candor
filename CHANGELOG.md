@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (unreleased)
+## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
 - **THE FLOOR MOVES TO 0.33 — `scannedUnder`, and a gate that refuses a peek it did not commission.**
   `excluded[].peeked: true` was only ever true *relative to the deny set the producer held* — ⟨0.29⟩
@@ -59,7 +59,7 @@ keeps its own.
   found every declaration and every gated document at 0.33, nothing left at 0.32, and no fixture or
   backward-compatibility input swept.
 
-## 2026-08-25 — the umbrella's own workflows can be run locally, and the ladder has a dress rehearsal (unreleased)
+## 2026-08-25 — the umbrella's own workflows can be run locally, and the ladder has a dress rehearsal (released 2026-08-26 as 0.33.0)
 
 - **`bin/verify-umbrella.sh` — what `bin/verify-local.sh` is for the engines, for this repo.**
   `verify-local.sh` walks the engine repos; nothing ran candor's own three push-triggered workflows, and
@@ -117,7 +117,7 @@ keeps its own.
 - **`just verify-umbrella`, `just verify-engines`, `just rehearse`** — the recipes, so the commands are
   discoverable rather than remembered.
 
-## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door (unreleased)
+## 2026-08-25 — `ENGINE_PIN` splits per engine, so a one-engine patch reaches the front door (released 2026-08-26 as 0.33.0)
 
 - **`bin/candor` now carries a per-engine pin beside the family one.** `ENGINE_PIN` was a single value
   read for the candor-java release tag, `cargo install --version`, `npx candor-ts@…` AND the candor-swift
@@ -215,7 +215,7 @@ keeps its own.
   since GitHub releases are checked per tag), but per-engine pins make the case likelier and it should
   move to a per-engine comparison next.
 
-## 2026-08-25 — the gates that only ran at release time now run on `main` (unreleased)
+## 2026-08-25 — the gates that only ran at release time now run on `main` (released 2026-08-26 as 0.33.0)
 
 - **candor-java's native/jar parity gate and candor-swift's release-configuration build moved off the
   release trigger.** Both are engine-repo changes (candor-java `ebe40af`, candor-swift `8c62b5a`); what

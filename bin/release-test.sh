@@ -1160,6 +1160,47 @@ printf '%s' "$(pcrun)" | grep -q "conformance REUSED" \
   || bad "[11] CONTROL: refused to reuse across a changelog edit — nothing is licensed, so nothing is tested"
 rm -rf "$PC"
 
+say "7d. release-verify.sh — a DRAFT release must be caught, not just a missing one"
+# WHY THIS EXISTS. Deleting a git tag silently converts its GitHub Release to a draft, and a draft 404s
+# on EVERY asset download URL even though the API reports the asset itself `state=uploaded` — the release
+# LOOKS fine (`gh release view --json tagName` still returns the tag) and every consumer download fails
+# anyway. Measured on the 0.33.0 cut: candor-swift's tag was deleted and re-pushed to recover an orphaned
+# workflow run, the binary built and attached fine, and every `candor update` / direct download 404'd.
+# Real `release-verify.sh` run directly here — `--only candor-spec` reaches the check with a single stubbed
+# `gh` and no real network call (crates.io/npm/artifact-curl are all out of scope for that one repo).
+PV="$(mktemp -d)"; mkdir -p "$PV/bin" "$PV/root/candor/bin"
+cat > "$PV/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  tag="$3"; json=""; prev=""
+  for a in "$@"; do [ "$prev" = "--json" ] && json="$a"; prev="$a"; done
+  case "$json" in tagName) echo "$tag" ;; isDraft) echo "${GH_DRAFT:-false}" ;; esac
+  exit 0
+fi
+[ "$1" = "auth" ] && exit 0
+exit 1
+GHEOF
+chmod +x "$PV/bin/gh"
+printf 'ENGINE_PIN="0.33.0"\n' > "$PV/root/candor/bin/candor"
+pvrun() { GH_DRAFT="$1" PATH="$PV/bin:$PATH" CANDOR_ROOT="$PV/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-spec 2>&1; }
+green="$(pvrun false)"
+printf '%s' "$green" | grep -q "✔ candor-spec v0.33" \
+  && ok "an ordinary (non-draft) release passes" || bad "a normal release was not confirmed — control is broken"
+printf '%s' "$green" | grep -q "release-verify: OK" \
+  && ok "…and the run as a whole reports OK" || bad "a clean release did not report OK"
+red="$(pvrun true)"
+printf '%s' "$red" | grep -q "candor-spec: v0.33 is a DRAFT release" \
+  && ok "CONTROL: a draft release is caught and NAMED, not conflated with a missing one" \
+  || bad "a draft release passed release-verify — the exact 0.33.0 candor-swift failure would reach this check green"
+printf '%s' "$red" | grep -q "gh release edit v0.33 -R tombaldwin/candor-spec --draft=false" \
+  && ok "…and the remedy is the exact command to run, with the right repo and tag" \
+  || bad "the draft diagnostic has no actionable remedy"
+printf '%s' "$red" | grep -q "release-verify: 1 check(s) FAILED" \
+  && ok "…and the run as a whole is RED, not a note beside a green verdict" \
+  || bad "a draft release did not fail the run"
+rm -rf "$PV"
+
 say "7. changelog-lag.sh — preflight [5b]"
 # [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.
 # This asks whether the description stopped moving while the thing it describes kept going. Two shapes
@@ -1282,6 +1323,14 @@ done
 exec /usr/bin/git "$@"
 EOF
 printf '#!/usr/bin/env bash\necho "STUB preflight $*"\nexit 0\n' > "$CS/bin/release-preflight-stub.sh"
+# release.sh's new final step (`8. release-verify`) runs the real release-verify.sh, which resolves
+# curl/npm/gh against the real network — not hermetic, and not what these rows are about. Stubbed the
+# same way preflight already is: copied OVER the fixture's own copy of the file, never invoked directly.
+printf '#!/usr/bin/env bash\necho "STUB verify $*"\nexit 0\n' > "$CS/bin/release-verify-stub.sh"
+# A SEPARATE stub that FAILS, with a distinct exit code and a distinctive diagnostic — used once, below,
+# to prove release.sh forwards release-verify's own exit code and output rather than folding a verify
+# failure into a generic `die` (which always exits 1 and would make the two indistinguishable).
+printf '#!/usr/bin/env bash\necho "STUB verify $*"\necho "STUB verify: candor-swift v0.32.1 is a DRAFT release"\nexit 9\n' > "$CS/bin/release-verify-fail-stub.sh"
 chmod +x "$CS"/bin/*
 
 # --- the flag refuses what it cannot mean ----------------------------------------------------------
@@ -1502,6 +1551,7 @@ printf '%s' "$red" | grep -q "conformance FAILED" \
 # --- release.sh publishes the subset, and stops before the umbrella --------------------------------
 csfix "$CSF"
 cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 relout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"
@@ -1543,6 +1593,7 @@ printf '%s' "$relout" | grep -qE '^ +· candor/integrations/(vscode|jetbrains)/[
 # one-engine fix reached the front door only by republishing five engines with no functional change.
 csfix "$CSF"
 cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 # THE OPERATOR'S STEP 6, done by hand as the script instructs: java's pin moves, the family line does not.
 perl -pi -e 's/^ENGINE_PIN_JAVA=""/ENGINE_PIN_JAVA="0.32.1"/' "$CSF/candor/bin/candor"
 grep -q '^ENGINE_PIN_JAVA="0.32.1"$' "$CSF/candor/bin/candor" \
@@ -1576,6 +1627,7 @@ printf '%s' "$juout" | grep -qE '^ +· candor/bin/candor +ENGINE_PIN_(TS|RUST|SW
 # guard exists to prevent, one level up.
 csfix "$CSF"
 cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nnotes.\n' > "$CSF/candor/CHANGELOG.md"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
@@ -1591,6 +1643,7 @@ printf '%s' "$lagout" | grep -qE "(ts|rust|swift) is pinned to" \
 # 0.32.1 exists for java and for nothing else, so a ts pin at 0.32.1 404s on every user's machine.
 csfix "$CSF"
 cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 perl -pi -e 's/^ENGINE_PIN_JAVA=""/ENGINE_PIN_JAVA="0.32.1"/; s/^ENGINE_PIN_TS=""/ENGINE_PIN_TS="0.32.1"/' "$CSF/candor/bin/candor"
 grep -q '^ENGINE_PIN_TS="0.32.1"$' "$CSF/candor/bin/candor" \
   && ok "[fixture] the phantom ts pin landed" || bad "[fixture] ENGINE_PIN_TS was not set — the control below is vacuous"
@@ -1637,6 +1690,7 @@ printf '%s' "$pfr" | grep -q "release-preflight: OK" \
 # umbrella — the guard that stops brew hashing a tarball whose `candor update` fetches the old engines.
 csfix "$CSF"
 cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 famout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 2>&1)"
@@ -1653,6 +1707,47 @@ done
 printf '%s' "$famout" | grep -q "STUB cargo publish" \
   && ok "CONTROL: …and a family-wide cut still publishes the crates" \
   || bad "the default cut stopped publishing crates — the subset scoping leaked into the family form"
+
+# --- release.sh's own final step (8): it must RUN release-verify, not just print instructions --------
+# Regression pin for the wiring added after the 0.33.0 retrospective (candor-swift's DRAFT release
+# reached users because nothing but a separately-remembered `release-verify.sh` invocation would have
+# caught it). Before this, "DONE" was the last thing release.sh said and verification was homework left
+# to the operator; now it is step 8 and its result decides whether the run reports success.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+vout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"; vrc=$?
+printf '%s' "$vout" | grep -qE 'STUB verify 0\.32 0\.32\.1 --only candor-java$' \
+  && ok "release.sh's final step runs release-verify, SCOPED to exactly what this cut published" \
+  || { bad "release.sh did not invoke release-verify with the cut's own --only scope"; printf '%s' "$vout" | tail -6; }
+[ "$vrc" = 0 ] \
+  && ok "…and a verify that reports OK lets release.sh exit 0" \
+  || bad "release.sh exited $vrc despite release-verify reporting success"
+
+# CONTROL: a verify FAILURE must reach the operator with release-verify's OWN exit code and output — not
+# silently swallowed, and not folded into a generic `die` (which always exits 1 and would make "verify
+# found a problem" indistinguishable from any other failure to a caller inspecting the exit code).
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-fail-stub.sh" "$CSF/candor/bin/release-verify.sh"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+fvout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"; fvrc=$?
+[ "$fvrc" = 9 ] \
+  && ok "CONTROL: release.sh exits with release-verify's OWN code (9), not a generic 1" \
+  || bad "release.sh did not preserve release-verify's exit code — got $fvrc, expected 9"
+printf '%s' "$fvout" | grep -q "candor-swift v0.32.1 is a DRAFT release" \
+  && ok "…and release-verify's own diagnostic reaches the operator" \
+  || bad "release-verify's failure detail was swallowed"
+printf '%s' "$fvout" | grep -q "release-verify FAILED (exit 9)" \
+  && ok "…and release.sh names the failure loudly instead of dying silently" \
+  || bad "release.sh's own failure line did not fire"
+printf '%s' "$fvout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
+  && ok "…and the publish itself still happened before verify ran (verify is the LAST step, not a gate before publishing)" \
+  || bad "release.sh did not publish before running verify — the step ordering regressed"
+
 rm -rf "$CS"
 
 printf '\n'

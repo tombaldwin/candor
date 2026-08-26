@@ -139,7 +139,7 @@ rel candor-spec   "v$SPEC" "candor-spec $SPEC"
 # --- 4. (the umbrella moved to step 7 — it must follow the pin bump) -----------------------------------
 
 # --- 5. release-verify ----------------------------------------------------------------------------------
-say "5. release-verify (allow a minute for npm/crates/gh to propagate)"
+say "5. propagation smoke — npm/crates/gh (allow a minute; the real gate is step 8)"
 rs_in_set candor-ts && { printf '  npx candor-ts@%s : ' "$VER"; npx -y "candor-ts@$VER" --version 2>/dev/null | grep -o "spec $SPEC" || echo "(not yet on npm — OIDC action still running)"; }
 rs_in_set candor-rust && { printf '  cargo query %s   : ' "$VER"; (cargo search candor-query 2>/dev/null | grep -o "$VER") || echo "(propagating)"; }
 rs_in_set candor-java && echo "  jbang / brew: run \`jbang candor@tombaldwin/candor-java --version\` and \`brew upgrade candor && candor doctor\` once the java release build finishes."
@@ -285,9 +285,42 @@ git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { g
 if [ -x "$ROOT/candor/scripts/update-candor.sh" ]; then bash "$ROOT/candor/scripts/update-candor.sh" "v$VER" && ok "brew tap → v$VER" || die "update-candor.sh failed (tap may need a reconcile — see [[candor-history-2026-06]])"; fi
 fi
 
-if rs_is_full; then
-say "DONE — $SPEC / $VER published. Verify each channel reports spec $SPEC, then run release-verify.sh."
+# --- 8. release-verify — RUN IT, do not just tell the operator to -----------------------------------
+# `release-verify.sh` is the only step in this whole ladder that RESOLVES what it checks rather than
+# string-matching it: it fetches the pinned URLs and confirms a fresh install reports the floor, instead
+# of trusting that a version string in a file means the artifact behind it exists and works. On the
+# 0.33.0 cut it was the ONLY thing that caught candor-swift's release sitting in DRAFT state — the binary
+# had built and attached fine, the API reported the asset `state=uploaded`, and every download 404'd
+# anyway, because a draft release serves 404 on every asset regardless of what the API says about it.
+#
+# Until now this was a separate step an operator had to remember to run, documented in the very message
+# this replaces — "verify each channel… then run release-verify.sh". A release that skips it is not
+# verified, and the whole point of automating the ladder is that the LAST step is not the one most likely
+# to be forgotten because everything before it already worked.
+#
+# SAME SCOPE AS THE CUT. `--only` on this run must equal `--only` on the cut: verifying MORE than was
+# published asks a question about repos this run never touched (their genuine unrelated staleness would
+# read as this release's failure); verifying LESS would let a scoped cut's own artifacts go unconfirmed.
+say "8. release-verify (resolves every pinned URL and GitHub Release — see the note above)"
+VERIFY_ONLY=""
+rs_is_full || VERIFY_ONLY="--only $(printf '%s' "$RS_SET" | tr ' ' ',')"
+# shellcheck disable=SC2086  # deliberately unquoted: empty must vanish as zero args, not pass as ""
+if bash "$ROOT/candor/bin/release-verify.sh" "$SPEC" "$VER" $VERIFY_ONLY; then
+  ok "release-verify OK"
 else
-say "DONE — $VER published for: $RS_SET (spec floor stays $SPEC). The rest of the family is unchanged.
-   Verify exactly what this cut claims:  bash bin/release-verify.sh $SPEC $VER --only $(printf '%s' "$RS_SET" | tr ' ' ',')"
+  # THE EXIT CODE IS release-verify's OWN, not a fixed 1 — `die` always exits 1, which would erase the
+  # distinction its caller (a CI job, another script) might want between "verify found N problems" and
+  # any other failure. The publish above already happened; this failure means it did not VERIFY, which
+  # is a different, still-serious, fact — reported loudly rather than folded into a generic die.
+  vrc=$?
+  printf '  \033[31m✘ release-verify FAILED (exit %s) — the publish above SUCCEEDED but did not verify.\033[0m\n' "$vrc"
+  printf '  \033[31m  See the output above. Fix it, then re-run:  bash bin/release-verify.sh %s %s%s\033[0m\n' \
+    "$SPEC" "$VER" "${VERIFY_ONLY:+ $VERIFY_ONLY}"
+  exit "$vrc"
+fi
+
+if rs_is_full; then
+say "DONE — $SPEC / $VER published and verified live everywhere."
+else
+say "DONE — $VER published and verified for: $RS_SET (spec floor stays $SPEC). The rest of the family is unchanged."
 fi

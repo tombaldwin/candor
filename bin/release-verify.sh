@@ -72,7 +72,20 @@ for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-sw
   repo="${r%%:*}"; tag="${r##*:}"
   rs_in_set "$repo" || { oos "$repo: not in this cut — no $tag release was created"; continue; }
   got=$(gh release view "$tag" -R "tombaldwin/$repo" --json tagName -q .tagName 2>/dev/null)
-  [ "$got" = "$tag" ] && ok "$repo $got" || bad "$repo: release '${got:-missing}' != $tag"
+  if [ "$got" != "$tag" ]; then bad "$repo: release '${got:-missing}' != $tag"; continue; fi
+  # DELETING A GIT TAG SILENTLY CONVERTS ITS GITHUB RELEASE TO A DRAFT, and a draft serves 404 on every
+  # asset download URL EVEN THOUGH THE API REPORTS THE ASSET `state=uploaded` — the release itself, and
+  # `gh release view`'s tagName above, look completely normal. Measured on 0.33.0: candor-swift's tag was
+  # deleted and re-pushed to recover an orphaned workflow run, the binary built and attached fine, and
+  # every consumer's `candor update` / direct download 404'd anyway. Checked here, not just in the
+  # artifact-URL loop below, because a draft is the CAUSE and a 404 is only its symptom two sections down —
+  # naming the cause is what turns "404, no idea why" into a one-command fix.
+  draft=$(gh release view "$tag" -R "tombaldwin/$repo" --json isDraft -q .isDraft 2>/dev/null)
+  if [ "$draft" = "true" ]; then
+    bad "$repo: $tag is a DRAFT release — a draft 404s on every asset URL regardless of what the API says about the asset's own state. Likely cause: the tag was deleted and re-pushed. Remedy: gh release edit $tag -R tombaldwin/$repo --draft=false"
+  else
+    ok "$repo $got"
+  fi
 done
 
 # --- the pinned DOWNLOAD URLS actually resolve --------------------------------------------------------

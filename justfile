@@ -101,8 +101,23 @@ rehearse spec version *flags:
 # `*flags` carries `--only <repos>` through for a SCOPED cut (one engine at a patch version, the rest of
 # the family unmoved): `just preflight 0.32 0.32.1 --only candor-java`. With no flag both behave exactly
 # as before and judge the whole family.
+#
+# STRICT by default — check [3]'s cross-repo pins must already name the version being asked about. That is
+# right for a post-publish or everyday health check, and wrong BEFORE a cut: the pins can only move AFTER
+# release.sh publishes (their own remedy text says so), so on a family cut this ALWAYS exits 1 with ~11 pin
+# rows before anything has been published. Use `just preflight-cut` before a cut — it sets PINS_ADVISORY=1,
+# same as `release.sh` step 0 and `just rehearse` already do. Costs a reviewer's whole pass to learn this
+# once; it is written here so it doesn't cost a second.
 preflight spec version *flags:
     cd {{root}}/candor && bash bin/release-preflight.sh {{spec}} {{version}} {{flags}}
+
+# THE ONE TO RUN BEFORE A CUT. Identical to `preflight` except PINS_ADVISORY=1, so check [3]'s cross-repo
+# pins — which cannot possibly name the new version until release.sh has published it — report as an
+# advisory note instead of a failure. Do not use this to judge a release ALREADY published (`preflight`
+# with no flags, or `verify`, is the strict question there): advisory pins are the expected pre-publish
+# state, not a licence to ignore a real lagging pin afterwards.
+preflight-cut spec version *flags:
+    cd {{root}}/candor && PINS_ADVISORY=1 bash bin/release-preflight.sh {{spec}} {{version}} {{flags}}
 
 verify spec version *flags:
     cd {{root}}/candor && bash bin/release-verify.sh {{spec}} {{version}} {{flags}}

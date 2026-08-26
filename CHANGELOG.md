@@ -51,6 +51,38 @@ new check has a fixture proving it fails before the fix and passes after, includ
 preserving release-verify's own exit code on a simulated failure and a simulated draft release being
 caught and named.
 
+A code-review pass on this same night's work found three more — the shared thread across all three is a
+check reporting success while the thing it checks did not happen:
+
+- **`release-preflight.sh` `[10]`'s per-workflow dedupe (added the same night, above) sorted duplicate
+  runs by `createdAt`, which `gh` reports at whole-second granularity.** Three workflows from one push
+  shared a second; the stable sort left the tied pair in `gh`'s own order, and "last write wins" then
+  picked whichever one `gh` happened to list SECOND — not whichever was newest. Swapping the two objects
+  in the input flipped the verdict over identical facts. Fixed by adopting `bin/ci-watch.sh`'s already-
+  proven rule instead of a third independent one: never re-sort, trust `gh`'s newest-first order, keep
+  the first occurrence per workflow. Both call sites (`[10]`'s initial read and its post-wait re-check)
+  now share one implementation, `bin/_ci_verdict.py`, so they cannot drift apart again.
+
+- **`release-verify.sh`'s draft check read a FAILED `gh` call as "not a draft."** `draft=$(gh ... 2>/dev/null)`
+  left `draft` empty on a transient failure — network blip, secondary rate limit, the same 409s/403s that
+  motivated the check — and empty is not `"true"`, so it took the `ok` branch. Now one combined
+  `--json tagName,isDraft` call distinguishes three outcomes: confirmed draft, confirmed not-draft, and
+  could-not-determine — the third fails loudly and names the cause, rather than reading as confirmed.
+
+- **`candor-java/.github/workflows/native.yml`'s tag-dispatch upload (added the same night) depends on
+  the operator picking the release tag in the `workflow_dispatch` ref dropdown.** Its default is `main`,
+  and right after a cut `main`'s tip and the tag are the same commit — the natural mistake. Dispatching
+  against the default silently skipped the upload while build, parity and smoke all still passed green,
+  which `release-preflight [10]` (keyed on `headSha` alone) would have read as evidence the upload
+  happened. The workflow now refuses a `workflow_dispatch` that is not against a tag ref outright, naming
+  the fix, and separately refuses one against a tag with no Release yet or one that already carries the
+  asset it's about to upload — the two ways `softprops/action-gh-release`'s create-if-missing and
+  `overwrite_files: true` defaults could turn a wrong-tag mistake into a silent one.
+
+`bin/release-test.sh` gained 12 more assertions for the first two (`release-test: OK — 205 assertions`);
+the third is exercised by hand (RED then GREEN transcripts), since this repo owns no fixture harness for
+GitHub Actions trigger/ref logic.
+
 ## 2026-08-26 — ⟨0.33⟩ CUT: the floor moves to 0.33, and a stored report has to be re-scanned (released 2026-08-26 as 0.33.0)
 
 - **`release-preflight` [10] now takes the LATEST run per workflow, not every run.** A superseded

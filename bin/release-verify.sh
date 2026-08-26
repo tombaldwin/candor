@@ -71,21 +71,45 @@ for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-sw
          "candor-agents:v$VER" "candor-ts:v$VER" "candor:v$VER"; do
   repo="${r%%:*}"; tag="${r##*:}"
   rs_in_set "$repo" || { oos "$repo: not in this cut — no $tag release was created"; continue; }
-  got=$(gh release view "$tag" -R "tombaldwin/$repo" --json tagName -q .tagName 2>/dev/null)
+  # ONE gh call for both facts, not two adjacent ones. DEFECT (code review, 2026-08-26): the old code read
+  # tagName and isDraft in separate calls, and if the SECOND one failed — network blip, secondary rate
+  # limit; this loop already fires up to 14 back-to-back calls, and the incident that motivated the draft
+  # check in the first place was full of gh 409s and 403s — `draft` came back empty, empty is not "true",
+  # so it took the `ok` branch. A transient failure on the call that exists to catch drafts read as
+  # "confirmed not a draft". Combining into one call halves the exposure; the branch below still treats a
+  # failed call as its own outcome rather than folding it into "false".
+  #
+  # `-q` runs jq: emit "tagName|true" or "tagName|false". If the call fails outright (bad tag, network,
+  # rate limit) it never reaches jq at all, so $info comes back EMPTY — never "|false" — which is what lets
+  # the branches below tell "confirmed not a draft" apart from "could not determine".
+  info=$(gh release view "$tag" -R "tombaldwin/$repo" \
+           --json tagName,isDraft -q '(.tagName // "") + "|" + (if .isDraft then "true" else "false" end)' \
+           2>/dev/null)
+  got="${info%%|*}"; draft="${info#*|}"
+  if [ -z "$info" ]; then
+    bad "$repo: could not read release info for $tag at all (gh call failed — network blip, secondary rate limit, or the release genuinely does not exist) — treat as NOT VERIFIED, not as passing. Re-check by hand: gh release view $tag -R tombaldwin/$repo"
+    continue
+  fi
   if [ "$got" != "$tag" ]; then bad "$repo: release '${got:-missing}' != $tag"; continue; fi
   # DELETING A GIT TAG SILENTLY CONVERTS ITS GITHUB RELEASE TO A DRAFT, and a draft serves 404 on every
   # asset download URL EVEN THOUGH THE API REPORTS THE ASSET `state=uploaded` — the release itself, and
-  # `gh release view`'s tagName above, look completely normal. Measured on 0.33.0: candor-swift's tag was
-  # deleted and re-pushed to recover an orphaned workflow run, the binary built and attached fine, and
-  # every consumer's `candor update` / direct download 404'd anyway. Checked here, not just in the
-  # artifact-URL loop below, because a draft is the CAUSE and a 404 is only its symptom two sections down —
-  # naming the cause is what turns "404, no idea why" into a one-command fix.
-  draft=$(gh release view "$tag" -R "tombaldwin/$repo" --json isDraft -q .isDraft 2>/dev/null)
-  if [ "$draft" = "true" ]; then
-    bad "$repo: $tag is a DRAFT release — a draft 404s on every asset URL regardless of what the API says about the asset's own state. Likely cause: the tag was deleted and re-pushed. Remedy: gh release edit $tag -R tombaldwin/$repo --draft=false"
-  else
-    ok "$repo $got"
-  fi
+  # the tagName read above, look completely normal. Measured on 0.33.0: candor-swift's tag was deleted
+  # and re-pushed to recover an orphaned workflow run, the binary built and attached fine, and every
+  # consumer's `candor update` / direct download 404'd anyway. Checked here, not just in the artifact-URL
+  # loop below, because a draft is the CAUSE and a 404 is only its symptom two sections down — naming the
+  # cause is what turns "404, no idea why" into a one-command fix.
+  case "$draft" in
+    true)
+      bad "$repo: $tag is a DRAFT release — a draft 404s on every asset URL regardless of what the API says about the asset's own state. Likely cause: the tag was deleted and re-pushed. Remedy: gh release edit $tag -R tombaldwin/$repo --draft=false" ;;
+    false)
+      ok "$repo $got" ;;
+    *)
+      # THE THIRD STATE, MADE LOUD. Reachable only if the call succeeded (tagName matched, so $info was
+      # non-empty and well-formed) yet isDraft still failed to resolve to true/false — kept as its own
+      # branch, distinct from the "call failed outright" case above, rather than folded into either
+      # confirmed state.
+      bad "$repo: $tag's draft status is UNREADABLE ('${draft:-empty}') even though its tag matched — treat as NOT CONFIRMED non-draft. Re-check by hand: gh release view $tag -R tombaldwin/$repo --json isDraft" ;;
+  esac
 done
 
 # --- the pinned DOWNLOAD URLS actually resolve --------------------------------------------------------

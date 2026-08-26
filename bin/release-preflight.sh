@@ -684,30 +684,15 @@ else
   for r in $RS_SET; do
     [ -d "$ROOT/$r/.git" ] || continue
     head_sha="$(git -C "$ROOT/$r" rev-parse HEAD 2>/dev/null)"
+    # THE DEDUPE LIVES IN ONE PLACE: bin/_ci_verdict.py, called from both this initial read and the
+    # post-wait re-check below. It used to be pasted twice — sorted by `createdAt`, which `gh` reports at
+    # WHOLE-SECOND granularity, so two runs tied on that second had their "last write wins" merge pick
+    # whichever one happened to be listed SECOND in the input, not whichever was newest. Swapping the two
+    # objects in the input JSON flipped the verdict on identical facts. Fixed by adopting bin/ci-watch.sh's
+    # already-proven approach instead of writing a third independent one: never re-sort, trust `gh`'s own
+    # newest-first order, and keep the FIRST occurrence per workflow. See _ci_verdict.py for the full story.
     verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null \
-      | python3 -c "
-import json,sys
-h='$head_sha'
-try: runs=json.load(sys.stdin)
-except Exception: print('ERR'); raise SystemExit
-mine=[x for x in runs if x['headSha']==h]
-if not mine: print('NONE'); raise SystemExit
-# LATEST ATTEMPT PER WORKFLOW WINS — a superseded run must not outvote its own successor. Measured on
-# the 0.33.0 cut: an Actions stall created three tag-triggered runs and never expanded them into jobs
-# (zero jobs, updated_at == created_at), uncancellable (cancel AND force-cancel 409 'has not been
-# queued yet') and undeletable (403 — the API refuses to delete a run that is not completed).
-# candor-ts's publish was re-run by workflow_dispatch and SUCCEEDED, npm had 0.33.0, and this check
-# still read the corpse beside it and blocked the umbrella cut with no way to clear it. The only other
-# remedies were waiting for GitHub to expire a phantom, or weakening the gate. Sorted by createdAt
-# rather than trusting gh's list order. BOTH copies of this filter carry it — the initial read and the
-# post-wait re-check — because a rule on one route and not its sibling is this family's oldest defect.
-mine.sort(key=lambda x: x.get('createdAt') or '')
-latest={}
-for x in mine: latest[x['workflowName']]=x
-mine=list(latest.values())
-bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skipped')]
-print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
-" 2>/dev/null)"
+      | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     # IN-PROGRESS IS NOT A FAILURE, IT IS A NOT-YET. `release.sh` steps 2–3 push the release TAGS, which
     # start candor-ts's OIDC `publish` and candor-swift's `release` — so the very next invocation of this
     # script, which is the one that resumes at step 7, is GUARANTEED to see its own workflows running and
@@ -738,30 +723,12 @@ print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status
           printf '%s' "$verdicts" | grep -qE "in_progress|queued|requested|waiting|pending"; do
       [ "$waited_any" = 0 ] && { waited_any=1; printf '  \033[33m•\033[0m %s\n' "$r: CI still running — waiting up to $((CI_WAIT_LEFT/60))m total (the release's own tag-triggered workflows)" >&2; }
       sleep 30; CI_WAIT_LEFT=$((CI_WAIT_LEFT-30))
+      # SAME HELPER AS THE INITIAL READ ABOVE — see the comment there and bin/_ci_verdict.py. Kept as one
+      # call site each rather than one shared shell function around them, because the two loops differ in
+      # everything BUT this line (one runs once, one polls); the call itself is now the only thing they
+      # share, and it is literally the same file, not a copy that could drift.
       verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null \
-        | python3 -c "
-import json,sys
-h='$head_sha'
-try: runs=json.load(sys.stdin)
-except Exception: print('ERR'); raise SystemExit
-mine=[x for x in runs if x['headSha']==h]
-if not mine: print('NONE'); raise SystemExit
-# LATEST ATTEMPT PER WORKFLOW WINS — a superseded run must not outvote its own successor. Measured on
-# the 0.33.0 cut: an Actions stall created three tag-triggered runs and never expanded them into jobs
-# (zero jobs, updated_at == created_at), uncancellable (cancel AND force-cancel 409 'has not been
-# queued yet') and undeletable (403 — the API refuses to delete a run that is not completed).
-# candor-ts's publish was re-run by workflow_dispatch and SUCCEEDED, npm had 0.33.0, and this check
-# still read the corpse beside it and blocked the umbrella cut with no way to clear it. The only other
-# remedies were waiting for GitHub to expire a phantom, or weakening the gate. Sorted by createdAt
-# rather than trusting gh's list order. BOTH copies of this filter carry it — the initial read and the
-# post-wait re-check — because a rule on one route and not its sibling is this family's oldest defect.
-mine.sort(key=lambda x: x.get('createdAt') or '')
-latest={}
-for x in mine: latest[x['workflowName']]=x
-mine=list(latest.values())
-bad=[x for x in mine if (x['conclusion'] or x['status']) not in ('success','skipped')]
-print('BAD ' + ', '.join('%s:%s'%(x['workflowName'],x['conclusion'] or x['status']) for x in bad) if bad else 'OK')
-" 2>/dev/null)"
+        | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     done
     # THE TIMEOUT IS JUDGED ON THE VERDICT, NOT THE CLOCK. This fired on the elapsed counter, so a repo
     # whose CI went green on the LAST poll was reported failed AND green in the same run — `bad` here plus

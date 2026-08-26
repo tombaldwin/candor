@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+# _ci_verdict.py — the ONE implementation of "what did CI conclude for this commit", shared by both call
+# sites in release-preflight.sh's [10] (the initial read, and the post-wait re-check after CI_WAIT_BUDGET).
+#
+# Until 2026-08-26 this logic was pasted twice, and the comment beside each copy already warned that "a
+# rule on one route and not its sibling is this family's oldest defect" — a warning about staying in sync,
+# not about being CORRECT, and both copies carried the same bug in sync with each other.
+#
+# THE BUG: `gh run list --json ...,createdAt` reports `createdAt` at WHOLE-SECOND granularity. On
+# 2026-08-26, three workflows from one push shared a single second. The old code did
+#     mine.sort(key=lambda x: x.get('createdAt') or '')
+#     latest = {}
+#     for x in mine: latest[x['workflowName']] = x     # last write wins
+# Python's sort is stable, so two entries tied on createdAt keep their INPUT order after the sort — and
+# "last write wins" then picks whichever of the tied pair happened to be listed SECOND in that input, which
+# is not "whichever is newest": it is just "whichever is second", full stop. Swapping the two objects in
+# the input JSON (same facts, same timestamps) flipped the verdict, because the thing being read was the
+# array's incidental order, not recency.
+#
+# THE FIX, taken from bin/ci-watch.sh rather than invented a third time: `gh run list` (undocumented but
+# already relied on by ci-watch.sh) returns runs NEWEST-FIRST. So: never re-sort, and keep the FIRST
+# occurrence of each workflowName. That is exact — there is no second-granularity to lose — and ci-watch.sh's
+# own header explains the sibling lesson: an earlier version of THAT script sorted rows alphabetically
+# instead of trusting gh's order, and "which duplicate survives was arbitrary" ever since. Trusting gh's own
+# order here means this file now has the same assumption in exactly one place, not two independently-argued
+# ones that could drift.
+#
+# INPUT (stdin): a JSON array from `gh run list --json headSha,conclusion,status,workflowName,createdAt`.
+# ARGV[1]: the head SHA being judged.
+# OUTPUT (one line): ERR | NONE | OK | BAD <workflow:conclusion-or-status>[, ...]
+import json
+import sys
+
+head = sys.argv[1] if len(sys.argv) > 1 else ""
+
+try:
+    runs = json.load(sys.stdin)
+except Exception:
+    print("ERR")
+    raise SystemExit
+
+mine = [x for x in runs if x.get("headSha") == head]
+if not mine:
+    print("NONE")
+    raise SystemExit
+
+# FIRST OCCURRENCE PER WORKFLOW WINS. `mine` preserves gh's own newest-first order (filtering by headSha
+# above does not reorder), so the first row seen for a given workflowName is that workflow's latest run at
+# this commit — no sort, no timestamp comparison, nothing for same-second ties to break.
+seen = set()
+latest = []
+for x in mine:
+    wf = x.get("workflowName")
+    if wf in seen:
+        continue
+    seen.add(wf)
+    latest.append(x)
+
+bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]
+if bad:
+    print("BAD " + ", ".join("%s:%s" % (x.get("workflowName"), x.get("conclusion") or x.get("status")) for x in bad))
+else:
+    print("OK")

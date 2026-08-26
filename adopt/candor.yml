@@ -78,7 +78,7 @@ jobs:
           # you to it. `candor init` writes that pin and generates `.candor/run`, which reads it to fetch
           # the right jar, so the version appears exactly once. The version living HERE, decoupled from
           # the baseline it is married to, is the drift the §3.4 rung exists to end.
-          CANDOR_JAVA_VERSION: 0.32.1
+          CANDOR_JAVA_VERSION: 0.33.0
           CLASSES: target/classes
         run: >
           jbang "https://github.com/tombaldwin/candor-java/releases/download/v${CANDOR_JAVA_VERSION}/candor-java-${CANDOR_JAVA_VERSION}-all.jar"

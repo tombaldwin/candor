@@ -10,6 +10,13 @@ keeps its own.
 
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified
 
+- **`CLAUDE.md`: hand every dispatched agent a brief, and tell it to attack the premise.** Measured
+  over one session: roughly a third of the mechanisms the coordinator handed agents were wrong or
+  backwards while the findings themselves were all real, and every inversion was caught by an agent
+  told to stop and report if its brief was wrong — never by the coordinator re-checking itself. Also
+  records the two rules that recurred: one owner per repo (an agent finding a problem elsewhere
+  reports rather than fixes), and an audit's boundary must not be drawn around its own trigger.
+
 The night of the 0.33.0 cut, a corpus round against the PUBLISHED artifacts (not HEAD) found **thirteen
 cardinal sins across all four engines, plus a nine-crate classifier class** — hours after that same
 release had passed a three-lens review panel, four-way conformance, CI on seven repos, and

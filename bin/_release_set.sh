@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # _release_set.sh — THE CUT SET: which repos a release actually covers. Sourced by release-stage.sh,
-# release-preflight.sh, release.sh and release-verify.sh; it is not runnable on its own.
+# release-preflight.sh, release.sh, release-verify.sh, and scripts/update-candor.sh (for rs_tag_and_push
+# alone — it does not derive a cut set); it is not runnable on its own.
 #
 # WHY THIS EXISTS. candor's own versioning policy (candor-spec SPEC.md, "Versioning policy", and
 # [[candor-three-axis-versioning]]) says the family moves as a LADDER: the SPEC version is the shared
@@ -166,6 +167,54 @@ rs_pin_violations() { # $1 = path to bin/candor ; $2 = the version being cut
 }
 rs_is_full() { [ "${RS_FULL:-1}" = 1 ]; }
 rs_count()   { printf '%s\n' $RS_SET | grep -c .; }
+
+# ── TAG THEN PUSH — REMOTE EXISTENCE, NOT LOCAL ─────────────────────────────────────────────────────
+# `git tag && git push` used to be the whole guard, checked for idempotency on a rerun with
+# `git rev-parse "$tag"`. Under `set -uo pipefail` (release.sh has no `-e`) that `&&` chain failing at
+# the SECOND half — the push — does not die: the chain simply stops evaluating and the calling script
+# carries on as if nothing happened. The tag exists locally but never reached origin. A rerun then asks
+# `git rev-parse "$tag"`, which answers "do I have this ref" — always yes after the first attempt — so
+# the push is never retried and the tag never reaches origin. For candor-ts (release.sh step 2) that
+# means the OIDC `publish.yml` an origin push triggers never fires; the failure surfaces ~25 minutes
+# later at the npm wait, pointing the operator at candor-ts's workflow, which was never triggered at
+# all. The umbrella tag (step 7) and update-candor.sh's own umbrella tag share the identical shape.
+#
+# THE FIX ASKS THE REMOTE. `git ls-remote --exit-code --tags origin refs/tags/$tag` is the question
+# every caller actually needs answered — has this tag reached the place its consumers read it from
+# (npm's OIDC trigger, `gh release`, a fresh clone) — and `rev-parse` answers a different one. A tag
+# that is local-but-not-remote is therefore "not yet done": the push is (re)attempted, and the existing
+# local tag is reused rather than recreated (recreating it would move it off whatever commit the first,
+# half-finished attempt tagged, on a repo where that commit might no longer be HEAD).
+#
+# NO RETRY LOOP HERE — unlike the Homebrew tap's rebase-and-retry (this repo's OWN
+# scripts/update-candor.sh, further down, on the shared tap). The tap is the one repo in this whole
+# path this maintainer does not solely control, so a rejected push there is routine, expected
+# contention. Every tag this function pushes targets a repo this maintainer owns outright: a rejected
+# push there means auth or network, not contention, and retrying would paper over a real failure
+# instead of surfacing it. This is the over-charge control that keeps this fix distinct from the tap's.
+#
+# Returns 0 on a push that happened just now, 3 if the tag was already on origin (nothing to do — the
+# caller prints its own "skip" wording), 1 on a genuine failure (a diagnostic is already on stderr).
+rs_tag_and_push() { # $1 = tag (e.g. v0.32.1) ; $2 = annotate message, or "" for a lightweight tag ; run with $PWD inside the target repo
+  local tag="$1" msg="${2:-}"
+  if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+    return 3
+  fi
+  if ! git rev-parse "$tag" >/dev/null 2>&1; then
+    if [ -n "$msg" ]; then
+      git tag -a "$tag" -m "$msg" || { echo "rs_tag_and_push: could not create local tag $tag" >&2; return 1; }
+    else
+      git tag "$tag" || { echo "rs_tag_and_push: could not create local tag $tag" >&2; return 1; }
+    fi
+  fi
+  if git push origin "$tag"; then
+    return 0
+  fi
+  echo "rs_tag_and_push: $tag exists locally but the push to origin FAILED — not retried automatically" \
+       "(this repo is single-writer, so a rejected push means auth or network, not the tap's ordinary" \
+       "contention). Fix access, then re-run: the local tag is kept and reused, only the push repeats." >&2
+  return 1
+}
 
 # The one line every script prints when the cut is scoped, so a reader of any log can tell a partial cut
 # from a family one WITHOUT being told which flag was used. A scoped run that looks like a full run is

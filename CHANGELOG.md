@@ -10,6 +10,25 @@ keeps its own.
 
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (released 2026-08-27 as 0.33.1)
 
+- **`release.sh`'s tag-then-push guard now checks the REMOTE, not the local ref — `rs_tag_and_push`
+  (`bin/_release_set.sh`).** `git tag && git push` under this script's `set -uo pipefail` (no `-e`) can
+  create the tag locally, have only the push fail, and the `&&` chain simply stops evaluating — no die,
+  no error surfaced, the run continues. The rerun guard was `git rev-parse "$tag"`, which is LOCAL ONLY:
+  it saw the tag from the dead run and skipped, so the push was never retried and the tag never reached
+  origin. For candor-ts (step 2) that meant the OIDC `publish.yml` an origin push triggers never fired,
+  surfacing ~25 minutes later at the npm wait with a message pointing at candor-ts's workflow — which was
+  never triggered at all. Reproduced directly (a bare-repo `git tag && git push` against a broken remote
+  URL, then a rerun against a fixed one) before fixing. Fixed at both of release.sh's own tag sites
+  (candor-ts step 2, the umbrella step 7) and in `scripts/update-candor.sh`'s own umbrella tag, which now
+  sources the same helper — a rejected push there still fails loudly rather than retrying (this repo is
+  single-writer; only the shared Homebrew tap, a different repo, gets the tap's rebase-and-retry). Also:
+  `rel()`'s `gh release create … && ok` gained the `|| die` it was missing, naming `gh release upload
+  --clobber` as the remedy for a release that was created but whose asset upload failed — the identical
+  swallowed-failure shape, one call away. `bin/release-test.sh` gained execution-based coverage against
+  throwaway bare repos: a tag already on origin is skipped, a tag local-but-not-remote is now pushed, a
+  genuine push failure dies loudly without retrying and is retried correctly on the next run, and the
+  ordinary no-failure path is unchanged (243 assertions total, up from 225).
+
 - **`scripts/update-candor.sh`: the Homebrew tap push retries a rejection instead of dying.**
   Measured during the 0.33.1 cut: `tombaldwin/homebrew-tap` carries every other formula this
   maintainer publishes, so a push landing between our clone and our push is the normal case there, not

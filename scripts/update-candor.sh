@@ -22,6 +22,8 @@ FORMULA="$TAP/Formula/candor.rb"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE"
+# shellcheck source=bin/_release_set.sh
+. "$HERE/bin/_release_set.sh"   # for rs_tag_and_push alone — this script does not derive a cut set
 
 # 1. the tag and UMBRELLA_VERSION must agree
 UV="$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' bin/candor)"
@@ -32,12 +34,25 @@ UV="$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' bin/candor)"
 # 2. tag + push — IDEMPOTENT, because release.sh now cuts `v$VER` itself before calling this. Creating it
 # unconditionally is what produced two tags per release; skipping is what lets this be called either as
 # part of release.sh or standalone for a CLI-only umbrella bump.
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-  echo "tag $TAG already exists — reusing it"
+#
+# REMOTE existence, not local — rs_tag_and_push (bin/_release_set.sh). Under this script's OWN
+# `set -euo pipefail`, a plain `git tag && git push` failing at the push half DOES die immediately on the
+# run that hit it — but the guard on the NEXT run was still `git rev-parse "$TAG"`, which only asks "do I
+# have this ref locally". A rerun after fixing access therefore saw the local tag from the dead run, said
+# "already exists — reusing it", and skipped the push forever: the tag never reached origin and this
+# script carried on to cut a GitHub release for a tag GitHub never received.
+# Captured via if/else, not `cmd; rc=$?` — this script runs under `set -e`, and a bare non-zero return
+# (3 for "already on origin" is expected, not exceptional) would exit the script before `$?` is ever read.
+if rs_tag_and_push "$TAG" "candor umbrella $VER — the one-command front door; manages the engines"; then
+  tcrc=0
 else
-  git tag -a "$TAG" -m "candor umbrella $VER — the one-command front door; manages the engines"
-  git push origin "$TAG"
+  tcrc=$?
 fi
+case "$tcrc" in
+  3) echo "tag $TAG already exists — reusing it" ;;
+  0) : ;;
+  *) exit 1 ;;   # rs_tag_and_push already printed the diagnostic (stderr) — nothing to add here
+esac
 
 # 3. gh release — same reason
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then

@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (released 2026-08-27 as 0.33.1)
 
+- **Cross-repo pins move to 0.33.1.** Until they do the release is inert, however much is published:
+  `candor update` fetches `releases/download/v$ENGINE_PIN_*`, `cargo install --version` and
+  `npx candor-ts@$ENGINE_PIN_TS`, so brew, jbang, `adopt/` and both IDE plugins keep serving 0.33.0.
+  Moved here: `bin/candor`'s `ENGINE_PIN` (the family line — the four per-engine pins stay empty and
+  follow it), `adopt/candor.yml`'s `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml`'s
+  `candor-agents@v`, and both IDE plugins' bundled-toolchain pins (`vscode/package.json`'s `version`
+  and `candorTsVersion`; `jetbrains/gradle.properties`'s `candorJavaVersion` and `candorTsVersion`).
+  Pushed only after `candor-ts@0.33.1` was resolvable on npm — the bump is what starts the two IDE
+  jobs that `npm install` exactly that version, and pushing it early is what broke 0.16.0 and 0.29.0.
+
 - **`AGENT-CORPUS-BRIEF.md` rule 11: verify locally, treat CI as confirmation.** `verify-local.sh`
   plus `conformance/run.sh` answer in minutes what a queued runner takes an hour to, and the local check is
   STRICTER in at least one place. Half a dozen agents in one session stalled on CI notifications for work

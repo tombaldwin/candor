@@ -105,10 +105,16 @@ carries its sibling:
   (gated on a new `REL_STATE` `rel()` sets, not on set-membership alone, so a NEW contract rung is
   unchanged) as a SOFT failure — a `gh` error here is reported with the exact idempotent re-run and the
   release continues, rather than blocking the pin bump and umbrella cut over a documentation-only
-  repo's release notes. `bin/release-test.sh` gained execution-based coverage against the real script
-  (never a stand-in): the skip fires and the refresh runs, a new rung takes the ordinary create branch
-  and triggers nothing extra, re-running republishes byte-identical notes, and an injected `gh` failure
-  is reported and the release still reaches `release-verify` (258 assertions total, up from 243).
+  repo's release notes. `bin/release-test.sh` gained execution-based coverage: the skip fires and the
+  refresh runs, a new rung takes the ordinary create branch and triggers nothing extra, re-running
+  republishes byte-identical notes, and an injected `gh` failure is reported and the release still
+  reaches `release-verify` (258 assertions total, up from 243). The fixture's `publish-floor-notes.sh`
+  is a STAND-IN reproducing the real (candor-spec-owned) script's calling contract, not a copy of the
+  file itself — `release-scripts.yml`'s `actions/checkout@v4` fetches this repo alone, so a row that
+  `cp`'d the sibling's real file would pass on a dev machine carrying that checkout and then find
+  nothing in CI, which this file's own `note_skip` rule turns into a hard failure. Caught by actually
+  running `bin/verify-umbrella.sh` against the committed rev before calling this done, not by reading
+  the row.
 
 ## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective (released 2026-08-27 as 0.33.1)
 

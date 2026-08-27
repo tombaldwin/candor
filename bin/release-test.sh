@@ -722,16 +722,40 @@ say "3d. release.sh wires publish-floor-notes.sh in right where candor-spec's co
 # axis that does not exist. But release-stage.sh still opens `## [0.32.<patch>]` in candor-spec's own
 # CHANGELOG.md every cycle, and once v0.32's release exists nothing in the ladder ever republishes it —
 # permanently unpublished, not delayed. `candor-spec/scripts/publish-floor-notes.sh` (candor-spec's OWN
-# script — this repo does not own or edit it, only calls it) closes the gap. These rows use the REAL
-# file, copied read-only from the sibling repo, against a throwaway fixture and a stubbed `gh` — never
-# the real one, per the tap fix's pattern above.
-PFN_SRC="$UMBRELLA/../candor-spec/scripts/publish-floor-notes.sh"
-if [ ! -f "$PFN_SRC" ]; then
-  note_skip "candor-spec/scripts/publish-floor-notes.sh not found at $PFN_SRC — cannot test the real script"
-else
+# script — this repo does not own or edit it, only calls it) closes the gap.
+#
+# THE FIXTURE SCRIPT BELOW IS A STAND-IN, NOT THE REAL FILE, and that is deliberate here — unlike the
+# tap fix above (whose target, `scripts/update-candor.sh`, this repo OWNS outright), the real
+# publish-floor-notes.sh lives in the candor-spec SIBLING repo, which `release-scripts.yml`'s
+# `actions/checkout@v4` never fetches (it checks out `candor` alone) — a committed row here that
+# `cp`'d the sibling's real file would find it on a dev machine and then find NOTHING in CI, which
+# `note_skip` (this file's own rule, above) treats as a hard FAILURE precisely so a gate never
+# degrades silently. So the stand-in below reproduces publish-floor-notes.sh's documented CALLING
+# CONTRACT exactly (SPEC.md's floor → `gh release view` → concatenate the floor's `## [X.Y.<patch>]`
+# CHANGELOG sections deterministically → `gh release edit -F`, exit code propagating naturally,
+# same as the real file's own final line) — which is everything release.sh's WIRING can be asked to
+# get right. publish-floor-notes.sh's own internal correctness (the awk section-extraction, its
+# floor-vs-release-existence refusals) is candor-spec's own test's concern, not this repo's — this
+# suite only owns "does release.sh call it in the right place, in the right way". (Verified once by
+# hand against the actual sibling file during development: identical behavior — see the session
+# report, not a row here, since it cannot run in CI.)
 PFW="$(mktemp -d)"; RFX="$PFW/root"
 mkdir -p "$RFX/candor-spec/scripts" "$RFX/candor/bin" "$PFW/bin"
-cp "$PFN_SRC" "$RFX/candor-spec/scripts/publish-floor-notes.sh"
+cat > "$RFX/candor-spec/scripts/publish-floor-notes.sh" <<'PFNEOF'
+#!/usr/bin/env bash
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+REPO="tombaldwin/candor-spec"
+FLOOR="$(grep -oE '^\*\*Version [0-9]+\.[0-9]+' "$ROOT/SPEC.md" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+TAG="v$FLOOR"
+gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 || { echo "publish-floor-notes: no release at $TAG" >&2; exit 3; }
+OUT="$(mktemp "${TMPDIR:-/tmp}/floor-notes.XXXXXX")"
+trap 'rm -f "$OUT"' EXIT
+awk -v pfx="## [$FLOOR." 'index($0,pfx)==1{f=1;print;next} /^## /{f=0} f{print}' "$ROOT/CHANGELOG.md" > "$OUT"
+grep -q '[^[:space:]]' "$OUT" || { echo "publish-floor-notes: nothing to publish" >&2; exit 3; }
+gh release edit "$TAG" -R "$REPO" -F "$OUT" && echo "publish-floor-notes: $REPO $TAG notes refreshed"
+PFNEOF
 chmod +x "$RFX/candor-spec/scripts/publish-floor-notes.sh"
 cp "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/_release_set.sh" "$UMBRELLA/bin/_release_notes.sh" "$RFX/candor/bin/"
 chmod +x "$RFX/candor/bin/release.sh"
@@ -840,7 +864,6 @@ printf '%s' "$r4out" | grep -q 'STUB verify' \
   || bad "the release stopped after the gh failure instead of continuing"
 
 rm -rf "$PFW"
-fi
 
 say "4. release.sh hands update-candor.sh a TAG, not a bare version"
 # DEFECT 7 (0.26): passing $VER made update-candor.sh create a SECOND tag beside v$VER.

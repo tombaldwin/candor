@@ -715,6 +715,133 @@ grep -q '_release_notes.sh' "$UMBRELLA/bin/release-preflight.sh" \
   && ok "preflight [9b] asks the publisher's own selection program" \
   || bad "preflight re-derives 'is there a heading' — a gate that can go green on a cut that then refuses"
 
+say "3d. release.sh wires publish-floor-notes.sh in right where candor-spec's coarser-tag skip fires"
+# candor-spec is the ONE repo in the family tagged at the CONTRACT version (`v0.32`, no patch
+# component), so `rel candor-spec`'s "already released" branch fires on every patch cycle after the
+# floor's first cut — correctly: a second v0.32 release, or a v0.32.1 tag, would fabricate a contract
+# axis that does not exist. But release-stage.sh still opens `## [0.32.<patch>]` in candor-spec's own
+# CHANGELOG.md every cycle, and once v0.32's release exists nothing in the ladder ever republishes it —
+# permanently unpublished, not delayed. `candor-spec/scripts/publish-floor-notes.sh` (candor-spec's OWN
+# script — this repo does not own or edit it, only calls it) closes the gap. These rows use the REAL
+# file, copied read-only from the sibling repo, against a throwaway fixture and a stubbed `gh` — never
+# the real one, per the tap fix's pattern above.
+PFN_SRC="$UMBRELLA/../candor-spec/scripts/publish-floor-notes.sh"
+if [ ! -f "$PFN_SRC" ]; then
+  note_skip "candor-spec/scripts/publish-floor-notes.sh not found at $PFN_SRC — cannot test the real script"
+else
+PFW="$(mktemp -d)"; RFX="$PFW/root"
+mkdir -p "$RFX/candor-spec/scripts" "$RFX/candor/bin" "$PFW/bin"
+cp "$PFN_SRC" "$RFX/candor-spec/scripts/publish-floor-notes.sh"
+chmod +x "$RFX/candor-spec/scripts/publish-floor-notes.sh"
+cp "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/_release_set.sh" "$UMBRELLA/bin/_release_notes.sh" "$RFX/candor/bin/"
+chmod +x "$RFX/candor/bin/release.sh"
+printf '#!/usr/bin/env bash\necho "STUB preflight $*"\nexit 0\n' > "$RFX/candor/bin/release-preflight.sh"
+printf '#!/usr/bin/env bash\necho "STUB verify $*"\nexit 0\n'    > "$RFX/candor/bin/release-verify.sh"
+chmod +x "$RFX/candor/bin/release-preflight.sh" "$RFX/candor/bin/release-verify.sh"
+printf 'UMBRELLA_VERSION="0.32.0"\nENGINE_PIN="0.32.0"\nENGINE_PIN_JAVA=""\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' > "$RFX/candor/bin/candor"
+# candor-spec: floor at 0.32, a patch-cycle section already staged — the ordinary state between the
+# floor's first cut and the next contract rung.
+rfx_patch32() {
+  printf '**Version 0.32**\n⟨0.32⟩ a rung marker.\n' > "$RFX/candor-spec/SPEC.md"
+  printf '# Changelog\n\n## Unreleased\n\n## [0.32.1] — 2026-08-27\n\nTHE-PATCH-CYCLE-NOTES: a fix that landed after v0.32 was cut.\n\n## 0.32 — current floor\n\nthe floor rung.\n' > "$RFX/candor-spec/CHANGELOG.md"
+}
+rfx_patch32
+mkdir -p "$RFX/remotes"
+for r in candor-spec candor; do
+  ( cd "$RFX/$r" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm init ) >/dev/null 2>&1
+  git init -q --bare "$RFX/remotes/$r.git"
+  ( cd "$RFX/$r" && git remote add origin "$RFX/remotes/$r.git" && git push -q -u origin HEAD ) >/dev/null 2>&1
+done
+# gh stub: candor-spec's `v0.32` reports ALREADY released — the patch-cycle state under test. Every
+# other tag/repo (including the DIFFERENT spec floor used by the control below) reports NOT released,
+# so `rel()` takes its ordinary "create" branch, same as any other repo.
+cat > "$PFW/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 ${2:-}" in
+  "auth status") exit 0 ;;
+  "release view")
+    [ "$3" = "v0.32" ] && [ "$5" = "tombaldwin/candor-spec" ] && exit 0
+    exit 1
+    ;;
+  "release create") echo "STUB-CREATE $*"; exit 0 ;;
+  "release edit")
+    f=""; prev=""
+    for a in "$@"; do [ "$prev" = "-F" ] && f="$a"; prev="$a"; done
+    [ -n "$f" ] && cp "$f" "${GH_EDIT_CAPTURE:-/dev/null}"
+    printf '%s\n' "STUB-EDIT $*" >> "${GH_EDIT_LOG:-/dev/null}"
+    exit "${GH_EDIT_RC:-0}"
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$PFW/bin/gh"
+
+# --- the row this whole gap is about: the patch-cycle skip fires, and the notes refresh runs directly --
+: > "$PFW/edit.log"
+r1out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_CAPTURE="$PFW/edit-body-1.md" \
+        CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.32 0.32.1 --only candor-spec 2>&1)"; r1rc=$?
+[ "$r1rc" = 0 ] && ok "the wired run exits 0" || { bad "the wired run exited $r1rc"; printf '%s\n' "$r1out" | tail -20; }
+printf '%s' "$r1out" | grep -q 'candor-spec v0.32 already released' \
+  && ok "…the coarser-tag skip still fires exactly as before" || bad "the skip branch did not fire"
+printf '%s' "$r1out" | grep -q 'candor-spec v0.32 floor notes refreshed with the 0.32.1 patch-cycle section' \
+  && ok "…and release.sh calls publish-floor-notes.sh RIGHT THERE, unprompted" \
+  || bad "release.sh did not report refreshing the floor notes after the skip"
+[ -s "$PFW/edit.log" ] && ok "…gh release edit actually ran" || bad "gh release edit was never invoked"
+grep -q -- '-R tombaldwin/candor-spec' "$PFW/edit.log" 2>/dev/null && grep -q 'v0.32' "$PFW/edit.log" 2>/dev/null \
+  && ok "…targeting candor-spec's OWN v0.32 release, not a new tag or a different repo" \
+  || bad "the edit call did not target candor-spec v0.32"
+grep -q 'THE-PATCH-CYCLE-NOTES' "$PFW/edit-body-1.md" 2>/dev/null \
+  && ok "…and the body it published carries the patch-cycle CHANGELOG section" \
+  || bad "the published body is missing the patch-cycle notes"
+
+# --- CONTROL: a NEW contract rung (the tag does not exist yet) must be UNCHANGED -----------------------
+printf '**Version 0.33**\n⟨0.33⟩ a rung marker.\n' > "$RFX/candor-spec/SPEC.md"
+printf '# Changelog\n\n## Unreleased\n\n## 0.33 — current floor\n\nfirst cut of the new floor.\n' > "$RFX/candor-spec/CHANGELOG.md"
+( cd "$RFX/candor-spec" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "bump to 0.33" && git push -q ) >/dev/null 2>&1
+: > "$PFW/edit.log"
+r2out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_CAPTURE="$PFW/edit-body-2.md" \
+        CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.33 0.33.0 --only candor-spec 2>&1)"; r2rc=$?
+[ "$r2rc" = 0 ] && ok "CONTROL: a new-rung cut still exits 0" || bad "CONTROL: a new-rung cut exited $r2rc"
+printf '%s' "$r2out" | grep -q 'STUB-CREATE.*v0.33' \
+  && ok "CONTROL: …the new tag takes the ordinary CREATE branch" || bad "CONTROL: the new rung did not create a release"
+[ -s "$PFW/edit.log" ] \
+  && { bad "CONTROL: gh release edit ran for a NEW contract rung — the skip-only gate is not fenced"; cat "$PFW/edit.log"; } \
+  || ok "CONTROL: …and publish-floor-notes.sh was NOT invoked — nothing extra runs when the skip never fires"
+
+# --- IDEMPOTENCE, BY EXECUTION: running the SAME patch cycle twice republishes the SAME bytes -----------
+rfx_patch32
+( cd "$RFX/candor-spec" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "back to 0.32 patch" && git push -q ) >/dev/null 2>&1
+: > "$PFW/edit.log"
+PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_CAPTURE="$PFW/edit-body-3.md" \
+  CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.32 0.32.1 --only candor-spec >/dev/null 2>&1
+[ "$(grep -c 'release edit' "$PFW/edit.log" 2>/dev/null)" = 1 ] \
+  && ok "IDEMPOTENCE: the second run also calls gh release edit exactly once" \
+  || bad "IDEMPOTENCE: the second run's edit call count is wrong"
+if diff -q "$PFW/edit-body-1.md" "$PFW/edit-body-3.md" >/dev/null 2>&1; then
+  ok "IDEMPOTENCE: re-running republishes byte-identical notes (proved by execution, not by reading the header)"
+else
+  bad "IDEMPOTENCE: the second run's body differs from the first — re-running is not actually a no-op"
+fi
+
+# --- FAILURE INJECTION: gh release edit fails — the release must NOT die, and must say what to do -------
+: > "$PFW/edit.log"
+r4out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_RC=1 GH_EDIT_CAPTURE="$PFW/edit-body-4.md" \
+        CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.32 0.32.1 --only candor-spec 2>&1)"; r4rc=$?
+[ "$r4rc" = 0 ] \
+  && ok "a gh failure here does NOT abort the release (exit 0 — left no worse than not running it)" \
+  || { bad "a gh release edit failure aborted the whole release — got exit $r4rc"; printf '%s\n' "$r4out" | tail -20; }
+printf '%s' "$r4out" | grep -q 'publish-floor-notes.sh failed (exit 1)' \
+  && ok "…the failure is reported, not swallowed" || bad "no diagnostic for the gh failure"
+printf '%s' "$r4out" | grep -qF "bash $RFX/candor-spec/scripts/publish-floor-notes.sh" \
+  && ok "…with the exact manual re-run in the message (the script is idempotent — safe to retry by hand)" \
+  || bad "no manual remedy printed for the failure"
+printf '%s' "$r4out" | grep -q 'STUB verify' \
+  && ok "…and the release still reaches step 8 (release-verify) — the failure did not stop the ladder" \
+  || bad "the release stopped after the gh failure instead of continuing"
+
+rm -rf "$PFW"
+fi
+
 say "4. release.sh hands update-candor.sh a TAG, not a bare version"
 # DEFECT 7 (0.26): passing $VER made update-candor.sh create a SECOND tag beside v$VER.
 grep -q 'update-candor.sh" "v\$VER"' "$UMBRELLA/bin/release.sh" \

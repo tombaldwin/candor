@@ -10,6 +10,18 @@ keeps its own.
 
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (released 2026-08-27 as 0.33.1)
 
+- **`scripts/update-candor.sh`: the Homebrew tap push retries a rejection instead of dying.**
+  Measured during the 0.33.1 cut: `tombaldwin/homebrew-tap` carries every other formula this
+  maintainer publishes, so a push landing between our clone and our push is the normal case there, not
+  an error — an unrelated `ebman 0.35.0` commit rejected this exact push, and by then the umbrella
+  release + tag were already cut (irreversible). Recovery was a manual `git pull --rebase` + re-push;
+  happened once before too. Now: bounded rebase-and-retry (5 attempts) for the ordinary shared-repo
+  race, with a loud failure and a clean `git rebase --abort` — never a silent retry loop — on a genuine
+  conflict in `Formula/candor.rb`. `bin/release-test.sh` gained the first execution-based coverage of
+  the tap step (stubbed `gh`/`curl`, a throwaway bare-repo pair via `CANDOR_TAP`): a clean-rebase
+  rejection now succeeds, a real conflict fails on the first attempt without touching the remote's
+  competing commit, and the no-contention path is unchanged.
+
 - **Cross-repo pins move to 0.33.1.** Until they do the release is inert, however much is published:
   `candor update` fetches `releases/download/v$ENGINE_PIN_*`, `cargo install --version` and
   `npx candor-ts@$ENGINE_PIN_TS`, so brew, jbang, `adopt/` and both IDE plugins keep serving 0.33.0.

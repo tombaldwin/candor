@@ -722,6 +722,119 @@ grep -q 'update-candor.sh" "v\$VER"' "$UMBRELLA/bin/release.sh" \
 grep -q 'already exists — reusing it' "$UMBRELLA/scripts/update-candor.sh" \
   && ok "update-candor.sh reuses an existing tag/release" || bad "update-candor.sh would recreate the tag"
 
+say "4b. update-candor.sh's Homebrew tap push — a rejected push must retry, a real conflict must not"
+# MEASURED during the 0.33.1 cut: `tombaldwin/homebrew-tap` carries every OTHER formula this maintainer
+# publishes, so a push landing between our clone and our push is the NORMAL case in that repo, not an
+# error. It rejected the tap push there (an unrelated `ebman 0.35.0` commit had landed), and by then the
+# umbrella release + tag were ALREADY CUT — i.e. the rejection happened after the irreversible steps, so
+# a routine race turned a healthy release into a failed run that had already published. Happened once
+# before too. This is the FIRST execution-based coverage of the tap step at all: the header of this file
+# says the tap "touches the network and cannot be exercised… neither exists yet" — `gh` and `curl` are
+# stubbed on PATH exactly as the rest of this file already stubs them, and CANDOR_TAP (the script's own
+# escape hatch) points at a throwaway bare-repo pair instead of ~/git/homebrew-tap. Nothing here reaches
+# the real tap, the real GitHub repo, or the real umbrella.
+UCW="$(mktemp -d)"
+mkdir -p "$UCW/bin"
+cat > "$UCW/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 ${2:-}" in
+  "release view")   exit 1 ;;
+  "release create") echo "STUB-CREATE $*"; exit 0 ;;
+esac
+exit 0
+EOF
+printf '#!/usr/bin/env bash\necho "fake-tarball-bytes-for-testing"\nexit 0\n' > "$UCW/bin/curl"
+chmod +x "$UCW/bin/gh" "$UCW/bin/curl"
+# GIT IDENTITY BY ENVIRONMENT, NOT BY GLOBAL CONFIG: update-candor.sh's own `git commit` inside the tap
+# takes no `-c` flags (unlike every commit this test harness makes directly), so a runner with no global
+# git identity (CI's is bare) would fail the commit before the push logic under test ever ran.
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
+ucfix() { # $1=umbrella dir  $2=tag(vX.Y.Z) — a throwaway umbrella whose OWN tag pre-exists locally, so
+  # update-candor.sh's umbrella tag/push and gh-release steps skip and this row is scoped to the tap alone.
+  local d="$1" tag="$2" ver="${2#v}"
+  rm -rf "$d"; mkdir -p "$d/scripts" "$d/bin"
+  cp "$UMBRELLA/scripts/update-candor.sh" "$d/scripts/update-candor.sh"
+  printf '#!/usr/bin/env bash\nUMBRELLA_VERSION="%s"\n' "$ver" > "$d/bin/candor"
+  ( cd "$d" && git init -q && git add -A && git commit -qm init && git tag -a "$tag" -m t )
+}
+uctap() { # $1=bare remote dir  $2=local clone dir — the pair `CANDOR_TAP` is pointed at
+  local remote="$1" local_="$2" seed
+  rm -rf "$remote" "$local_"
+  git init -q --bare "$remote"
+  seed="$(mktemp -d)"; git clone -q "$remote" "$seed"
+  mkdir -p "$seed/Formula"
+  printf 'class Candor < Formula\n  url "https://example.com/v0.0.0.tar.gz"\n  sha256 "%s"\nend\n' \
+    "$(printf '0%.0s' $(seq 1 64))" > "$seed/Formula/candor.rb"
+  ( cd "$seed" && git add -A && git commit -qm seed && git push -q )
+  git clone -q "$remote" "$local_"
+  rm -rf "$seed"
+}
+
+# --- CONTROL: no contention — must behave exactly as before (succeed on the first push, no retry text) --
+UCU="$UCW/umbrella1"; ucfix "$UCU" "v9.9.1"
+UCR="$UCW/tap-remote-1.git"; UCL="$UCW/tap-local-1"; uctap "$UCR" "$UCL"
+ucout1="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.1 2>&1)"; ucrc1=$?
+[ "$ucrc1" = 0 ] && ok "CONTROL: no-contention tap push succeeds (exit 0)" \
+                  || { bad "CONTROL: no-contention tap push failed — got exit $ucrc1"; printf '%s\n' "$ucout1"; }
+printf '%s' "$ucout1" | grep -qiE 'rejected|retrying' \
+  && bad "CONTROL: the no-contention path printed retry text — behaviour changed on the common case" \
+  || ok "CONTROL: …and the no-contention path is silent about retries, same as before this fix"
+
+# --- FALSIFICATION 1: a push rejected by a DIFFERENT formula file must rebase cleanly and SUCCEED -------
+UCU="$UCW/umbrella2"; ucfix "$UCU" "v9.9.2"
+UCR="$UCW/tap-remote-2.git"; UCL="$UCW/tap-local-2"; uctap "$UCR" "$UCL"
+UCO="$(mktemp -d)"; git clone -q "$UCR" "$UCO"
+printf 'class Ebman < Formula\n  url "x"\nend\n' > "$UCO/Formula/ebman.rb"
+( cd "$UCO" && git add -A && git commit -qm "ebman 0.35.0" && git push -q ); rm -rf "$UCO"
+ucout2="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.2 2>&1)"; ucrc2=$?
+[ "$ucrc2" = 0 ] && ok "a push rejected by an unrelated formula rebases cleanly and still succeeds" \
+                  || { bad "a cleanly-rebasable rejection was not recovered — got exit $ucrc2"; printf '%s\n' "$ucout2"; }
+printf '%s' "$ucout2" | grep -q 'tap push rejected (attempt 1/5)' \
+  && ok "…and the retry is reported, not silent" || bad "no retry was attempted/reported for the rejection"
+UCC="$(mktemp -d)"; git clone -q "$UCR" "$UCC"
+[ -f "$UCC/Formula/ebman.rb" ] && ok "…the unrelated formula (ebman) is still on the tap" \
+                                || bad "the retry lost the unrelated formula's commit"
+grep -q 'v9.9.2.tar.gz' "$UCC/Formula/candor.rb" && ok "…and our own candor.rb update actually landed" \
+                                                    || bad "the retry reported success but candor.rb was not updated"
+rm -rf "$UCC"
+
+# --- FALSIFICATION 2 (the over-charge control): a REAL conflict must fail LOUDLY, not retry forever -----
+UCU="$UCW/umbrella3"; ucfix "$UCU" "v9.9.3"
+UCR="$UCW/tap-remote-3.git"; UCL="$UCW/tap-local-3"; uctap "$UCR" "$UCL"
+UCO="$(mktemp -d)"; git clone -q "$UCR" "$UCO"
+perl -0pi -e 's{url "[^"]*"}{url "https://example.com/someone-elses-edit.tar.gz"}' "$UCO/Formula/candor.rb"
+( cd "$UCO" && git add -A && git commit -qm "a competing candor.rb edit" && git push -q ); rm -rf "$UCO"
+ucout3="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.3 2>&1)"; ucrc3=$?
+[ "$ucrc3" = 1 ] && ok "a REAL conflict on Formula/candor.rb fails loudly (exit 1), not a silent retry loop" \
+                  || bad "a genuine conflict did not fail as expected — got exit $ucrc3"
+printf '%s' "$ucout3" | grep -q 'REAL conflict' \
+  && ok "…and names it as a real conflict, distinct from the retriable race" \
+  || bad "no distinct diagnostic for a real conflict — indistinguishable from the retriable case"
+printf '%s' "$ucout3" | grep -q 'resolve by hand' \
+  && ok "…with a remedy, not a dead end" || bad "a real conflict gave no remedy"
+# THE OVER-CHARGE CHECK: it must not have retried five times against an unresolvable conflict.
+printf '%s' "$ucout3" | grep -qF 'attempt 5/5' \
+  && bad "a real conflict was retried to exhaustion instead of failing on the first rebase conflict" \
+  || ok "…and it failed on the FIRST conflict rather than burning through all 5 attempts"
+# THE LOCAL REPO MUST BE LEFT CLEAN, not mid-rebase — `git rebase --abort` must actually have run.
+( cd "$UCL" && git status --porcelain ) > "$UCW/ucl-status.txt"
+[ -s "$UCW/ucl-status.txt" ] && { bad "the tap clone was left dirty/mid-rebase after the conflict"; cat "$UCW/ucl-status.txt"; } \
+                              || ok "…and the local tap clone is left clean (the abort actually ran)"
+[ -d "$UCL/.git/rebase-apply" ] || [ -d "$UCL/.git/rebase-merge" ] \
+  && bad "a rebase was left in progress — the next release run would inherit a broken tap clone" \
+  || ok "…no rebase-in-progress state was left behind"
+( cd "$UCL" && git log --oneline -1 ) | grep -q "candor 9.9.3" \
+  && ok "…and OUR commit is still there locally — a real conflict does not silently drop the update" \
+  || bad "our own commit vanished after the failed push — the update was silently dropped"
+UCC="$(mktemp -d)"; git clone -q "$UCR" "$UCC"
+grep -q 'someone-elses-edit' "$UCC/Formula/candor.rb" \
+  && ok "…and the remote still carries the competing edit untouched (no forced/corrupt push happened)" \
+  || bad "the remote's competing edit was overwritten — a real conflict must never force-push over it"
+rm -rf "$UCC"
+
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+rm -rf "$UCW"
+
 say "5. spec-bump.sh — the floor-bump rehearsal"
 # The ⟨0.27⟩ bump was done by hand and turned SIX repos red on version-coupled assertions, every one
 # findable locally. `spec-bump.sh` exists so a contract bump is rehearsed rather than discovered in CI.

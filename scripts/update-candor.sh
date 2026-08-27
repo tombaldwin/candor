@@ -60,8 +60,48 @@ SHA="$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}')"
 # $ENV — fatal under set -u — and never reach perl).
 URL="$URL" perl -0pi -e 's{url "[^"]*"}{url "$ENV{URL}"}' "$FORMULA"
 SHA="$SHA" perl -0pi -e 's{sha256 "[0-9a-f]{64}"}{sha256 "$ENV{SHA}"}' "$FORMULA"
-( cd "$TAP" && git add Formula/candor.rb \
-  && git commit -m "candor $VER" \
-  && git push )
+( cd "$TAP" && git add Formula/candor.rb && git commit -m "candor $VER" )
+
+# THE TAP IS SHARED — it carries every other formula this maintainer publishes, so a push landing
+# between our last fetch and our push is the NORMAL case, not an error. Measured twice (0.33.1, and once
+# before): an unrelated formula bump rejected this push AFTER the umbrella tag + GitHub release above had
+# already been cut — i.e. after the irreversible steps — turning a routine, non-conflicting race into a
+# failed release run that had already published. Rebase-and-retry, bounded, so the ordinary case recovers
+# on its own; a REAL conflict (this maintainer's own candor.rb edit racing itself, not a different
+# formula file) must still fail loudly rather than retry forever or drop the update silently — that is
+# the over-charge control on this fix.
+TAP_PUSH_MAX=5
+tap_push_attempt=1
+tap_pushed=0
+while [ "$tap_push_attempt" -le "$TAP_PUSH_MAX" ]; do
+  if ( cd "$TAP" && git push ) 2>/tmp/candor-tap-push.err; then
+    tap_pushed=1
+    break
+  fi
+  if ! grep -qiE 'rejected|fetch first|non-fast-forward|stale info' /tmp/candor-tap-push.err; then
+    # Not the shared-repo race this loop exists for (auth, network, no remote, …) — surface it once and
+    # stop; retrying a failure this loop cannot fix would just burn attempts and delay the real message.
+    cat /tmp/candor-tap-push.err >&2
+    break
+  fi
+  echo "tap push rejected (attempt $tap_push_attempt/$TAP_PUSH_MAX) — the tap is shared; pulling --rebase and retrying…" >&2
+  if ( cd "$TAP" && git pull --rebase ) >/tmp/candor-tap-rebase.out 2>&1; then
+    :
+  else
+    cat /tmp/candor-tap-rebase.out >&2
+    ( cd "$TAP" && git rebase --abort ) >/dev/null 2>&1 || true
+    echo "tap rebase hit a REAL conflict in $FORMULA — not retrying further. The commit is still local; resolve by hand in $TAP, then push." >&2
+    break
+  fi
+  tap_push_attempt=$((tap_push_attempt + 1))
+done
+
+if [ "$tap_pushed" != 1 ]; then
+  echo "could not push the Homebrew tap after $tap_push_attempt attempt(s)." >&2
+  echo "the umbrella release + tag for $VER already exist (that part is done and irreversible) — only the tap push is unresolved." >&2
+  echo "fix by hand: cd $TAP && git status   (a clean tree with an unpushed commit means: git pull --rebase && git push;" >&2
+  echo "             a conflict in Formula/candor.rb means: resolve it, git rebase --continue, then git push)" >&2
+  exit 1
+fi
 
 echo "done: candor $VER released and the tap updated. Verify: brew install tombaldwin/tap/candor"

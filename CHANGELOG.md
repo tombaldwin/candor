@@ -97,9 +97,18 @@ carries its sibling:
   the automated hermetic half of a corpus round — this brief is for the manual, ad-hoc half that
   script doesn't cover: published artifacts and cross-arm comparisons specifically.
 
-No engine or spec change in this section — docs and briefs only; `bin/corpus.sh` itself is unchanged
-apart from the pointer comment above. (It ships in the 0.33.1 cut, which carries the engine fixes the
-round this brief was written from found.)
+- **`release.sh` now calls candor-spec's `publish-floor-notes.sh` automatically, right where the
+  coarser-tag skip fires.** candor-spec is the one repo tagged at the CONTRACT version (`v0.33`, no
+  patch component), so `rel candor-spec`'s "already released" branch fires on every patch cycle after
+  the floor's first cut, correctly — but every cycle still opens a `## [0.33.<patch>]` CHANGELOG
+  section nothing in the ladder ever republishes: permanently unpublished, not delayed. Wired in
+  (gated on a new `REL_STATE` `rel()` sets, not on set-membership alone, so a NEW contract rung is
+  unchanged) as a SOFT failure — a `gh` error here is reported with the exact idempotent re-run and the
+  release continues, rather than blocking the pin bump and umbrella cut over a documentation-only
+  repo's release notes. `bin/release-test.sh` gained execution-based coverage against the real script
+  (never a stand-in): the skip fires and the refresh runs, a new rung takes the ordinary create branch
+  and triggers nothing extra, re-running republishes byte-identical notes, and an injected `gh` failure
+  is reported and the release still reaches `release-verify` (258 assertions total, up from 243).
 
 ## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective (released 2026-08-27 as 0.33.1)
 

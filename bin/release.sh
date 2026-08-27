@@ -96,12 +96,17 @@ if rs_in_set candor-java; then
 fi
 rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
   local repo="$1" tag="$2" title="$3"; shift 3
+  # REL_STATE tells the ONE call site below (candor-spec, after the loop) which branch fired here,
+  # without changing rel()'s own return value — every other call site still ignores it exactly as
+  # before. Set FIRST, unconditionally, so it is never read unset under `set -u` no matter which arm
+  # below returns early.
+  REL_STATE=created
   # THE SET IS ENFORCED HERE, NOT AT THE CALL SITES, and that is deliberate: preflight [8] derives the
   # published-repo list by grepping `^rel candor…` out of this file and compares it with the verifier's,
   # so wrapping the calls in `if` blocks would indent them out of that grep and silently empty the one
   # check that keeps the publisher and the verifier naming the same repos.
-  if ! rs_in_set "$repo"; then skip "$repo is not in this cut — no release cut"; return 0; fi
-  if gh release view "$tag" -R "tombaldwin/$repo" >/dev/null 2>&1; then skip "$repo $tag already released"
+  if ! rs_in_set "$repo"; then skip "$repo is not in this cut — no release cut"; REL_STATE=not-in-set; return 0; fi
+  if gh release view "$tag" -R "tombaldwin/$repo" >/dev/null 2>&1; then skip "$repo $tag already released"; REL_STATE=already-released
   else
     # SELECTION LIVES IN `bin/_release_notes.sh`, AND IT REFUSES RATHER THAN GUESSES.
     #
@@ -152,6 +157,52 @@ rel candor-ts     "v$VER" "candor-ts v$VER"
 # formula hashes exactly that tarball. See step 7.
 # the SPEC is tagged at its OWN version — no patch component; release-verify.sh checks `v$SPEC` to match.
 rel candor-spec   "v$SPEC" "candor-spec $SPEC"
+
+# ── candor-spec's coarser tag: the patch-cycle CHANGELOG had nowhere else to be announced ─────────────
+#
+# candor-spec is the ONE repo in the family whose GitHub release is tagged at the CONTRACT version
+# (`v$SPEC`, deliberately no patch component — SPEC.md's own versioning policy), so `rel`'s
+# "already released" branch above fires on EVERY patch cycle after the floor's first cut — correctly:
+# cutting a second `v$SPEC` release, or inventing a `v$SPEC.<patch>` tag, would fabricate a contract axis
+# that does not exist. But `release-stage.sh` still opens `## [$SPEC.<patch>]` in candor-spec's
+# CHANGELOG.md every cycle, because CHANGELOG headings are keyed to the family BUILD version, not the
+# floor — and once `v$SPEC`'s release exists, nothing else in this ladder ever reads that section again.
+# Permanently unpublished, not delayed.
+#
+# `publish-floor-notes.sh` (candor-spec's own script — see its header for the full three-axis reasoning)
+# closes the gap: it concatenates every `## [$SPEC.<patch>]` section into candor-spec's EXISTING release
+# notes. It moves no tag, touches no version file, edits only that release's BODY.
+#
+# GATED ON REL_STATE, NOT ON `rs_in_set candor-spec` ALONE, so a cut of a NEW CONTRACT RUNG (this run's
+# `v$SPEC` did not exist yet, `rel` just took the "created" branch above) is UNCHANGED — this fires only
+# on the branch it exists for, never on "created" and never on "not-in-set" (a scoped cut that leaves
+# candor-spec out entirely).
+#
+# SOFT FAILURE, DELIBERATELY. By the time this runs, every code-carrying release above has already
+# published; the umbrella tag + Homebrew tap (step 7 — the actually irreversible finish line) has not
+# happened yet. `die`-ing here would trade a cosmetic notes gap on a documentation-only repo for blocking
+# the pin bump and the umbrella cut over it — a worse outcome than the gap itself, and the same
+# "a routine failure of a lower-stakes adjacent step kills the release" shape the tap-push fix above
+# exists to avoid (there, recoverable AFTER the irreversible steps; here, avoided by never dying BEFORE
+# them). A real `gh` failure is reported loudly with the exact manual re-run, and the release continues —
+# the script is idempotent (its own header), so running it again by hand once whatever broke is fixed is
+# always safe.
+if [ "$REL_STATE" = already-released ]; then
+  PFN="$ROOT/candor-spec/scripts/publish-floor-notes.sh"
+  if [ ! -x "$PFN" ]; then
+    skip "candor-spec/scripts/publish-floor-notes.sh not found (or not executable) — skipping the floor-notes refresh"
+  else
+    bash "$PFN" >/tmp/rel-floor-notes.txt 2>&1; pfnrc=$?
+    if [ "$pfnrc" = 0 ]; then
+      ok "candor-spec v$SPEC floor notes refreshed with the $VER patch-cycle section"
+    else
+      printf '  \033[33m•\033[0m publish-floor-notes.sh failed (exit %s) — candor-spec release notes were NOT refreshed.\033[0m\n' "$pfnrc"
+      printf '    This does not affect anything published above or below in this run; refresh by hand once fixed:\n'
+      printf '      bash %s\n' "$PFN"
+      sed 's/^/      /' /tmp/rel-floor-notes.txt
+    fi
+  fi
+fi
 
 # --- 4. (the umbrella moved to step 7 — it must follow the pin bump) -----------------------------------
 

@@ -75,8 +75,16 @@ say "2. candor-ts npm (via v$VER tag → OIDC publish.yml)"
 if ! rs_in_set candor-ts; then skip "candor-ts is not in this cut — nothing is tagged, so nothing publishes to npm"
 else
 cd "$ROOT/candor-ts" || die "cannot cd to $ROOT/candor-ts"
-if git rev-parse "v$VER" >/dev/null 2>&1; then skip "tag v$VER already exists"
-else git tag "v$VER" && git push origin "v$VER" && ok "tagged + pushed v$VER (OIDC action publishes candor-ts@$VER with provenance)"; fi
+# rs_tag_and_push checks ORIGIN, not the local ref — see its own comment in _release_set.sh for why a
+# local check let a failed push go unretried across reruns and unreported on the run that failed it.
+rs_tag_and_push "v$VER" ""; tprc=$?
+case "$tprc" in
+  3) skip "tag v$VER already on origin" ;;
+  0) ok "tagged + pushed v$VER (OIDC action publishes candor-ts@$VER with provenance)" ;;
+  *) die "candor-ts: v$VER did not reach origin — see the message above. candor-ts's OIDC publish never
+     fires until the tag is on origin, so npm step 5/6's wait would fail for a workflow that was never
+     triggered. Fix access/network and re-run — steps already done are skipped, this one retries." ;;
+esac
 fi
 
 # --- 3. GitHub releases (java release triggers native.yml + needs the jar asset) -------------------------
@@ -119,7 +127,16 @@ rel() { # $1 repo ; $2 tag ; $3 title ; shift 3 ; extra assets
     # Belt and braces at the call site: the helper cannot return blank on exit 0, and if it ever did,
     # `gh release create -F` would happily publish an empty body.
     grep -q '[^[:space:]]' "/tmp/rel-body-$repo.md" || die "$repo: release notes are whitespace only — refusing"
-    gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag"
+    # `gh release create` can create the release and still fail — an asset upload rejected mid-way
+    # (plausible for java's jar) leaves the release itself sitting there. A rerun's own guard, two lines
+    # up (`gh release view`), then sees "already released" and skips — it never re-uploads. This DIES
+    # rather than falling through silently, same shape as the tag-push fix above, and names the exact
+    # remedy `gh release view` cannot: the release exists, only the asset does not.
+    gh release create "$tag" "$@" -R "tombaldwin/$repo" -t "$title" -F "/tmp/rel-body-$repo.md" && ok "$repo $tag" \
+      || die "$repo $tag: gh release create failed or a partial upload — check \`gh release view $tag -R tombaldwin/$repo\`.
+     If the release exists but an asset is missing, re-upload it directly (a rerun of this script will
+     NOT retry it, because the release already existing is the normal skip case):
+       gh release upload $tag $* -R tombaldwin/$repo --clobber"
   fi
 }
 # ALL SEVEN, not four. This cut java/swift/agents/spec only, while `release-verify.sh` checks all seven —
@@ -277,7 +294,14 @@ fi
 rs_in_set candor && { cd "$ROOT/candor" || die "cannot cd to $ROOT/candor"; }
 rel candor "v$VER" "candor v$VER"
 if rs_in_set candor; then
-git rev-parse "v$VER" >/dev/null 2>&1 && skip "umbrella tag v$VER exists" || { git tag "v$VER" && git push origin "v$VER" && ok "umbrella v$VER"; }
+# Same remote-existence guard as step 2 — see rs_tag_and_push in _release_set.sh.
+rs_tag_and_push "v$VER" ""; utprc=$?
+case "$utprc" in
+  3) skip "umbrella tag v$VER already on origin" ;;
+  0) ok "umbrella v$VER" ;;
+  *) die "umbrella: v$VER did not reach origin — see the message above. Fix access/network and re-run;
+     the local tag is kept and reused, only the push repeats." ;;
+esac
 # PASS THE TAG, NOT THE BARE VERSION. update-candor.sh tags whatever string it is handed and its usage line
 # asks for `v0.16.0`; this passed `$VER`, so every release grew a SECOND umbrella tag and a second GitHub
 # release beside `v$VER` — 0.25 and 0.26 both carry the pair. Harmless (both resolve) and untidy, and the

@@ -749,13 +749,19 @@ chmod +x "$UCW/bin/gh" "$UCW/bin/curl"
 # takes no `-c` flags (unlike every commit this test harness makes directly), so a runner with no global
 # git identity (CI's is bare) would fail the commit before the push logic under test ever ran.
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
-ucfix() { # $1=umbrella dir  $2=tag(vX.Y.Z) — a throwaway umbrella whose OWN tag pre-exists locally, so
+ucfix() { # $1=umbrella dir  $2=tag(vX.Y.Z) — a throwaway umbrella whose OWN tag pre-exists ON ORIGIN, so
   # update-candor.sh's umbrella tag/push and gh-release steps skip and this row is scoped to the tap alone.
-  local d="$1" tag="$2" ver="${2#v}"
-  rm -rf "$d"; mkdir -p "$d/scripts" "$d/bin"
+  # ORIGIN, not just local: rs_tag_and_push (bin/_release_set.sh) now checks the REMOTE for this tag —
+  # that is the fix this whole file exists to cover — so the fixture must give it a real origin carrying
+  # the tag, or step 2 would try to push and fail on a fixture with no remote at all.
+  local d="$1" tag="$2" ver="${2#v}" remote="${1}-remote.git"
+  rm -rf "$d" "$remote"; mkdir -p "$d/scripts" "$d/bin"
   cp "$UMBRELLA/scripts/update-candor.sh" "$d/scripts/update-candor.sh"
+  cp "$UMBRELLA/bin/_release_set.sh" "$d/bin/_release_set.sh"
   printf '#!/usr/bin/env bash\nUMBRELLA_VERSION="%s"\n' "$ver" > "$d/bin/candor"
-  ( cd "$d" && git init -q && git add -A && git commit -qm init && git tag -a "$tag" -m t )
+  git init -q --bare "$remote"
+  ( cd "$d" && git init -q && git add -A && git commit -qm init && git tag -a "$tag" -m t \
+    && git remote add origin "$remote" && git push -q origin HEAD "$tag" )
 }
 uctap() { # $1=bare remote dir  $2=local clone dir — the pair `CANDOR_TAP` is pointed at
   local remote="$1" local_="$2" seed
@@ -834,6 +840,108 @@ rm -rf "$UCC"
 
 unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 rm -rf "$UCW"
+
+say "4c. rs_tag_and_push — the guard checks the REMOTE, not the local ref"
+# THE DEFECT. release.sh's steps 2 and 7 (and update-candor.sh's own umbrella tag) used to do
+# `git tag "$tag" && git push origin "$tag" && ok "..."` — under release.sh's `set -uo pipefail` (no
+# `-e`), the push half failing does not die: the `&&` chain just stops evaluating and the script carries
+# on as if nothing happened. A rerun's idempotency check was `git rev-parse "$tag"`, which asks "do I
+# have this ref LOCALLY" — always yes after the dead run — so the push was never retried and the tag
+# never reached origin. For candor-ts that means the OIDC `publish.yml` an origin push triggers never
+# fires; the failure surfaces ~25 minutes later at the npm wait, misdiagnosed as candor-ts's workflow.
+#
+# These rows exercise the REAL `rs_tag_and_push` (bin/_release_set.sh) — the exact function release.sh
+# and update-candor.sh now call — against throwaway bare-repo pairs with real git. Nothing here reaches
+# GitHub, npm, or any repo but the throwaway ones created below.
+RTW="$(mktemp -d)"
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@e GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@e
+rtw_repo() { # $1=work dir — a fresh local clone-equivalent wired to a fresh bare "origin"
+  local d="$1" remote="${1}-origin.git"
+  rm -rf "$d" "$remote"
+  git init -q --bare "$remote"
+  git init -q "$d"
+  ( cd "$d" && git commit -q --allow-empty -m init && git remote add origin "$remote" \
+    && git push -q -u origin HEAD ) >/dev/null
+}
+rtw_run() { # $1=work dir  $2=tag — calls the REAL rs_tag_and_push from inside $1, prints RC=<n> last
+  ( cd "$1" && . "$UMBRELLA/bin/_release_set.sh" && rs_tag_and_push "$2" ""; echo "RC=$?" )
+}
+
+# --- CONTROL A: a tag already on origin must be skipped, not touched again -----------------------------
+D="$RTW/a"; rtw_repo "$D"
+( cd "$D" && git tag v9.1.0 && git push -q origin v9.1.0 ) >/dev/null
+outA="$(rtw_run "$D" v9.1.0 2>&1)"
+printf '%s' "$outA" | grep -q '^RC=3$' \
+  && ok "CONTROL A: a tag already on origin is recognised as done (RC=3), not re-pushed" \
+  || { bad "a tag already on origin was not recognised as done"; printf '%s\n' "$outA"; }
+
+# --- THE DEFECT'S OWN SHAPE: tag local-but-not-remote must now be PUSHED -------------------------------
+D="$RTW/b"; rtw_repo "$D"
+( cd "$D" && git tag v9.2.0 ) >/dev/null   # exactly the state a failed push used to leave behind
+[ -z "$(git --git-dir="${D}-origin.git" tag -l)" ] \
+  && ok "[fixture] origin does NOT have v9.2.0 yet — this is the defect's exact starting shape" \
+  || bad "[fixture] origin already has the tag — this row would prove nothing"
+outB="$(rtw_run "$D" v9.2.0 2>&1)"
+printf '%s' "$outB" | grep -q '^RC=0$' \
+  && ok "a tag local-but-not-remote is pushed (RC=0) — THE DEFECT'S FIX" \
+  || { bad "a local-only tag was not pushed"; printf '%s\n' "$outB"; }
+[ "$(git --git-dir="${D}-origin.git" tag -l)" = "v9.2.0" ] \
+  && ok "…and origin now actually carries the tag" \
+  || bad "rs_tag_and_push reported success but origin has no tag"
+
+# --- THE OVER-CHARGE CONTROL: a genuine push failure must fail LOUDLY, once, and never retry ------------
+D="$RTW/c"; rtw_repo "$D"
+( cd "$D" && git tag v9.3.0 ) >/dev/null
+( cd "$D" && git remote set-url origin "$RTW/does-not-exist.git" )   # simulates auth/network failure
+outC="$(rtw_run "$D" v9.3.0 2>&1)"
+printf '%s' "$outC" | grep -q '^RC=1$' \
+  && ok "a genuine push failure returns 1 — not silently swallowed, not retried" \
+  || { bad "a genuine push failure did not report RC=1"; printf '%s\n' "$outC"; }
+printf '%s' "$outC" | grep -qi 'not retried automatically' \
+  && ok "…and the diagnostic explains why (distinct from the tap's own contention-retry)" \
+  || bad "no diagnostic explaining that this path does not retry"
+( cd "$D" && git tag -l ) | grep -q v9.3.0 \
+  && ok "…and the local tag is KEPT (a later rerun with fixed access can reuse it, never recreated)" \
+  || bad "the local tag was deleted after a failed push — nothing left for a rerun to resume"
+# Fix access and re-run: THIS is the actual regression proof — the OLD local-only guard would have
+# printed "already exists" here and skipped forever, exactly as measured against release.sh's own
+# code at the top of this run (see the bare `bash -c` reproduction in the task's own investigation).
+( cd "$D" && git remote set-url origin "${D}-origin.git" )
+outC2="$(rtw_run "$D" v9.3.0 2>&1)"
+printf '%s' "$outC2" | grep -q '^RC=0$' \
+  && ok "…and once access is fixed, the VERY NEXT run retries the same tag and succeeds" \
+  || { bad "a rerun after fixing access did not retry the push"; printf '%s\n' "$outC2"; }
+git --git-dir="${D}-origin.git" tag -l | grep -q v9.3.0 \
+  && ok "…and origin has it now" || bad "origin still missing the tag after the successful rerun"
+
+# --- CONTROL D: the no-failure path behaves identically to before --------------------------------------
+D="$RTW/d"; rtw_repo "$D"
+outD="$(rtw_run "$D" v9.4.0 2>&1)"
+printf '%s' "$outD" | grep -q '^RC=0$' \
+  && ok "CONTROL D: a brand-new tag with no prior attempt is created + pushed in one call (unchanged)" \
+  || { bad "the ordinary no-failure path regressed"; printf '%s\n' "$outD"; }
+git --git-dir="${D}-origin.git" tag -l | grep -q v9.4.0 \
+  && ok "…and origin has it" || bad "origin is missing the tag on the ordinary, no-failure path"
+
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+rm -rf "$RTW"
+
+say "4d. release.sh + update-candor.sh actually WIRE UP the shared guard (regression pin)"
+# Without this, 4c proves the function is correct in isolation while a caller could still carry its own,
+# un-fixed `git rev-parse` check beside it — exactly the shape of bug this whole file's method exists to
+# catch (a fix that doesn't reach every call site it needs to).
+[ "$(grep -c 'rs_tag_and_push "v\$VER" ""' "$UMBRELLA/bin/release.sh")" = "2" ] \
+  && ok "release.sh calls rs_tag_and_push at both tag sites (candor-ts step 2, umbrella step 7)" \
+  || bad "release.sh does not call rs_tag_and_push exactly twice — a tag site kept the old local check"
+grep -q 'git rev-parse "v\$VER"' "$UMBRELLA/bin/release.sh" \
+  && bad "release.sh still has a LOCAL rev-parse tag-existence check — the defect this file closes" \
+  || ok "…and no local-only tag-existence check remains in release.sh"
+grep -q 'rs_tag_and_push "\$TAG"' "$UMBRELLA/scripts/update-candor.sh" \
+  && ok "update-candor.sh's own umbrella tag also calls the shared guard" \
+  || bad "update-candor.sh still has its own local-only tag guard"
+grep -qE '^\s*if git rev-parse "\$TAG"' "$UMBRELLA/scripts/update-candor.sh" \
+  && bad "update-candor.sh still has a LOCAL rev-parse tag-existence check (as CODE, not just the comment explaining why it was replaced)" \
+  || ok "…and no local-only tag-existence check remains in update-candor.sh's code"
 
 say "5. spec-bump.sh — the floor-bump rehearsal"
 # The ⟨0.27⟩ bump was done by hand and turned SIX repos red on version-coupled assertions, every one
@@ -2052,6 +2160,44 @@ printf '%s' "$fvout" | grep -q "release-verify FAILED (exit 9)" \
 printf '%s' "$fvout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
   && ok "…and the publish itself still happened before verify ran (verify is the LAST step, not a gate before publishing)" \
   || bad "release.sh did not publish before running verify — the step ordering regressed"
+
+say "9. gh release create can fail AFTER creating the release (e.g. a rejected asset upload) — must not swallow it"
+# `gh release create <tag> <jar> …` can create the release and still exit non-zero if the asset upload
+# fails (plausible for java's jar). The old code was `gh release create … && ok "$repo $tag"` with no
+# `|| die` — the exact same swallowed-failure shape as the tag-push defect above. A rerun's own guard
+# (`gh release view`, two lines up in `rel()`) then sees the release "exists" and skips, never
+# re-uploading — release-verify.sh catches the missing asset later by resolving the URL, but until this
+# fix the remedy (`gh release upload`) was in no die message anywhere in this script.
+csfix "$CSF"
+cp "$CS/bin/release-preflight-stub.sh" "$CSF/candor/bin/release-preflight.sh"
+cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
+( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
+  && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
+GHF="$(mktemp -d)"; mkdir -p "$GHF/bin"
+cat > "$GHF/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 ${2:-}" in
+  "auth status")  exit 0 ;;
+  "release view") exit 1 ;;   # not yet released — rel() takes the create branch
+  "release create")
+    echo "STUB-CREATE-THEN-FAIL $*"   # the release half "succeeds" — gh still reports overall failure
+    exit 1
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$GHF/bin/gh"
+ghfail="$(PATH="$GHF/bin:$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"; ghfailrc=$?
+[ "$ghfailrc" != 0 ] \
+  && ok "a gh release create failure makes release.sh exit non-zero — not silently continuing" \
+  || { bad "release.sh exited 0 despite gh release create failing — the swallowed-failure shape is back"; printf '%s\n' "$ghfail" | tail -6; }
+printf '%s' "$ghfail" | grep -q "gh release create failed or a partial upload" \
+  && ok "…and names the failure explicitly, rather than falling through to the next step" \
+  || bad "no diagnostic for the gh release create failure"
+printf '%s' "$ghfail" | grep -q "gh release upload v0.32.1 .* -R tombaldwin/candor-java --clobber" \
+  && ok "…and the remedy (\`gh release upload\`) is IN the die message, not left for the operator to guess" \
+  || bad "the gh release upload remedy is missing from the die message"
+rm -rf "$GHF"
 
 rm -rf "$CS"
 

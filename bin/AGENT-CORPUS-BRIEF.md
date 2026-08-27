@@ -97,3 +97,21 @@ Full context: `bin/corpus.sh` (the automated, hermetic corpus harness — this b
 ad-hoc rounds that harness doesn't cover, chiefly published-artifact and cross-arm comparisons),
 `TESTING.md` (family test standards), and the umbrella `CHANGELOG.md`'s dated entries for the round
 this brief was written from.
+
+## 11. Verify LOCALLY. Treat CI as confirmation, not as the gate.
+
+`bin/verify-local.sh` runs CI's union — every engine's real suite. `candor-spec/conformance/run.sh` runs
+the four-way differential. Between them, minutes on this machine answer what a queued runner takes an hour
+to. CI's genuinely unique contribution is narrow: the released-artifact arms.
+
+**Do not park waiting for a CI notification.** Half a dozen agents in one session stalled twenty minutes
+each on runs for work they had already proven locally, and a GitHub outage once orphaned three runs that
+would never start at all (zero jobs, `updated_at == created_at`, uncancellable and undeletable). Run the
+local checks, push, say once that CI is in flight, and send your report.
+
+`verify-local.sh` is also **stricter** than CI in at least one place — it caught a changelog lag that
+would have aborted the next release at step 0. A local green is worth more than a badge, not less.
+
+This machine (`anya.local`, 12 cores) is dedicated to this work. Long runs are cheap here. Sequence
+anything that shares a cache — the cargo registry, `.candor/` — because concurrent agents on one box do
+contend, and one round had to pin to pre-drift crate versions after another agent's fetch moved them.

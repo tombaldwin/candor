@@ -63,6 +63,12 @@ already closed it — nothing to file.
       independently — a wording fix, not a behaviour fix (behaviour already closed this review).
   12. `[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT (still open, field-reported).
 
+**FILED SINCE THIS REVIEW (2026-08-27), not ranked by it:** `[P2]` PR-GATE P4 — `--since-baseline`, the
+one unbuilt piece of the shipped PR-gate design. Deliberately not inserted into the order above: that
+order is a record of what the 2026-08-26 sweep found, and back-dating entries into it is how a dated audit
+stops being evidence. Rank it at the next review. Note its *implementation* has a category-1 fail-open
+shape even though its current behaviour does not.
+
 ## `[DECISION]` `receipt`'s TSV CAVEAT SHAPE NEEDS A SPEC RULING OR REJECTION (filed 2026-08-26)
 
 R55 is closed in **rust only** — the only engine with the `receipt` verb. The shape was decided
@@ -179,6 +185,67 @@ java's `fix` carries neither ⟨0.32⟩'s nor ⟨0.33⟩'s cause; rust and swift
 ts's `fix` answers `{crossing,…}` with no `ok` at all. **Not a soundness bug** — ⟨0.24⟩'s advisory law
 binds verbs that answer `ok`, and `fix` doesn't — but the reference engine being the odd one out is the
 wrong way round. Decide one way and make it uniform.
+
+
+
+## `[P2]` PR-GATE P4 — THE PR ANNOTATES EVERY VIOLATION, NOT THE ONES THE PR INTRODUCED (filed 2026-08-27)
+
+`integrations/github/PR-GATE-DESIGN.md` is **shipped as spec 0.8 (2026-07-02, conformance PART 12)**:
+P0 `--gate-json`, P1 the `candor-sarif` reporter, P2 `codeFlows` carrying the `path` hop chain, P3 Action
+wiring in `adopt/candor.yml`. **P4 — `--since-baseline`, annotate only what is new against the ratchet
+baseline — is the one piece of that design still unbuilt**, and it is the piece that decides whether a
+reviewer reads the annotations or dismisses them.
+
+**The difference it makes.** Today a PR on a repo with 40 standing violations shows 40 annotations, none
+of which the author caused. That is a wall to scroll past, and a reviewer learns within two PRs to ignore
+it. What the review surface is *for* is the one line that says **`OrderService.quote` now reaches `Db`,
+crossing the domain→infra boundary you declared, 3 hops via `billing.charge`** — a fact about *this
+change*. The same annotation is noise in the first framing and the whole point in the second.
+
+**Why now rather than at 0.8.** The reviewer of an agent-written PR did not write the code and cannot hold
+it in their head, so "what did this change gain the ability to do" is the only question they can actually
+answer by reading. That is the same argument the Claude Code Stop hook already won at edit time
+(`integrations/claude-code/`, which diffs effects against a baseline and hands back newly-introduced
+ones). P4 is that argument applied to the review surface, where the second pair of eyes is.
+
+**Nothing new to model — it is a filter over outputs that already exist.** `adopt/candor-init.sh` already
+records and commits `.candor/baseline.json` (the regression ratchet bites only when it is committed);
+`--gate-json` already emits structured violations; `candor-sarif` already renders them with locations and
+hop chains. P4 selects.
+
+**The hazard, and it is the category this backlog ranks first: a delta filter is a fail-open shape.**
+"No new violations" and "nothing was compared" produce the identical empty annotation set. A missing,
+unreadable or empty baseline must **refuse loudly or annotate everything and say why** — never emit zero
+quietly. Three specific ways it goes quiet:
+
+- **Missing/unreadable baseline.** The ratchet only bites when committed; a fork, a shallow checkout or a
+  first-run branch may not have it. Empty output there is a false all-clear on the surface most likely to
+  be trusted.
+- **Baseline recorded under a different engine.** AGENTS.md already states it: *"Upgrading invalidates
+  baselines. Coverage batches change what an engine sees."* A delta across an upgrade invents new
+  violations and, worse, can hide real ones behind entries the old engine never saw. The baseline must
+  carry the engine + spec version it was recorded under, and a mismatch must be named, not absorbed.
+- **The wrong base.** "New" has to mean *new against the merge base*, not against the branch tip or the
+  default branch's HEAD, or a long-lived branch annotates everything that landed on main meanwhile.
+
+**Controls are the deliverable, written first:** flag unset ⇒ **byte-identical output to today on every
+route**; violation present in the baseline ⇒ not annotated; violation absent from it ⇒ annotated; baseline
+missing/unreadable/empty ⇒ refusal naming which, never a silent zero; baseline's engine or spec version
+different from the running one ⇒ named mismatch. A PART pinning the false-all-clear arm specifically — an
+absent baseline must not read as a clean PR — since that is the arm a green run cannot distinguish.
+
+**Inherits the design doc's two open questions**, both still unanswered: reporter home + language
+(standalone script in `integrations/github/`, leaning that way, vs a subcommand of `candor-agents`); and
+repo-relative path resolution — `loc` is engine-relative to the scanned root, SARIF `uri` must be
+repo-relative, so a `--src-root` prefix-strip is needed or annotations land on the wrong file.
+
+**P2, not higher.** Today's behaviour is noisy but *honest* — it over-reports, and over-reporting is the
+safe direction. Nothing is failing open right now; the risk is entirely in the fix, which is why the
+controls above come before the feature. **Sequence it behind the family-level answer, not ahead of it:**
+this sharpens a surface that adoption has to reach first, and the standing steer is still *sell before
+building* — the concierge assessment found what no scanner would, while the shipped engines have 0 stars
+across six repos and ~272 organic `candor-scan` pulls. P4 makes the review surface worth adopting; it
+does not make anyone adopt it.
 
 
 

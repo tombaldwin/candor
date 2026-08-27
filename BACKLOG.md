@@ -64,43 +64,71 @@ already closed it — nothing to file.
   12. `[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT (still open, field-reported).
   13. `[NEW, B7 below]` four conformance-row candidates from the 2026-08-26 fix wave were deferred —
       specification and fixture detail on file so the next pass starts ahead, not re-discovered.
+      **UPDATE 2026-08-27: three landed (PART 74/75/76, candor-spec `ede38f2`, `conformance: OK`); the
+      ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
+      candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
-## `[NEW]` FOUR DEFERRED CONFORMANCE-ROW CANDIDATES FROM THE 2026-08-26 FIX WAVE (filed 2026-08-27)
+## `[NEW]` FOUR DEFERRED CONFORMANCE-ROW CANDIDATES FROM THE 2026-08-26 FIX WAVE — THREE CLOSED 2026-08-27
 
 Six rows were recommended by the agents that fixed their underlying defects (ts, java, rust, swift ×2)
-on 2026-08-26. Two landed in candor-spec `conformance/run.sh` — PART 72 (route equality, four-way,
-mutant-falsified) and PART 73 (candor-swift's `#if`-shadow, falsified against the real pre-fix binary
-`bcb4bc8`). The other four were judged not landable to the same evidentiary bar in one pass; each is
-recorded here with the concrete commit/fixture detail already gathered, so it does not need
-re-discovering:
+on 2026-08-26. Two landed same-day in candor-spec `conformance/run.sh` — PART 72 (route equality,
+four-way, mutant-falsified) and PART 73 (candor-swift's `#if`-shadow, falsified against the real
+pre-fix binary `bcb4bc8`). The other four were judged not landable to the same evidentiary bar in one
+pass and deferred here. **A follow-on pass on 2026-08-27 landed three of the remaining four — PART 74
+(rust), PART 75 (swift), PART 76 (ts), all falsified against their real pre-fix binaries with
+over-charge controls, `conformance: OK` — leaving only the ts/LSP advisory-prose row open.** Detail on
+each, kept for the commit SHAs and cross-engine notes even where closed:
 
-- **ts, "a covered package's unanswerable key still speaks."** Fixed in candor-ts `5b9cfd5` (own
-  `.d.ts` silently shadowing a cross-file call into the compiled `.js`, dropping the effect entirely —
-  measured live on `got@15.1.0`: `deny Rand` exits 1 on git-tag source, exits 0 on the identical
-  compiled dist). Pre-fix parent `965a521`. A conformance row would need `--allow-js` and a
-  `helper.js`/`helper.d.ts`/`index.js` fixture (ts's own working tree carried an UNCOMMITTED test.mjs
-  addition of roughly this shape on 2026-08-26 — do not assume it is still there or rely on it; build
-  the row's own fixture). Open question the ts author raised and this pass did not check: whether
-  java/rust/swift have an analogous generated-stub-shadowing-real-implementation shape.
+- **ts, "a covered package's unanswerable key still speaks." CLOSED — PART 76 (candor-spec `ede38f2`).**
+  Fixed in candor-ts `5b9cfd5` (own `.d.ts` silently shadowing a cross-file call into the compiled
+  `.js`, dropping the effect entirely — measured live on `got@15.1.0`: `deny Rand` exits 1 on git-tag
+  source, exits 0 on the identical compiled dist). Pre-fix parent `965a521`. The row uses a
+  `helper.js`/`helper.d.ts`/`index.js` fixture built fresh under `--allow-js` (the ts working tree's own
+  uncommitted test.mjs addition from 2026-08-26 was NOT relied on and its current state was not
+  re-checked). Four cells: an unambiguous cross-file call resolves onto the real sibling
+  (`absent` → `["Rand"]` across the pre/post-fix binaries), an ambiguous/unminted match discloses
+  `Unknown` rather than dropping (`absent` → `["Unknown"]`), and two over-charge controls (no sibling
+  `.d.ts`; a same-file reference) sit unmoved at `["Rand"]` on both binaries. Cross-engine question
+  the original ask raised: whether java/rust/swift have an analogous generated-stub-shadowing shape.
+  Answered by reasoning, not exhaustive audit — java reads compiled bytecode (signature and body are
+  the same artifact, so there is no separate declaration file to shadow anything), rust's `syn`-based
+  scan has no declaration/implementation split for its own crate's code, and swift's nearest analogue
+  (`.swiftinterface`) describes a binary-framework boundary rather than a same-package source pairing.
+  None of the three is audited beyond that reasoning — still open if a corpus round wants to press it.
 
-- **rust, "construction-site charging."** Fixed in `e6ac9ee` (`WalkDir::new(p)` charged at
-  construction because `IntoIter::next` is receiver-typing-blocked) and swept in `19ce144`
-  (`ignore::Walk::new`, the one other same-shape victim found; the other 9 fixes in that sweep are a
-  different bug — missing verb spellings, not the construction/iteration split). Pre-fix parent for the
-  primary fix: `8734b87`. Fixture shape: a crate with `for entry in WalkDir::new(".") { … }` under
-  `deny Fs`. Not checked: whether java/ts/swift have an analogous same-crate lazy-iterator shape — the
-  original ask, unexamined by this pass.
+- **rust, "construction-site charging." CLOSED — PART 74 (candor-spec `ede38f2`).** Fixed in `e6ac9ee`
+  (`WalkDir::new(p)` charged at construction because `IntoIter::next` is receiver-typing-blocked) and
+  swept in `19ce144` (`ignore::Walk::new`, the one other same-shape victim found; the other 9 fixes in
+  that sweep are a different bug — missing verb spellings, not the construction/iteration split).
+  Pre-fix parent for the primary fix: `8734b87`. The row drives three independently-idiomatic silent
+  forms (`for entry in WalkDir::new(".")`, `.into_iter().count()`, an untyped `.next()` loop) — all
+  three read `absent` from `functions` on `8734b87` and `["Fs"]` at HEAD — plus three over-charge
+  controls that sit unmoved on both binaries: the narrower explicit-type-annotation shape the old rule
+  already caught, the sibling `ignore` crate's already-modeled construction charge, and a plain
+  `std::vec::Vec::into_iter()` chain (the entire reason the receiver-typing blocklist exists). Checked
+  this pass: java is not exposed to the MECHANISM (`Files.walk`/`.list` are charged at the producing
+  bytecode call directly, no separate blocked-verb step to fall into) and ts resolves through a real
+  type-checker rather than a syntactic verb blocklist. swift shares candor-rust's syntax-only
+  resolution and has an analogous LOCAL `Sequence`/`IteratorProtocol` receiver-typing split, but no
+  third-party-package classify table the way rust's `classify(crate_name, path)` works — whether an
+  equivalent third-party SPM package shape exists is still UNAUDITED.
 
-- **swift, "an overloaded protocol-extension provided member must resolve or union — never vanish."**
-  Fixed in `bcb4bc8` (parent `a9ab1a6`): a concrete-receiver dispatch to a protocol extension's default
-  member skipped the `overloadedBases` check its sibling dispatch arms already had, silently dropping
-  the effect. Part of the dispatch-arc/provided-method vein (SOUNDNESS-VEIN docs, R32–R44 range) but not
-  itself numbered in a commit message. Fixture: a protocol with two overloads of a provided method, one
-  pure and one performing `Exec`, called through a concrete conforming type — `deny Exec` must still
-  fire. This pass built PART 73 for the SIBLING swift fix (`098a035`, conditional-compilation shadow)
-  from the same commit range instead, because that item's fixture triple was fully specified in the
-  original ask and this one was not — lower design risk in the time available, not a judgement that this
-  item is less real.
+- **swift, "an overloaded protocol-extension provided member must resolve or union — never vanish."
+  CLOSED — PART 75 (candor-spec `ede38f2`).** Fixed in `bcb4bc8` (parent `a9ab1a6`): a concrete-receiver
+  dispatch to a protocol extension's default member skipped the `overloadedBases` check its sibling
+  dispatch arms already had, silently dropping the effect. Part of the dispatch-arc/provided-method
+  vein (SOUNDNESS-VEIN docs, R32–R44 range) but not itself numbered in a commit message. The row's four
+  cells: a protocol with two overloads (one pure, one `Exec`) called through a concrete conforming type
+  resolves onto the real member (`absent` on `a9ab1a6` → `["Exec"]` at HEAD); a genuinely ambiguous
+  same-arity pair (`Exec` + `Env`, label-only distinguished — this engine does not model argument
+  labels) unions rather than drops (`absent` → `["Env", "Exec"]`); two over-charge controls (a genuine
+  local override; the non-overloaded case) sit unmoved at their pre-fix values on both binaries. This
+  is the item PART 73 was built from instead in the prior pass, for the SIBLING swift fix (`098a035`,
+  conditional-compilation shadow) — both are from the same 2026-08-27 fix wave but are different code
+  paths; PART 73's cross-engine question about candor-rust's `#[cfg(...)]` analogue is unrelated to this
+  item's own cross-engine question, which is still open: an analogous
+  overload-resolution-through-a-default-member shape in java/rust/ts is UNAUDITED, not assumed unique
+  to swift.
 
   **PART 73's own cross-engine question, referenced from its `# ENGINES:` line and this repo's
   CHANGELOG.md as "filed to BACKLOG.md" — this IS that filing.** PART 73 pins candor-swift's `#if
@@ -111,20 +139,38 @@ re-discovering:
   Not assumed clean — genuinely unchecked. candor-java and candor-ts have no compile-time
   conditional-declaration construct, so this is rust-only as a follow-on.
 
-- **ts/LSP, "advisory prose must not contradict the gate's actual exit."** Fixed in candor-ts `658e3c0`
-  (`lsp.mjs`'s `discloseIncompleteness`, parent `c8aa89a`): the LSP's live diagnostic text hard-coded
-  "gate --report exits 2" without checking whether a certain violation elsewhere in the same report
-  would make the real exit 1. **The MCP-equivalent question the original ask flagged as explicitly
-  unexamined was checked this pass, and the flag should stay up, not come down — with a finding:**
-  `mcp.mjs`'s own `candor_gate` tool already computes `violations`+`incomplete` fresh per call with no
-  stale hard-coded exit-code claim, so MCP's *tool-call* surface is clean. But `query.mjs`'s
-  `gateLine()` (~line 203–207, last touched `a44e615` on 2026-08-11, untouched by `658e3c0`) has the
-  IDENTICAL unfixed defect for `unanalyzed`/`unreadable` causes, and it feeds `incompleteAnswerNote()` —
-  called from the shared advisory helpers used by `where`, `callers`, `show`, `map`, `reachable`,
-  `containment`, `blindspots`, `gains`, `diff`, `tour`, and `path`. Any of those verbs, run over a
-  report with `unanalyzed` code AND a certain violation elsewhere, will still print the false "exits 2"
-  claim. This is a live, unfixed sibling of a defect already closed once in the same file family — not
-  itself a conformance row, since it needs a candor-ts code fix first, but it should not sit unflagged.
+- **ts/LSP, "advisory prose must not contradict the gate's actual exit." STILL OPEN — the underlying
+  defect this row would test has moved since the entry below was written; read `73100d9` before
+  building it.** Originally: fixed in candor-ts `658e3c0` (`lsp.mjs`'s `discloseIncompleteness`, parent
+  `c8aa89a`), the LSP's live diagnostic text hard-coded "gate --report exits 2" without checking whether
+  a certain violation elsewhere in the same report would make the real exit 1. The MCP-equivalent
+  question that entry raised was checked and found clean (`mcp.mjs`'s `candor_gate` computes
+  `violations`+`incomplete` fresh per call, no stale claim) — but `query.mjs`'s `gateLine()` carried the
+  IDENTICAL defect, unfixed, feeding `incompleteAnswerNote()` and through it eleven verbs (`where`,
+  `callers`, `show`, `map`, `reachable`, `containment`, `blindspots`, `gains`, `diff`, `tour`, `path`).
+
+  **THAT HAS NOW BEEN FIXED, in candor-ts `73100d9`, AFTER the above was written — a conformance row
+  for it needs to test the FIX, not the still-open defect this entry describes.** `73100d9` added a
+  `certainViolationOver` pre-check to `gateLine()` and, on widening the inventory past that one trigger
+  (per the corpus brief's rule 9), found and fixed TWO MORE confirmed instances of the identical defect
+  (`advisoryNoManifestNote`/`advisoryJudgedNothingNote`, feeding `whatif`/`fix-gate`/`unverified`) and a
+  THIRD, DIFFERENT bug on `gateLine()` itself: `outOfScope` (⟨0.30⟩'s own exit-2 cause) had no arm at
+  all and fell into the wrong tail, printing "exits 0" for a report that already exits 2 before any
+  violation is considered. A first attempt at the main fix also introduced the opposite error the
+  corpus brief warns about — folding the ABSOLUTE `unreadable` refusal into the same certain-violation
+  branch as `unanalyzed`, which would claim a false "1, not 2" dominance for a cause that in fact
+  dominates unconditionally — caught before landing and given its own unconditional arm.
+
+  A conformance row here would need FOUR fixture families (one per fixed site:
+  `gateLine`'s `unanalyzed`/`unread` causes, `gateLine`'s newly-fixed `outOfScope` arm,
+  `advisoryNoManifestNote`, `advisoryJudgedNothingNote`), each crossed with "a certain violation
+  elsewhere in the report" vs "none", run through at least one of the eleven verbs `gateLine` feeds and
+  one of the three verbs the `advisory*Note` pair feeds, and an unconditional control for
+  `advisoryUnreadableNote` (must NOT be conditioned — `unreadable` dominates absolutely, the exact
+  error the first fix attempt made). Falsification would be against candor-ts `a44e615` (`gateLine`'s
+  last touch before `658e3c0`) for the first family and against the commit immediately before
+  `73100d9` for the other three — NOT the same pre-fix binary for all four cells. Not built this pass;
+  the shape above is deliberately concrete so the next pass does not need to re-read `73100d9` cold.
 
 **FILED SINCE THIS REVIEW (2026-08-27), not ranked by it:** `[P2]` PR-GATE P4 — `--since-baseline`, the
 one unbuilt piece of the shipped PR-gate design. Deliberately not inserted into the order above: that

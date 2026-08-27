@@ -8,6 +8,45 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified
+
+The night of the 0.33.0 cut, a corpus round against the PUBLISHED artifacts (not HEAD) found **thirteen
+cardinal sins across all four engines, plus a nine-crate classifier class** — hours after that same
+release had passed a three-lens review panel, four-way conformance, CI on seven repos, and
+URL-resolving `release-verify.sh`. The method that found them existed only in prompt text handed to
+that night's agents; nothing survived the session that could be handed to the next one. Following
+`bin/AGENT-RELEASE-BRIEF.md`'s precedent (a short, paste-able brief, not a runbook), the umbrella now
+carries its sibling:
+
+- **`bin/AGENT-CORPUS-BRIEF.md`.** Ten rules, each a measured finding, not a preference: calibrate by
+  seeding a violation and proving the engine catches it *before* trusting any clean result; scan a
+  library as a dependency of a hand-written consumer, not standalone (rust's standalone scans found
+  nothing — both real findings came from a consumer exercising the public API); test published
+  artifacts and prove the binary's identity AND freshness (`ls -lT`, never `ls -t | head` — a stale
+  0.27 jar and a swift binary one minute behind HEAD were both picked by the latter); a comparison is
+  only evidence if its arms differ in exactly the thing under test (one finding was false because two
+  variables moved at once — ⟨0.32⟩ working as designed); include a tree shape the ecosystem's own
+  convention hides (no SPM package ever reaches the zero-exclusion path, because every one excludes
+  `Package.swift`); "0 violations" is not evidence until the instrument is proven able to fail
+  (`blindspots` once called a silent filesystem walk "every call resolved"); stop and report on a
+  cardinal sin rather than finishing the sweep, but say what was left unexamined (three early stops
+  left tails later rounds found defects in); a clean result is a LEAD not a conclusion (java read
+  clean for two rounds until asking *why*, with an instruction to attack the answer, broke it in one
+  attempt); an audit's boundary must not be drawn around its own trigger (a walkdir audit called one
+  hole "unique, not a class" and cited `ignore` as the sound model — `ignore` had the same hole one
+  constructor over, and a later sweep found nine more victims); and a finding needs a reproduction,
+  the larger reliable one over a smaller flaky one. Plus the standing per-engine traps that cost real
+  time on recurrence (JS truthiness, Foundation's `1`-as-`Bool` bridging, Gson coercion, a
+  `cargo build --release` that exits 0 without rebuilding, swift's "0 tests in 0 suites" and
+  `(0 unexpected)` masking crashes, `$?` after a pipe, an unset `--out` dirtying the repo).
+
+  Linked from `TESTING.md` (beside the release brief) and from `bin/corpus.sh`'s own header, which is
+  the automated hermetic half of a corpus round — this brief is for the manual, ad-hoc half that
+  script doesn't cover: published artifacts and cross-arm comparisons specifically.
+
+No engine or spec change; no version bump. `bin/corpus.sh` itself is unchanged apart from the pointer
+comment above.
+
 ## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective
 
 The 0.33.0 cut took **three aborted `release.sh` runs**; every abort was a gate correctly catching a

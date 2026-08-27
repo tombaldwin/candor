@@ -15,6 +15,13 @@ first — four rules, each written after a release-day abort cost real time (CHA
 report-don't-poll, verify-after-not-before, one owner per repo/file). It is written to be pasted whole
 into an agent's prompt.
 
+**Running a corpus round — real third-party code, published artifacts, a spot-check?** Read
+[`bin/AGENT-CORPUS-BRIEF.md`](bin/AGENT-CORPUS-BRIEF.md) first — ten rules (calibrate before trusting a
+clean result; test published artifacts, not HEAD; a clean result is a lead, not a conclusion; an
+audit's boundary must not be drawn around its own trigger) plus the standing per-engine traps. Written
+after a single night's round found thirteen cardinal sins across all four engines, hours after a
+release that had passed a three-lens review, four-way conformance, and CI. Also paste-able whole.
+
 ## 1. Two layers, and what each owns
 
 - **The unit layer** owns pure logic: parsers, scope/literal matchers, classifier table lookups, set

@@ -14,6 +14,12 @@
 # A round that lives in a scratchpad is a round that gets reconstructed from memory next time, slightly
 # differently, which is how a measurement stops being comparable. So: run this before a release.
 #
+# THIS SCRIPT IS THE AUTOMATED, HERMETIC HALF OF A CORPUS ROUND. For the manual, ad-hoc half it does
+# NOT cover — published-artifact testing, cross-arm comparisons, an audit that needs a human/agent
+# judgment call about scope — read bin/AGENT-CORPUS-BRIEF.md first. It is the paste-able method doc
+# a single night's round was distilled into after finding thirteen cardinal sins this script's two
+# oracles could not have caught.
+#
 # WHAT IT IS NOT. It is NOT `candor-java/eval/corpus-crossorg/run.sh` — that is the paper's PRE-REGISTERED
 # RQ1 evidence, hash-pinned to a FROZEN engine, and it aborts on a current build. Leave it frozen. This
 # writes only under its own work dir and NEVER under any `eval/` (see the standing rule: do not run a

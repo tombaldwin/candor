@@ -10,6 +10,11 @@ keeps its own.
 
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified
 
+- **`AGENT-CORPUS-BRIEF.md` rule 11: verify locally, treat CI as confirmation.** `verify-local.sh`
+  plus `conformance/run.sh` answer in minutes what a queued runner takes an hour to, and the local check is
+  STRICTER in at least one place. Half a dozen agents in one session stalled on CI notifications for work
+  they had already proven.
+
 - **`CLAUDE.md`: hand every dispatched agent a brief, and tell it to attack the premise.** Measured
   over one session: roughly a third of the mechanisms the coordinator handed agents were wrong or
   backwards while the findings themselves were all real, and every inversion was caught by an agent

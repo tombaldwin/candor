@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (unreleased)
+## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (released 2026-08-27 as 0.33.1)
 
 - **`AGENT-CORPUS-BRIEF.md` rule 11: verify locally, treat CI as confirmation.** `verify-local.sh`
   plus `conformance/run.sh` answer in minutes what a queued runner takes an hour to, and the local check is
@@ -60,7 +60,7 @@ No engine or spec change in this section — docs and briefs only; `bin/corpus.s
 apart from the pointer comment above. (It ships in the 0.33.1 cut, which carries the engine fixes the
 round this brief was written from found.)
 
-## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective (unreleased)
+## 2026-08-26 — release tooling: four fixes from the 0.33.0 cut retrospective (released 2026-08-27 as 0.33.1)
 
 The 0.33.0 cut took **three aborted `release.sh` runs**; every abort was a gate correctly catching a
 change made mid-cut by someone who didn't know that gate's contract. Four fixes, no engine or spec

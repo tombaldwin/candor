@@ -5388,3 +5388,53 @@ down ONCE as a non-normative rationale note in §3.1 or PRINCIPLES.md — no MUS
 re-derivation cost is real (the ⟨0.33⟩ emission guard hit this shape from two engines in one week); a
 rationale note answers it at near-zero cost. **Promote to a MUST only if a second non-JSON consumer
 surface ever appears, and then with a row.**
+
+## ⟨0.34⟩ ITEM 2 (`min-report-spec`) — DEFERRED (Tom, 2026-08-28). Don't build it.
+
+Approved 2026-08-26, deferred on review. **It does not solve the problem it was invented for.**
+
+The design doc rules out a blanket version floor in its first section, then names the real gap: a
+consumer cannot distinguish *key absent because the producer predates it* from *key absent because the
+producer chose not to emit it*. `min-report-spec` addresses NEITHER — it is that same rejected floor
+with an opt-in flag on it. A version floor cannot say WHY a key is missing; it refuses everything old,
+including the reports measured as perfectly answerable (the 63/63 with no `peeked:true` class, which are
+the whole reason ⟨0.33⟩'s cost is 76% and not 100%).
+
+Cost was a §3.4 clause + config parsing four-way + a PART + a route inventory that ran to 38 surfaces in
+ts last time — for a defaults-OFF feature with no operator demand behind it.
+
+### Instead: document the external check (zero engine cost)
+
+The envelope already carries `spec`. A supply-chain operator gets the same floor today, in CI, where
+they actually work. **Tested 2026-08-28** — including the ladder trap a string compare inverts:
+
+    jq -e '(.candor.spec // "0.0") | split(".") | (.[0]|tonumber)*1000 + (.[1]|tonumber) >= 33' r.json
+
+    "0.33" -> 0    "0.34" -> 0    "0.32" -> 1    "0.9" -> 1 (correctly BELOW 0.33)    absent -> 1
+
+`"0.9"` is the cell that matters: lexicographically it sorts above `"0.33"`, so a naive `<` comparison
+inverts it. Absent `spec` fails closed. Belongs in the docs beside the ⟨0.33⟩ refusal, not in an engine.
+
+## OPEN DESIGN QUESTION — vintage vs emission ambiguity (the gap ITEM 2 was reaching for)
+
+**This had no queue item at all, despite being the ⟨0.34⟩ design doc's own strongest finding.** Filed
+now so it survives.
+
+For any key a report does not carry, a consumer cannot tell:
+- **absent because the producer PREDATES the key** — it could not have emitted it; silence is not a
+  claim; or
+- **absent because the producer CHOSE not to emit it** — silence IS a claim, per §2 rule 3.
+
+Those license opposite conclusions. It is [[candor-026-sidecar-manifest]]'s collapse one level up: there,
+a PARTIAL sidecar answered WORSE than an ABSENT one, and the fix was to make the KEY SET its own
+manifest. The same move is the obvious candidate here — a producer-vintage key manifest, so a report
+states which keys its producer was capable of emitting — but that is a design question, not a decision.
+
+**Why it matters beyond ⟨0.33⟩:** ⟨0.33⟩'s refusal is DERIVED, not designed — an absent key happens to
+read as the empty set, a coincidence of this rung's shape. **⟨0.30⟩ added no field and removed none; it
+changed what a gate DOES with an existing one.** A future ⟨0.30⟩-shaped rung would SILENTLY MISREAD an
+old report rather than refuse it, and nothing in the format would catch it. That is the cardinal-sin
+direction, and it is the reason this question outranks the feature it came from.
+
+Open, unscheduled, no owner. Needs a design pass before any rung that changes the meaning of an
+existing key.

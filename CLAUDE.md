@@ -51,9 +51,17 @@ modes, which would have sent the audit past the ABSENCE direction that produced 
 asserted a hole that a commit six days earlier had closed. An entry that says what it measured can go
 stale honestly. One that states a conclusion cannot.
 
-**Tell dispatched agents to BLOCK, not to stall.** An agent that stops to report "waiting on the suite"
-ends its turn and costs a resume. Four turns went that way in one session. Say: poll in a loop inside a
-single turn; a full conformance run is ~476s, far cheaper than the round trip.
+**Do not tell agents to "block, not stall" — tell them to run the long command in the FOREGROUND.**
+An agent that stops to report "waiting on the suite" ends its turn and costs a resume. Measured
+2026-08-28: the instruction "BLOCK, do not stall — poll in a loop inside one turn" was written into this
+file, put verbatim into six briefs, and **failed all six times**, every one an agent in candor-spec
+waiting on `conformance/run.sh`. An agent that has already backgrounded a job will stall no matter how
+the rule is phrased, because by then stopping is the only move it has.
+
+What works is removing the choice: **"run `bash conformance/run.sh` in the foreground and wait for it —
+do not background it."** Name the mechanism, not the intention. This is worth remembering as a general
+point about these instructions: a rule the agent must remember to APPLY is weaker than one that removes
+the option, and a rule that has failed six times is not a rule, it is a note.
 
 ## The standing checks
 

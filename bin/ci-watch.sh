@@ -27,8 +27,37 @@
 # path filter matched). Non-zero on any failure, any stall, or any run still pending.
 set -uo pipefail
 
-REPOS=("candor-spec" "candor-rust" "candor-ts" "candor-java" "candor-swift" "candor-agents" "candor")
-[ $# -gt 0 ] && REPOS=("$@")
+# Flags are parsed BEFORE the repo list is built. Getting this order wrong (measured 2026-08-28) put the
+# literal string `--wait` into REPOS as if it were a repo, and the re-exec below then dropped the repo
+# list entirely — so `--wait candor-spec candor-rust` silently watched all seven and reported OK over a
+# set the caller never asked for. A gate whose SCOPE can differ from its request is fail-open by shape.
+WAIT=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --wait) WAIT=1; shift ;;
+    -*)     echo "ci-watch: unknown flag '$1'" >&2
+            echo "usage: ci-watch.sh [--wait] [repo ...]" >&2; exit 64 ;;
+    *)      break ;;
+  esac
+done
+
+DEFAULT_REPOS=("candor-spec" "candor-rust" "candor-ts" "candor-java" "candor-swift" "candor-agents" "candor")
+REPOS=("${DEFAULT_REPOS[@]}")
+if [ $# -gt 0 ]; then
+  # An argument that is not a known repo is a USAGE ERROR, never a silently-enumerated "repo" that then
+  # contributes nothing to the verdict. Same reason as above: silence about a name we cannot check reads
+  # as a pass. (candor-ux-pass: a bad argument is a usage error, and failures carry remedies.)
+  for want in "$@"; do
+    ok=0
+    for known in "${DEFAULT_REPOS[@]}"; do [ "$want" = "$known" ] && ok=1 && break; done
+    if [ "$ok" -eq 0 ]; then
+      echo "ci-watch: '$want' is not a candor repo" >&2
+      echo "  known: ${DEFAULT_REPOS[*]}" >&2
+      exit 64
+    fi
+  done
+  REPOS=("$@")
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STALL_FACTOR="${STALL_FACTOR:-3}"
 OWNER="tombaldwin"
@@ -41,11 +70,12 @@ OWNER="tombaldwin"
 #
 # On expiry it prints the last snapshot and exits 2. It must never turn "I got bored" into green: the
 # deadline bounds how long this WAITS, not what it CONCLUDES.
-if [ "${1:-}" = "--wait" ]; then
+if [ "$WAIT" -eq 1 ]; then
   WAIT_MAX="${CI_WATCH_WAIT_MAX:-1800}"
   deadline=$(( $(date +%s) + WAIT_MAX ))
   while :; do
-    out="$("$0")"; st=$?
+    # Pass the repo list through. Re-execing bare here is what dropped it (2026-08-28).
+    out="$("$0" "${REPOS[@]}")"; st=$?
     if [ "$st" -ne 2 ]; then printf '%s\n' "$out"; exit "$st"; fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       printf '%s\n' "$out"

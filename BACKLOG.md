@@ -5199,9 +5199,18 @@ direction the script exists to prevent.
 
 Never surfaced before because every prior call this session was bare or repos-only, never flag+repos.
 
-Fix: parse flags first, then build REPOS from what remains. Add a row asserting an unknown/flag-shaped
-repo argument is a hard usage error, not a silently-enumerated "repo" — `[[candor-ux-pass]]` already
-rules that a missing/!bad arg is a usage error.
+**FIXED 2026-08-28. On measuring it the defect was WORSE than filed above.** Falsified against the
+pre-fix script: `ci-watch.sh bogusrepo` exited **0** printing `ci-watch: OK — every workflow enumerated
+at every HEAD concluded success`. A repo that does not exist produced a GREEN RELEASE GATE — not a
+drifted enumeration, but zero repos checked and a pass reported. `--wait` was being placed into exactly
+that position, so every `--wait` invocation carried a phantom repo that could only contribute a pass.
+
+A second, independent bug found in the same read: the `--wait` path re-execed `"$0"` with NO ARGUMENTS,
+silently discarding the requested repo list and watching all seven instead. A gate whose SCOPE can
+differ from its request is fail-open by shape, whatever its verdict logic does.
+
+Fixed: flags parsed before REPOS is built; an unknown repo or flag is exit 64 with the known list as the
+remedy ([[candor-ux-pass]]); the re-exec passes `"${REPOS[@]}"` through. Post-fix both cases exit 64.
 
 ## Two unexamined residuals (filed 2026-08-28, neither audited — hypotheses, not findings)
 

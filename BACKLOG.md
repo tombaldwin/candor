@@ -5247,6 +5247,45 @@ net-partner. Narrowing the scan route's counting instead would delete a true obs
 fix separately from the measurement, and measure first.** Unassessed: whether this asymmetry exists in
 java/ts/swift (rust only was traced), and whether `zeroMatch` is verdict-affecting or advisory anywhere.
 
+**MEASURED 2026-08-28 — reproduces, and it is FOUR-WAY.** Fixture: `add_numbers` (pure on both routes)
++ `write_something` (effectful), policy `deny Fs add_numbers`. Byte diff is a single key:
+
+    scan --policy:  {"ok":true,"analyzed":{"count":3},"violations":[]}
+    gate --report:  {"ok":true,"analyzed":{"count":3},"violations":[],"zeroMatch":["deny Fs add_numbers"]}
+
+Control (`deny Fs write_something`, effectful): byte-identical on both routes, exit 1, no `zeroMatch` —
+so the divergence is specific to the pure-on-both-routes quadrant, not general breakage. Held constant:
+same tree, same freshly-built binaries, same policy; only the route varied.
+
+**Present in ALL FOUR engines** (java `Policy.discloseZeroMatchRules`, swift `gateInputFromReport`, and
+ts by a structurally DIFFERENT cause — its report route deliberately passes an empty callgraph, which is
+CORRECT per §3.1's no-re-derivation MUST). **Advisory-only in all four** — confirmed by ⟨0.27⟩'s spec
+text ("MUST NOT change `ok` or the exit code"), by code, and by execution. Ceiling is a spurious "this
+rule bound nothing" warning on the safe side; never a hidden violation.
+
+**But it does violate §3.1's byte-equality MUST as written, in four engines, undocumented.** Options
+priced: (A) widen the wire format to carry pure names — reopens the ⟨0.21⟩ purity-by-absence tradeoff,
+four-way port, and is the same producer-side-information wall that got `net-partner` reverted;
+(B) narrow the scan route — REJECTED, deletes a true observation; (C) suppress on the report route —
+REJECTED, swallows the genuine typo case PART 32/36 already pin. **(D) RECOMMENDED: a narrow SPEC
+carve-out** on §3.1 scoped to `zeroMatch` under this one condition, mirroring the ⟨0.24⟩
+manifest-limitation precedent, optionally with an advisory when `analyzed.count > |functions|`. Turns an
+accidental unstated MUST violation into a stated bounded one. **Leaving it undocumented is the only
+option that is not defensible.** Needs Tom's ruling.
+
+**THE BLIND SPOT IS FOUR-WAY TOO, and is the more valuable finding.** Every byte-equality test in the
+family scopes its rule to a name that matches NOTHING ANYWHERE (the typo case) — conformance PART 32/36
+use `zzz_no_such_layer`; java's `GateReportVerbTest` uses `pure app.Nothing`; ts's `POLICIES` corpus has
+`scoped_none`(typo)/`scoped`(effectful); swift uses `pure ZzzNoSuchScope` over a fixture with no pure
+function to scope onto. **Four independent suites, all testing the wrong kind of miss** (absent
+everywhere) and never the wrong kind of hit (present on the scan route only). A row in that quadrant is
+owed regardless of which fix option is chosen.
+
+**Correction to this entry's own wording:** there is no `smoke.sh` in candor-rust — the file is
+`ci/wrapper-smoke.sh`, and it tests wrapper exit codes, touching `zeroMatch` nowhere. `grep -rl
+'zeroMatch\|zero_match' crates/*/tests/` returns ZERO hits: all rust coverage of it lives in
+candor-spec's conformance suite.
+
 The blind spot in the smoke policy set **is** real — it was
 read off the policy list, not inferred. Next step is a fixture in that quadrant, falsified against a
 pre-fix binary before it counts as a row ([[candor-032-route-and-fixture-lessons]]).

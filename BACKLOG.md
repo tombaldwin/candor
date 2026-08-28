@@ -5209,6 +5209,11 @@ Both surfaced during the ⟨0.33⟩ work and were carried in conversation only. 
 explicitly, per the audit rule: **neither has been measured.** What follows is why each is worth a
 look, not a claim that either is broken.
 
+**CORRECTED 2026-08-28 after review.** Two errors in the original filing, both mine: (1) residual 1 was
+filed under "silent under-report" and is NOT one — see its own section; (2) residual 2's class label
+was too narrow and would have mis-briefed the audit — see its own section. Left visible rather than
+rewritten away, because the second error is the interesting one.
+
 ### 1. `zeroMatch` §3.1 divergence, and `smoke.sh`'s blind spot around it
 
 `smoke.sh` exercises no policy that applies a **pure-scoped rule to a function that is pure on both
@@ -5218,16 +5223,45 @@ verdict matches, and only the `zeroMatch` list would differ. Route equality is b
 verdict document (§3.1), so a divergence confined to that key is exactly the shape the suite cannot
 see today.
 
-Unknown whether the divergence is real. The blind spot in the smoke policy set **is** real — it was
+**NOT A CARDINAL SIN — corrected.** Traced read-only in rust: the scan route builds `all` from the full
+collected function set BEFORE the emission gate drops pure functions (`candor-scan/src/scan.rs:2353` →
+`policy_violations` `:3499`), while the report route builds it from the report's `functions` array, where
+a pure function has no entry at all (`candor-query/src/gate.rs` ~`:94-95`, `:634`). So a pure-scoped rule
+counts >=1 on the scan route and 0 on the report route, landing in `zeroMatch` on one route only. The
+failure is a **FALSE DISCLOSURE** (a rule reported as binding nothing when it bound a pure function)
+plus a §3.1 route break — the PART-13b shape. **No effect is under-reported.** Filing it as a possible
+cardinal sin overstated it.
+
+Cheap to MEASURE (one fixture, both routes, diff — ~1h in rust). Possibly NOT cheap to FIX: the report
+lacks the pure functions the count needs, which is the producer-side-information constraint that killed
+net-partner. Narrowing the scan route's counting instead would delete a true observation. **Price the
+fix separately from the measurement, and measure first.** Unassessed: whether this asymmetry exists in
+java/ts/swift (rust only was traced), and whether `zeroMatch` is verdict-affecting or advisory anywhere.
+
+The blind spot in the smoke policy set **is** real — it was
 read off the policy list, not inferred. Next step is a fixture in that quadrant, falsified against a
 pre-fix binary before it counts as a row ([[candor-032-route-and-fixture-lessons]]).
 
 ### 2. rust-deep's crate-name-keyed `invisible` mechanism, everywhere else
 
-rust-deep keys at least one `invisible` disclosure decision on the **crate name**. Crate-name keying
-is the same shape as the coverage-gate row-drop found on 2026-08-28 (`candor-rust 3a32fdf`): a key
-assumed unique that isn't, with sibling crates/targets colliding. It is also the shape behind the
-⟨0.29⟩ locator-position vein, where one helper produced the identical defect at three call sites.
+rust-deep keys `invisible` disclosure decisions on the **crate name** — ~30 `crate_name` call sites in
+`candor-rust/src/lib.rs`; the funnel at `:2689-2722` classifies by `(crate_name, path)` and hangs
+`invisible` off the crate-name string.
+
+**CLASS LABEL CORRECTED.** The original filing called this "a key assumed unique that isn't". That
+covers only ONE of the two failure directions and would have sent the audit past the other:
+
+- **COLLISION** — a workspace crate sharing a name with a `CALIBRATED_CRATES` member inherits R59's
+  exemption for its unclassified calls. Constructible; incidence unmeasured. (This is the coverage-gate
+  row-drop's direction, `candor-rust 3a32fdf`.)
+- **ABSENCE** — no crate name exists to key on, so disclosure has nowhere to hang and goes silent.
+  **This is R60's actual measured mechanism**, and an audit briefed only on uniqueness walks straight
+  past it.
+
+So the class is **"a crate name used as an identity when it is not one"**, which fails BOTH ways. Two
+confirmed sins came out of this mechanism in the week to 2026-08-28. SOUNDNESS.md's own R59/R60
+close-out already states the limit: rust-deep's `invisible` disclosure remains crate-name-keyed
+everywhere OUTSIDE the local-extern seam R60 closed. Audit cost ~half a day.
 
 Audit boundary, stated up front so it is not drawn around its own trigger: grep **every** site that
 keys on a crate name in rust-deep, not the one instance that prompted this. The `ignore`/`walkdir`

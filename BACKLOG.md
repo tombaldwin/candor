@@ -5522,15 +5522,27 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
    release talk — the index line is not enough.
 
 ### Ready to work, no ruling needed
-3. **candor-spec: SOUNDNESS R64 + its conformance PART.** Shapes 1/2 CLOSED at candor-ts `b4c3a22`;
+3. ~~**candor-spec: SOUNDNESS R64 + its conformance PART.**~~ **DONE — candor-spec `01c7fd5`, PART 82.**
+   Shapes 1/2 independently re-verified in throwaway clones before writing; 4 cells reddened pre-fix,
+   the open cell and both controls unmoved. R64 argued structurally ts-only (rust attribute-macro args
+   are unevaluated token streams; swift's are compile-time AST; java requires compile-time constants,
+   JLS 9.7.1). Original text: Shapes 1/2 CLOSED at candor-ts `b4c3a22`;
    shape 3 stays open with its now-MEASURED rationale (byte-identical on 2 of 3 real corpora, +52% rows
    on a real Angular app). Row should pin both fixed shapes, both over-charge controls, and shape 3 as a
    documented-open case — mirroring how PART 81 pinned R57.
-4. **The four-way byte-equality blind spot.** Owed regardless of which `zeroMatch` option is chosen:
+4. ~~**The four-way byte-equality blind spot.**~~ **DONE — candor-spec `01c7fd5`, PART 83.** Confirmed
+   all four suites scope to "matches nothing"; measured the missing quadrant four-way and it diverges in
+   ALL FOUR. The row RECORDS the current measured state (scan silent / report false-positive
+   `zeroMatch`), paired with an effectful-sibling control proving the divergence stays confined to the
+   pure-matched quadrant. **A future red cell here likely means the §3.1 ruling landed — rewrite the
+   wanted value then, do NOT loosen the assertion.** Original text: Owed regardless of which `zeroMatch` option is chosen:
    EVERY byte-equality test in the family (PART 32/36, java `GateReportVerbTest`, ts `POLICIES`, swift
    `testGateJsonIsByteEqualToTheScanRoute`) scopes to a name matching NOTHING ANYWHERE. Four independent
    suites, all testing absent-everywhere, none testing present-on-one-route-only.
-5. **java `--policy` accept-and-drop.** Accepted on 11 descriptive verbs, never forwarded into
+5. ~~**java `--policy` accept-and-drop.**~~ **DONE FOUR-WAY** — java `37c9b10`, rust `e4bc419`, ts
+   `2c2147e`; swift was already conformant. **Still owed:** the SPEC clause (§3.1 for the descriptive
+   verbs, §3.2 for `rewire`) and a `verb_reject` conformance loop over the verbs × four engines,
+   mirroring the existing `gains_reject` battery (~line 1995 of `conformance/run.sh`). Original text: Accepted on 11 descriptive verbs, never forwarded into
    `denyRules`. Step 1: is `--policy` meaningful per verb, or a usage error there? Step 2: **sweep all
    four engines** — found in java only, and the boundary must not be drawn around its trigger.
 
@@ -5582,3 +5594,29 @@ the model java copied, so it is an existing spec-sanctioned gap rather than some
 **Owed:** the rust and ts fixes; a SPEC note extending ⟨0.18⟩'s "`gains` has no `--policy`" to name the
 full set (§3.1 for the eleven, §3.2 for `rewire`); and a conformance `verb_reject` loop over twelve
 verbs × four engines, mirroring the existing `gains_reject` battery (~line 1995 of `conformance/run.sh`).
+
+## Three instrument failures in one session — the pattern is the finding
+
+All three were caught, none by re-reading. Recording them together because they are the same shape.
+
+1. **`ci-watch.sh` printed OK over a repo it had stopped tracking** — and handed a name that was not a
+   repo at all, exited 0 with "every workflow enumerated at every HEAD concluded success". Zero repos
+   checked, green reported. Fixed (`candor b8c53a6`).
+2. **PART 83's first-draft checker could not fail.** Single-quoted Python dict-key literals nested inside
+   a bash single-quoted `python3 -c '...'` string: bash silently strips the inner quotes, and the damage
+   is INVISIBLE ON THE PASSING PATH because the message-building line only evaluates on a real
+   divergence. Caught only by feeding it synthetic "divergence closed" / "routes now differ" documents
+   and getting a Python `NameError` instead of a clean `FAIL:`. **This is the second bash single-quote
+   corruption in `conformance/run.sh` in one day** — the earlier one was in a PART 80 checker script.
+3. **A rust test was passing BECAUSE of the bug.** `cli.rs`'s no-manifest-hedge test passed `--policy` to
+   four descriptive verbs incidentally, working only because the flag was silently dropped. Fixing the
+   defect turns that test red, and the tempting move there is to loosen the new check until the suite
+   goes green. Removed the incidental flag instead.
+
+**The rule these argue for: a checker is not trusted until it has been made to FAIL on purpose.** A
+mutation control is cheap — feed the checker a document it must reject — and it is the only thing that
+distinguishes "this row passes" from "this row cannot report anything". Applies to conformance cells,
+release gates, and any script whose green is read as evidence.
+
+**Candidate follow-up:** sweep `conformance/run.sh` for the nested-single-quote pattern generally. It has
+produced two instrument failures in a day, and the failure mode is silent-green, which is the worst kind.

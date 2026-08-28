@@ -5275,3 +5275,63 @@ everywhere OUTSIDE the local-extern seam R60 closed. Audit cost ~half a day.
 Audit boundary, stated up front so it is not drawn around its own trigger: grep **every** site that
 keys on a crate name in rust-deep, not the one instance that prompted this. The `ignore`/`walkdir`
 lesson in CLAUDE.md is precisely that the audit scoped to its trigger missed nine more.
+
+## ⟨0.34⟩ ITEM 1 — review findings, and a coordinator ruling that was wrong
+
+Fable review, 2026-08-28, against candor-rust `f10bb82` + candor-ts `9a8a5c7`. Core claims VERIFIED:
+message-only holds (no wire path carries the flag; no consumer parses the prose — checked across
+umbrella `bin/`, `integrations/`, `adopt/`), the universal quantifier's polarity is right, and no
+constructible path reaches a false all-clear. What follows is what it found wrong.
+
+### MY RULING WAS WRONG — recorded because the artifact is right and the reason was not
+
+I ruled out the design doc's stderr-only option citing BACKLOG:185-193 ("stderr-only disclosure equals
+silence under `2>/dev/null`"). That principle is about a **machine-parsed** channel: `candor-run.sh`
+parses stdout TSV and discards stderr, so a disclosure THAT CONSUMER NEEDS dies. ITEM 1's sentence has
+no machine consumer — exit 2, `ok:false`, `incomplete:true` and `unaskedRules` all ride the parsed
+channel unchanged. BACKLOG:195-205 says outright that SPEC carries NO general stderr-only prohibition
+and that ⟨0.21⟩/⟨0.27⟩ each bind one named ENVELOPE KEY — the fact, not the prose.
+
+Two consequences worth keeping: **what shipped IS the human-channel-only option** (gate stderr, whatif
+stdout, LSP log), so my ruling did not describe the artifact it justified; and the cause detail was
+ALREADY human-channel-only before ITEM 1, so believing "stderr-only = silence" would indict ⟨0.33⟩, not
+this. **Correct grounds:** §3.1/⟨0.33⟩ forbid minting a wire key without a spec clause, and the two
+independently-coded readers per engine must compute ONE predicate.
+
+### F1 (medium, OPEN) — both engines cite a SPEC clause that does not exist
+
+`grep -c '0\.34' candor-spec/SPEC.md` → **0**. `candor-ts/query-core.mjs` alone → **12** references to
+"⟨0.34⟩", written as citations; rust's completeness.rs/gate.rs/lib.rs likewise. The real authority is a
+scratchpad design doc. When ⟨0.34⟩ is actually written — carrying ITEM 2, possibly the R55 ruling — two
+shipped engines will be misquoting it. **And no conformance PART pins the two-sentence behaviour**, so
+the java/swift ports have nothing holding them to the same predicate. F2 is that gap already realised.
+
+### F2 (low, OPEN) — rust and ts have ALREADY diverged in the unpinned space
+
+ts `parseSpecLadder` trims; rust `parse_spec_ladder` does not. A report with `"spec": " 0.33"` and a
+`scannedUnder` mismatch: rust prints "produced before ⟨0.33⟩ … did not yet record the deny set" (FALSE,
+the key is present); ts prints the accurate "does not cover". Same exit, same verdict. Reachable only
+from nonconformant input, and unpinnable until F1's PART exists. Where the engines HAD to agree they do:
+`"0.9"` vs `"0.33"`, `"0.33.1"`, absent/garbage — pinned identically in both unit suites.
+
+### F5 (note) — silent deviation from the approved design
+
+The design doc and the backlog headline both say the message should NAME the producer's spec version
+("produced at spec 0.32"). Both engines print "produced before ⟨0.33⟩" and never print the envelope
+value. Defensible (absent spec has nothing to print; a mixed old set has no single value) and arguably
+better — but record it, or the item reads misclosed.
+
+### Also filed
+- F4: the completeness text says "the report(s) under this locator predate", but the accounting is over
+  every CONTRIBUTING report — false of a freshly re-scanned sibling. Neither engine NAMES which report
+  predates, so a stale sibling reproduces the byte-same message after the user follows the remedy
+  exactly. Safe-direction, pre-existing in shape; naming the paths closes both.
+- ts's exported `reportCompleteness()` return object gained `unaskedRulesPredates033` — not a document
+  change, but a library-API surface change for npm consumers of `query-core.mjs`.
+- "THE SAME policy" is necessary, not sufficient: the real condition is the same EXPANSION. Producer and
+  consumer expanding one policy file through different `.candor/config` aliases still refuse. Inherited
+  from ⟨0.33⟩; the message does not say so.
+
+**Not verified by the review** (declared, per the audit rule): the pre-fix-binary falsification claims in
+both commit messages — checking them needs builds that write into repos other agents held. Trusting the
+commits' word there, not evidence seen.

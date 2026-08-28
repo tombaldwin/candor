@@ -1259,10 +1259,40 @@ flips its own row from CONFIRMED DEFECTIVE to OK, and the two skip-baseline line
 (`main.swift:1810`, `DERIVED_EXCLUSIONS: Set<String> = ["build-output"]`) — the first `[P1]` below is
 closed. Java's source-peek closer is shipped (`Candor.java:774-798`, `compileSourcesForPeek` +
 `source-without-class`/`source-newer-than-class` handling, with the undrivable-class withdrawal for
-non-`.java` members of the same class) — the `[P2]` below is closed. **Swift's platform-pruned files
-are STILL open** — confirmed still absent from `excluded[]` (`main.swift:969-972` still only appends to
-the human-readable `note`, never to `excludedFiles`); nothing else in the repo adds a `platform-pruned`
-class. Promoted to its own dated entry below rather than left buried in this superseded cluster.
+non-`.java` members of the same class) — the `[P2]` below is closed. ~~**Swift's platform-pruned files are STILL open** — confirmed still absent from `excluded[]`
+(`main.swift:969-972` still only appends to the human-readable `note`, never to `excludedFiles`);
+nothing else in the repo adds a `platform-pruned` class.~~ **THIS WAS WRONG — CLOSED, and it was
+already closed when it was filed. Corrected 2026-08-28 by an agent told to attack its premise.**
+
+Every literal statement above is TRUE and the conclusion drawn from them is FALSE. `main.swift:969-972`
+really does only touch the `note`, and no `platform-pruned` class really did exist. But a LATER, more
+general commit — **`ee49295` "B1 (swift): the scope, and the peek", 2026-08-16**, nine days after the
+cited code and **six days BEFORE the review that filed this** — added a before/after diff over
+`sourcePaths` around `--target` resolution that files EVERY removed file into `excludedFiles`,
+whatever the reason. Platform-pruned files were already being swept in, just labelled
+`outside-the-target-closure`.
+
+**Measured, not argued:** a real `.xcodeproj` fixture (SDKROOT=iphoneos, a file wholly `#if os(macOS)`
+containing a live Fs call) run against the PRE-fix binary showed the file already in `excluded[]`,
+already peeked by the child-process peek, and the effect inside it already flipping the verdict to
+`ok:false, incomplete:true, exit 2` via `outOfScope` under `deny Fs`. The ⟨0.29⟩/⟨0.32⟩ machinery was
+never bypassed.
+
+**THE LESSON, which is the reusable part.** The audit asked *"is there a `platform-pruned` class?"* —
+correct answer, no — when the property it actually cared about was *"do these files reach `excluded[]`
+by ANY route?"* Grepping for the mechanism you expect cannot see a different mechanism already
+delivering the property. This is the audit-boundary rule one level in: the boundary was drawn around a
+NAME rather than a BEHAVIOUR. Ask what the report must CONTAIN, then find every route that puts it
+there.
+
+**What was genuinely wrong (smaller, real, fixed at candor-swift `328a67f`):** the shared class label.
+`outside-the-target-closure`'s reason string ("production sources... an unscoped scan WOULD have
+judged") is only half-true of code dead on this platform in EVERY target's build, and SPEC §2 requires
+a class `reason` to say why the class exists in the engine's own terms. Split into its own
+`platform-pruned` class, peeked identically, with a guard against double-counting. Old-vs-new binaries
+byte-identical for whole-repo, SPM-manifest `--target`, and pure cross-target scans; only the
+platform-pruned case changed, and only its `class`/`reason` strings. **No SPEC clause needed** — this
+was never a spec gap.
 
 **THE RULE'S COST IS CONFINED TO ONE ENGINE, which I had assumed was family-wide and it is not.**
 MEASURED: candor-ts and candor-rust PEEK their excluded sources — ts builds a child tsconfig listing

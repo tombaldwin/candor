@@ -5183,3 +5183,22 @@ cells, controls unaffected) and restored. **Note for future reference:** LSP `ru
 (`workspace/executeCommand candor.whatif`) is a *different call site* from the `diagnosticsFor` path the
 ⟨0.32⟩ tests drive — nothing had ever exercised it before this fix, which is how ts's MCP/LSP surfaces
 carried zero of four causes while the CLI carried all four undetected.
+
+## ci-watch.sh: `--wait` is swallowed into the repo list (arg-parse order)
+
+`bin/ci-watch.sh:31` sets `REPOS=("$@")` **before** `:44` tests `"${1:-}" = "--wait"`. So
+`ci-watch.sh --wait candor-spec candor-rust` treats the literal `--wait` as a repo name, and the
+enumeration that comes back matches neither the requested list nor the default list.
+
+Measured 2026-08-28: that invocation printed `ci-watch: OK — every workflow enumerated at every HEAD
+concluded success` over a 10-row list that **omitted candor-spec entirely**, while a concluded
+candor-rust row from the same early poll did survive. candor-spec's conformance at `8ced65e` was in
+fact `completed/success` (checked directly with `gh run list`), so nothing was missed in substance —
+but a fail-closed release gate printed OK over a repo it had stopped tracking, which is the failure
+direction the script exists to prevent.
+
+Never surfaced before because every prior call this session was bare or repos-only, never flag+repos.
+
+Fix: parse flags first, then build REPOS from what remains. Add a row asserting an unknown/flag-shaped
+repo argument is a hard usage error, not a silently-enumerated "repo" — `[[candor-ux-pass]]` already
+rules that a missing/!bad arg is a usage error.

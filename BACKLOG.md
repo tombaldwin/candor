@@ -5762,7 +5762,32 @@ followed by an explicit compare-to-expected-value or explicit-emptiness check (`
 any of the other four gates** — ci-watch.sh was the one built without this discipline, not a class present
 family-wide.
 
-### A3 — ts decorator-arg over-charge reproduces on a real 4th corpus
+### A3 — RESOLVED: ACCEPT AS-IS (no code change). My comparison in the original filing was WRONG.
+Reproduced exactly (22 new rows on a base of 233, +9.4%), then widened to SEVEN corpora: **0% to 9.6%**,
+tracking genuine DI/factory density rather than a blanket flood. **Zero fabrications across ~615 analyzed
+functions**; every pre-existing row byte-identical pre/post-fix; a decorator-arg unit with NEITHER
+`invisible` NOR `inferred` populated occurred **zero times**, confirmed with a pure-closure control
+(`@Column({default: () => 42})`) that mints nothing.
+
+**Three corrections to what I filed:**
+1. **My "22 here vs 42 on Angular" comparison was apples to oranges.** The rejected blanket variant is a
+   DIFFERENT FIX on a different axis — it also mints on shape-3 bare applications. Not the same mechanism,
+   so the numbers were never comparable. I used it to argue severity.
+2. **The narrowing I floated as option (b) — "only mint when the argument reaches an effect or an unread
+   import" — is ALREADY the implementation's behaviour.** Verified, not assumed.
+3. **Several new rows are genuine catches, not noise:** a real `Db` effect
+   (`TypeOrmModule.forRootAsync({dataSourceFactory: …new DataSource(o).initialize()})`) and two real
+   `Clock` effects (MikroORM's `@Property({onCreate: …})`) that were **SILENT before the fix**.
+
+The real lesson is the one that survives: **the original three-corpus measurement was under-powered, and
+its corpus choice decided its answer.** Seven corpora was enough to see the distribution. Recorded in
+candor-ts `09ec1fc`; SOUNDNESS.md R64 addendum text is in that agent's report, owed to candor-spec.
+
+**Found in passing, filed not fixed (orthogonal):** under a pnpm-managed `node_modules`, `invisible[]`'s
+package-name extraction reads `.pnpm` instead of the real package (e.g. `dedent`) — an npm-flat-layout
+assumption. Affects label quality generally, no minting decision.
+
+ORIGINAL FINDING:
 `brocoders/nestjs-boilerplate` (13k stars, deps genuinely installed): **22 new `<decorator-arg>` rows**, 18
 carrying `invisible:[…]`. Cause: `class-transformer`'s `@Transform(({value}) => …)` and NestJS's
 `registerAsync({useFactory: …})` — idioms the three tested corpora barely exercise. No fabricated effects,

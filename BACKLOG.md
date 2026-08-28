@@ -5620,3 +5620,43 @@ release gates, and any script whose green is read as evidence.
 
 **Candidate follow-up:** sweep `conformance/run.sh` for the nested-single-quote pattern generally. It has
 produced two instrument failures in a day, and the failure mode is silent-green, which is the worst kind.
+
+## The mutation gate — BUILT (candor-spec `73173de`), and independently falsified
+
+Answers "a checker that cannot fail still prints a pass", measured twice on 2026-08-28.
+
+**`conformance/mutation-gate.sh`** feeds each covered checker a poison document it MUST reject.
+Checkers are extracted LIVE from `run.sh` every run, not from a frozen copy — a frozen copy would rot
+into a different silent-green.
+
+**Covered:** PARTs 36, 37, 38, 39, 83 — 9 checkers, chosen as the rows whose green reads as a release
+signal. **NOT covered, stated not assumed:** PARTs 2/3/12/29/32/34/47/57/59-62/67-70/72 — those drive
+real engine binaries over source fixtures rather than a JSON document, so "feed it poison" does not
+transfer. Extending to them is a separate design question.
+
+**The control that terminates the regress.** `conformance/canary/cannot-fail.sh` carries the REAL
+historical bug shape, not a synthetic stub — a canary broken in a way no real checker would break proves
+nothing about real ones. The gate exits non-zero if the canary is absent from its findings OR if the
+canary reads PASS: it must be found, and found broken. So the gate demonstrates its own liveness in the
+same run in which it certifies everything else, and there is no gate-of-the-gate to build.
+**Outermost check, deliberately readable by eye:** output non-empty and containing the exact line
+`BROKEN  canary  cannot-fail`.
+
+**Falsified three ways by the author, and a fourth INDEPENDENTLY by the coordinator:** injecting a real
+break into `RS_PY_FAILCLOSED` (made to always `sys.exit(0)`) produced
+`BROKEN real PART37/RS_PY_FAILCLOSED` + `BROKEN canary cannot-fail`, exit 1, tree restored byte-identical.
+A gate that caught only its own canary would have been theatre; this one catches a real one.
+
+### The nested-quote lint: a CLEAN NEGATIVE, and the sweep hypothesis was wrong
+
+`scripts/check_nested_quotes.py`, wired into `run.sh` BEFORE any engine build (fail fast, not after 8
+minutes). **Zero live instances** — both known cases were already fixed same-session, and the two
+lookalikes are the deliberate `$HERE`-interpolation idiom. **The coordinator's "sweep for this pattern
+generally" hypothesis was wrong: it is not an open class.** The value is the standing gate, not a
+backlog of fixes.
+
+**And the lint repeated the very failure it exists to catch.** Building it cost three real bugs, each
+caught before shipping — most tellingly a `<<<` here-string mis-parsed as a heredoc, which made the lint
+**silently truncate its own scan of `run.sh`**. It was validated against `shfmt -tojson`, a real
+independent bash parser, rather than against its own logic — calibrate the instrument, never a copy of
+it. Six selftest cases pin all three, one with a hang budget.

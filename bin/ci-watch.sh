@@ -32,11 +32,13 @@ set -uo pipefail
 # list entirely — so `--wait candor-spec candor-rust` silently watched all seven and reported OK over a
 # set the caller never asked for. A gate whose SCOPE can differ from its request is fail-open by shape.
 WAIT=0
+SELFTEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --wait) WAIT=1; shift ;;
+    --wait)     WAIT=1; shift ;;
+    --selftest) SELFTEST=1; shift ;;
     -*)     echo "ci-watch: unknown flag '$1'" >&2
-            echo "usage: ci-watch.sh [--wait] [repo ...]" >&2; exit 64 ;;
+            echo "usage: ci-watch.sh [--wait] [--selftest] [repo ...]" >&2; exit 64 ;;
     *)      break ;;
   esac
 done
@@ -101,6 +103,31 @@ now=$(date -u +%s)
 #   instrument, not the instrument. Both halves are fixed here — a separator that cannot collapse AND a
 #   conclusion that is never empty — and the selftest now drives the parse itself.
 US=$'\037'
+
+# ── EVERY `gh` CALL IS CHECKED, NOT JUST READ ──────────────────────────────────────────────────────
+# All three `gh run list` call sites below used to end in `2>/dev/null` and never looked at $?. `gh`
+# failing (rate limit, network blip, an expired token) prints nothing to stdout — the IDENTICAL shape to
+# "this workflow genuinely has no runs" or "no earlier run exists" — so a flake and a clean absence read
+# as the same thing, and this script (whose whole header claims silence-read-as-pass was eliminated)
+# reported OK over a call it never checked. (Adversarial re-review 2026-08-28, finding B3: a stub `gh`
+# that failed ONLY the `--branch main` safety-net call still printed
+# "ci-watch: OK — every workflow enumerated at every HEAD concluded success", exit 0. Reproduced again
+# here before this fix, same output.)
+#
+# gh_call runs `gh "$@"`, leaves stdout in $GH_OUT and gh's real stderr (never discarded) in $GH_ERR, and
+# returns gh's own exit status. Every call site checks that status explicitly and, on failure, prints a
+# line naming the repo and the call and forces `rc=1` — a `gh` flake is now a red line, not a blank one.
+gh_call() {
+  local _err
+  _err="$(mktemp "${TMPDIR:-/tmp}/ci-watch-gh.XXXXXX")"
+  GH_OUT="$(gh "$@" 2>"$_err")"
+  local _st=$?
+  GH_ERR="$(cat "$_err")"       # command substitution strips trailing newlines cleanly
+  GH_ERR="${GH_ERR//$'\n'/ }"   # collapse any embedded newlines into spaces for a one-line message
+  rm -f "$_err"
+  return "$_st"
+}
+
 JQ_ROW='.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .createdAt'
 
 # THE STALL DECISION, as a function so it can be exercised without waiting for a real hang. A check whose
@@ -122,7 +149,7 @@ is_stalled() {
   [ "$1" -gt "$threshold" ]
 }
 
-if [ "${1:-}" = "--selftest" ]; then
+if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
   for row in "3420 600 3 yes" "300 600 3 no" "1801 600 3 yes" "1800 600 3 no" "99999 0 3 no" \
@@ -164,8 +191,25 @@ if [ "${1:-}" = "--selftest" ]; then
   printf "  %s %-18s -> %s\n" "$mark" "jq empty concl" "$emitted"
   echo "  (an in_progress run has conclusion \"\", not null; jq's // leaves it, and tab-separated it"
   echo "   collapsed and shifted createdAt out of the row — elapsed was 0 for every run, always)"
+
+  # THE gh WRAPPER. B3 (adversarial re-review, 2026-08-28): a `gh` that failed only the earlier-commit
+  # safety-net call still printed "OK", exit 0, because that call's stderr was discarded and nothing
+  # checked $?. Exercised here with a fake `gh` *function* — same reason the stall arm above is tested
+  # against synthetic rows instead of a real hung workflow: an alarm untested by anything but itself is
+  # not known to fire.
   echo
-  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, and its input parses" \
+  gh() { echo "stub gh failure" >&2; return 7; }
+  if gh_call run list -R fake/fake --commit deadbeef; then
+    echo "  ✘ gh_call reported success against a gh that exited 7"; fails=$((fails+1))
+  elif [ "$GH_ERR" != "stub gh failure" ]; then
+    echo "  ✘ gh_call did not surface gh's stderr (got '$GH_ERR')"; fails=$((fails+1))
+  else
+    echo "  ✔ gh_call surfaces a nonzero gh exit and its real stderr, never silence"
+  fi
+  unset -f gh
+
+  echo
+  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, and a gh failure is never silent" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
@@ -176,12 +220,23 @@ dur() { if [ "$1" -lt 60 ]; then printf "%ds" "$1"; else printf "%dm" $(( $1 / 6
 
 # The historical median duration of a workflow, in seconds, from its last successful runs. Median rather
 # than mean: one 3h45m hang in the history would drag a mean past any threshold worth having.
+#
+# On a `gh` failure this prints "FAIL:<message>" rather than folding the failure into "0" silently — "0"
+# already means something real here (a workflow with no successful history yet, row 5 of the selftest
+# above, which must never be called stalled). Collapsing a `gh` flake into that same 0 would have made an
+# API blip indistinguishable from "no evidence" and silently disarmed the stall check for exactly the run
+# it exists to catch. NOT a global flag: every call site here runs this inside `$(...)`, which forks a
+# subshell, and a variable this function set would never reach the caller — it has to ride back in the
+# one channel that does, the captured stdout.
 median_secs() {
   local repo="$1" wf="$2"
-  gh run list -R "$OWNER/$repo" --workflow "$wf" --limit 12 \
-     --json conclusion,createdAt,updatedAt \
-     -q '.[] | select(.conclusion=="success") | [(.updatedAt|fromdateiso8601) - (.createdAt|fromdateiso8601)] | .[]' \
-     2>/dev/null | sort -n | awk '{a[NR]=$1} END{ if (NR==0) print 0; else print a[int((NR+1)/2)] }'
+  if gh_call run list -R "$OWNER/$repo" --workflow "$wf" --limit 12 \
+             --json conclusion,createdAt,updatedAt \
+             -q '.[] | select(.conclusion=="success") | [(.updatedAt|fromdateiso8601) - (.createdAt|fromdateiso8601)] | .[]'; then
+    printf '%s' "$GH_OUT" | sort -n | awk '{a[NR]=$1} END{ if (NR==0) print 0; else print a[int((NR+1)/2)] }'
+  else
+    printf 'FAIL:%s' "$GH_ERR"
+  fi
 }
 
 for repo in "${REPOS[@]}"; do
@@ -200,9 +255,19 @@ for repo in "${REPOS[@]}"; do
   # A superseded run is not evidence about anything — the newest run of a workflow at a commit is the
   # only one whose answer is about that commit. `gh` returns newest-first, so the first row per workflow
   # name wins; `awk` keeps insertion order rather than re-sorting.
-  rows="$(gh run list -R "$OWNER/$repo" --commit "$sha" \
-          --json workflowName,status,conclusion,createdAt -q "$JQ_ROW" 2>/dev/null \
-          | awk -F"$US" '!seen[$1]++')"
+  if gh_call run list -R "$OWNER/$repo" --commit "$sha" \
+             --json workflowName,status,conclusion,createdAt -q "$JQ_ROW"; then
+    rows="$(printf '%s' "$GH_OUT" | awk -F"$US" '!seen[$1]++')"
+  else
+    # A failed call here is not "no runs at HEAD" — it is "HEAD was never checked". Reporting the former
+    # over the latter is exactly B3 (adversarial re-review, 2026-08-28): this repo cannot be judged, so it
+    # is named as failed and skipped rather than falling into the "no run expected ✔" branch below, which
+    # would otherwise print a green line over a call that never ran.
+    printf "  %-14s %-26s ✘ gh FAILED (run list --commit) — %s\n" "$repo" "(gh)" \
+           "${GH_ERR:-no stderr captured}"
+    rc=1
+    continue
+  fi
 
   # WHICH WORKFLOWS MUST HAVE RUN, asked of the workflow files rather than of GitHub. Until this existed
   # the script printed "no run at HEAD (path-filtered, or never triggered — verify before trusting)" and
@@ -270,7 +335,25 @@ for repo in "${REPOS[@]}"; do
         fi
         elapsed=$(( now - started ))
         med=$(median_secs "$repo" "${wf}.yml")
-        [ "$med" -eq 0 ] && med=$(median_secs "$repo" "$wf")
+        case "$med" in
+          FAIL:*)
+            # median=0 could mean "no successful history" (fine, is_stalled treats it as never-stalled) OR
+            # "gh failed and we never found out" (not fine — a real stall would silently read as ordinary
+            # pending, the exact shape of B3). Never guess which; name it and fail closed instead of
+            # falling through to the "pending" branch below.
+            printf "  %-14s %-26s ✘ gh FAILED (median lookup) — %s — cannot judge stall for this run\n" \
+                   "$repo" "$wf" "${med#FAIL:}"
+            rc=1; continue ;;
+        esac
+        if [ "$med" -eq 0 ]; then
+          med=$(median_secs "$repo" "$wf")
+          case "$med" in
+            FAIL:*)
+              printf "  %-14s %-26s ✘ gh FAILED (median lookup) — %s — cannot judge stall for this run\n" \
+                     "$repo" "$wf" "${med#FAIL:}"
+              rc=1; continue ;;
+          esac
+        fi
         if is_stalled "$elapsed" "$med" "$STALL_FACTOR"; then
           printf "  %-14s %-26s ✘ STALLED — %s elapsed against a %s median. Not slow: stuck.\n" \
                  "$repo" "$wf" "$(dur "$elapsed")" "$(dur "$med")"
@@ -295,7 +378,18 @@ for repo in "${REPOS[@]}"; do
   #
   # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
   # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
-  latest="$(gh run list -R "$OWNER/$repo" --branch main --limit 40             --json workflowName,status,conclusion,headSha,createdAt             -q '.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .headSha'             2>/dev/null)"
+  if gh_call run list -R "$OWNER/$repo" --branch main --limit 40 \
+             --json workflowName,status,conclusion,headSha,createdAt \
+             -q '.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .headSha'; then
+    latest="$GH_OUT"
+  else
+    # Cannot tell "no earlier run exists" from "the call failed" without checking — this IS finding B3
+    # (adversarial re-review, 2026-08-28): a stub gh that failed only this call still printed OK, exit 0.
+    printf "  %-14s %-26s ✘ gh FAILED (run list --branch main, the earlier-commit safety net) — %s\n" \
+           "$repo" "(gh)" "${GH_ERR:-no stderr captured}"
+    rc=1
+    latest=""
+  fi
   # FAULT HOOK, same idea as `drop-row` above: this arm reports only when something upstream is broken,
   # so on a healthy repo it is indistinguishable from a check that does nothing. `stale-red` recolours
   # every completed non-HEAD run as a failure, which is exactly the state this exists to catch.

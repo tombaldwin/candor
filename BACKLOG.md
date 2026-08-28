@@ -5202,3 +5202,33 @@ Never surfaced before because every prior call this session was bare or repos-on
 Fix: parse flags first, then build REPOS from what remains. Add a row asserting an unknown/flag-shaped
 repo argument is a hard usage error, not a silently-enumerated "repo" — `[[candor-ux-pass]]` already
 rules that a missing/!bad arg is a usage error.
+
+## Two unexamined residuals (filed 2026-08-28, neither audited — hypotheses, not findings)
+
+Both surfaced during the ⟨0.33⟩ work and were carried in conversation only. Stating the boundary
+explicitly, per the audit rule: **neither has been measured.** What follows is why each is worth a
+look, not a claim that either is broken.
+
+### 1. `zeroMatch` §3.1 divergence, and `smoke.sh`'s blind spot around it
+
+`smoke.sh` exercises no policy that applies a **pure-scoped rule to a function that is pure on both
+routes**. That combination is the one where a `zeroMatch` divergence between `scan --policy` and
+`gate --report` could exist without any gate noticing: both routes agree the function is pure, so the
+verdict matches, and only the `zeroMatch` list would differ. Route equality is byte-equality of the
+verdict document (§3.1), so a divergence confined to that key is exactly the shape the suite cannot
+see today.
+
+Unknown whether the divergence is real. The blind spot in the smoke policy set **is** real — it was
+read off the policy list, not inferred. Next step is a fixture in that quadrant, falsified against a
+pre-fix binary before it counts as a row ([[candor-032-route-and-fixture-lessons]]).
+
+### 2. rust-deep's crate-name-keyed `invisible` mechanism, everywhere else
+
+rust-deep keys at least one `invisible` disclosure decision on the **crate name**. Crate-name keying
+is the same shape as the coverage-gate row-drop found on 2026-08-28 (`candor-rust 3a32fdf`): a key
+assumed unique that isn't, with sibling crates/targets colliding. It is also the shape behind the
+⟨0.29⟩ locator-position vein, where one helper produced the identical defect at three call sites.
+
+Audit boundary, stated up front so it is not drawn around its own trigger: grep **every** site that
+keys on a crate name in rust-deep, not the one instance that prompted this. The `ignore`/`walkdir`
+lesson in CLAUDE.md is precisely that the audit scoped to its trigger missed nine more.

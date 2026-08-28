@@ -5660,3 +5660,65 @@ caught before shipping — most tellingly a `<<<` here-string mis-parsed as a he
 **silently truncate its own scan of `run.sh`**. It was validated against `shfmt -tojson`, a real
 independent bash parser, rather than against its own logic — calibrate the instrument, never a copy of
 it. Six selftest cases pin all three, one with a hang budget.
+
+## Adversarial re-review, 2026-08-28 — SIX findings, including two gates verified the same day
+
+The over-charge/gate-defeat lens. Every CONFIRMED item below was reproduced by running code in throwaway
+clones, not argued from a diff. **Ranked; the top three are release blockers.**
+
+### B4 (HIGHEST) — `eval/coverage-gate` cannot see a rule NARROWED to a wrong effect
+`coverage_gate.rs` asserts `classify(krate, path).is_some()` and never checks the returned effect MATCHES
+the recorded one. Mutation run at candor-rust `e4bc419`: `async_nats`'s `connect`/`publish`/`subscribe`/
+`request`/`flush` changed from `Some("Net")` to `Some("Log")` → `cargo test -p candor-classify --test
+coverage_gate` **still passed**. A `deny Net` gate would then wave through code opening a NATS connection.
+The docstring's claim that "a rule narrowed regresses" is FALSE for any narrowing that stays non-`None`.
+**This is the gate built to stop exactly this class.**
+
+### B1 — the mutation gate's real coverage is a fraction of its stated scope
+Two defeats, both reproduced in a scratch copy:
+1. `VD_PY` (PART 36) is driven by `vd_doc` in ~9 modes (`ok0` 37×, `viol` 7×, `okt` 3×, `refused`, `v005`,
+   `unev:`, `zm:`, `nozm`) — mutation-gate exercises only `norefused`. Loosening the `ok0` branch to accept
+   a MISSING `ok` key still printed full `OK`.
+2. `RS_PY_FAILCLOSED` ANDs three conditions and the single poison document violates all three at once, so
+   no individual leg is isolated. Changing `bool(d.get("unanalyzed"))` to `"unanalyzed" in d` — which lets
+   an all-clear forged as `"unanalyzed": []` pass PART 37 — was NOT caught.
+**Why my own falsification missed this:** I broke a checker TOTALLY (always exit 0). A partial break is the
+realistic regression and it survives. **A poison document must isolate ONE condition at a time.**
+
+### B3 — `ci-watch.sh` still prints green over something it never checked
+The "red on an earlier commit" safety net is a SECOND `gh` call per repo (`--branch main --limit 40`) with
+stderr discarded. A stub `gh` that succeeds for the per-HEAD call and fails only that one yields
+`ci-watch: OK — every workflow enumerated at every HEAD concluded success`, exit 0. 7 repos × 2 calls = 14
+API calls per run, any one of which can flake silently. **Fixed once today already, by a different route.**
+
+### A3 — ts decorator-arg over-charge reproduces on a real 4th corpus
+`brocoders/nestjs-boilerplate` (13k stars, deps genuinely installed): **22 new `<decorator-arg>` rows**, 18
+carrying `invisible:[…]`. Cause: `class-transformer`'s `@Transform(({value}) => …)` and NestJS's
+`registerAsync({useFactory: …})` — idioms the three tested corpora barely exercise. No fabricated effects,
+but the row inflation the NARROW fix existed to avoid appears at a scale comparable to the REJECTED blanket
+variant (22 here vs 42 on Angular). **The over-charge measurement's corpus choice decided its answer.**
+
+### A4 — the swift platform-pruned fix is bounded to its own trigger; SwiftPM has the same hole, worse
+`swiftFileCompilesToNothing`/`platformExcludedFiles` live only in `xcodeTargetScope`. `PackageTargets.swift`
+(~528 lines) mentions neither "platform" nor `#if os`. Built at `328a67f` against a real SwiftPM package
+(`platforms: [.macOS(.v13), .iOS(.v16)]`) with a function wholly inside `#if os(watchOS)` doing
+`FileManager.createFile`: the provably-dead function is reported as a LIVE, undisclosed `Fs` effect — not
+excluded, not flagged. In the Xcode case the file at least reached `excluded[]` under a wrong reason; here
+it reaches nothing. **The audit boundary was drawn around the BACKLOG entry's example.**
+
+### B2 — `check_nested_quotes.py` allowlists interpreters, so `bash -c`/`sh -c` are invisible
+`INTERP_NAMES` covers python/node/perl/ruby/php/tclsh/osascript — no shells. The identical corruption in
+`bash -c '…'` was proven to split into THREE argv words at runtime (worse than the original in-word
+stripping). Zero live instances today, so a class boundary rather than a manifesting miss. **An allowlist
+under-reports whatever it forgot — [[candor-denylist-over-allowlist]] applies to the LINT too.**
+
+### A2 — open, unmeasured, safe direction
+The Cargo.lock check treats any `path`/`git` source as not-the-reviewed-artifact, including a git dep
+pinned to the crate's own upstream. Conservative (over-disclosure) and consistent with denylist-over-
+allowlist, so not filed as a defect — but unmeasured against a corpus that does it, and not flagged as a
+stated residual the way the no-lockfile case is.
+
+### A1 — CLEAN NEGATIVE, verified
+`--policy` exit-2: SPEC §3.1's pinned shapes read line by line for all twelve verbs. None carries a
+policy-derived field — `containment`'s `ambient` is the §6.1 cross-cutting classification, and
+`blindspots --class` selects on the report's own `reasonClass`. **The ruling holds.**

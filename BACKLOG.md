@@ -5335,3 +5335,32 @@ better — but record it, or the item reads misclosed.
 **Not verified by the review** (declared, per the audit rule): the pre-fix-binary falsification claims in
 both commit messages — checking them needs builds that write into repos other agents held. Trusting the
 commits' word there, not evidence seen.
+
+## candor-java: `--policy` is ACCEPTED and silently ignored on every descriptive verb
+
+Found 2026-08-28 during the ⟨0.34⟩ ITEM 1 java port, by an agent told to inventory every route rather
+than the one it was editing. **Reported, not fixed** — pre-existing, shipped with ⟨0.33⟩, and out of
+scope for a message-only rung.
+
+`--policy` on `show`/`where`/`callers`/`map`/`diff`/`blindspots`/`tour`/`impact`/`path`/`reachable`/
+`containment` is accepted by the shared arg parser but **never forwarded into
+`AnalysisState.ctx().denyRules`**. Only `gate`/`whatif`/`fix`/`fix-gate`/`unverified`/`gains` thread
+`policyFlag` through. Measured against the installed jar: `blindspots --report <predates> --policy <p>
+--strict` never reaches the cross-policy cause at all.
+
+**Why this is worse than a dead flag.** The user passes a policy, receives an answer computed WITHOUT
+it, and nothing discloses the difference. That is the [[candor-scan-guards]] config-disclosure class
+inverted: there, a key was reported as ignored WHILE being honoured (a false disclosure); here a flag is
+accepted with no report at all WHILE being dropped. Both license a conclusion the run does not support.
+[[candor-ux-pass]] rules an unusable argument a usage error — accepting it silently is the one option
+that rule excludes.
+
+**Ask before fixing, in this order:** (1) is `--policy` MEANINGFUL on each of these verbs, or should it
+be a usage error there? The answer likely differs per verb — `blindspots`/`containment` plausibly want
+it; `show`/`path` may not. (2) Do the other three engines accept-and-drop it on the same verbs? This was
+found in java only, and the audit boundary must not be drawn around its own trigger — **sweep all four**.
+(3) Does any verb that DOES thread it disclose that it did?
+
+Note the ⟨0.34⟩ ITEM 1 logic in `ReportCompleteness.unaskedRules` is computed generically and is
+therefore correct-but-unreachable via these verbs today. The port pinned it in-process rather than
+through a CLI route that cannot exercise it — the right call, and the reason this was noticed at all.

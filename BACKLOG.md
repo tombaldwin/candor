@@ -5364,3 +5364,27 @@ found in java only, and the audit boundary must not be drawn around its own trig
 Note the ⟨0.34⟩ ITEM 1 logic in `ReportCompleteness.unaskedRules` is computed generically and is
 therefore correct-but-unreachable via these verbs today. The port pinned it in-process rather than
 through a CLI route that cannot exercise it — the right call, and the reason this was noticed at all.
+
+## R55 RULED (Tom, 2026-08-28): option (a) — closed rust-local, no SPEC change
+
+Accepts the review's argument over the coordinator's lean toward (b). The three reasons, kept because
+(b) will look attractive again the next time this shape recurs:
+
+1. **The three instances are two-and-one, not three-of-a-kind.** ⟨0.21⟩ and ⟨0.27⟩ bind the JSON
+   envelope, where "the channel the consumer parses" is well-defined and a conformance row can pin it.
+   R55's consumer is one shell script's `read -r k v` loop. Two instances inside the envelope plus one
+   outside it is thin evidence for a standalone clause over arbitrary formats.
+2. **A general MUST here is unfalsifiable by row.** "A disclosure MUST ride a channel the documented
+   consumer actually reads" cannot be conformance-tested over formats that do not exist yet. ⟨0.29⟩'s
+   lesson stands: a MUST can exist in the spec and in ONE engine, and an untestable MUST breeds four
+   private interpretations.
+3. **The four-engine cost is an audit obligation, not a wording edit.** The moment §3.1 binds "any
+   channel a documented consumer reads", every engine owes a sweep of every non-JSON surface — human
+   summaries, SARIF, LSP diagnostics, MCP text, receipt. That is a rung, not a ruling, and it was not
+   what was being priced.
+
+**FOLLOW-UP, not yet done (candor-spec was owned by another agent at ruling time):** write the principle
+down ONCE as a non-normative rationale note in §3.1 or PRINCIPLES.md — no MUST, no PART, no port. The
+re-derivation cost is real (the ⟨0.33⟩ emission guard hit this shape from two engines in one week); a
+rationale note answers it at near-zero cost. **Promote to a MUST only if a second non-JSON consumer
+surface ever appears, and then with a row.**

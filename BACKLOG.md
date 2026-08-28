@@ -5507,3 +5507,43 @@ direction, and it is the reason this question outranks the feature it came from.
 
 Open, unscheduled, no owner. Needs a design pass before any rung that changes the meaning of an
 existing key.
+
+## CURRENT QUEUE — ranked, as of 2026-08-28 end of session
+
+Written down because it was being carried in conversation. Floor is **0.33 published**; ⟨0.34⟩ ITEM 1 is
+**built four-way, spec'd (SPEC §2), and pinned (PART 80) — but UNRELEASED**.
+
+### Needs Tom, blocking nothing
+1. **`zeroMatch` §3.1 ruling.** Measured: diverges scan-vs-report in ALL FOUR engines, advisory-only
+   everywhere, but violates §3.1's byte-equality MUST as written. Options priced in this file;
+   recommendation is (D), a narrow SPEC carve-out mirroring ⟨0.24⟩'s manifest-limitation precedent.
+   Leaving it undocumented is the only indefensible option.
+2. **Release ⟨0.34⟩, or hold.** Nothing forces a cut. Read [[candor-pre-publish-checklist]] BEFORE any
+   release talk — the index line is not enough.
+
+### Ready to work, no ruling needed
+3. **candor-spec: SOUNDNESS R64 + its conformance PART.** Shapes 1/2 CLOSED at candor-ts `b4c3a22`;
+   shape 3 stays open with its now-MEASURED rationale (byte-identical on 2 of 3 real corpora, +52% rows
+   on a real Angular app). Row should pin both fixed shapes, both over-charge controls, and shape 3 as a
+   documented-open case — mirroring how PART 81 pinned R57.
+4. **The four-way byte-equality blind spot.** Owed regardless of which `zeroMatch` option is chosen:
+   EVERY byte-equality test in the family (PART 32/36, java `GateReportVerbTest`, ts `POLICIES`, swift
+   `testGateJsonIsByteEqualToTheScanRoute`) scopes to a name matching NOTHING ANYWHERE. Four independent
+   suites, all testing absent-everywhere, none testing present-on-one-route-only.
+5. **java `--policy` accept-and-drop.** Accepted on 11 descriptive verbs, never forwarded into
+   `denyRules`. Step 1: is `--policy` meaningful per verb, or a usage error there? Step 2: **sweep all
+   four engines** — found in java only, and the boundary must not be drawn around its trigger.
+
+### Lower, measured, safe to defer
+6. R58 — java annotation-processor codegen, UNMEASURED. ~1h to settle (compile a Dagger sample, scan the
+   output dir).
+7. R64 shape 3 — external body-less decorator reference. Left open on evidence, not assumption.
+8. rust renamed-dependency precision loss (honest `invisible`, not a sin); rust-deep `core`/`alloc`
+   adversarial-only residual; R63 `wild::ArgsOs` (Windows-only).
+9. 252 untriaged coverage-gate candidates, safe behind the ratchet (Log 136, Unknown 81, Clock 58).
+
+### Unscheduled, no owner, highest ceiling
+10. **Vintage-vs-emission ambiguity.** A consumer cannot distinguish *key absent because the producer
+    predates it* from *key absent because it chose not to emit it*. ⟨0.33⟩'s refusal is DERIVED, not
+    designed. A future ⟨0.30⟩-shaped rung would SILENTLY MISREAD an old report rather than refuse it.
+    **Settle this before any rung that changes what an existing key means.**

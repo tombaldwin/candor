@@ -5535,8 +5535,12 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
    four engines** — found in java only, and the boundary must not be drawn around its trigger.
 
 ### Lower, measured, safe to defer
-6. R58 — java annotation-processor codegen, UNMEASURED. ~1h to settle (compile a Dagger sample, scan the
-   output dir).
+6. ~~R58 — java annotation-processor codegen, UNMEASURED.~~ **STALE WHEN WRITTEN — R58 was already
+   CLOSED at candor-java `802efe4`** ("R58: measure separate-file annotation-processor codegen — CLOSED
+   sound") with a pinned regression test. Independently re-confirmed 2026-08-28 against a real Dagger
+   2.51.1 build: `Fs` propagated through every generated hop to `Main.main`, `deny Fs` fired exit 1
+   naming the whole path, unrelated generated methods stayed pure. No gap, no over-charge.
+   **candor-spec's SOUNDNESS.md still lists R58 as UNMEASURED and needs the same correction.**
 7. R64 shape 3 — external body-less decorator reference. Left open on evidence, not assumption.
 8. rust renamed-dependency precision loss (honest `invisible`, not a sin); rust-deep `core`/`alloc`
    adversarial-only residual; R63 `wild::ArgsOs` (Windows-only).
@@ -5547,3 +5551,34 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
     predates it* from *key absent because it chose not to emit it*. ⟨0.33⟩'s refusal is DERIVED, not
     designed. A future ⟨0.30⟩-shaped rung would SILENTLY MISREAD an old report rather than refuse it.
     **Settle this before any rung that changes what an existing key means.**
+
+## `--policy` accept-and-drop is THREE engines, not one — rust and ts still open
+
+The java finding swept four-way 2026-08-28 (live-reproduced against fresh builds, not read from source).
+**candor-java FIXED at `37c9b10`. candor-rust and candor-ts have the IDENTICAL defect and are OPEN.**
+candor-swift was already conformant — its narrower exposed surface (`tour`/`path`/`gains`) rejects
+unrecognised flags via `fixDie`.
+
+| verb set | java | rust | ts | swift |
+|---|---|---|---|---|
+| show/where/callers/map/containment/reachable/path/impact/blindspots/tour | FIXED | **accept+drop** | **accept+drop** | clean |
+| diff | FIXED | already rejects | **accept+drop** | n/a |
+| rewire | FIXED | already rejects | n/a | n/a |
+| gains | already rejects | already rejects | already rejects | already rejects |
+
+**The ruling, argued per-verb rather than blanket:** SPEC §3.1's pinned JSON shapes were checked for all
+twelve verbs — **none defines a policy-derived field**, including `blindspots` and `containment`, which
+the coordinator had guessed "plausibly want a policy". They do not. Adding one is a NEW FEATURE needing
+a SPEC clause, not a fix to today's silent drop. So the correct behaviour for all twelve is `gains`'
+existing one: **exit-2 usage error, never a silent swallow.** Same answer for all twelve, reached
+independently for each, not applied without checking.
+
+A twelfth verb (`rewire`) was found beyond the originally-reported eleven — the sweep widened past its
+brief, per rule 9.
+
+**Also noted:** `CANDOR_POLICY` is likewise inert on these verbs — but that is equally true of `gains`,
+the model java copied, so it is an existing spec-sanctioned gap rather than something the fix introduced.
+
+**Owed:** the rust and ts fixes; a SPEC note extending ⟨0.18⟩'s "`gains` has no `--policy`" to name the
+full set (§3.1 for the eleven, §3.2 for `rewire`); and a conformance `verb_reject` loop over twelve
+verbs × four engines, mirroring the existing `gains_reject` battery (~line 1995 of `conformance/run.sh`).

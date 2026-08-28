@@ -67,6 +67,14 @@ walkdir audit ruled "unique victim, not a class" and cited the `ignore` crate as
 The one audit that grepped every call site instead of the handful it was handed came back verifiably
 clean. Widen the boundary past the trigger before trusting a "no class here" verdict.
 
+**A boundary drawn around a NAME is as bad as one drawn around its trigger.** Measured 2026-08-28: an
+audit asked *"is there a `platform-pruned` class?"*, correctly answered no, and filed a completeness
+hole — while a generic diff committed nine days earlier was already sweeping those files into
+`excluded[]` under a different label. Every literal statement in the entry was true and its conclusion
+was false. Grepping for the mechanism you EXPECT cannot see a different mechanism already delivering the
+property. **State the property the report must have, then find every route that could produce it** — not
+the one you have in mind.
+
 ## 10. Findings need a reproduction
 
 If it cannot be minimised, keep the larger reliable repro rather than a small one that only sometimes
@@ -115,3 +123,18 @@ would have aborted the next release at step 0. A local green is worth more than 
 This machine (`anya.local`, 12 cores) is dedicated to this work. Long runs are cheap here. Sequence
 anything that shares a cache — the cargo registry, `.candor/` — because concurrent agents on one box do
 contend, and one round had to pin to pre-drift crate versions after another agent's fetch moved them.
+
+## 12. A cited BACKLOG or SOUNDNESS entry is a snapshot, not a fact — verify it against HEAD
+
+If your brief quotes a backlog entry, a SOUNDNESS row, or a "known" limitation, **check it still holds at
+HEAD before you act on it.** These are written once and then trusted, and they go stale silently.
+
+Measured 2026-08-28, in one session: a `[P1]` entry asserting "confirmed still absent from `excluded[]`"
+had been closed by a commit dated SIX DAYS BEFORE the review that filed it. A SOUNDNESS row listed a
+defect as SILENT/open that the engine had already fixed. A rejection rationale ("a blanket fix would
+flood real framework code") had never been measured against any code containing the construct — and when
+measured, was true for one framework and entirely false for another.
+
+The cheapest version of this check is a `git log` on the cited file since the entry's date, and one run
+of the cited repro against HEAD. Report a stale entry as a finding: **the correction is worth as much as
+the fix**, because everything downstream was reasoning from it.

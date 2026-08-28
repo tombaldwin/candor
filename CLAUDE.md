@@ -36,6 +36,25 @@ as the model — and `ignore` had the same hole one constructor over, with nine 
 sweep. The exception grepped every call site rather than the ones it was handed, and came back verifiably
 clean.
 
+**Write the row before the port.** Do not take a behaviour four-way until its SPEC clause and
+conformance PART exist. Measured on ⟨0.34⟩ ITEM 1, 2026-08-28: four engines shipped prose citing
+"SPEC §2 ⟨0.34⟩" while `grep -c '0\.34' SPEC.md` returned **0**, nothing pinned the behaviour
+cross-engine, and rust and ts had already drifted inside that gap on whitespace-padded input. Closing it
+took a clause, a PART, and two follow-up engine fixes — all of which the row would have prevented, and
+the drift was found by a review panel, which is the expensive way to find it. This is the family's own
+"conformance ROWS beat review panels" rule, and the coordinator is the one who broke it.
+
+**A BACKLOG entry is a snapshot; mark what was MEASURED and what was INFERRED.** Three entries were wrong
+on 2026-08-28, all written by me, all reading as findings: one classified a false disclosure as a
+cardinal sin; one used a class label ("a key assumed unique that isn't") covering only half the failure
+modes, which would have sent the audit past the ABSENCE direction that produced the real defect; one
+asserted a hole that a commit six days earlier had closed. An entry that says what it measured can go
+stale honestly. One that states a conclusion cannot.
+
+**Tell dispatched agents to BLOCK, not to stall.** An agent that stops to report "waiting on the suite"
+ends its turn and costs a resume. Four turns went that way in one session. Say: poll in a loop inside a
+single turn; a full conformance run is ~476s, far cheaper than the round trip.
+
 ## The standing checks
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway

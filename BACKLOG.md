@@ -5793,3 +5793,36 @@ stated residual the way the no-lockfile case is.
 `--policy` exit-2: SPEC §3.1's pinned shapes read line by line for all twelve verbs. None carries a
 policy-derived field — `containment`'s `ambient` is the §6.1 cross-cutting classification, and
 `blindspots --class` selects on the report's own `reasonClass`. **The ruling holds.**
+
+## B3 closed (`98fe7df`) — and two coordinator errors it exposed
+
+**Three `gh` calls, not one.** Beyond B3's own trigger, the median lookup in `median_secs` also failed
+silently — an empty result gave `median=0`, indistinguishable from "no successful history yet", which
+**silently disarmed the stall check**. That is the arm that caught today's 124-minute stalled rust runs.
+All nine invocations now route through one checked `gh_call()` wrapper; `--selftest` asserts a gh failure
+is never silent.
+
+**The fix's own first draft reproduced the bug.** `median_secs` signalled failure via a global flag, but
+every call site invokes it inside `$(...)`, which forks a subshell — the flag never reached the caller.
+Fixed by returning `FAIL:<msg>` through stdout, the one channel that survives a subshell.
+
+### Coordinator error 1 — my `--wait` fix broke `--selftest`, and hid it
+`b8c53a6` (this afternoon) moved argument parsing ahead of the `--selftest` dispatch and never taught the
+new loop about it, so `ci-watch.sh --selftest` exited 64 from that commit onward. **The gate's own
+diagnostic mode was unreachable, which is how the subshell bug nearly shipped unverified.** I verified
+that fix by running the tool, not its self-test — and a self-test that cannot be invoked is exactly the
+silent-green shape this whole day has been about. **After changing argument parsing, run every mode the
+script advertises, not the one you were fixing.**
+
+### Coordinator error 2 — I edited BACKLOG.md while an agent owned this repo
+My B4 commit `b69e8ac` swept up that agent's uncommitted BACKLOG.md edit, so B3's write-up landed under a
+commit message about B4. Content is intact; attribution is wrong. **One owner per repo INCLUDES the
+coordinator.** I dispatched an agent to the umbrella and then kept committing to it — the same
+shared-file hazard that cost a dropped commit in candor-spec earlier in this project's history, and CLAUDE.md
+already records the rule I broke.
+
+### Clean negative worth NOT re-deriving
+`verify-local.sh`, `_ci_verdict.py`, `release-preflight.sh` and `release-verify.sh` were all swept for the
+same shape and are already fail-closed on empty/failed lookups — `release-preflight`'s `[10]` routes an
+`ERR` verdict into its own `could not read CI status — treat as NOT verified` arm. **B3 was specific to
+ci-watch, not family-wide.**

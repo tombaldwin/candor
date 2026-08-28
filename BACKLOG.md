@@ -5666,7 +5666,23 @@ it. Six selftest cases pin all three, one with a hang budget.
 The over-charge/gate-defeat lens. Every CONFIRMED item below was reproduced by running code in throwaway
 clones, not argued from a diff. **Ranked; the top three are release blockers.**
 
-### B4 (HIGHEST) — `eval/coverage-gate` cannot see a rule NARROWED to a wrong effect
+### B4 — FIXED at candor-rust `79546f3`, and the OBVIOUS FIX WOULD HAVE FAILED
+Coordinator-verified: mutating `async_nats` `Net`→`Log` now exits 101 naming every affected row.
+
+**The trap worth keeping.** `covered.tsv`'s existing effects column is NOT `classify()`'s answer — it is
+the self-scan oracle's full `inferred` set. `async_nats::connect`'s set is `Fs,Log,Net,Rand,Unknown`, so
+**`Log` was already a member**: the natural fix ("assert `classify()`'s result is IN column 3") would have
+passed the reviewer's exact mutation. And it fails the other way — `Consumer::request_batch`'s set is
+`Log` alone while `classify()` correctly returns `Net`, so membership-testing would redden a correct row.
+Fixed by recording a NEW column, `classified_as`, holding `classify()`'s actual return, and asserting
+exact equality. **Two columns that look interchangeable and are not.**
+
+Also found, deliberately NOT folded in: the local `entries.json`/registry cache is ALREADY stale against
+the checked-in manifest (~34 dropped, ~42 new rows from crate version drift, e.g. `ureq`'s API moved),
+reproduced with the UNEDITED binary to isolate it. Regenerating wholesale would have mixed that drift into
+the fix. Row set untouched; a residual for the weekly `coverage-gate-refresh`.
+
+ORIGINAL FINDING:
 `coverage_gate.rs` asserts `classify(krate, path).is_some()` and never checks the returned effect MATCHES
 the recorded one. Mutation run at candor-rust `e4bc419`: `async_nats`'s `connect`/`publish`/`subscribe`/
 `request`/`flush` changed from `Some("Net")` to `Some("Log")` → `cargo test -p candor-classify --test
@@ -5685,11 +5701,66 @@ Two defeats, both reproduced in a scratch copy:
 **Why my own falsification missed this:** I broke a checker TOTALLY (always exit 0). A partial break is the
 realistic regression and it survives. **A poison document must isolate ONE condition at a time.**
 
-### B3 — `ci-watch.sh` still prints green over something it never checked
+### B3 — `ci-watch.sh` still prints green over something it never checked — CLOSED 2026-08-28
 The "red on an earlier commit" safety net is a SECOND `gh` call per repo (`--branch main --limit 40`) with
 stderr discarded. A stub `gh` that succeeds for the per-HEAD call and fails only that one yields
 `ci-watch: OK — every workflow enumerated at every HEAD concluded success`, exit 0. 7 repos × 2 calls = 14
 API calls per run, any one of which can flake silently. **Fixed once today already, by a different route.**
+
+**Reproduced** with a stub `gh` (succeeds on `--commit`, fails only `--branch main`) before touching
+anything: identical output/exit to the finding above. **Audited every `gh run list` call in the script —
+three, not one**, all three ending in `2>/dev/null` with `$?` never checked:
+1. the primary per-HEAD `--commit` rows (the one everything else in the script is judged against),
+2. `median_secs`'s `--workflow … --limit 12` history lookup (feeds the stall check),
+3. the `--branch main --limit 40` earlier-commit safety net (B3's own trigger).
+
+All three now go through one `gh_call` wrapper that captures real stderr and checks gh's exit status
+(never discarded, never inferred from empty stdout). Dispositions: (1) a failure is reported and that
+repo is skipped for the rest of the loop — nothing else about it can be soundly judged without HEAD's own
+rows; (2) a failure prints `gh FAILED (median lookup)` and fails closed rather than reading as "no
+successful history" (median=0 already means something real — a workflow with no history yet — and
+folding a `gh` flake into the same 0 would have silently disarmed the stall check for the exact case it
+exists to catch); (3) B3's own call, now named and non-zero on failure. Added a `gh_call` exercise to
+`--selftest` (a fake `gh` function, same reasoning as the existing stall-arm tests: an alarm untested by
+anything but itself is not known to fire) — it caught a real bug in the first version of this fix, where
+`median_secs`'s failure signal was a global variable set inside a `$(...)` subshell and never reached the
+caller; fixed by returning `FAIL:<message>` through the one channel that does survive the subshell, the
+captured stdout.
+
+**Found and fixed in passing**: today's earlier `--wait`-parsing fix (`b8c53a6`) moved flag parsing before
+`--selftest`'s dispatch but never taught that loop about `--selftest` itself, so `bash ci-watch.sh
+--selftest` had been exiting 64 ("unknown flag") since that commit landed — the gate's own diagnostic mode
+was unreachable, which is how the subshell bug above almost shipped unverified.
+
+**Controls, falsified against the pre-fix (committed) script:**
+- **defect case** — stub fails only `--branch main`: pre-fix prints the false "OK", exit 0 (confirmed);
+  post-fix prints a named `✘ gh FAILED (run list --branch main, the earlier-commit safety net)` line and
+  exits 1.
+- **over-charge control** — a genuinely all-green stub (`--commit` succeeds, `--branch main` and
+  `--workflow` both succeed empty): pre-fix and post-fix output is BYTE-IDENTICAL (`diff` empty), exit 0
+  both. (The median-lookup call is never reached for an all-green run — it only fires for a non-completed
+  workflow — so this control cannot be weakened by that arm's fix.)
+- **partial-failure case** — two repos, only one repo's safety-net call fails: only that repo's line
+  names the failure (`candor-rust ✘ gh FAILED …`); the clean repo (`candor-spec`) still prints its own
+  `✔ success` untouched, and the summary is `NOT GREEN`, not an aggregate that hides which repo broke.
+
+`bash bin/ci-watch.sh --selftest` passes (10/10 checks incl. the new `gh_call` exercise, now reachable
+again). The two existing fault hooks (`CI_WATCH_FAULT=drop-row`/`stale-red`) still fire identically to
+before this change — verified in a throwaway harness, not just read.
+
+**Swept the family's other release gates for the same shape** (a failed subprocess, empty result, or
+discarded stderr read as a pass): `verify-local.sh`'s `step()` checks `$?` directly off the command
+substitution (never after a pipe) and merges stderr into the captured output rather than discarding it —
+clean. `_ci_verdict.py` already prints `ERR` (never `OK`/`NONE`) on unparseable/empty stdin, and
+`release-preflight.sh`'s [10] CI-gate — the section built around the identical `gh run list | _ci_verdict.py`
+shape — already routes that `ERR` into its own `bad "$r: could not read CI status — treat as NOT
+verified"` arm; also spot-checked its `grab()` version-parsing helper and the [11] conformance reuse-stamp
+logic (today's other change, `0567beb`) — both fail closed on an empty/failed lookup by construction, not
+by luck. `release-verify.sh` was the most thorough of the four already: every `2>/dev/null` there is
+followed by an explicit compare-to-expected-value or explicit-emptiness check (`gh release view`'s own
+`info` being empty is its own named `bad` branch, not folded into "not a draft"). **No new fix needed in
+any of the other four gates** — ci-watch.sh was the one built without this discipline, not a class present
+family-wide.
 
 ### A3 — ts decorator-arg over-charge reproduces on a real 4th corpus
 `brocoders/nestjs-boilerplate` (13k stars, deps genuinely installed): **22 new `<decorator-arg>` rows**, 18

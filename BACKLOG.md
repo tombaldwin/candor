@@ -6790,3 +6790,47 @@ R37's existing test rather than writing their own, which is what makes the entan
 **Out of scope by construction:** R33–R35, R38, R39 (other engines — swept separately); R45–R53 (a later
 arc, previously declined by another sweeper on clean-revert-feasibility grounds); anything before
 2026-06-18. **Within the stated slice, nothing was skipped.**
+
+## Historical revert sweep, java/ts/swift 2026-07-09→19 — 20 of 21 protected
+
+**20 of 21 distinct fixes protected. One genuine gap.** Zero build failures, zero not-cleanly-revertible
+items — all 21 reverts applied via plain `git apply -R` and built first try.
+
+**METHOD IMPROVEMENT worth adopting: test at the FIX COMMIT'S OWN SHA, not at a moved HEAD.** Prior sweeps
+routinely hit content drift and dangling-symbol failures; this one hit none, across three repos and seven
+weeks of churn. That is the whole difference.
+
+**THE GAP — ts `7a12017` item 2, the confinement-root default.** Reverting it leaves the suite GREEN: the
+fixture builds the report prefix directly in the workspace root, **so the old (buggy) and new (fixed) roots
+resolve identically** and the test never separates the two candidates the fix exists to distinguish.
+Same shape as swift's `testSiblingCallIntoAHOFStillGetsJudged`. **Severity: it fails CLOSED** — the bug
+refuses a legitimate policy rather than passing a violation, so it is the safe direction, not a cardinal
+sin. Still a real hole in R21's own coverage. Fix dispatched.
+
+**TWO CAVEATS THAT CHANGE HOW TO READ ANY SWEEP:**
+
+1. **java R21 goes RED only in `test/smoke.sh`; JUnit alone (291/291) stays GREEN.** In the agent's own
+   words: *"JUnit-only reasoning would have wrongly filed this as unprotected."* **A partial suite cannot
+   answer the revert question** — run everything the repo's CI runs, or the measurement is wrong in the
+   direction that manufactures findings.
+2. **A pre-existing failure in candor-ts's `test.mjs` (`--agents prints the version header…`, present on an
+   unmodified checkout) aborts `npm test`'s `&&` chain**, so `test-lsp.mjs`, `test-watch.mjs` and `fuzz.mjs`
+   never ran for any of the three ts commits swept. **Three whole suites masked from the standard command**
+   — the detector-works-aggregator-discards shape again, this time in a package script. Under investigation.
+
+**Second-order finding, swift R41/R43:** without the fix, a conformer-less super-protocol chain
+**FABRICATES PURE** rather than disclosing `Unknown` — the pre-fix code was worse than merely silent.
+
+**Cumulative revert-test picture across four sweeps:**
+
+| population | protected | note |
+|---|---|---|
+| today's own commits (~30) | 24 of 30 | **6 unprotected** — same-day work |
+| 2026-08-26→28 (11) | 11 of 11 | sits downstream of a pass hunting this |
+| R32–R44 rust (9) | 9 of 9 | six weeks old, files churned 5–20× |
+| 2026-07-09→19 java/ts/swift (21) | 20 of 21 | one non-discriminating test |
+
+**The shape is consistent: the project's OLDER fixes are well protected; the gap is in SAME-DAY work.**
+A fix written under time pressure, verified by a suite that passes, is exactly where a missing test hides.
+**The revert test's highest yield is on recent work, not archaeology** — worth knowing before spending
+another round digging backwards.

@@ -34,6 +34,17 @@ import argparse, hashlib, json, re, shlex, subprocess, sys
 INFO_URI = "https://candor.poly.io"
 SPEC_URI = "https://github.com/tombaldwin/candor/blob/main/README.md"
 
+# Synthetic rule ids this reporter itself mints — not AS-EFF codes, they carry a COMPLETENESS caveat
+# (see `completeness_note` below), never a specific code finding.
+RULES_COMPLETENESS = {
+    "CANDOR-REFUSED": ("PolicyUnevaluable",
+        "The policy gate could not decide at least one rule and REFUSED rather than certify. This run "
+        "makes no claim about violations — an empty result set here is not a clean scan."),
+    "CANDOR-INCOMPLETE": ("IncompleteAnalysis",
+        "Part of the target was never read or judged (files candor could not analyze, or a dependency "
+        "report that judged nothing). This run's verdict does not cover that part."),
+}
+
 # AS-EFF rule metadata (the codes candor's policy checker emits). helpUri points at the concept.
 RULES = {
     "AS-EFF-001": ("UndeclaredEffect", "A class performs an effect its capabilities don't cover (conformance)."),
@@ -53,9 +64,56 @@ RULES = {
 
 # SARIF level per code. AS-EFF-007 is the sole heuristic ADVISORY (candor-spec §6 — it never fails CI, so
 # `ok` can stay true with a 007 in `violations`); it must surface as `warning`, not a false `error` alert.
+# The two synthetic completeness codes are also `warning`: they are not a specific code violation (that
+# would misrepresent them as more certain than they are), but they must never be invisible either.
 # Every other code is gate-failing → `error`.
 def level_of(rule):
-    return "warning" if rule == "AS-EFF-007" else "error"
+    return "warning" if rule == "AS-EFF-007" or rule in RULES_COMPLETENESS else "error"
+
+
+def completeness_note(report, gate):
+    """SPEC ⟨0.24⟩/⟨0.28⟩: a report-consuming verb whose output could be read as a negative finding about
+    the code — a verdict, an EMPTY RESULT SET, a zero count — MUST re-disclose an underlying `incomplete`
+    (`unanalyzed`/`judgedNothing`) or a REFUSAL, on the same verdict-preserving terms as `coverage`. A
+    SARIF run's `results: []` is exactly that empty result set: read alone in the Security tab it says
+    "no violations", and this reporter produced that IDENTICAL shape for three different underlying
+    truths — a clean scan, a REFUSED gate (`ok:false, refused:true`, no `violations` key at all — SPEC
+    ⟨0.24⟩ is explicit that the gate "is making no claim about violations, and an empty array there is
+    precisely the claim it cannot make"), and an INCOMPLETE one (`incomplete:true` — part of the target
+    was never read or judged). `dict_items`'s `.get(key, [])` silently reads a REFUSED document's absent
+    `violations` key as "zero", which is the one reading SPEC ⟨0.24⟩ says the naive reader must not land
+    on. This never changes `results` for those two cases (a location-free synthetic finding would be
+    fabricated evidence about a specific line) — it returns a caveat for the CALLER to attach at the run
+    level, same as `coverage`'s "the verdict/exit does not change, the caveat travels".
+
+    Checked on the GATE document first — it is the verb's own normative verdict — then the REPORT (which
+    may carry `unanalyzed`/`incomplete` even when a pre-⟨0.28⟩ gate doesn't echo it). Returns
+    (ruleId, message) or None. A malformed/absent gate or report degrades to None (nothing to disclose),
+    matching this tool's existing crash contract."""
+    if not isinstance(gate, dict):
+        gate = {}
+    if not isinstance(report, dict):
+        report = {}
+    if gate.get("refused") is True:
+        reason = str_or_none(gate.get("reason")) or "a rule could not be decided"
+        return ("CANDOR-REFUSED",
+                f"the policy gate REFUSED to certify this code ({reason}) — this run makes NO claim "
+                f"about violations, which is not the same thing as a clean scan.")
+    for doc, whose in ((gate, "gate"), (report, "report")):
+        if doc.get("incomplete") is not True:
+            continue
+        bits = []
+        un = doc.get("unanalyzed")
+        if isinstance(un, list) and un:
+            bits.append(f"{len(un)} file(s) candor could not read")
+        jn = doc.get("judgedNothing")
+        if isinstance(jn, list) and jn:
+            bits.append(f"{len(jn)} dependency report(s) that judged nothing")
+        detail = "; ".join(bits) or "part of the target"
+        return ("CANDOR-INCOMPLETE",
+                f"analysis is INCOMPLETE per the {whose} document ({detail}) — no verdict was reached "
+                f"over that part, so this run is not a full scan.")
+    return None
 
 
 def load_json(path, what):
@@ -391,13 +449,31 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
         "helpUri": SPEC_URI,
         "defaultConfiguration": {"level": level_of(rid)},
     } for rid, (name, desc) in sorted(seen_rules.items())]
+    run = {
+        "tool": {"driver": {"name": "candor", "informationUri": INFO_URI, "rules": rules}},
+        "results": results,
+    }
+    # SPEC ⟨0.24⟩/⟨0.28⟩ re-disclosure (see `completeness_note`): an empty `results` here would otherwise
+    # be indistinguishable from a genuinely clean, complete scan. `invocations[].executionSuccessful` is
+    # SARIF's own channel for "the tool did not fully succeed", separate from `results` (code findings) —
+    # so a refusal/incompleteness never fabricates a location-bearing finding, and a genuinely healthy run
+    # (the common case) gets no `invocations` key at all, staying byte-identical to before this rung.
+    note = completeness_note(report, gate)
+    if note:
+        rule_id, msg = note
+        print(f"candor-sarif: {msg}", file=sys.stderr)
+        run["invocations"] = [{
+            "executionSuccessful": False,
+            "toolExecutionNotifications": [{
+                "level": level_of(rule_id),
+                "descriptor": {"id": rule_id},
+                "message": {"text": f"[{rule_id}] {msg}"},
+            }],
+        }]
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
-        "runs": [{
-            "tool": {"driver": {"name": "candor", "informationUri": INFO_URI, "rules": rules}},
-            "results": results,
-        }],
+        "runs": [run],
     }
 
 

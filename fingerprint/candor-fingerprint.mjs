@@ -102,10 +102,24 @@ const stems = [...new Set(positional.flatMap(resolveStems))].sort();
 // the resolved input files — outputs that collide with one are REFUSED (never clobber a report).
 const inputFiles = new Set(stems.flatMap((s) => [path.resolve(s + ".json"), path.resolve(s + ".callgraph.json")]));
 let mergedFns = [], cg = Object.create(null);   // null-proto: a `__proto__` callgraph key is a real entry, not a setter
+// SPEC ⟨0.21⟩/⟨0.28⟩: `incomplete`/`unanalyzed`/`judgedNothing` are the pinned wire keys a report (or a
+// dependency report it names) carries when part of the target was never read or judged. Without this, a
+// report that says outright "I could not read src/big-module.ts" still produced a fully-saturated,
+// maximally-confident badge (measured: `structure: 1` — a 100% "order" reading) with nothing anywhere
+// noting that a whole module's effects are simply absent from the mix, not verified pure. This is the
+// same re-disclosure MUST `candor-sarif` implements for the SARIF surface (§3.1: "a verb whose output
+// could be read as a negative finding" — here, a confident structure score IS that finding). Summed
+// across every merged stem (a multi-crate workspace can have one incomplete member among clean ones).
+let unanalyzedTotal = 0, judgedNothingTotal = 0, anyIncomplete = false;
 for (const stem of stems) {
   const rep = readJson(stem + ".json", "report");
   const part = Array.isArray(rep) ? rep : (rep && Array.isArray(rep.functions) ? rep.functions : []);   // rep&& : a top-level `null` is valid JSON
   mergedFns = mergedFns.concat(part);
+  if (rep && typeof rep === "object" && !Array.isArray(rep)) {
+    if (rep.incomplete === true) anyIncomplete = true;
+    if (Array.isArray(rep.unanalyzed)) unanalyzedTotal += rep.unanalyzed.length;
+    if (Array.isArray(rep.judgedNothing)) judgedNothingTotal += rep.judgedNothing.length;
+  }
   const cgp = stem + ".callgraph.json";
   if (fs.existsSync(cgp)) {
     const parsed = readJson(cgp, "callgraph sidecar", true);
@@ -131,6 +145,7 @@ for (const f of mergedFns) {
 }
 const fns = [...fnMap.values()];
 const cgVal = (n) => { const v = cg[n]; return Array.isArray(v) ? v : []; };
+const incomplete = anyIncomplete || unanalyzedTotal > 0 || judgedNothingTotal > 0;
 
 // ---------------------------------------------------------------- palette
 const PALETTE = [["Exec", "#ff5470"], ["Net", "#4cc4ff"], ["Db", "#ffb347"], ["Fs", "#3ce8a0"],
@@ -423,9 +438,19 @@ const meta = {
   threadsDrawn: filDrawn.length,
   threadsCapped: filCapped,
   blastApprox: blastBudget <= 0,   // true when the blast-visit budget was exhausted (weights approximate)
+  incomplete,   // true when a merged report (or a dependency it names) declares part of the target unread/unjudged
   seed: h,
 };
+if (unanalyzedTotal > 0) meta.unanalyzedCount = unanalyzedTotal;
+if (judgedNothingTotal > 0) meta.judgedNothingCount = judgedNothingTotal;
 if (meta.blastApprox) warn(`blast-visit budget (${BLAST_BUDGET.toLocaleString()}) exhausted on this large graph — propagation weights are approximate`);
+if (meta.incomplete) {
+  const bits = [];
+  if (unanalyzedTotal > 0) bits.push(`${unanalyzedTotal} file(s) candor could not read`);
+  if (judgedNothingTotal > 0) bits.push(`${judgedNothingTotal} dependency report(s) that judged nothing`);
+  warn(`the report declares itself INCOMPLETE (${bits.join("; ") || "incomplete:true"}) — this fingerprint, `
+     + `including its "structure" score, is computed only over what WAS read; it is not a claim about the rest.`);
+}
 
 // ---- baseline diff (--baseline <prefix>): report the CHANGE in structure vs a baseline report — the
 // deterministic-gate framing (trend / PR-over-PR) rather than an absolute number. Computed by re-running
@@ -511,12 +536,13 @@ if (opts.png) {
 const legendParts = effs.map((x) => `<span style="color:${x.c}">●</span> ${x.e} ${Math.round(x.share * 100)}%`);
 if (unkShare > UNK_MIN) legendParts.push(`<span style="color:${UNK}">●</span> Unknown ${Math.round(unkShare * 100)}%`);
 const legend = legendParts.join("  ");
+const incompleteNote = meta.incomplete ? " · INCOMPLETE (not a full read of the target)" : "";
 if (opts.html) {
   writeFile(opts.html, `<!doctype html><meta charset="utf-8"><title>${esc(name)} · candor fingerprint</title>
 <body style="margin:0;background:#070a0e;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font:12px ui-monospace,monospace;color:#8c84b8">
 ${svg}
 <div style="margin-top:12px;letter-spacing:.4px">${legend}</div>
-<div style="margin-top:4px;color:#3a434e">${esc(name)} · ${fns.length} fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · ${fedges.length} effect threads</div>
+<div style="margin-top:4px;color:#3a434e">${esc(name)} · ${fns.length} fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · ${fedges.length} effect threads${meta.incomplete ? ' · <span style="color:#e0c84a">INCOMPLETE</span>' : ""}</div>
 </body>`, "HTML");
   written.push(opts.html);
 }
@@ -525,7 +551,7 @@ if (opts.json) process.stdout.write(JSON.stringify(meta, null, 2) + "\n");
 
 const summaryParts = effs.map((x) => x.e + " " + Math.round(x.share * 100) + "%");
 if (unkShare > UNK_MIN) summaryParts.push("Unknown " + Math.round(unkShare * 100) + "%");
-console.error(`candor-fingerprint: ${name} — ${fns.length} effectful fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · [${summaryParts.join(", ") || "no effects"}]`
+console.error(`candor-fingerprint: ${name} — ${fns.length} effectful fns · structure ${structure === null ? "n/a" : meta.structure_detail.value + "%"} · [${summaryParts.join(", ") || "no effects"}]${incompleteNote}`
   + (filCapped > 0 ? ` · ${filDrawn.length}/${fedges.length} threads drawn` : "")
   + (written.length ? `\n  wrote: ${written.join(", ")}` : ""));
 

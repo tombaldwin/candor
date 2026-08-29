@@ -6842,3 +6842,68 @@ sin. Still a real hole in R21's own coverage. Fix dispatched.
 A fix written under time pressure, verified by a suite that passes, is exactly where a missing test hides.
 **The revert test's highest yield is on recent work, not archaeology** — worth knowing before spending
 another round digging backwards.
+
+# ============================================================
+# THE 9-HOUR AUTONOMOUS PLAN — written to disk 2026-08-29 so it survives a context compaction.
+# A fresh coordinator should be able to pick this up COLD. Scope ruled by Tom: **FIX what you find**,
+# not measure-and-file. Sole ownership confirmed — no other session owns any repo.
+# ============================================================
+
+## STATE AT PLAN TIME
+All seven repos clean, pushed, CI-green. **68 findings, 26 cardinal sins** closed today.
+⟨0.34⟩ is fully spec'd and pinned (PARTs 80/83/85, 46+72 hardened, 79 extended) — **UNRELEASED, floor 0.33.**
+Method is documented in `bin/AGENT-CORPUS-BRIEF.md` under **"THE ATTACKS THAT WORK"** (A–K). Read it first.
+
+## THE RULES THAT MADE TODAY WORK — do not rediscover these
+- **One owner per repo for EDITS.** Read-only sweeps may span repos (throwaway worktrees only).
+- **Bounded tasks return; open-ended ones stall.** "Fix these 5 named things" works. "Harden this gate"
+  burned 425k tokens and stalled three times. Name the deliverable and the stopping point.
+- **Every brief: "attack the premise"**, "EXECUTE, label ANALYSIS-ONLY separately", "run long commands in
+  the FOREGROUND", "verify from a CLEAN tree after committing".
+- **Every fix needs: an over-charge control on REAL code, and a red-on-revert proof.** A test that passes
+  with and without the fix is worse than none — found 6× today.
+- **Coordinator verifies every headline claim before repeating it, and re-checks CI after a push wave.**
+  candor-swift sat red for 4 commits today while every push was reported green.
+
+## WAVE 1 — the conformance measurement (the largest open unknown)
+Owner: candor-spec. Survey (`e1ce567`) found **86 parts: 5 gated, 13 standalone, 68 embedded**. Of the 68:
+**15 confirmed defeatable, 46 UNRESOLVED, 7 inconclusive.**
+1. **Resolve the 46.** The mechanical neuter didn't apply — different `sys.exit` spellings, bash `[ ]`/`-eq`
+   chains. Extend `mutation_poison_gen.py`'s classifier or neuter them by hand. **An unresolved part is not
+   a passing part** — silence here is what let 13 of 13 standalone checkers survive.
+2. **Harden the 15 known-defeatable**, severity-first (verdict, route-equality, disclosure, refusal,
+   completeness). Known ids: 10, 14, 19, 20, 21, 22, 45, 4h, 56, 57, 58, 59, 5b, 80.
+3. **THE THIRD CLASS, never attacked and never inventoried:** external `gen_*.py` property generators —
+   `gen_chain_idempotence`, `gen_trust_monotonicity`, `gen_signature_monotonicity`,
+   `gen_incomplete_dominance`, `gen_fs_kind` (PARTs 25/26/28/29/31). Apply the unconditional-pass test.
+
+## WAVE 2 — revert-test TODAY'S fixes (highest yield per the cumulative evidence)
+Read-only, spans repos. Four sweeps measured: today's own commits **6 of ~30 unprotected**; 2026-08-26→28
+**11/11**; R32–R44 rust **9/9**; 2026-07 java/ts/swift **20/21**. **The gap is same-day work, not history.**
+~25 fixes have landed since that sweep ran (`defe53d`, `e43eec0`, `4f3f88b`, `58f79b1`, `35cfc73`,
+`cd465a5`, `59ed357`, `164a0e2`, `e1ce567`, …). Revert each; fix every gap found.
+**Method:** test at the FIX COMMIT'S OWN SHA, not a moved HEAD — that gave 21/21 clean reverts where
+earlier sweeps hit constant drift. **Run everything CI runs**: java's R21 goes red only in `smoke.sh`;
+JUnit alone would have filed it wrongly.
+
+## WAVE 3 — the last never-attacked surfaces
+- umbrella: `release-rehearsal.sh`, `_release_notes.sh` (`release-verify.sh` yielded the 8th false green today)
+- `integrations/vscode`, `integrations/jetbrains` — thin LSP clients, confirmed low-value, but unexamined
+- candor-java: `soundness/run_kotlin.sh` (needs `kotlinc`) and `kappa_libs_probe.py` (needs JDK 21) — both
+  env-blocked today. **If the toolchain is absent, say so LOUDLY; do not report a clean result you could not run.**
+
+## NEEDS TOM — do not decide these autonomously
+1. **Release ⟨0.34⟩, or hold.** Nothing forces a cut. **Read `[[candor-pre-publish-checklist]]` BEFORE any
+   release talk — the index line is not enough.** Bare `release-preflight.sh` is HEALTH MODE.
+2. **`is_pure_std_trait`'s 11-trait allowlist** (candor-rust): a real silent gap inside a deliberate,
+   `ui/trust.rs`-pinned trade-off. Closing it needs a NEW NON-GATING WIRE SIGNAL = cross-engine SPEC decision.
+3. **Vintage-vs-emission ambiguity** — a consumer cannot distinguish "producer predates this key" from
+   "producer chose not to emit it". Settle before any rung changes what an existing key MEANS.
+4. **Cross-engine cfg-branch identity** — can two declarations share one report identity? (java multi-release
+   jars, ts conditional exports, swift `#if os`.) Ruled ACCEPT-and-document in rust; unasked elsewhere.
+
+## THE ONE-LINE SUMMARY OF WHY TODAY WORKED
+**A claim written down stops being checked.** Five code comments, four commit messages, two of my own
+backlog entries, a test name and a gate's own scope statement all asserted something true-sounding that
+nobody re-derived. **The defence that worked every time: revert it, delete it, feed it poison, or ask the
+authority. Never re-read it.**

@@ -6513,3 +6513,56 @@ nonzero exit; both published-artifact pins RESOLVE over the network to real corr
 
 **Stale entry corrected (rule 12):** the BACKLOG note citing `candor-sarif` fingerprinting on
 `fn|rule|effects` (dated 2026-08-22) was superseded by `94a3695`/`68cedf7` on 2026-08-25.
+
+## The 9-item "accepted band" — CLEAN NEGATIVE, and my framing was WRONG
+
+Investigated 2026-08-29 on the hypothesis that an unexamined "accepted band" was hiding a cardinal sin.
+**It was not, and the premise I gave the agent was false.** Recording it because a verified clean negative
+on a nine-item exemption is worth as much as a finding, and because I was wrong in an instructive way.
+
+**What I claimed:** "nobody has re-derived that band; it is accepted because it has always been accepted."
+**What git history shows:** re-derived TWICE. `a81de44` (2026-06-18) states in its own message, after review,
+*"callback band tolerates Unknown but never silent-pure."* And `2afef46` (2026-08-18, **eleven days ago**)
+grew it 8→9 effects precisely because a parity sweep **caught a real cardinal sin**: `process.argv` /
+`CommandLine.arguments` / `ProcessHandle.Info.arguments()` read **pure** in ts/java/swift while rust already
+charged `Env` — fixed four-way with A/B verification quoted in the commit.
+
+**All 9 are case (a) — benign.** rust answers `Unknown`, java hedges `effect+Unknown`, ts/swift assert the
+effect. No engine ever answers `pure`. All three answers are true statements about the fixture.
+
+**And it is genuinely GATED — proven by mutation, not by reading.** Reverting the historical fix
+(`collector.rs:1211`, `self.unresolved = true;`) in a throwaway rust clone produced
+`9 DISAGREEMENT(S) ... got=(pure) -> DROP (under-report)` and `GENERATIVE DIFFERENTIAL: FAILED`, exit 1.
+The accept-list (`{effect}`, `{Unknown}`, `{effect,Unknown}`) structurally excludes `{}`, so a regression to
+silent-pure cannot land in the band by construction.
+
+**Real residual, narrow:** nothing bounds the band's COUNT, and nothing restricts which indirections may
+carry the Unknown-tolerant rule instead of the strict one. Growing it by adding an effect is visible in a
+diff (and was, twice). Growing it by widening tolerance to a NEW indirection — to silence an inconvenient
+failure — would also be a visible diff but has **no automated alarm**. It rests entirely on code review.
+
+## FABRICATION in ts and swift: a shared HOF's effects are charged to EVERY caller
+
+Found by attacking the generator's single-caller assumption — not part of the band, and NOT a cardinal sin
+(over-report, the safe direction). Executed against all four real engines:
+
+    two callers, two different named callbacks through one HOF — sinkA does Fs, sinkB is pure
+    rust   callerA=Unknown       callerB=Unknown        honest
+    java   callerA=[Fs,Unknown]  callerB=[Unknown]      call-site precise (method-reference resolution)
+    ts     callerA=[Fs]          callerB=[Fs]           FABRICATION
+    swift  callerA=[Fs]          callerB=[Fs]           FABRICATION
+
+**swift's own diagnostic states the false path:** *"`callerB` performs Fs, 2 hops away via `sinkA`"* — a
+path `callerB` never takes. ts and swift union every effect reachable through a shared HOF and attribute
+the whole union to every caller, rather than resolving per call site. **The generator's one-caller-per-HOF
+convention makes that union coincidentally equal the right answer**, which is why the band reads as precise
+resolution when the mechanism is coarser.
+
+Nothing in SOUNDNESS.md or SOUNDNESS-LOG.md documents this shape — it appears to be new.
+
+**The trap worth naming:** if the multi-caller shape were added to the generator under the EXISTING
+`acc_callback` tolerance, it would **rubber-stamp the fabrication as "within the accepted band"** — the
+rule ({effect} or {Unknown} or both) cannot distinguish a correctly-resolved effect from a wrongly-attributed
+sibling-path one. **Fix the engines before extending the generator here, or the generator will bless it.**
+
+Owed: fixes in ts and swift; a SOUNDNESS entry; and only then a generator row.

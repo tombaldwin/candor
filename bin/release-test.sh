@@ -1575,10 +1575,31 @@ rm -rf "$PF"
 N=$(mktemp -d); mkdir -p "$N/bin" "$N/root/candor"
 cat > "$N/bin/gh" <<'GHEOF'
 #!/bin/bash
+# ci_all_workflows_latest() (release-preflight.sh, the 2026-08-29 eighth-false-green fix) does not ask
+# this NONE-branch's question with one unfiltered `gh run list` any more: it asks `gh workflow list` for
+# this repo's own workflow ids, then `gh run list --workflow <id> --limit 1` for EACH one's own newest
+# run, so a chatty sibling cannot age a quiet workflow's real failure off a shared page. This stub used
+# to answer only the old shape, which made every NONE-branch fixture below fail enumeration instead of
+# exercising the dedupe logic they exist to test — a regression this file introduced, not release-
+# preflight.sh: both new shapes are answered from the same $GH_RUNS data. Workflow ids are assigned by
+# distinct workflowName (jq's `unique`, alphabetical — internally consistent between the two calls below
+# even though it need not match gh's own numbering), and `--workflow <id>` returns just that one
+# workflow's own row(s), exactly as the real per-workflow query would.
 case "$1 $2" in
   "auth status") exit 0 ;;
-  "run list")    printf '%s\n' "$GH_RUNS" ;;
-  *)             exit 0 ;;
+  "workflow list")
+    printf '%s' "$GH_RUNS" | jq -c '[.[].workflowName] | unique | to_entries | map({id: (.key+1)})' ;;
+  "run list")
+    wf=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --workflow) wf="$2"; shift 2 ;; *) shift ;; esac; done
+    if [ -n "$wf" ]; then
+      name="$(printf '%s' "$GH_RUNS" | jq -r --argjson wf "$wf" '[.[].workflowName] | unique | .[$wf-1]')"
+      printf '%s' "$GH_RUNS" | jq -c --arg n "$name" '[.[] | select(.workflowName==$n)] | .[0:1]'
+    else
+      printf '%s\n' "$GH_RUNS"
+    fi
+    ;;
+  *) exit 0 ;;
 esac
 GHEOF
 chmod +x "$N/bin/gh"
@@ -1854,11 +1875,26 @@ exit 0
 EOF
 cat > "$CS/bin/gh" <<'EOF'
 #!/usr/bin/env bash
+# See $N/bin/gh in the [10] NONE-branch fixture above for why "workflow list" and "run list --workflow
+# <id>" are answered here too: GHGREEN's headSha ("none") never matches a real fixture commit, so every
+# preflight run in this section takes ci_all_workflows_latest()'s NONE branch, and it needs both call
+# shapes answered, not just the single unfiltered `run list` this stub used to provide.
 case "$1 ${2:-}" in
   "auth status")    exit 0 ;;
   "release view")   exit 1 ;;
   "release create") echo "STUB-CREATE $*"; exit 0 ;;
-  "run list")       printf '%s\n' "${GH_RUNS:-[]}" ;;
+  "workflow list")
+    printf '%s' "${GH_RUNS:-[]}" | jq -c '[.[].workflowName] | unique | to_entries | map({id: (.key+1)})' ;;
+  "run list")
+    wf=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --workflow) wf="$2"; shift 2 ;; *) shift ;; esac; done
+    if [ -n "$wf" ]; then
+      name="$(printf '%s' "${GH_RUNS:-[]}" | jq -r --argjson wf "$wf" '[.[].workflowName] | unique | .[$wf-1]')"
+      printf '%s' "${GH_RUNS:-[]}" | jq -c --arg n "$name" '[.[] | select(.workflowName==$n)] | .[0:1]'
+    else
+      printf '%s\n' "${GH_RUNS:-[]}"
+    fi
+    ;;
 esac
 exit 0
 EOF

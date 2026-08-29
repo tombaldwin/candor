@@ -8,6 +8,41 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-29 — `ci-watch.sh`'s third false green: a subprocess read through `2>/dev/null` again
+
+- **`bin/ci-watch.sh` swallowed `wf-expected.py`'s stderr and exit code, so a DETACHED HEAD read as
+  "nothing required" instead of an unanswered question.** `wf-expected.py "$d" HEAD 2>/dev/null | awk
+  ...` passed no branch argument; on a detached checkout `git rev-parse --abbrev-ref HEAD` answers the
+  literal string `HEAD`, which `wf-expected.py` already refuses to guess about — exit 2, an explanation
+  on stderr, empty stdout. Discarding that stderr and never checking the exit code let the empty result
+  read as "no workflow is required", printing `✔ no run expected` and `ci-watch: OK` over a repo whose
+  own workflow declares a matching `branches:`/`paths:` filter. Reproduced end-to-end (a throwaway repo,
+  `branches: [main]`, checked out `--detach`, plus a correctly-stubbed `gh` answering a legitimate empty
+  "no runs yet") before fixing: `OK`, exit 0, pre-fix. This is the THIRD false green this script has
+  produced from a different external subprocess each time, after the argument-parsing bug (`b8c53a6`)
+  and the unchecked `gh` calls (`98fe7df`), both below.
+  Fixed by mirroring `bin/verify-umbrella.sh`'s already-correct call to the same script: the branch is
+  now resolved by `ci-watch.sh` itself (falling back to `main` with a note on a detached checkout, never
+  to silence) and passed explicitly, through a new `resolve_required()` function that captures real
+  stderr and checks the real exit code — any nonzero exit is now a named, red row, never "nothing
+  required". `--selftest` gained two checks exercising `resolve_required()` directly: a real throwaway
+  detached repo, and a stubbed `python3` crash. Controls: the defect case flips from OK/exit 0 to a named
+  failure/exit 1; a genuinely all-green attached-branch repo produces byte-identical output before and
+  after the fix; a mixed clean-plus-broken pair names the broken repo without touching the clean one's
+  row. Full detail, the subprocess audit of every other call this script makes, and the sweep of the
+  other standing checks for the same call pattern are in `BACKLOG.md`.
+
+- **`bin/ci-watch.sh`: a bogus repo name printed `OK` and exited 0** (`b8c53a6`, 2026-08-28). Zero repos
+  checked, green reported — flags now parse before `REPOS` is built, an unknown repo or flag is exit 64
+  carrying the known list as its remedy, and the `--wait` re-exec passes the repo list through instead
+  of silently watching all seven.
+
+- **`bin/ci-watch.sh`: every `gh` call checked, not just read** (`98fe7df`, 2026-08-28). The "red on an
+  earlier commit" safety net (`gh run list --branch main --limit 40`) discarded stderr and never checked
+  `$?`, so a `gh` failure on just that call was indistinguishable from "no earlier run exists" and
+  printed the same false `OK`. All three `gh run list` call sites now go through one `gh_call()` wrapper
+  that captures real stderr and checks the real exit status.
+
 ## 2026-08-27 — `bin/AGENT-CORPUS-BRIEF.md`: the corpus-round method, codified (released 2026-08-27 as 0.33.1)
 
 - **`release.sh`'s tag-then-push guard now checks the REMOTE, not the local ref — `rs_tag_and_push`

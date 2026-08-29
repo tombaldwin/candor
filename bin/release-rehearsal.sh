@@ -106,7 +106,15 @@ for r in $CLEAN_REPOS; do
   tree_n=$((tree_n + 1))
   d="$ROOT/$r"
   if [ ! -d "$d/.git" ]; then
-    printf "  ⊘ %-16s not a git repo at %s\n" "$r" "$d"; continue
+    # NOT A SKIP. `git -C <missing> status --porcelain` fails to stderr and prints NOTHING to stdout —
+    # identical to a real "no changes" answer to every check below — so a repo that was never cloned
+    # (wrong CANDOR_ROOT, a fresh machine mid-bootstrap: [[candor-anya-second-machine]]) must not be
+    # silently excluded from the count that backs "all N repo(s) clean and pushed" below. It is the one
+    # thing this arm could not examine at all, which is the opposite of evidence that it is fine.
+    printf "  ✘ %-16s not a git repo at %s — cannot verify clean/pushed state\n" "$r" "$d"
+    problem "[1] $r: not a git repo at $d — release.sh step 0 dies on this rather than reading it as clean"
+    tree_bad=$((tree_bad + 1))
+    continue
   fi
   dirty="$(git -C "$d" status --porcelain | grep -c .)"
   ahead="$(git -C "$d" rev-list --count '@{u}..HEAD' 2>/dev/null || echo "?")"

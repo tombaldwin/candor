@@ -51,6 +51,13 @@ PINS_ADVISORY=1 bash "$ROOT/candor/bin/release-preflight.sh" "$SPEC" "$VER" >/tm
 CLEAN_REPOS="$RS_SET"
 case " $RS_SET " in *" candor "*) ;; *) CLEAN_REPOS="$RS_SET candor" ;; esac
 for r in $CLEAN_REPOS; do
+  # A repo this cut publishes must be a REAL checkout before "clean" means anything. `git -C <missing>
+  # status --porcelain` fails to stderr and prints NOTHING on stdout — indistinguishable, to the `-z`
+  # check below, from a real "no changes" answer. Without this line a repo that was never cloned (wrong
+  # CANDOR_ROOT, a fresh machine mid-bootstrap) sails through as "clean and pushed" without ever being
+  # examined — proven: `git -C <missing-dir> status --porcelain` prints its fatal error to stderr only,
+  # and both checks below evaluate true on the empty stdout that leaves.
+  [ -d "$ROOT/$r/.git" ] || die "$r is not a git repo at $ROOT/$r — this cut publishes it and cannot verify a tree that is not there"
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit + push first"
   [ "$(git -C "$ROOT/$r" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" = "0" ] || die "$r has unpushed commits — push main first"
 done

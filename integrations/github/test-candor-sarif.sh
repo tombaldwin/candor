@@ -207,8 +207,39 @@ ok "unwritable -o → disclosed on stderr, exit 0"   '[ "$rco" = 0 ] && grep -q 
 
 # clean gate (ok:true, no violations) -> valid SARIF, zero results.
 echo '{"spec":"0.7","ok":true,"violations":[]}' > "$WORK/clean.json"
-OUTC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/clean.json" 2>/dev/null)
+OUTC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/clean.json" 2>"$WORK/cleanerr")
 ok "clean gate -> valid, empty results"        'printf "%s" "$OUTC" | jq -e ".runs[0].results|length==0" >/dev/null'
+# OVER-CHARGE CONTROL for the completeness re-disclosure below: a genuinely clean, complete scan must
+# get NO invocations key and NO stderr noise — the rung must not tax the common case.
+ok "clean gate -> no invocations, silent"      '[ "$(printf "%s" "$OUTC" | jq -r ".runs[0].invocations // \"none\"")" = none ] && [ ! -s "$WORK/cleanerr" ]'
+
+# SPEC ⟨0.24⟩: a REFUSED gate document carries `ok:false, refused:true` and MUST NOT carry a `violations`
+# key at all — "an empty array there is precisely the claim it cannot make". Before this fix, reading an
+# absent `violations` key as `[]` made a refusal indistinguishable from a clean scan: empty results,
+# silent stderr. It must now surface as `results:[]` PLUS a run-level completeness caveat, never a
+# location-bearing finding (there is no line to blame — the gate answered nothing).
+echo '{"spec":"0.24","ok":false,"refused":true,"reason":"a scoped rule could not be decided"}' > "$WORK/refused.json"
+OUTREF=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/refused.json" 2>"$WORK/referr"); rcref=$?
+ok "refused gate: exit 0, still no results"    '[ "$rcref" = 0 ] && [ "$(printf "%s" "$OUTREF" | jq ".runs[0].results|length")" = 0 ]'
+ok "refused gate: NOT silently read as clean"  '[ "$(printf "%s" "$OUTREF" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
+ok "refused gate: names the code CANDOR-REFUSED" 'printf "%s" "$OUTREF" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-REFUSED\"" >/dev/null'
+ok "refused gate: also disclosed on stderr"    'grep -q "REFUSED to certify" "$WORK/referr"'
+
+# SPEC ⟨0.28⟩: `incomplete:true` (unanalyzed files / a dependency report that judged nothing) is the
+# other verdict-preserving MUST — an incomplete gate's `violations:[]` is a real (if partial) answer, so
+# `results` stays `[]`, but the caveat must travel rather than evaporate into an indistinguishable "clean".
+echo '{"candor":{"spec":"0.28"},"functions":[{"fn":"app.domain.Order.audit","loc":"Order.java:6","direct":["Fs"],"inferred":["Fs"]}],"unanalyzed":[{"path":"src/legacy/Weird.java","reason":"malformed bytecode"}]}' > "$WORK/increport.json"
+echo '{"spec":"0.28","ok":false,"incomplete":true,"unanalyzed":[{"path":"src/legacy/Weird.java","reason":"malformed bytecode"}],"violations":[]}' > "$WORK/incgate.json"
+OUTINC=$(python3 "$SARIF" "$WORK/increport.json" --gate "$WORK/incgate.json" 2>"$WORK/increrr"); rcinc=$?
+ok "incomplete gate: exit 0, results stay []"  '[ "$rcinc" = 0 ] && [ "$(printf "%s" "$OUTINC" | jq ".runs[0].results|length")" = 0 ]'
+ok "incomplete gate: flagged, not clean"       '[ "$(printf "%s" "$OUTINC" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
+ok "incomplete gate: names CANDOR-INCOMPLETE"  'printf "%s" "$OUTINC" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-INCOMPLETE\"" >/dev/null'
+ok "incomplete gate: names the unread file count" 'grep -q "1 file(s)" "$WORK/increrr"'
+# a REAL violation found ALONGSIDE incompleteness must still surface as an error result — the caveat is
+# additive, never a substitute for a certain finding the gate DID make.
+echo '{"spec":"0.28","ok":false,"incomplete":true,"unanalyzed":[{"path":"x","reason":"y"}],"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.audit","effects":["Fs"],"detail":"x"}]}' > "$WORK/incgate2.json"
+OUTINC2=$(python3 "$SARIF" "$WORK/increport.json" --gate "$WORK/incgate2.json" 2>/dev/null)
+ok "incomplete + a real violation: both present"  '[ "$(printf "%s" "$OUTINC2" | jq ".runs[0].results|length")" = 1 ] && [ "$(printf "%s" "$OUTINC2" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
 
 # malformed gate -> no crash, empty-results SARIF, exit 0.
 echo 'not json {' > "$WORK/bad.json"

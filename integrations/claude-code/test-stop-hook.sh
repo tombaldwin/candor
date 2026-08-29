@@ -124,6 +124,74 @@ ok "under the hook (CANDOR_HOOK=1) the review does NOT self-log (no double recor
 CANDOR_CMD="bash $ENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" >/dev/null 2>&1
 ok "with no CANDOR_ACTIVITY_LOG set, the review writes nothing (opt-in)"      '[ ! -s "$SLOG" ]'
 
+# ── FAIL-CLOSED INCOMPLETENESS (SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩) must BLOCK, not read as a setup error ──
+# candor-review.sh/-source.sh distinguish "a real policy violation" (an AS-EFF line) from "a build/setup
+# error" (exit nonzero, no AS-EFF line) — and rc=2 is ALLOWED by the hook ("don't block on a misconfig").
+# An engine that fails closed because it could not read/judge part of the target ALSO exits nonzero with
+# no AS-EFF line (that code is reserved for a CERTAIN violation) — so before this fix it fell into the
+# same "setup error, not blocking" bucket, and a violation could be sitting in exactly the part the
+# engine admits it never analysed. The fix reads the WIRE-PINNED keys (`incomplete`/`unanalyzed`/
+# `judgedNothing`) from the report the scan DID produce, not scanlog prose — a genuine crash produces no
+# such report content and must stay allowed (the over-charge control below).
+echo
+echo "fail-closed incompleteness (⟨0.21⟩/⟨0.28⟩/⟨0.30⟩):"
+INCENG="$WORK/mock-incomplete-engine.sh"
+cat > "$INCENG" <<'INCEOF'
+#!/usr/bin/env bash
+# candor-review.sh (JVM) form: "<classes> --json <out>"
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && cat > "$out" <<JSON
+{"candor":{"version":"mock","spec":"0.30"},"functions":[{"fn":"app.checkout","inferred":["Db"]}],
+ "incomplete":true,"unanalyzed":[{"path":"src/Weird.java","reason":"malformed bytecode"}]}
+JSON
+echo "candor: internal note (not a certain violation)" >&2
+exit 2
+INCEOF
+chmod +x "$INCENG"
+OUT=$(CANDOR_CMD="bash $INCENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "JVM review: an INCOMPLETE report BLOCKS (rc=1, not 2)"        '[ "$rc" = 1 ]'
+ok "JVM review: names the incompleteness, not a generic crash"   'printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
+ok "JVM review: names the unanalyzed file + reason"              'printf "%s" "$OUT" | grep -q "Weird.java — malformed bytecode"'
+
+INCSCAN="$WORK/mock-incomplete-scan.sh"
+cat > "$INCSCAN" <<'INCEOF'
+#!/usr/bin/env bash
+# candor-review-source.sh form: "<src> --out <prefix>"
+prefix="$3"
+cat > "$prefix.json" <<JSON
+{"candor":{"spec":"0.30"},"functions":[{"fn":"app.checkout","inferred":["Db"]}],
+ "incomplete":true,"unanalyzed":[{"path":"src/weird.ts","reason":"parse error"}]}
+JSON
+echo "candor: internal note (not a certain violation)" >&2
+exit 2
+INCEOF
+chmod +x "$INCSCAN"
+SRCREV="$HERE/candor-review-source.sh"
+OUT=$(CANDOR_SCAN="bash $INCSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent "$SRCREV" 2>&1); rc=$?
+ok "source review: an INCOMPLETE report BLOCKS (rc=1, not 2)"    '[ "$rc" = 1 ]'
+ok "source review: names the unanalyzed file + reason"           'printf "%s" "$OUT" | grep -q "weird.ts — parse error"'
+
+# end-to-end through the REAL hook (not the MOCK review): the block must actually reach the agent.
+OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | CANDOR_REVIEW="$SRCREV" CANDOR_SCAN="bash $INCSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent \
+    CANDOR_HOOK_NOTICE=summary CANDOR_HOOK_SKIP=0 CANDOR_ACTIVITY_LOG=off "$HOOK" 2>/dev/null)
+ok "…and the STOP HOOK blocks the turn over it (not a silent allow)" '[ "$(printf "%s" "$OUT" | jq -r .decision)" = block ]'
+
+# OVER-CHARGE CONTROL: a genuine crash — no report content claims incompleteness — must stay rc=2/ALLOW.
+# This is the case the rc=2 "don't block on a misconfig" contract exists for; the fix must not tax it.
+CRASHENG="$WORK/mock-crash-engine.sh"
+cat > "$CRASHENG" <<'CRASHEOF'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && printf '{"candor":{"version":"mock","spec":"0.30"},"functions":[{"fn":"a","inferred":["Log"]}]}' > "$out"
+echo "candor: internal error: NullPointerException" >&2
+exit 2
+CRASHEOF
+chmod +x "$CRASHENG"
+OUT=$(CANDOR_CMD="bash $CRASHENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "over-charge control: a genuine crash still ALLOWS (rc=2)"    '[ "$rc" = 2 ]'
+ok "…and is NOT mislabeled as incomplete"                        '! printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
+
 # ── maxHops: the graph-depth of a change (FEEDBACK-SPEC's last deferred field, unlocked by the 0.11
 #    surface machinery). A 2-hop chain (top → mid → leaf) where leaf gains Fs must print "deepest
 #    propagation: 2 hop(s)" and land maxHops:2 in the self-logged record. Real candor-scan when

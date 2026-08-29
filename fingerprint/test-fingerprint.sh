@@ -84,6 +84,44 @@ ok "delta = to - from"                            'printf "%s" "$JB" | jq -e "(.
 ok "every component diffed (smear/unknown/tangleExcess/cycleRatio)" 'printf "%s" "$JB" | jq -e ".baseline.components | has(\"smear\") and has(\"unknown\") and has(\"tangleExcess\") and has(\"cycleRatio\")" >/dev/null'
 ok "smear regression shows as a positive delta"   'printf "%s" "$JB" | jq -e ".baseline.components.smear.delta > 0" >/dev/null'
 
+# (d) SPEC ⟨0.21⟩/⟨0.28⟩ re-disclosure: a report declaring `incomplete`/`unanalyzed`/`judgedNothing`
+# (part of the target never read or judged) must not produce a fingerprint that reads as a confident,
+# fully-informed structure score with nothing anywhere saying otherwise. Before this fix, `structure`
+# computed to a full 1.0 ("100% order") over a report naming a whole unread module.
+cat > "$WORK/incomplete.json" <<'JSON'
+{"candor":{"spec":"0.30"},"functions":[
+  {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
+],"incomplete":true,"unanalyzed":[{"path":"src/big-module.ts","reason":"parse error"}]}
+JSON
+cat > "$WORK/incomplete.callgraph.json" <<'JSON'
+{"a":["b"],"b":["c"],"c":["d"],"d":[]}
+JSON
+cat > "$WORK/complete-same-effects.json" <<'JSON'
+{"candor":{"spec":"0.30"},"functions":[
+  {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
+]}
+JSON
+cp "$WORK/incomplete.callgraph.json" "$WORK/complete-same-effects.callgraph.json"
+
+JI=$(node "$FP" "$WORK/incomplete.json" --json --no-svg 2>"$WORK/incerr")
+ok "incomplete report: meta.incomplete is true"          '[ "$(printf "%s" "$JI" | jq -r .incomplete)" = true ]'
+ok "incomplete report: unanalyzedCount reflects the file" '[ "$(printf "%s" "$JI" | jq -r .unanalyzedCount)" = 1 ]'
+ok "incomplete report: disclosed on stderr"               'grep -q "INCOMPLETE" "$WORK/incerr"'
+ok "incomplete report: stderr names the caveat scope"     'grep -q "not a claim about the rest" "$WORK/incerr"'
+
+# OVER-CHARGE CONTROLS: a genuinely complete report with the IDENTICAL effect/callgraph data must (1)
+# report incomplete:false with no count keys, (2) stay silent on stderr, and (3) render a BYTE-IDENTICAL
+# SVG to the incomplete report — this rung must not tax the visual artifact or the common case.
+JC=$(node "$FP" "$WORK/complete-same-effects.json" --json --no-svg 2>"$WORK/comperr")
+ok "complete report: meta.incomplete is false"            '[ "$(printf "%s" "$JC" | jq -r .incomplete)" = false ]'
+ok "complete report: no unanalyzedCount key"              '[ "$(printf "%s" "$JC" | jq -r "has(\"unanalyzedCount\")")" = false ]'
+# (the tool always prints its one-line summary to stderr, incomplete or not — the control is that the
+# INCOMPLETE-specific caveat text does NOT appear when nothing is incomplete)
+ok "complete report: no INCOMPLETE caveat on stderr"      '! grep -q "INCOMPLETE" "$WORK/comperr"'
+node "$FP" "$WORK/incomplete.json" --svg "$WORK/inc.svg" >/dev/null 2>&1
+node "$FP" "$WORK/complete-same-effects.json" --svg "$WORK/comp.svg" >/dev/null 2>&1
+ok "SVG artifact is unaffected (byte-identical to complete)" 'cmp -s "$WORK/inc.svg" "$WORK/comp.svg"'
+
 echo
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

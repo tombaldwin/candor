@@ -10,7 +10,10 @@
 #   CANDOR_REVIEW_BASELINE  the report to diff against (last-known-good)   (default: .candor/baseline.json)
 #   CANDOR_POLICY   an architecture policy file; a violation → exit 1      (optional — see ../../adopt/arch.policy)
 #
-# Exit 0 = clean · 1 = a policy violation OR a newly-introduced effect · 2 = setup error.
+# Exit 0 = clean · 1 = a policy violation, a newly-introduced effect, OR a fail-closed INCOMPLETE
+# analysis (part of the target unread/unjudged — SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩; a violation could be hiding
+# in the unread part, so this blocks rather than being read as a safe-to-ignore setup error) · 2 = a
+# genuine build/scan error (no usable report at all).
 # (Refresh the baseline once a change is intended — copy the current report over it:
 #    $CANDOR_SCAN <src> --out .candor/cur && cp "$(ls .candor/cur*.json|grep -ve callgraph -e hierarchy|head -1)" .candor/baseline.json)
 set -uo pipefail
@@ -94,6 +97,25 @@ verdict_body() {
       [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
       [ -n "$remedy" ] && { echo; printf '%s\n' "$remedy"; }
       echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
+      return 1
+    fi
+    # SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩: same distinction as candor-review.sh — a FAIL-CLOSED incompleteness
+    # (part of the target unread/unjudged) is not a "setup error the agent can't fix". Read the
+    # wire-pinned keys from the report ($CUR) itself, never scanlog prose.
+    incomplete_info=""
+    if command -v jq >/dev/null 2>&1 && [ -s "$CUR" ]; then
+      incomplete_info=$(jq -r '
+        if (.incomplete == true) or ((.unanalyzed // [])|length > 0) or ((.judgedNothing // [])|length > 0)
+        then ( ["  incomplete: true"]
+               + ((.unanalyzed // []) | map("  unanalyzed: \(.path // .unit // "?") — \(.reason // .why // "no reason given")"))
+               + (if (.judgedNothing // [])|length > 0 then ["  judgedNothing: \((.judgedNothing|length)) dependency report(s)"] else [] end)
+             ) | join("\n")
+        else empty end' "$CUR" 2>/dev/null)
+    fi
+    if [ -n "$incomplete_info" ]; then
+      echo "candor: ANALYSIS INCOMPLETE — part of the target was never read or judged, so a violation could be hiding there:"
+      printf '%s\n' "$incomplete_info"
+      echo "fix: make the unread/unanalyzed part legible to candor (fix the parse/build error, or narrow the scope deliberately), then re-run — this is not a safe-to-ignore setup error."
       return 1
     fi
     echo "candor-review-source: the scan exited $gate with no policy finding — a scan/setup error, not a violation:"

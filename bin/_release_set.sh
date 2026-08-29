@@ -168,6 +168,34 @@ rs_pin_violations() { # $1 = path to bin/candor ; $2 = the version being cut
 rs_is_full() { [ "${RS_FULL:-1}" = 1 ]; }
 rs_count()   { printf '%s\n' $RS_SET | grep -c .; }
 
+# ── VERSION COMPARISON, PLAIN X.Y.Z ONLY ────────────────────────────────────────────────────────────
+# Every version this family cuts is a bare X.Y.Z (SPEC.md's own versioning policy — no pre-release or
+# build-metadata suffixes), so a numeric field-by-field comparison is exact; nothing here needs a general
+# semver grammar. Added for release-verify.sh, which needs to tell a per-engine pin that is BEHIND the
+# release under verification (the 0.18-engines-under-a-0.23-umbrella failure, expressible per engine since
+# 2026-08-25) apart from one that is merely AHEAD of it (the ordinary, expected shape of an unfinished
+# one-engine patch — release-verify.sh's own header already says that must not read as broken, and until
+# this existed nothing in the file could tell the two apart: both were a bare string inequality).
+rs_ver_lt() { # $1 $2 — return 0 (true) if "$1" < "$2" ; 1 otherwise, including equal or unparseable
+  [ "$1" = "$2" ] && return 1
+  local IFS=. a b i ai bi
+  # shellcheck disable=SC2206
+  a=($1)
+  # shellcheck disable=SC2206
+  b=($2)
+  for i in 0 1 2; do
+    ai="${a[$i]:-0}"; bi="${b[$i]:-0}"
+    # A non-numeric field means this isn't the X.Y.Z shape this function is for — refuse to guess which
+    # side it falls on rather than risk a false "not less" (silently treated as AHEAD, i.e. disclosed
+    # and not failed) OR a false "less" (a spurious hard failure). Callers see 1 either way and read it
+    # as "not less"; a value this malformed already fails elsewhere (rs_engine_pin's own anchor regex).
+    case "$ai$bi" in *[!0-9]*) return 1 ;; esac
+    [ "$ai" -lt "$bi" ] && return 0
+    [ "$ai" -gt "$bi" ] && return 1
+  done
+  return 1
+}
+
 # ── TAG THEN PUSH — REMOTE EXISTENCE, NOT LOCAL ─────────────────────────────────────────────────────
 # `git tag && git push` used to be the whole guard, checked for idempotency on a rerun with
 # `git rev-parse "$tag"`. Under `set -uo pipefail` (release.sh has no `-e`) that `&&` chain failing at

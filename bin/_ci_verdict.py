@@ -19,13 +19,26 @@
 #
 # THE FIX, taken from bin/ci-watch.sh rather than invented a third time: `gh run list` (undocumented but
 # already relied on by ci-watch.sh) returns runs NEWEST-FIRST. So: never re-sort, and keep the FIRST
-# occurrence of each workflowName. That is exact — there is no second-granularity to lose — and ci-watch.sh's
+# occurrence of each workflow. That is exact — there is no second-granularity to lose — and ci-watch.sh's
 # own header explains the sibling lesson: an earlier version of THAT script sorted rows alphabetically
 # instead of trusting gh's order, and "which duplicate survives was arbitrary" ever since. Trusting gh's own
 # order here means this file now has the same assumption in exactly one place, not two independently-argued
 # ones that could drift.
 #
-# INPUT (stdin): a JSON array from `gh run list --json headSha,conclusion,status,workflowName,createdAt`.
+# THE SECOND BUG, same family, found and fixed 2026-08-29 alongside ci-watch.sh's "fifth false green":
+# "each workflow" above used to mean workflowName — a DISPLAY STRING a human writes in `name:`, which
+# GitHub does NOT require to be unique across FILES. Two workflow files in one repo can both declare
+# `name: ci`; `seen.add(wf)`/`wf in seen`, keyed on that shared name, silently treated the second file's
+# run as a duplicate of the first and dropped it — including a genuine failure, in the exact release gate
+# ([10] in release-preflight.sh) that is supposed to catch one. Reproduced live before this fix: two
+# entries for "ci" with different workflowDatabaseId, one success one failure, printed "OK". Fixed by
+# keying on workflowDatabaseId instead — GitHub's own numeric per-FILE identifier, confirmed via `gh
+# workflow list --json id,path` reporting the same number `gh run list --json workflowDatabaseId` does
+# for that file's runs. workflowName is still carried in the "BAD ..." message, for a human to read, but
+# it is never again what decides which rows are "the same workflow".
+#
+# INPUT (stdin): a JSON array from `gh run list --json
+# headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt`.
 # ARGV[1]: the head SHA being judged, or "" (see below).
 # OUTPUT (one line): ERR | NONE | OK | BAD <workflow:conclusion-or-status>[, ...]
 #
@@ -56,16 +69,19 @@ if not mine:
     print("NONE")
     raise SystemExit
 
-# FIRST OCCURRENCE PER WORKFLOW WINS. `mine` preserves gh's own newest-first order (filtering by headSha
-# above does not reorder), so the first row seen for a given workflowName is that workflow's latest run at
-# this commit — no sort, no timestamp comparison, nothing for same-second ties to break.
+# FIRST OCCURRENCE PER WORKFLOW ID WINS. `mine` preserves gh's own newest-first order (filtering by
+# headSha above does not reorder), so the first row seen for a given workflowDatabaseId is that
+# workflow's latest run at this commit — no sort, no timestamp comparison, nothing for same-second ties
+# to break. Falls back to workflowName only if workflowDatabaseId is absent from the input entirely (a
+# caller that has not been updated to request it) — degraded, not silently wrong: the fallback is the
+# OLD key, not a crash, but every current call site in release-preflight.sh requests the id.
 seen = set()
 latest = []
 for x in mine:
-    wf = x.get("workflowName")
-    if wf in seen:
+    key = x.get("workflowDatabaseId", x.get("workflowName"))
+    if key in seen:
         continue
-    seen.add(wf)
+    seen.add(key)
     latest.append(x)
 
 bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]

@@ -128,7 +128,24 @@ gh_call() {
   return "$_st"
 }
 
-JQ_ROW='.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .createdAt'
+# THE FIFTH FALSE GREEN (2026-08-29): workflowName is a DISPLAY STRING a human writes in `name:` --
+# GitHub does NOT require it to be unique across FILES in one repo. Two real workflow files (ci-a.yml,
+# ci-b.yml) can both declare `name: ci`, and `gh run list` genuinely returns two rows for "ci" at the
+# same commit. Every place below that grouped or matched runs by workflowName silently treated the two
+# as one workflow -- `awk '!seen[$1]++'`, keyed on name, kept whichever `gh` happened to list first and
+# dropped the OTHER one's run outright. Reproduced live before this fix: a newer success row ahead of an
+# older failure row for the same name printed "ci-watch: OK", the failure never seen.
+#
+# workflowDatabaseId is GitHub's own numeric per-FILE identifier -- confirmed live, `gh workflow list
+# --json id,path`'s `id` IS the same number `gh run list --json workflowDatabaseId` reports for that
+# file's runs -- and every row below is keyed on THAT now, never on the name. workflowName is carried
+# alongside it purely for the printed label, and disambiguated with its file (via WF_PATH_MAP, defined
+# below with wf_path_map()/path_for_id()/dup_names_of()/label_for()) whenever two rows shown this run
+# share it.
+#
+# The row separator is bound in as jq's own $US rather than the literal escape repeated in every filter
+# below -- one value, used everywhere it is needed, so it cannot silently drift from what US= above means.
+JQ_ROW='.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .createdAt'
 
 # THE STALL DECISION, as a function so it can be exercised without waiting for a real hang. A check whose
 # alarm has never been seen to fire is a check nobody should trust — this is the arm that was missing on
@@ -228,6 +245,54 @@ resolve_sha() {  # $1 = repo working dir -> sets sha, sha_failed (0/1), sha_errm
   fi
 }
 
+# THE FILE<->ID JOIN that the fifth false green needed and nothing before it did. `gh run list` reports
+# a run's workflowDatabaseId but never its local FILE — so to compare a real run back against
+# wf-expected.py's per-FILE verdict (which knows only files, not GitHub's numeric ids), something has to
+# translate one into the other. `gh workflow list --json id,path` is that translation: its `id` is
+# confirmed live to be the exact same number `gh run list --json workflowDatabaseId` reports for that
+# workflow's runs. `-a` includes disabled workflows too — a workflow disabled after it ran still has to
+# resolve, or its history becomes an orphan id path_for_id cannot explain.
+wf_path_map() {  # $1 = repo name -> sets WF_PATH_MAP ("id<US>basename" per line), WF_PATH_FAILED (0/1)
+  local rname="$1"
+  if gh_call workflow list -R "$OWNER/$rname" --json id,path --limit 100 -a; then
+    WF_PATH_MAP="$(printf '%s' "$GH_OUT" \
+                   | jq -r --arg US "$US" '.[] | (.id|tostring) + $US + (.path | split("/") | last)' \
+                   2>/dev/null)"
+    WF_PATH_FAILED=0
+  else
+    WF_PATH_MAP=""
+    WF_PATH_FAILED=1
+  fi
+}
+
+# $1 = workflowDatabaseId -> the local FILE it maps to, or the id itself if this repo's workflow list
+# could not be read, or no longer lists it (a deleted workflow file whose run history remains — there is
+# nothing local left to compare it against, and falling back to the id keeps that visible instead of
+# inventing a filename).
+path_for_id() {
+  local id="$1" hit
+  hit="$(printf '%s\n' "$WF_PATH_MAP" | awk -F"$US" -v id="$id" '$1==id{print $2; exit}')"
+  if [ -n "$hit" ]; then printf '%s' "$hit"; else printf '%s' "$id"; fi
+}
+
+# Given one repo's deduped rows (US-separated: id, name, ...), the SET of display names shared by more
+# than one distinct workflow id — the exact shape the fifth false green exploited. A name in this set
+# cannot be printed alone without implying there is only one row behind it.
+dup_names_of() {  # $1 = rows blob
+  printf '%s\n' "$1" | awk -F"$US" 'NF>1{print $2}' | sort | uniq -d
+}
+
+# THE PRINTED LABEL for one row: the plain display name normally, name-plus-file only when this repo's
+# rows actually contain another workflow sharing that exact name — never unconditionally, so an ordinary
+# repo (unique names throughout) prints byte-identical to before this fix.
+label_for() {  # $1=id $2=name $3=dup_names_of() output
+  if printf '%s\n' "$3" | grep -qxF "$2"; then
+    printf '%s (%s)' "$2" "$(path_for_id "$1")"
+  else
+    printf '%s' "$2"
+  fi
+}
+
 if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
@@ -255,18 +320,18 @@ if [ "$SELFTEST" -eq 1 ]; then
   for probe in "empty-conclusion in_progress" "dash-conclusion completed"; do
     set -- $probe
     case "$1" in
-      empty-conclusion) row="wf${US}in_progress${US}${US}2026-08-19T19:00:00Z" ;;
-      dash-conclusion)  row="wf${US}in_progress${US}-${US}2026-08-19T19:00:00Z" ;;
+      empty-conclusion) row="123${US}wf${US}in_progress${US}${US}2026-08-19T19:00:00Z" ;;
+      dash-conclusion)  row="123${US}wf${US}in_progress${US}-${US}2026-08-19T19:00:00Z" ;;
     esac
-    IFS="$US" read -r p_wf p_status p_concl p_created <<< "$row"
+    IFS="$US" read -r p_id p_wf p_status p_concl p_created <<< "$row"
     if [ "$p_created" = "2026-08-19T19:00:00Z" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
-    printf "  %s %-18s -> wf=%s status=%s concl=%q created=%q\n" \
-           "$mark" "$1" "$p_wf" "$p_status" "$p_concl" "$p_created"
+    printf "  %s %-18s -> id=%s wf=%s status=%s concl=%q created=%q\n" \
+           "$mark" "$1" "$p_id" "$p_wf" "$p_status" "$p_concl" "$p_created"
   done
   # And the query itself must never emit an empty conclusion field, whatever `read` would do with it.
-  emitted=$(printf '%s' '[{"workflowName":"wf","status":"in_progress","conclusion":"","createdAt":"2026-08-19T19:00:00Z"}]' \
-            | jq -r "$JQ_ROW" 2>/dev/null | tr "$US" "|")
-  if [ "$emitted" = "wf|in_progress|-|2026-08-19T19:00:00Z" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
+  emitted=$(printf '%s' '[{"workflowDatabaseId":123,"workflowName":"wf","status":"in_progress","conclusion":"","createdAt":"2026-08-19T19:00:00Z"}]' \
+            | jq -r --arg US "$US" "$JQ_ROW" 2>/dev/null | tr "$US" "|")
+  if [ "$emitted" = "123|wf|in_progress|-|2026-08-19T19:00:00Z" ]; then mark="✔"; else mark="✘"; fails=$((fails+1)); fi
   printf "  %s %-18s -> %s\n" "$mark" "jq empty concl" "$emitted"
   echo "  (an in_progress run has conclusion \"\", not null; jq's // leaves it, and tab-separated it"
   echo "   collapsed and shifted createdAt out of the row — elapsed was 0 for every run, always)"
@@ -284,6 +349,74 @@ if [ "$SELFTEST" -eq 1 ]; then
     echo "  ✘ gh_call did not surface gh's stderr (got '$GH_ERR')"; fails=$((fails+1))
   else
     echo "  ✔ gh_call surfaces a nonzero gh exit and its real stderr, never silence"
+  fi
+  unset -f gh
+
+  # THE FIFTH FALSE GREEN, reproduced through the REAL JQ_ROW and the REAL dedup expression from the main
+  # loop below — not a copy of either. Two runs, same workflowName "ci", DIFFERENT workflowDatabaseId
+  # (GitHub does not require the name to be unique across files): one success, one failure, success
+  # listed first exactly as `gh` returned it live in the reproduction that motivated this fix. Keying the
+  # dedup on name alone (the bug, fixed 2026-08-29) drops the failing row whenever the clean namesake
+  # sorts first; keying on id keeps both.
+  echo
+  dup_json='[{"workflowDatabaseId":111,"workflowName":"ci","status":"completed","conclusion":"success","createdAt":"2026-08-29T10:00:05Z"},{"workflowDatabaseId":222,"workflowName":"ci","status":"completed","conclusion":"failure","createdAt":"2026-08-29T10:00:01Z"}]'
+  dup_rows="$(printf '%s' "$dup_json" | jq -r --arg US "$US" "$JQ_ROW" 2>/dev/null | awk -F"$US" '!seen[$1]++')"
+  dup_count=$(printf '%s\n' "$dup_rows" | grep -c .)
+  dup_has_failure=$(printf '%s\n' "$dup_rows" | awk -F"$US" '$4=="failure"' | grep -c .)
+  if [ "$dup_count" -eq 2 ] && [ "$dup_has_failure" -eq 1 ]; then
+    echo "  ✔ two same-named workflows (different workflowDatabaseId) both survive the dedup — the failing one is not dropped"
+  else
+    echo "  ✘ duplicate-named workflow dedup DROPPED A ROW — got $dup_count row(s), failure present=$dup_has_failure (want 2, 1)"
+    fails=$((fails+1))
+  fi
+
+  # dup_names_of()/label_for(): given those same two rows, the collision must be NAMED (dup_names_of
+  # reports "ci") and the printed label for EACH must disambiguate with its own file — the file coming
+  # from WF_PATH_MAP exactly as wf_path_map() would have populated it, not a shortcut around that lookup.
+  # A third, uniquely-named row alongside them must print PLAIN — the whole point is that an ordinary
+  # repo's output does not change at all.
+  _dn="$(dup_names_of "$dup_rows
+333${US}other${US}completed${US}success${US}2026-08-29T09:00:00Z")"
+  WF_PATH_MAP="111${US}ci-a.yml
+222${US}ci-b.yml"
+  l1="$(label_for 111 ci "$_dn")"; l2="$(label_for 222 ci "$_dn")"; l3="$(label_for 333 other "$_dn")"
+  if [ "$l1" = "ci (ci-a.yml)" ] && [ "$l2" = "ci (ci-b.yml)" ] && [ "$l3" = "other" ]; then
+    echo "  ✔ label_for disambiguates only the colliding name (ci -> ci-a.yml / ci-b.yml), leaves a unique name plain"
+  else
+    echo "  ✘ label_for did not disambiguate correctly (got '$l1' / '$l2' / '$l3', want 'ci (ci-a.yml)' / 'ci (ci-b.yml)' / 'other')"
+    fails=$((fails+1))
+  fi
+
+  # wf_path_map() itself, over a stubbed `gh workflow list` — same discipline as the gh_call wrapper
+  # test above: exercise the real function against a fake `gh`, not a hand-built WF_PATH_MAP standing in
+  # for what it would have produced.
+  echo
+  gh() {
+    if [ "$1 $2" = "workflow list" ]; then
+      echo '[{"id":111,"path":".github/workflows/ci-a.yml"},{"id":222,"path":".github/workflows/ci-b.yml"}]'
+    else
+      echo "unexpected stub gh call: $*" >&2; return 9
+    fi
+  }
+  wf_path_map "fake-repo"
+  if [ "$WF_PATH_FAILED" -ne 0 ] || [ "$(path_for_id 111)" != "ci-a.yml" ] || [ "$(path_for_id 222)" != "ci-b.yml" ]; then
+    echo "  ✘ wf_path_map/path_for_id did not resolve a stubbed workflow list correctly (WF_PATH_FAILED=$WF_PATH_FAILED, 111->'$(path_for_id 111)', 222->'$(path_for_id 222)')"
+    fails=$((fails+1))
+  elif [ "$(path_for_id 999)" != "999" ]; then
+    echo "  ✘ path_for_id did not fall back to the raw id for an id absent from the map (got '$(path_for_id 999)')"
+    fails=$((fails+1))
+  else
+    echo "  ✔ wf_path_map resolves a stubbed \`gh workflow list\`, and path_for_id falls back to the raw id when a workflow is not (or no longer) listed"
+  fi
+  unset -f gh
+
+  gh() { echo "stub gh failure" >&2; return 6; }
+  wf_path_map "fake-repo"
+  if [ "$WF_PATH_FAILED" -ne 1 ]; then
+    echo "  ✘ wf_path_map did not surface a nonzero \`gh workflow list\` exit as a failure"
+    fails=$((fails+1))
+  else
+    echo "  ✔ wf_path_map surfaces a \`gh workflow list\` failure rather than silently answering an empty map"
   fi
   unset -f gh
 
@@ -383,7 +516,7 @@ EOF
   fi
 
   echo
-  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, neither is a wf-expected.py one, and neither is a HEAD git cannot resolve" \
+  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, neither is a wf-expected.py one, neither is a HEAD git cannot resolve, and a workflow display name shared by two files never hides one of them" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
@@ -402,9 +535,17 @@ dur() { if [ "$1" -lt 60 ]; then printf "%ds" "$1"; else printf "%dm" $(( $1 / 6
 # it exists to catch. NOT a global flag: every call site here runs this inside `$(...)`, which forks a
 # subshell, and a variable this function set would never reach the caller — it has to ride back in the
 # one channel that does, the captured stdout.
+#
+# TAKES A workflowDatabaseId, NOT A NAME (fixed alongside the fifth false green, 2026-08-29). `--workflow`
+# accepts a plain display name too, but that is exactly the string this whole fix stops trusting: two
+# files sharing a name would pool their runs into one median, silently blending a healthy workflow's
+# history into a stalled one's threshold (or vice versa). It used to be guessed as "${name}.yml" on the
+# first call and bare "${name}" on a fallback — wrong whenever a file's actual name differs from its
+# display name, which this reader has no way to know without WF_PATH_MAP. The numeric id is exact and
+# needs no guessing at all.
 median_secs() {
-  local repo="$1" wf="$2"
-  if gh_call run list -R "$OWNER/$repo" --workflow "$wf" --limit 12 \
+  local repo="$1" wfid="$2"
+  if gh_call run list -R "$OWNER/$repo" --workflow "$wfid" --limit 12 \
              --json conclusion,createdAt,updatedAt \
              -q '.[] | select(.conclusion=="success") | [(.updatedAt|fromdateiso8601) - (.createdAt|fromdateiso8601)] | .[]'; then
     printf '%s' "$GH_OUT" | sort -n | awk '{a[NR]=$1} END{ if (NR==0) print 0; else print a[int((NR+1)/2)] }'
@@ -426,6 +567,21 @@ for repo in "${REPOS[@]}"; do
     rc=1
     continue
   fi
+
+  # THE FILE MAP for this repo (see wf_path_map()/path_for_id() above). Fetched once per repo, used below
+  # both to disambiguate a printed name that collides and to translate a run back to the local FILE that
+  # REQUIRED BUT ABSENT (at the end of this loop) has to compare it against. A failure here degrades
+  # gracefully rather than aborting the repo outright — the per-row success/failure judging below needs
+  # none of it — but it is a NAMED, red line, and the two things that DO need it are skipped rather than
+  # silently answered wrong (see WF_PATH_FAILED below).
+  wf_path_map "$repo"
+  if [ "$WF_PATH_FAILED" -eq 1 ]; then
+    printf "  %-14s %-26s ✘ gh FAILED (workflow list) — %s — cannot tell same-named workflows apart or match wf-expected.py's per-file verdict\n" \
+           "$repo" "(gh)" "${GH_ERR:-no stderr captured}"
+    rc=1
+  fi
+  have_fn=""   # accumulated below as each row is judged — the FILES this repo actually has a run for
+
   # ONE ROW PER WORKFLOW: THE NEWEST. `gh run list --commit` returns EVERY run at that sha, and a
   # workflow with a concurrency group leaves superseded ones behind — a re-run, or a `workflow_dispatch`
   # firing while another is queued, cancels the older and both come back. The cancelled one then reads as
@@ -439,8 +595,9 @@ for repo in "${REPOS[@]}"; do
   # only one whose answer is about that commit. `gh` returns newest-first, so the first row per workflow
   # name wins; `awk` keeps insertion order rather than re-sorting.
   if gh_call run list -R "$OWNER/$repo" --commit "$sha" \
-             --json workflowName,status,conclusion,createdAt -q "$JQ_ROW"; then
-    rows="$(printf '%s' "$GH_OUT" | awk -F"$US" '!seen[$1]++')"
+             --json workflowDatabaseId,workflowName,status,conclusion,createdAt; then
+    rows="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" "$JQ_ROW" | awk -F"$US" '!seen[$1]++')"
+    dupe_names="$(dup_names_of "$rows")"
   else
     # A failed call here is not "no runs at HEAD" — it is "HEAD was never checked". Reporting the former
     # over the latter is exactly B3 (adversarial re-review, 2026-08-28): this repo cannot be judged, so it
@@ -505,13 +662,19 @@ for repo in "${REPOS[@]}"; do
     continue
   fi
 
-  while IFS="$US" read -r wf status concl created; do
-    [ -z "$wf" ] && continue
+  while IFS="$US" read -r wfid wf status concl created; do
+    [ -z "$wfid" ] && continue
+    # THE PRINTED LABEL. Plain name, unless this repo's OWN rows contain another workflow with the exact
+    # same name — see label_for() above. have_fn accumulates the FILE behind every row judged here so the
+    # REQUIRED BUT ABSENT check below can compare files, never names, against wf-expected.py's verdict.
+    label="$(label_for "$wfid" "$wf" "$dupe_names")"
+    have_fn="$have_fn
+$(path_for_id "$wfid")"
     case "$status/$concl" in
       completed/success)
-        printf "  %-14s %-26s ✔ success\n" "$repo" "$wf" ;;
+        printf "  %-14s %-26s ✔ success\n" "$repo" "$label" ;;
       completed/*)
-        printf "  %-14s %-26s ✘ %s\n" "$repo" "$wf" "$concl"; rc=1 ;;
+        printf "  %-14s %-26s ✘ %s\n" "$repo" "$label" "$concl"; rc=1 ;;
       *)
         # NOT `|| echo "$now"`. That fallback is what hid the bug above: it turned "I could not read the
         # start time" into "it started this instant", which reads as healthy and disarms the stall check.
@@ -519,11 +682,11 @@ for repo in "${REPOS[@]}"; do
                   || date -u -d "$created" +%s 2>/dev/null || echo "")
         if [ -z "$started" ]; then
           printf "  %-14s %-26s ✘ %s, start time UNREADABLE (%s) — the stall check cannot answer here\n" \
-                 "$repo" "$wf" "$status" "${created:-empty}"
+                 "$repo" "$label" "$status" "${created:-empty}"
           rc=1; continue
         fi
         elapsed=$(( now - started ))
-        med=$(median_secs "$repo" "${wf}.yml")
+        med=$(median_secs "$repo" "$wfid")
         case "$med" in
           FAIL:*)
             # median=0 could mean "no successful history" (fine, is_stalled treats it as never-stalled) OR
@@ -531,25 +694,16 @@ for repo in "${REPOS[@]}"; do
             # pending, the exact shape of B3). Never guess which; name it and fail closed instead of
             # falling through to the "pending" branch below.
             printf "  %-14s %-26s ✘ gh FAILED (median lookup) — %s — cannot judge stall for this run\n" \
-                   "$repo" "$wf" "${med#FAIL:}"
+                   "$repo" "$label" "${med#FAIL:}"
             rc=1; continue ;;
         esac
-        if [ "$med" -eq 0 ]; then
-          med=$(median_secs "$repo" "$wf")
-          case "$med" in
-            FAIL:*)
-              printf "  %-14s %-26s ✘ gh FAILED (median lookup) — %s — cannot judge stall for this run\n" \
-                     "$repo" "$wf" "${med#FAIL:}"
-              rc=1; continue ;;
-          esac
-        fi
         if is_stalled "$elapsed" "$med" "$STALL_FACTOR"; then
           printf "  %-14s %-26s ✘ STALLED — %s elapsed against a %s median. Not slow: stuck.\n" \
-                 "$repo" "$wf" "$(dur "$elapsed")" "$(dur "$med")"
+                 "$repo" "$label" "$(dur "$elapsed")" "$(dur "$med")"
           rc=1
         else
           printf "  %-14s %-26s … %s (%s elapsed, %s median)\n" \
-                 "$repo" "$wf" "$status" "$(dur "$elapsed")" "$(dur "$med")"
+                 "$repo" "$label" "$status" "$(dur "$elapsed")" "$(dur "$med")"
           pending=$((pending+1))
         fi ;;
     esac
@@ -568,9 +722,9 @@ for repo in "${REPOS[@]}"; do
   # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
   # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
   if gh_call run list -R "$OWNER/$repo" --branch main --limit 40 \
-             --json workflowName,status,conclusion,headSha,createdAt \
-             -q '.[] | .workflowName + "\u001f" + .status + "\u001f" + (if (.conclusion // "") == "" then "-" else .conclusion end) + "\u001f" + .headSha'; then
-    latest="$GH_OUT"
+             --json workflowDatabaseId,workflowName,status,conclusion,headSha,createdAt; then
+    latest="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" '.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .headSha')"
+    dupe_latest="$(dup_names_of "$latest")"
   else
     # Cannot tell "no earlier run exists" from "the call failed" without checking — this IS finding B3
     # (adversarial re-review, 2026-08-28): a stub gh that failed only this call still printed OK, exit 0.
@@ -578,37 +732,48 @@ for repo in "${REPOS[@]}"; do
            "$repo" "(gh)" "${GH_ERR:-no stderr captured}"
     rc=1
     latest=""
+    dupe_latest=""
   fi
   # FAULT HOOK, same idea as `drop-row` above: this arm reports only when something upstream is broken,
   # so on a healthy repo it is indistinguishable from a check that does nothing. `stale-red` recolours
   # every completed non-HEAD run as a failure, which is exactly the state this exists to catch.
   if [ "${CI_WATCH_FAULT:-}" = "stale-red" ] && [ -n "$latest" ]; then
     latest="$(printf '%s\n' "$latest" | awk -v US="$US" -F"$US" \
-              'NF>=4 {print $1 US "completed" US "failure" US $4}')"
+              'NF>=5 {print $1 US $2 US "completed" US "failure" US $5}')"
+    dupe_latest="$(dup_names_of "$latest")"
   fi
   seen_wf=""
-  while IFS="$US" read -r lwf lstatus lconcl lsha; do
-    [ -z "$lwf" ] && continue
-    case " $seen_wf " in *" $lwf "*) continue ;; esac   # the list is newest-first: first row wins
-    seen_wf="$seen_wf $lwf"
+  while IFS="$US" read -r lwfid lwf lstatus lconcl lsha; do
+    [ -z "$lwfid" ] && continue
+    case " $seen_wf " in *" $lwfid "*) continue ;; esac   # the list is newest-first: first id wins
+    seen_wf="$seen_wf $lwfid"
     [ "$lsha" = "$sha" ] && continue                    # already judged against HEAD above
     [ "$lstatus" != "completed" ] && continue           # an older run still going says nothing
     [ "$lconcl" = "success" ] && continue
+    llabel="$(label_for "$lwfid" "$lwf" "$dupe_latest")"
     printf "  %-14s %-26s ✘ %s at %s — its NEWEST run, on an earlier commit. HEAD needs no run,\n" \
-           "$repo" "$lwf" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"
+           "$repo" "$llabel" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"
     printf "  %-14s %-26s   so this red would otherwise vanish from the summary.\n" "" ""
     rc=1
   done <<< "$latest"
 
   # And the subtler half: rows exist, but not for every workflow that had to produce one. This is the
   # shape that let a green `realworld-oracle` stand in for a red `ci` — one row present is not the set.
-  while IFS=$'\t' read -r req_wf _ req_why; do
-    [ -z "$req_wf" ] && continue
-    if ! printf "%s" "$rows" | grep -qF "$req_wf$US"; then
-      printf "  %-14s %-26s ✘ REQUIRED BUT ABSENT — %s\n" "$repo" "$req_wf" "$req_why"
-      rc=1
-    fi
-  done <<< "$required"
+  #
+  # Matched by FILE (have_fn, accumulated above as each row was judged), never by name: wf-expected.py's
+  # first column is the workflow FILE (fixed alongside this one), which is what is actually unique in one
+  # repo's .github/workflows/ directory — the whole point of this fix is that req_wf here can no longer be
+  # trusted to identify a single workflow. Skipped when WF_PATH_FAILED, rather than asserting an answer
+  # this repo's failed `gh workflow list` call cannot back up.
+  if [ "$WF_PATH_FAILED" -eq 0 ]; then
+    while IFS=$'\t' read -r req_wf _ req_why; do
+      [ -z "$req_wf" ] && continue
+      if ! printf '%s\n' "$have_fn" | grep -qxF "$req_wf"; then
+        printf "  %-14s %-26s ✘ REQUIRED BUT ABSENT — %s\n" "$repo" "$req_wf" "$req_why"
+        rc=1
+      fi
+    done <<< "$required"
+  fi
 done
 
 echo

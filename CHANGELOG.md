@@ -8,6 +8,37 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-29 — `ci-watch.sh`'s fifth false green: `workflowName` treated as a unique key, and it isn't
+
+- **A different class than the first four: not a swallowed subprocess failure, a data-modeling
+  assumption.** GitHub's `name:` field is a display string a human chooses, and does not have to be
+  unique across workflow FILES in one repo. Two files (`ci-a.yml`, `ci-b.yml`) both declaring `name: ci`
+  make `gh run list` genuinely return two rows for `"ci"` at the same commit — and every place this
+  script grouped, deduped, or matched runs by `workflowName` (the primary row dedup, the earlier-commit
+  safety net, `median_secs()`'s history lookup) silently treated the two as one workflow, keeping
+  whichever row `gh` listed first and dropping the other's run outright, including a genuine failure.
+  Reproduced both as the isolated mechanism and end-to-end (a real throwaway repo, a stubbed `gh`): `OK`,
+  exit 0, over a `completed/failure` run. Fixed by keying every row on `workflowDatabaseId` — GitHub's own
+  numeric per-file identifier, joined back to a local file via a new `wf-expected.py`/`gh workflow list`
+  pairing (`wf_path_map()`/`path_for_id()`) — with `workflowName` kept only for the printed label,
+  disambiguated with its file when two shown rows share a name. `median_secs()` carried the same
+  assumption worse (it *guessed* a workflow's filename from its display name, wrong whenever the two
+  differ, and its fallback would have blended two colliding workflows' histories into one median);
+  fixed by passing the numeric id directly. `wf-expected.py`'s own TSV changed its identity column from
+  the display name to the workflow file, or the two readers would disagree — confirmed live it would
+  have (`shell-lint.yml` vs `shell-lint`), which in turn required fixing `bin/verify-umbrella.sh`'s
+  `wf_required()` to match by file too (a real regression, caught before landing). The same defect,
+  independently present, was also found and fixed in `bin/_ci_verdict.py` — shared by
+  `release-preflight.sh`'s CI-status **release gate** — which deduped a repo's latest run per workflow by
+  `workflowName` the same way. `verify-local.sh` and `release-verify.sh` swept clean (neither keys on a
+  non-unique human string). `--selftest` extended in both `ci-watch.sh` and `wf-expected.py` to exercise
+  the real dedup/identity code against a synthetic and a real duplicate-name case, not a copy of it.
+  Controls: two same-named workflows (one failing) flip from `OK`/exit 0 to both rows shown, `NOT
+  GREEN`/exit 1; an ordinary repo with unique names produces byte-identical output before and after,
+  confirmed via `diff` against the pre-fix script on live and synthetic fixtures alike; a duplicate pair
+  beside an unrelated clean workflow names only the failing duplicate, by file. Detail, the full
+  cross-script sweep, and every control in `BACKLOG.md`.
+
 ## 2026-08-29 — `ci-watch.sh`'s third false green: a subprocess read through `2>/dev/null` again
 
 - **`bin/ci-watch.sh` swallowed `wf-expected.py`'s stderr and exit code, so a DETACHED HEAD read as

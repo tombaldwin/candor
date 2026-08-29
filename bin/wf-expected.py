@@ -18,7 +18,14 @@ required-and-absent run as red and a not-required absence as green, with the rea
 Usage:  python3 wf-expected.py <repo-dir> [<git-rev>] [<branch>]
 The branch defaults to the repo's current one; pass it when that repo is a DETACHED checkout, where
 `rev-parse --abbrev-ref HEAD` says "HEAD" and every `branches:` filter would read as unmatched.
-Prints one line per workflow:  <workflow display name>\\t<required|not-required>\\t<why>
+
+Prints one line per workflow:  <workflow FILE>\\t<required|not-required>\\t<why>
+THE FIFTH FALSE GREEN (ci-watch.sh, 2026-08-29): the first column used to be the workflow's `name:` —
+a display string a human chooses, which GitHub does NOT require to be unique across files. Two files in
+one repo (ci-a.yml, ci-b.yml) can both declare `name: ci`, and ci-watch.sh's dedup (keyed on that same
+name, now fixed on its side too) silently dropped whichever of the two `gh` listed second — including a
+genuine failure. The identity emitted here is the FILE — the only thing actually unique within one
+repo's .github/workflows/ directory — so a caller can tell the two apart even when their `name:` cannot.
 Exit 0 always unless the repo cannot be read; an unparseable workflow is REQUIRED, because the
 conservative answer to "I could not tell whether this must have run" is to make someone look.
 """
@@ -229,9 +236,53 @@ def selftest():
     return fails
 
 
+def selftest_duplicate_names():
+    """THE FIFTH FALSE GREEN, exercised through the REAL subprocess against a REAL throwaway repo \u2014 not
+    a copy of classify()'s logic, the same discipline this file's own docstring credits for catching the
+    ORIGINAL bug (a selftest that only ever agreed with a second copy of itself). Two workflow files both
+    declare `name: ci`; main()'s output must key each on its FILE, not the name they share.
+    """
+    import subprocess
+    import tempfile
+    import shutil
+
+    d = tempfile.mkdtemp()
+    fails = 0
+    try:
+        wfdir = os.path.join(d, ".github", "workflows")
+        os.makedirs(wfdir)
+        with open(os.path.join(wfdir, "ci-a.yml"), "w", encoding="utf-8") as fh:
+            fh.write("name: ci\non:\n  push:\n    branches: [main]\n")
+        with open(os.path.join(wfdir, "ci-b.yml"), "w", encoding="utf-8") as fh:
+            fh.write("name: ci\non:\n  push:\n    branches: [main]\n")
+        run = lambda *a: subprocess.run(["git", "-C", d, *a], capture_output=True, text=True)
+        run("init", "-q", "-b", "main")
+        run("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
+        run("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+        out = subprocess.run([sys.executable, os.path.abspath(__file__), d, "HEAD", "main"],
+                             capture_output=True, text=True).stdout
+        rows = [ln.split("\t") for ln in out.splitlines() if ln.strip()]
+        keys = sorted(r[0] for r in rows)
+        ok = (keys == ["ci-a.yml", "ci-b.yml"] and len(rows) == 2
+              and all(r[1] == "required" for r in rows))
+        mark = "\u2714" if ok else "\u2718"
+        print(f"  {mark} duplicate name 'ci' across ci-a.yml/ci-b.yml -> keys {keys!r} "
+              "(want two DISTINCT file keys, never one collapsed 'ci')")
+        if not ok:
+            fails += 1
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    return fails
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
-        return selftest()
+        f1 = selftest()
+        print()
+        f2 = selftest_duplicate_names()
+        total = f1 + f2
+        print("wf-expected selftest (combined): " + ("OK" if total == 0 else f"FAILED — {total} case(s)"))
+        return total
     repo = sys.argv[1]
     rev = sys.argv[2] if len(sys.argv) > 2 else "HEAD"
     wfdir = os.path.join(repo, ".github", "workflows")
@@ -259,7 +310,10 @@ def main():
             continue
         name, has_push, paths, tags, branches, pignore, ok = parse_workflow(os.path.join(wfdir, fn))
         verdict, why = classify(name, has_push, paths, tags, branches, pignore, files, branch, ok, fn)
-        print(f"{name}\t{verdict}\t{why}")
+        # THE IDENTITY COLUMN IS THE FILE, NOT `name` — see the fifth-false-green note in this file's
+        # docstring. `name` (the human `name:` display string) is still fed into classify() above only
+        # because some of its `why` messages read better with it; it is never the key a caller matches on.
+        print(f"{fn}\t{verdict}\t{why}")
     return 0
 
 

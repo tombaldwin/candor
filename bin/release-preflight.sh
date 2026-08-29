@@ -719,8 +719,10 @@ else
     # whichever one happened to be listed SECOND in the input, not whichever was newest. Swapping the two
     # objects in the input JSON flipped the verdict on identical facts. Fixed by adopting bin/ci-watch.sh's
     # already-proven approach instead of writing a third independent one: never re-sort, trust `gh`'s own
-    # newest-first order, and keep the FIRST occurrence per workflow. See _ci_verdict.py for the full story.
-    verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null \
+    # newest-first order, and keep the FIRST occurrence per workflow ID (2026-08-29: this used to be
+    # workflowName, which GitHub does not require to be unique across files — see _ci_verdict.py's own
+    # header for the reproduction). `workflowDatabaseId` is requested below for exactly that reason.
+    verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
       | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     # IN-PROGRESS IS NOT A FAILURE, IT IS A NOT-YET. `release.sh` steps 2–3 push the release TAGS, which
     # start candor-ts's OIDC `publish` and candor-swift's `release` — so the very next invocation of this
@@ -756,7 +758,7 @@ else
       # call site each rather than one shared shell function around them, because the two loops differ in
       # everything BUT this line (one runs once, one polls); the call itself is now the only thing they
       # share, and it is literally the same file, not a copy that could drift.
-      verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null \
+      verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
         | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     done
     # THE TIMEOUT IS JUDGED ON THE VERDICT, NOT THE CLOCK. This fired on the elapsed counter, so a repo
@@ -806,7 +808,7 @@ else
           # green" over a genuinely broken build. `_ci_verdict.py` with an empty head dedupes every
           # workflow's own latest completed run instead, so one green straggler cannot stand in for a red
           # one elsewhere. See _ci_verdict.py's header for the full argument.
-          raw="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,createdAt 2>/dev/null)"
+          raw="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null)"
           verdict="$(printf '%s' "$raw" | python3 "$HERE/_ci_verdict.py" "" 2>/dev/null)"
           # The anchor sha is DISPLAY ONLY — which commit was freshest overall, so the message still names
           # something concrete. It plays no part in the verdict above, which judges every workflow.

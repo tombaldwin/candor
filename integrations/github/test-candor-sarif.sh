@@ -241,6 +241,55 @@ echo '{"spec":"0.28","ok":false,"incomplete":true,"unanalyzed":[{"path":"x","rea
 OUTINC2=$(python3 "$SARIF" "$WORK/increport.json" --gate "$WORK/incgate2.json" 2>/dev/null)
 ok "incomplete + a real violation: both present"  '[ "$(printf "%s" "$OUTINC2" | jq ".runs[0].results|length")" = 1 ] && [ "$(printf "%s" "$OUTINC2" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
 
+# SPEC ⟨0.30⟩/⟨0.32⟩: `excluded[].peeked:false` and a non-empty `outOfScope` each suppress `ok`/exit ON
+# THEIR OWN — checked here DIRECTLY, not only through the shared `incomplete` flag a producer is expected
+# to raise alongside them. A gate that sets `ok:false` and one of these keys WITHOUT `incomplete` (a
+# partial ⟨0.32⟩ implementation, a hand-edited or filtered document, a future engine) must not fall back
+# to reading `results:[]` as clean. Measured against the pre-fix tool: both produced a byte-identical
+# clean empty-results SARIF with no `invocations` and no stderr line.
+echo '{"spec":"0.32","ok":false,"violations":[],"excluded":[{"class":"deploy-script","count":1,"peeked":false,"reason":"uncompiled"}]}' > "$WORK/excgate.json"
+OUTEXC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/excgate.json" 2>"$WORK/excerr"); rcexc=$?
+ok "excluded/peeked:false alone (no incomplete): exit 0, results []" '[ "$rcexc" = 0 ] && [ "$(printf "%s" "$OUTEXC" | jq ".runs[0].results|length")" = 0 ]'
+ok "…flagged, not clean"                            '[ "$(printf "%s" "$OUTEXC" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
+ok "…names CANDOR-INCOMPLETE and the class"          'grep -q "deploy-script" "$WORK/excerr"'
+
+echo '{"spec":"0.32","ok":false,"violations":[],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"build-output"}]}' > "$WORK/oosgate.json"
+OUTOOS=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/oosgate.json" 2>"$WORK/ooserr"); rcoos=$?
+ok "outOfScope alone (no incomplete): exit 0, results []" '[ "$rcoos" = 0 ] && [ "$(printf "%s" "$OUTOOS" | jq ".runs[0].results|length")" = 0 ]'
+ok "…flagged, not clean"                            '[ "$(printf "%s" "$OUTOOS" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
+ok "…names CANDOR-INCOMPLETE"                        'printf "%s" "$OUTOOS" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-INCOMPLETE\"" >/dev/null'
+
+# `excluded[].class` is engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and MUST NOT change behaviour — an
+# unread class under a brand-new/unknown token (the ⟨0.34⟩ `dispatch-widened` shape) is caught exactly
+# like any other, and a PEEKED class (or one marked `judgedElsewhere`) under that SAME unknown token is
+# the over-charge control and must stay clean.
+echo '{"spec":"0.34","ok":false,"violations":[],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$WORK/dwgate.json"
+OUTDW=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwgate.json" 2>"$WORK/dwerr")
+ok "unknown excluded class (dispatch-widened): still caught"  'grep -q "dispatch-widened" "$WORK/dwerr"'
+echo '{"spec":"0.34","ok":true,"violations":[],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$WORK/dwclean.json"
+OUTDWC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwclean.json" 2>"$WORK/dwcerr")
+ok "…peeked+judgedElsewhere under the same unknown class: stays clean" '[ "$(printf "%s" "$OUTDWC" | jq -r ".runs[0].invocations // \"none\"")" = none ] && [ ! -s "$WORK/dwcerr" ]'
+
+# THE BACKSTOP: an `ok:false` gate this tool cannot attribute to ANY recognized cause (not refused, not
+# incomplete, not excluded/outOfScope) must still not present its empty `results` as a clean scan — SPEC
+# keeps adding causes (⟨0.29⟩ excluded, ⟨0.30⟩ outOfScope, ⟨0.32⟩ peeked, ⟨0.33⟩ scannedUnder…) and a
+# boundary drawn around today's enumerated list would miss the next one exactly as it missed these two.
+echo '{"spec":"0.34","ok":false,"violations":[]}' > "$WORK/unkgate.json"
+OUTUNK=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/unkgate.json" 2>"$WORK/unkerr")
+ok "ok:false, no recognized cause: still flagged"    '[ "$(printf "%s" "$OUTUNK" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
+ok "…names CANDOR-UNKNOWN-FAIL"                      'printf "%s" "$OUTUNK" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-UNKNOWN-FAIL\"" >/dev/null'
+# …and the backstop must NEVER fire beside a real violation (results non-empty) — that case already
+# discloses itself, and a redundant caveat there would be noise, not a missing signal.
+echo '{"spec":"0.34","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.checkout","effects":["Fs"],"detail":"x"}]}' > "$WORK/unkgate2.json"
+OUTUNK2=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/unkgate2.json" 2>"$WORK/unkerr2")
+ok "ok:false WITH a real violation: no backstop noise" '[ "$(printf "%s" "$OUTUNK2" | jq ".runs[0].results|length")" = 1 ] && [ ! -s "$WORK/unkerr2" ]'
+
+# OVER-CHARGE CONTROLS for all of the above: `zeroMatch` (⟨0.27⟩, advisory — MUST NOT change ok/exit) and
+# a plain clean gate must both stay byte-silent — no invocations, no stderr — through every check above.
+echo '{"spec":"0.27","ok":true,"violations":[],"zeroMatch":["deny Net app.typo"]}' > "$WORK/zmgate.json"
+OUTZM=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/zmgate.json" 2>"$WORK/zmerr")
+ok "zeroMatch present, ok:true: no invocations, silent"  '[ "$(printf "%s" "$OUTZM" | jq -r ".runs[0].invocations // \"none\"")" = none ] && [ ! -s "$WORK/zmerr" ]'
+
 # malformed gate -> no crash, empty-results SARIF, exit 0.
 echo 'not json {' > "$WORK/bad.json"
 OUTB=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/bad.json" 2>/dev/null); rc=$?

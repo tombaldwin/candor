@@ -192,6 +192,60 @@ OUT=$(CANDOR_CMD="bash $CRASHENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/
 ok "over-charge control: a genuine crash still ALLOWS (rc=2)"    '[ "$rc" = 2 ]'
 ok "…and is NOT mislabeled as incomplete"                        '! printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
 
+# ── `excluded[].peeked`/`outOfScope` (SPEC ⟨0.30⟩/⟨0.32⟩) must ALSO block on their OWN, not only through
+# the shared `incomplete` flag. MEASURED pre-fix: a report carrying one of these two keys with NO
+# top-level `incomplete` fell through to "build/scan error, not a violation" (rc=2, ALLOWED) exactly like
+# the genuine crash above — the same silent-pass shape the incomplete/unanalyzed fix closed, reached by a
+# spelling that fix did not check. `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) and must not
+# matter — tested here under `dispatch-widened`, the brand-new ⟨0.34⟩ class no consumer has seen before.
+UNREADENG="$WORK/mock-unread-engine.sh"
+cat > "$UNREADENG" <<'UNREADEOF'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && cat > "$out" <<JSON
+{"candor":{"spec":"0.34"},"functions":[],
+ "excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
+JSON
+exit 2
+UNREADEOF
+chmod +x "$UNREADENG"
+OUT=$(CANDOR_CMD="bash $UNREADENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "unread excluded class ALONE (no incomplete flag) BLOCKS (rc=1)" '[ "$rc" = 1 ]'
+ok "…names the class, whatever it is called"                        'printf "%s" "$OUT" | grep -q "dispatch-widened"'
+
+OOSENG="$WORK/mock-oos-engine.sh"
+cat > "$OOSENG" <<'OOSEOF'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && cat > "$out" <<JSON
+{"candor":{"spec":"0.33"},"functions":[{"fn":"app.checkout","inferred":["Db"]}],
+ "outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"build-output"}]}
+JSON
+exit 2
+OOSEOF
+chmod +x "$OOSENG"
+OUT=$(CANDOR_CMD="bash $OOSENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "outOfScope ALONE (no incomplete flag) BLOCKS (rc=1)"            '[ "$rc" = 1 ]'
+ok "…names outOfScope in the detail"                                 'printf "%s" "$OUT" | grep -q "outOfScope:"'
+
+# OVER-CHARGE CONTROL: a class the producer DID read (`judgedElsewhere`, e.g. a derived build-output copy)
+# — even under the SAME unknown `dispatch-widened` token — must stay clean. Proves the class name never
+# decides anything; only the two booleans do.
+PEEKEDENG="$WORK/mock-peeked-engine.sh"
+cat > "$PEEKEDENG" <<'PEEKEDEOF'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && cat > "$out" <<JSON
+{"candor":{"spec":"0.34"},"functions":[{"fn":"a","inferred":["Log"]}],
+ "excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
+JSON
+exit 0
+PEEKEDEOF
+chmod +x "$PEEKEDENG"
+OUT=$(CANDOR_CMD="bash $PEEKEDENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "over-charge control: peeked+judgedElsewhere (same unknown class) stays clean (rc=0)" '[ "$rc" = 0 ]'
+ok "…and is not flagged incomplete"                                  '! printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
+
 # ── maxHops: the graph-depth of a change (FEEDBACK-SPEC's last deferred field, unlocked by the 0.11
 #    surface machinery). A 2-hop chain (top → mid → leaf) where leaf gains Fs must print "deepest
 #    propagation: 2 hop(s)" and land maxHops:2 in the self-logged record. Real candor-scan when

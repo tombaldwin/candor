@@ -41,8 +41,14 @@ RULES_COMPLETENESS = {
         "The policy gate could not decide at least one rule and REFUSED rather than certify. This run "
         "makes no claim about violations — an empty result set here is not a clean scan."),
     "CANDOR-INCOMPLETE": ("IncompleteAnalysis",
-        "Part of the target was never read or judged (files candor could not analyze, or a dependency "
-        "report that judged nothing). This run's verdict does not cover that part."),
+        "Part of the target was never read or judged (files candor could not analyze, a class the scan "
+        "excluded and never opened, code outside the scan's scope performing a denied effect, or a "
+        "dependency report that judged nothing). This run's verdict does not cover that part."),
+    # THE BACKSTOP (see `completeness_note`): an `ok:false` gate this tool cannot attribute to any cause
+    # it recognizes by name. Never fires beside a real finding — `results` already discloses that case.
+    "CANDOR-UNKNOWN-FAIL": ("UnrecognizedGateFailure",
+        "The policy gate's own verdict is ok:false with no violations and none of the completeness causes "
+        "this reporter recognizes. An empty result set below is NOT evidence of a clean scan."),
 }
 
 # AS-EFF rule metadata (the codes candor's policy checker emits). helpUri points at the concept.
@@ -71,7 +77,26 @@ def level_of(rule):
     return "warning" if rule == "AS-EFF-007" or rule in RULES_COMPLETENESS else "error"
 
 
-def completeness_note(report, gate):
+def unread_exclusion_classes(doc):
+    """SPEC §2 ⟨0.32⟩: `excluded[]` entries the document's own producer never READ — `peeked` is not
+    `true` and `judgedElsewhere` is not `true` either. This MUST suppress `ok`/exit on its own, so it is
+    checked HERE independently of whether the producer also raised the shared `incomplete` flag —
+    `completeness_note` below already trusts that flag when present, this is the defense for a producer
+    that flips `ok`/exit but does not (an early/partial ⟨0.32⟩ implementation, or a future engine that
+    spells the shared flag differently). `class` is engine-chosen vocabulary (SPEC §2 ⟨0.29⟩: "a consumer
+    MUST NOT infer `judgedElsewhere` from the `class` token") and is NEVER used to decide anything here —
+    only named in the message, and only the two booleans are read to decide."""
+    exc = doc.get("excluded") if isinstance(doc, dict) else None
+    if not isinstance(exc, list):
+        return []
+    out = []
+    for e in exc:
+        if isinstance(e, dict) and e.get("peeked") is not True and e.get("judgedElsewhere") is not True:
+            out.append(str_or_none(e.get("class")) or "?")
+    return out
+
+
+def completeness_note(report, gate, results):
     """SPEC ⟨0.24⟩/⟨0.28⟩: a report-consuming verb whose output could be read as a negative finding about
     the code — a verdict, an EMPTY RESULT SET, a zero count — MUST re-disclose an underlying `incomplete`
     (`unanalyzed`/`judgedNothing`) or a REFUSAL, on the same verdict-preserving terms as `coverage`. A
@@ -89,7 +114,28 @@ def completeness_note(report, gate):
     Checked on the GATE document first — it is the verb's own normative verdict — then the REPORT (which
     may carry `unanalyzed`/`incomplete` even when a pre-⟨0.28⟩ gate doesn't echo it). Returns
     (ruleId, message) or None. A malformed/absent gate or report degrades to None (nothing to disclose),
-    matching this tool's existing crash contract."""
+    matching this tool's existing crash contract.
+
+    TWO LAYERS BELOW THE `incomplete` CHECK, neither of them redundant with it:
+
+    (1) `excluded[].peeked` / `outOfScope` are checked DIRECTLY, not only through `incomplete` — SPEC
+    ⟨0.30⟩/⟨0.32⟩ bind these two keys to suppress `ok`/exit in their own right; a producer could raise one
+    without also setting the shared boolean (a partial implementation, a hand-built or filtered document
+    in a CI pipeline, a future engine), and reading only the summary flag would silently pass that
+    through exactly as the original `incomplete`-only check passed through a `refused` document with no
+    `incomplete` key at all. MEASURED against this file pre-fix: an `{"ok": false, "excluded":
+    [{"class": "…", "peeked": false}]}` gate — `ok:false` with no `incomplete`/`refused` key — produced a
+    byte-identical clean empty-results SARIF, no `invocations`, no stderr line. Same for a bare
+    `{"ok": false, "outOfScope": [...]}`.
+
+    (2) THE BACKSTOP. Even (1) is an enumerated list, and SPEC §2 keeps growing it (⟨0.29⟩ excluded,
+    ⟨0.30⟩ outOfScope, ⟨0.32⟩ peeked, ⟨0.33⟩ scannedUnder…) — a boundary drawn around today's list repeats
+    the corpus brief's rule 9 mistake (an audit that scopes itself to the causes in hand and misses the
+    next one). So: an `ok:false` gate with an EMPTY `results` and none of the recognized causes still gets
+    a caveat, naming that this tool could not attribute the failure — never silence, whatever SPEC adds
+    next. Guarded on `results` being empty: a gate that is `ok:false` WITH real violations already
+    discloses itself through `results`, and tagging that case too would be noise beside a real finding,
+    not a missing one."""
     if not isinstance(gate, dict):
         gate = {}
     if not isinstance(report, dict):
@@ -109,10 +155,27 @@ def completeness_note(report, gate):
         jn = doc.get("judgedNothing")
         if isinstance(jn, list) and jn:
             bits.append(f"{len(jn)} dependency report(s) that judged nothing")
-        detail = "; ".join(bits) or "part of the target"
         return ("CANDOR-INCOMPLETE",
-                f"analysis is INCOMPLETE per the {whose} document ({detail}) — no verdict was reached "
-                f"over that part, so this run is not a full scan.")
+                f"analysis is INCOMPLETE per the {whose} document ({'; '.join(bits) or 'part of the target'}) "
+                f"— no verdict was reached over that part, so this run is not a full scan.")
+    for doc, whose in ((gate, "gate"), (report, "report")):
+        unread = unread_exclusion_classes(doc)
+        if unread:
+            return ("CANDOR-INCOMPLETE",
+                    f"the {whose} document names {len(unread)} exclusion class(es) the producing scan "
+                    f"never read ({', '.join(unread)}) — their effects are absent because nothing looked, "
+                    f"not because there are none, so this run's verdict does not cover them.")
+        oos = doc.get("outOfScope")
+        if isinstance(oos, list) and oos:
+            return ("CANDOR-INCOMPLETE",
+                    f"the {whose} document names {len(oos)} function(s) outside the scan's scope "
+                    f"performing an effect the policy denies — they were never judged, so this run's "
+                    f"verdict is incomplete rather than a pass.")
+    if gate.get("ok") is False and not results:
+        return ("CANDOR-UNKNOWN-FAIL",
+                "the policy gate's own verdict is ok:false with no violations and none of the "
+                "completeness causes this reporter recognizes (refused/incomplete/excluded/outOfScope) "
+                "— treat this as NOT a clean scan, not as the empty result set below.")
     return None
 
 
@@ -458,7 +521,7 @@ def build_sarif(report, report_path, gate, src_root, query_cmd):
     # SARIF's own channel for "the tool did not fully succeed", separate from `results` (code findings) —
     # so a refusal/incompleteness never fabricates a location-bearing finding, and a genuinely healthy run
     # (the common case) gets no `invocations` key at all, staying byte-identical to before this rung.
-    note = completeness_note(report, gate)
+    note = completeness_note(report, gate, results)
     if note:
         rule_id, msg = note
         print(f"candor-sarif: {msg}", file=sys.stderr)

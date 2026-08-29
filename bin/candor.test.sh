@@ -253,6 +253,39 @@ printf '{"candor":{"version":"scan-0.18.0","toolchain":"stable","spec": "0.23"},
 printf 'baseline .candor/baseline.json\n' > "$T/polyd/.candor/config"; : > "$T/polyd/.candor/baseline.json"
 ok "polyglot dashboard names per-engine gates (not \`scan .\`)" "one per language" bash -c "cd '$T/polyd' && CANDOR_DISPATCH_DRYRUN= '$D'"
 ok "polyglot dashboard: rust gate is the raw engine"  "candor-scan . --gate-json"  bash -c "cd '$T/polyd' && CANDOR_DISPATCH_DRYRUN= '$D'"
+
+echo "bare-dashboard completeness disclosure (SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩/⟨0.32⟩):"
+# The bare status dashboard reads a report's `functions` and tallies effects with NOTHING checking
+# `incomplete`/`unanalyzed`/`judgedNothing`/`excluded`/`outOfScope` — the same "refusal read as clean"
+# shape candor-sarif/candor-fingerprint/the Claude Code review scripts were fixed for (BACKLOG.md, "the
+# engines fail CLOSED…"), never previously checked for this consumer. DRYRUN doesn't matter here — the
+# dashboard reads the report directly, no engine invoked.
+mkdir -p "$T/dashinc/.candor"
+printf '{"candor":{"version":"mock","spec":"0.30"},"functions":[{"fn":"a","inferred":["Fs"]}],"incomplete":true,"unanalyzed":[{"path":"src/big.rs","reason":"parse error"}]}' > "$T/dashinc/.candor/report.pkg.scan.json"
+ok "incomplete report -> dashboard shows the caveat" "⚠ incomplete" bash -c "cd '$T/dashinc' && CANDOR_DISPATCH_DRYRUN= '$D'"
+ok "…names the unread file count" "1 file(s) candor could not read" bash -c "cd '$T/dashinc' && CANDOR_DISPATCH_DRYRUN= '$D'"
+
+# ADVERSARIAL: `excluded[].peeked:false` / a non-empty `outOfScope` must trip the caveat on their OWN,
+# not only through the shared `incomplete` flag — a report can carry one without the other (a partial
+# ⟨0.32⟩ implementation, or a future engine). `dispatch-widened` is the brand-new ⟨0.34⟩ class token, used
+# here to also prove `excluded[].class` (engine-chosen, SPEC §2 ⟨0.29⟩) never decides anything.
+mkdir -p "$T/dashexc/.candor"
+printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$T/dashexc/.candor/report.pkg.scan.json"
+ok "unread excluded class ALONE (no incomplete flag) trips the caveat" "⚠ incomplete" bash -c "cd '$T/dashexc' && CANDOR_DISPATCH_DRYRUN= '$D'"
+ok "…names the class, whatever it is called" "dispatch-widened" bash -c "cd '$T/dashexc' && CANDOR_DISPATCH_DRYRUN= '$D'"
+
+mkdir -p "$T/dashoos/.candor"
+printf '{"candor":{"version":"mock","spec":"0.33"},"functions":[{"fn":"a","inferred":["Fs"]}],"outOfScope":[{"fn":"x.run","effects":["Exec"],"class":"build-output"}]}' > "$T/dashoos/.candor/report.pkg.scan.json"
+ok "outOfScope ALONE (no incomplete flag) trips the caveat" "⚠ incomplete" bash -c "cd '$T/dashoos' && CANDOR_DISPATCH_DRYRUN= '$D'"
+
+# OVER-CHARGE CONTROLS: a class the producer DID read (`judgedElsewhere`, same unknown token) and a
+# plain clean report must both stay silent — no caveat line at all.
+mkdir -p "$T/dashpeeked/.candor"
+printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$T/dashpeeked/.candor/report.pkg.scan.json"
+no "over-charge: peeked+judgedElsewhere (same unknown class) stays silent" "⚠ incomplete" bash -c "cd '$T/dashpeeked' && CANDOR_DISPATCH_DRYRUN= '$D'"
+mkdir -p "$T/dashclean/.candor"
+printf '{"candor":{"version":"mock","spec":"0.30"},"functions":[{"fn":"a","inferred":["Fs"]}]}' > "$T/dashclean/.candor/report.pkg.scan.json"
+no "over-charge: a genuinely clean report stays silent" "⚠ incomplete" bash -c "cd '$T/dashclean' && CANDOR_DISPATCH_DRYRUN= '$D'"
 # hook-run run interactively (a TTY on stdin) must NOT hang — it explains + exits. Here stdin is a PIPE, so
 # it does NOT take the tty branch; assert the tty-guard text is absent (proving we only gate on -t 0).
 ok "hook-run piped stdin does not print the tty guidance" "systemMessage" bash -c "cd '$T' && printf '{}' | '$D' hook-run"

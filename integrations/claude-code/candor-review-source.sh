@@ -102,13 +102,23 @@ verdict_body() {
     # SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩: same distinction as candor-review.sh — a FAIL-CLOSED incompleteness
     # (part of the target unread/unjudged) is not a "setup error the agent can't fix". Read the
     # wire-pinned keys from the report ($CUR) itself, never scanlog prose.
+    #
+    # `excluded[].peeked`/`outOfScope` are checked DIRECTLY here too, not only through `incomplete` — see
+    # candor-review.sh's identical fix for the measured pre-fix shape (a report carrying one of these two
+    # keys with no top-level `incomplete` fell through to "scan/setup error, not a violation" below).
+    # `class` is engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and never decides anything below.
     incomplete_info=""
     if command -v jq >/dev/null 2>&1 && [ -s "$CUR" ]; then
       incomplete_info=$(jq -r '
-        if (.incomplete == true) or ((.unanalyzed // [])|length > 0) or ((.judgedNothing // [])|length > 0)
-        then ( ["  incomplete: true"]
+        ([(.excluded // [])[] | select((.peeked != true) and (.judgedElsewhere != true))]) as $unread
+        | (.outOfScope // []) as $oos
+        | if (.incomplete == true) or ((.unanalyzed // [])|length > 0) or ((.judgedNothing // [])|length > 0)
+             or ($unread|length > 0) or ($oos|length > 0)
+        then ( (if .incomplete == true then ["  incomplete: true"] else [] end)
                + ((.unanalyzed // []) | map("  unanalyzed: \(.path // .unit // "?") — \(.reason // .why // "no reason given")"))
                + (if (.judgedNothing // [])|length > 0 then ["  judgedNothing: \((.judgedNothing|length)) dependency report(s)"] else [] end)
+               + ($unread | map("  excluded (unread): \(.class // "?") — \(.reason // "no reason given")"))
+               + (if ($oos|length > 0) then ["  outOfScope: \($oos|length) function(s) outside the scan scope perform an effect this policy denies"] else [] end)
              ) | join("\n")
         else empty end' "$CUR" 2>/dev/null)
     fi

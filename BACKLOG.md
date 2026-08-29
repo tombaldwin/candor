@@ -6654,3 +6654,40 @@ one was independently reproduced twice.)
 
 **Environment gaps, stated:** `soundness/run_kotlin.sh` (kotlinc absent) and `kappa_libs_probe.py` (needs
 JDK 21, only 17 present) were NOT run — pre-existing, not introduced.
+
+## HOF fabrication CLOSED in both engines — the generator row is now UNBLOCKED
+
+ts `d5f6c0c`, swift `7a89dbc`. Both stopped unioning a shared HOF's effects onto every caller and now
+resolve per call site; unresolvable callbacks surface `Unknown`, never pure.
+
+**Real-world confirmation in both**: ts found a live instance in **lodash** (`_getAllKeys`/`_getAllKeysIn`
+both calling `_baseGetAllKeys` with different named args, both false-pooled pre-fix). swift's regression
+control over swift-algorithms (492 units) + swift-collections (4965) had 46 diffs, every one the same
+shape — a self-attributed `callback:` `Unknown` moving off the shared HOF's node — zero effect losses.
+
+**The near-miss worth keeping.** swift's FIRST cut introduced a silent under-report: several edge-adding
+branches (unqualified sibling calls, overloaded-sibling/init resolution, CHA/protocol-default unions) never
+populate `callsiteArgs`, so those callers briefly went **silently pure instead of `Unknown`**. Caught by
+auditing the fix against REAL swift-collections code (`BitSet.contains` → `_contains` → `_read`), not
+against the fixture. **This is the 4-in-5 hazard — killing an over-charge is where silent under-reports get
+introduced — caught in the act, by real code.** Closed with a reverse index over the same `edges` graph
+`propagate` already trusts.
+
+**Both fuzzers missed the original bug for the SAME structural reason:** swift's `fuzz.py` `callback_recv`
+form and the conformance generator's `callback` indirection each give a HOF **exactly one caller**, so the
+buggy union and a correct per-call-site fix produce IDENTICAL output. A one-caller convention cannot
+distinguish "resolved correctly" from "unioned everything." swift's fuzz assertion was corrected; **no
+multi-caller seed was added, deliberately, per the earlier ruling that the engines had to be fixed first or
+the generator's existing tolerance would bless the fabrication as "within the accepted band."**
+
+**NOW UNBLOCKED:** add the multi-caller callback shape to `conformance/gen_differential.py` — with an
+acceptance rule that DISTINGUISHES a correctly-resolved effect from a wrongly-attributed sibling-path one.
+The current `acc_callback` tolerance ({effect} | {Unknown} | both) cannot tell them apart, which is exactly
+why it must not simply be reused for the new shape.
+
+**Also owed:** a note that `fabrication_probe.mjs`/`fabrication_probe.py` are scoped to κ-table and
+type-member classification respectively — NOT to call-graph attribution. Both correctly passed through this
+entire fabrication. **Their names oversell their reach, and a reader seeing them green would reasonably
+conclude fabrication is gated generally. It is not.** Same shape as `mutation-gate.sh` honestly naming five
+parts while silently excluding fourteen standalone checkers: **a gate whose scope is narrower than its name,
+with nothing stating the boundary.**

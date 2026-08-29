@@ -6764,3 +6764,29 @@ R61, R62, R64 — spanning rust-scan, rust-deep, java, ts and swift.
 - **R57 and R64 are coupled** — `b4c3a22` is a refactor built on `0a5d493`, so R57 cannot be reverted
   alone. Reverted together, with failures attributed by reading WHICH NAMED TESTS fired rather than assumed.
 - R58 excluded on purpose: SOUNDNESS.md marks it UNMEASURED, and it had already been closed at `802efe4`.
+
+## R32–R44 dispatch wave, candor-rust slice — 9 of 9 protected, six weeks on
+
+Revert-tested 2026-08-29 against SHA `defe53d8`, in a throwaway worktree. **9 of 9 rust fixes in the wave
+go RED on revert** (R32, R36, R37, R37b, R40, R41, R42, R43, R44). No build failures — every revert was a
+true semantic edit, and the original code was still near-verbatim despite 7 weeks of churn, because these
+fixes are narrow `if`/match-arm insertions rather than restructurings.
+
+**Why this is STRONGER evidence than the 11-of-11 sweep of 2026-08-26→28.** That window sat immediately
+downstream of a pass already hunting this failure mode, and one of its greens was validating a same-day
+fix. This wave is six weeks old, in files that turned over 5–20× in size since — and is still protected.
+
+**The one honest limit, R37 — worth keeping as a distinction, not a caveat.** R37 goes red, but cannot be
+isolated: R37b, R40, R41's nested `Arc<Mutex<Vec<dyn>>>`, R44 and two later out-of-scope fixes all build on
+its `elem_trait_leaves` match arms, and disabling it takes five other tests down. The agent's own framing:
+
+> "R37 is protected" is honest; "R37 is protected INDEPENDENTLY of everything built on top of it since" is
+> not a claim this measurement can support.
+
+**That is a scope limit on what "isolated" can mean once a fix becomes load-bearing infrastructure** — and
+it would have been easy to report as 9 of 9 clean. Note also that R37b and R40 each APPENDED assertions to
+R37's existing test rather than writing their own, which is what makes the entanglement visible at all.
+
+**Out of scope by construction:** R33–R35, R38, R39 (other engines — swept separately); R45–R53 (a later
+arc, previously declined by another sweeper on clean-revert-feasibility grounds); anything before
+2026-06-18. **Within the stated slice, nothing was skipped.**

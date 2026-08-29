@@ -6566,3 +6566,47 @@ rule ({effect} or {Unknown} or both) cannot distinguish a correctly-resolved eff
 sibling-path one. **Fix the engines before extending the generator here, or the generator will bless it.**
 
 Owed: fixes in ts and swift; a SOUNDNESS entry; and only then a generator row.
+
+## THE BIGGEST STRUCTURAL FINDING: 13 of 13 external conformance checkers could not fail
+
+Surveyed 2026-08-29. **Every standalone checker tested survived having its body replaced with
+`sys.exit(0)`.** 100%. Partially fixed at candor-spec `90cee30`.
+
+**Denominator: 85 addressable PARTs.** Mechanism split:
+
+| class | count | attackable |
+|---|---|---|
+| already in `mutation-gate.sh` (PARTs 36/37/38/39/83) | 5 | yes — hardened over 3 rounds, 11 bypasses closed |
+| **standalone external checkers** (`conformance/*.py`) | **14** | yes — **13 of 13 conclusive survived the unconditional-pass test** |
+| comparison embedded in `run.sh` | ~66 | likely — 3-sample spot-read only, NOT executed. Stated boundary. |
+
+**The 13 that proved defeatable include the two that matter most:**
+- **`check_honesty.py` (PART 1c) — the family's ONE cardinal-sin detector. Its own CONTROLS comment reads
+  "none".**
+- **`peek_route_equality_check.py` (PART 54) — the flagship route-equality check.**
+Plus `file_set_check`, `only_check`, `incomplete_check`, `fs_position_check`, `peek_completeness_check`,
+`refused_peek_check`, `exec_capability_check`, `clause_check`, `probe_check`, `must_ledger`,
+`part_declarations`.
+
+**THE CAUSE IS STRUCTURAL, AND I SHOULD HAVE SEEN IT.** `mutation-gate.sh` extracts checker bodies out of
+`run.sh`. **A standalone file is invisible to it by construction.** So the gate's coverage was never "5 of
+84 parts" — it was 5 parts AND AN ENTIRE CLASS OF 14 CHECKERS IT COULD NOT REACH. Three rounds hardened
+what it could see; nobody asked what it could not.
+
+**Hardened (7 of 13)**, severity-selected on verdict/route-equality/disclosure/refusal/completeness:
+`check_honesty`, `file_set_check`, `peek_completeness_check`, `refused_peek_check`,
+`peek_route_equality_check`, `exec_capability_check`, `only_check` — each with near-miss poison +
+accept-known-good, via a new runner shape (`run_ext_reject`/`run_ext_accept`). `only_check`'s poison
+reproduces a REAL historical bug (the AS-EFF-011/009 collision that shipped in rust and java).
+
+**Still open, explicitly:** `incomplete_check`, `fs_position_check`, `clause_check`, `probe_check`,
+`must_ledger`, `part_declarations` — confirmed defeatable, not hardened. And the ~66 `run.sh`-embedded
+parts, never executed against; a 3-part spot-read found the same nameable-checker shape recurs, which is a
+LEAD not a measurement.
+
+**THE GENERATOR IS NOW OWED.** The same four comparison shapes (identity→truthiness,
+exact-equality→membership/subset, dropped `isinstance`, absent-key blindness) have now recurred a FOURTH
+time, on a surface never previously touched. The gate's own header set the threshold at "a fourth round
+finding a same-shape gap." **Today clears it. Build the generator: walk each checker's source, classify
+each comparison by shape, emit the matching near-miss family mechanically.** Hand-authored poison encodes
+only the wrongness its author imagined, and four rounds have now measured that ceiling.

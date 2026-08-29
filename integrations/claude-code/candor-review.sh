@@ -91,15 +91,31 @@ verdict_body() {   # echoes the human verdict; returns the exit code
     # exactly in the part the engine admits it never read. Read the wire-pinned keys from the REPORT
     # ($CUR) itself, never scanlog prose (only the JSON keys are a spec contract): `incomplete`,
     # `unanalyzed` (files candor could not read), `judgedNothing` (dependency reports that judged
-    # nothing). A report that has none of these — a genuine crash/misconfig, no partial analysis to
-    # trust — still falls through to the setup-error branch below, unchanged.
+    # nothing).
+    #
+    # `excluded[].peeked`/`outOfScope` are checked DIRECTLY here too, not only through `incomplete` —
+    # SPEC ⟨0.30⟩/⟨0.32⟩ bind those two keys to suppress the verdict IN THEIR OWN RIGHT, and reading only
+    # the shared `incomplete` flag trusts every producer to also raise it alongside them. MEASURED against
+    # this file pre-fix: a report carrying `excluded: [{"class": "…", "peeked": false}]` (or a non-empty
+    # `outOfScope`) with NO top-level `incomplete` key fell straight through to the "build/scan error, not
+    # a violation" branch below — the exact silent-pass shape this whole check exists to close, reached by
+    # a spelling this check did not enumerate. `class` is engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and is
+    # never used to decide anything below, only named in the message.
+    #
+    # A report with NONE of these — a genuine crash/misconfig, no partial analysis to trust — still falls
+    # through to the setup-error branch below, unchanged.
     incomplete_info=""
     if command -v jq >/dev/null 2>&1 && [ -s "$CUR" ]; then
       incomplete_info=$(jq -r '
-        if (.incomplete == true) or ((.unanalyzed // [])|length > 0) or ((.judgedNothing // [])|length > 0)
-        then ( ["  incomplete: true"]
+        ([(.excluded // [])[] | select((.peeked != true) and (.judgedElsewhere != true))]) as $unread
+        | (.outOfScope // []) as $oos
+        | if (.incomplete == true) or ((.unanalyzed // [])|length > 0) or ((.judgedNothing // [])|length > 0)
+             or ($unread|length > 0) or ($oos|length > 0)
+        then ( (if .incomplete == true then ["  incomplete: true"] else [] end)
                + ((.unanalyzed // []) | map("  unanalyzed: \(.path // .unit // "?") — \(.reason // .why // "no reason given")"))
                + (if (.judgedNothing // [])|length > 0 then ["  judgedNothing: \((.judgedNothing|length)) dependency report(s)"] else [] end)
+               + ($unread | map("  excluded (unread): \(.class // "?") — \(.reason // "no reason given")"))
+               + (if ($oos|length > 0) then ["  outOfScope: \($oos|length) function(s) outside the scan scope perform an effect this policy denies"] else [] end)
              ) | join("\n")
         else empty end' "$CUR" 2>/dev/null)
     fi

@@ -122,6 +122,46 @@ node "$FP" "$WORK/incomplete.json" --svg "$WORK/inc.svg" >/dev/null 2>&1
 node "$FP" "$WORK/complete-same-effects.json" --svg "$WORK/comp.svg" >/dev/null 2>&1
 ok "SVG artifact is unaffected (byte-identical to complete)" 'cmp -s "$WORK/inc.svg" "$WORK/comp.svg"'
 
+# (e) SPEC ⟨0.30⟩/⟨0.32⟩: `excluded[].peeked:false` and a non-empty `outOfScope` must ALSO flag
+# `incomplete`, checked directly rather than only through the shared `incomplete` boolean a producer is
+# expected to raise alongside them (a partial ⟨0.32⟩ implementation, or a future engine, might not).
+# `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) — exercised here under `dispatch-widened`, the
+# brand-new ⟨0.34⟩ class, to prove the class TOKEN never decides anything.
+cat > "$WORK/unread.json" <<'JSON'
+{"candor":{"spec":"0.34"},"functions":[
+  {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
+],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
+JSON
+cp "$WORK/incomplete.callgraph.json" "$WORK/unread.callgraph.json"
+JU=$(node "$FP" "$WORK/unread.json" --json --no-svg 2>"$WORK/unreaderr")
+ok "unread excluded class (no top-level incomplete): meta.incomplete is true" '[ "$(printf "%s" "$JU" | jq -r .incomplete)" = true ]'
+ok "…names the class in unreadClasses"                    '[ "$(printf "%s" "$JU" | jq -rc .unreadClasses)" = "[\"dispatch-widened\"]" ]'
+ok "…disclosed on stderr, naming the class"               'grep -q "dispatch-widened" "$WORK/unreaderr"'
+
+cat > "$WORK/oos.json" <<'JSON'
+{"candor":{"spec":"0.33"},"functions":[
+  {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
+],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"build-output"}]}
+JSON
+cp "$WORK/incomplete.callgraph.json" "$WORK/oos.callgraph.json"
+JO=$(node "$FP" "$WORK/oos.json" --json --no-svg 2>"$WORK/ooserr")
+ok "outOfScope (no top-level incomplete): meta.incomplete is true"  '[ "$(printf "%s" "$JO" | jq -r .incomplete)" = true ]'
+ok "…outOfScopeCount reflects the entry"                            '[ "$(printf "%s" "$JO" | jq -r .outOfScopeCount)" = 1 ]'
+ok "…disclosed on stderr"                                           'grep -q "out-of-scope function" "$WORK/ooserr"'
+
+# OVER-CHARGE CONTROL: a class the producer DID read (`judgedElsewhere`), even under the SAME unknown
+# `dispatch-widened` token, must stay incomplete:false — the class name never decides anything, only the
+# two booleans do.
+cat > "$WORK/peeked.json" <<'JSON'
+{"candor":{"spec":"0.34"},"functions":[
+  {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
+],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
+JSON
+cp "$WORK/incomplete.callgraph.json" "$WORK/peeked.callgraph.json"
+JP=$(node "$FP" "$WORK/peeked.json" --json --no-svg 2>"$WORK/peekederr")
+ok "peeked+judgedElsewhere (same unknown class): meta.incomplete is false" '[ "$(printf "%s" "$JP" | jq -r .incomplete)" = false ]'
+ok "…no INCOMPLETE caveat on stderr"                                       '! grep -q "INCOMPLETE" "$WORK/peekederr"'
+
 echo
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

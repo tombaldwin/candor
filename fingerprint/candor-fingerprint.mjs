@@ -110,7 +110,13 @@ let mergedFns = [], cg = Object.create(null);   // null-proto: a `__proto__` cal
 // same re-disclosure MUST `candor-sarif` implements for the SARIF surface (§3.1: "a verb whose output
 // could be read as a negative finding" — here, a confident structure score IS that finding). Summed
 // across every merged stem (a multi-crate workspace can have one incomplete member among clean ones).
-let unanalyzedTotal = 0, judgedNothingTotal = 0, anyIncomplete = false;
+//
+// `excluded[].peeked`/`outOfScope` are read DIRECTLY here too, not only through the shared `incomplete`
+// flag — SPEC ⟨0.30⟩/⟨0.32⟩ bind those two keys to suppress a verdict IN THEIR OWN RIGHT, and trusting
+// only `incomplete` assumes every producer also raises it alongside them. `excluded[].class` is
+// engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and decides nothing here, only names the class in the caveat.
+let unanalyzedTotal = 0, judgedNothingTotal = 0, outOfScopeTotal = 0, anyIncomplete = false;
+const unreadClasses = new Set();
 for (const stem of stems) {
   const rep = readJson(stem + ".json", "report");
   const part = Array.isArray(rep) ? rep : (rep && Array.isArray(rep.functions) ? rep.functions : []);   // rep&& : a top-level `null` is valid JSON
@@ -119,6 +125,11 @@ for (const stem of stems) {
     if (rep.incomplete === true) anyIncomplete = true;
     if (Array.isArray(rep.unanalyzed)) unanalyzedTotal += rep.unanalyzed.length;
     if (Array.isArray(rep.judgedNothing)) judgedNothingTotal += rep.judgedNothing.length;
+    if (Array.isArray(rep.outOfScope)) outOfScopeTotal += rep.outOfScope.length;
+    if (Array.isArray(rep.excluded)) for (const e of rep.excluded) {
+      if (e && typeof e === "object" && e.peeked !== true && e.judgedElsewhere !== true)
+        unreadClasses.add(typeof e.class === "string" && e.class ? e.class : "?");
+    }
   }
   const cgp = stem + ".callgraph.json";
   if (fs.existsSync(cgp)) {
@@ -145,7 +156,8 @@ for (const f of mergedFns) {
 }
 const fns = [...fnMap.values()];
 const cgVal = (n) => { const v = cg[n]; return Array.isArray(v) ? v : []; };
-const incomplete = anyIncomplete || unanalyzedTotal > 0 || judgedNothingTotal > 0;
+const incomplete = anyIncomplete || unanalyzedTotal > 0 || judgedNothingTotal > 0
+  || unreadClasses.size > 0 || outOfScopeTotal > 0;
 
 // ---------------------------------------------------------------- palette
 const PALETTE = [["Exec", "#ff5470"], ["Net", "#4cc4ff"], ["Db", "#ffb347"], ["Fs", "#3ce8a0"],
@@ -443,11 +455,15 @@ const meta = {
 };
 if (unanalyzedTotal > 0) meta.unanalyzedCount = unanalyzedTotal;
 if (judgedNothingTotal > 0) meta.judgedNothingCount = judgedNothingTotal;
+if (unreadClasses.size > 0) meta.unreadClasses = [...unreadClasses].sort();
+if (outOfScopeTotal > 0) meta.outOfScopeCount = outOfScopeTotal;
 if (meta.blastApprox) warn(`blast-visit budget (${BLAST_BUDGET.toLocaleString()}) exhausted on this large graph — propagation weights are approximate`);
 if (meta.incomplete) {
   const bits = [];
   if (unanalyzedTotal > 0) bits.push(`${unanalyzedTotal} file(s) candor could not read`);
   if (judgedNothingTotal > 0) bits.push(`${judgedNothingTotal} dependency report(s) that judged nothing`);
+  if (unreadClasses.size > 0) bits.push(`${unreadClasses.size} exclusion class(es) never read (${[...unreadClasses].sort().join(", ")})`);
+  if (outOfScopeTotal > 0) bits.push(`${outOfScopeTotal} out-of-scope function(s) performing a denied effect`);
   warn(`the report declares itself INCOMPLETE (${bits.join("; ") || "incomplete:true"}) — this fingerprint, `
      + `including its "structure" score, is computed only over what WAS read; it is not a claim about the rest.`);
 }

@@ -30,6 +30,44 @@ import argparse, glob, json, os, sys
 BOUNDARY = ["Db", "Net", "Fs", "Exec", "Ipc", "Clipboard"]
 
 
+def completeness_caveat(report):
+    """SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩/⟨0.32⟩: `incomplete`/`unanalyzed`/`judgedNothing`/`excluded[].peeked`/
+    `outOfScope` are the wire-pinned keys a report carries when part of the target was never read or
+    judged. This tool is a WORSE place to miss them than most: a `pure <layer>` rule it proposes is a
+    claim that NO function in that layer performs an effect, minted from `analyze()`'s layer/effect map —
+    and a report that never read part of the target cannot support that claim for a layer whose missing
+    code lives in the unread part. Silently proposing `pure` from an incomplete scan hands the adopter a
+    rule that can fail the very first REAL gate run over the whole tree, under the banner "every rule
+    below currently passes". `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) and never decides
+    anything here, only names the class in the message. Returns a message or None."""
+    if not isinstance(report, dict):
+        return None
+    bits = []
+    if report.get("incomplete") is True:
+        bits.append("incomplete:true")
+    un = report.get("unanalyzed")
+    if isinstance(un, list) and un:
+        bits.append(f"{len(un)} file(s) candor could not read")
+    jn = report.get("judgedNothing")
+    if isinstance(jn, list) and jn:
+        bits.append(f"{len(jn)} dependency report(s) that judged nothing")
+    exc = report.get("excluded")
+    if isinstance(exc, list):
+        unread = sorted({(e.get("class") if isinstance(e.get("class"), str) and e.get("class") else "?")
+                          for e in exc if isinstance(e, dict)
+                          and e.get("peeked") is not True and e.get("judgedElsewhere") is not True})
+        if unread:
+            bits.append(f"{len(unread)} exclusion class(es) never read ({', '.join(unread)})")
+    oos = report.get("outOfScope")
+    if isinstance(oos, list) and oos:
+        bits.append(f"{len(oos)} out-of-scope function(s) performing a denied effect")
+    if not bits:
+        return None
+    return ("the input report is INCOMPLETE (" + "; ".join(bits) + ") — a `pure`/`deny` rule proposed "
+            "below reflects only what WAS read, and may fail the first real gate run over the unread "
+            "part. Re-scan a complete target before trusting these rules.")
+
+
 def load(path):
     try:
         return json.load(open(path, encoding="utf-8"))
@@ -174,6 +212,9 @@ def main(argv=None):
     if callgraph is None:
         print("candor-init: no call-graph sidecar found — pure layers can't be detected (only deny rules "
               "from effectful layers). Pass --callgraph or run the scan with --json to write one.", file=sys.stderr)
+    caveat = completeness_caveat(report)
+    if caveat:
+        print(f"candor-init: {caveat}", file=sys.stderr)
     prefix, sep, layers = analyze(report, callgraph)
     body, n = propose(prefix, layers, args.min_fns)
 
@@ -184,6 +225,9 @@ def main(argv=None):
         "#   candor <classes-or-src> --policy <this file>   (exit 1 on a violation)",
         "",
     ]
+    if caveat:
+        header.append(f"# ⚠ {caveat}")
+        header.append("")
     if n == 0:
         header.append("# (No clear layering under a common package prefix — candor found no sub-layers to")
         header.append("#  propose rules for. Add packages/modules, or write rules by hand from `candor map`.)")

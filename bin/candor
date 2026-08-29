@@ -902,6 +902,28 @@ for p in sorted(reps):
         covs = f" · {len(cov)} uncovered dep(s)" if cov else ""
         print(f"  report   {os.path.basename(p)} — {len(fns)} effectful fns ({ts}){covs}")
         print(f"  scanned  {ages} (engine {env.get('version','?')}, spec {env.get('spec','?')})")
+        # SPEC ⟨0.21⟩/⟨0.28⟩/⟨0.30⟩/⟨0.32⟩: the tally above is computed ONLY over what the report's
+        # `functions` names — an incomplete/unanalyzed/excluded-but-unread/out-of-scope report still
+        # produces a normal-looking "N effectful fns" line with nothing here saying part of the target
+        # was never read. This is the same class of hole `candor-sarif`/`candor-fingerprint`/the Claude
+        # Code review scripts were fixed for (BACKLOG.md, "the engines fail CLOSED…") — the bare status
+        # dashboard was the one consumer of this family never checked. `excluded[].class` is engine-chosen
+        # (SPEC §2 ⟨0.29⟩) and never decides anything below, only names the class in the caveat.
+        bits = []
+        un = r.get("unanalyzed")
+        if isinstance(un, list) and un: bits.append(f"{len(un)} file(s) candor could not read")
+        jn = r.get("judgedNothing")
+        if isinstance(jn, list) and jn: bits.append(f"{len(jn)} dependency report(s) that judged nothing")
+        exc = r.get("excluded")
+        if isinstance(exc, list):
+            unread = sorted({(e.get("class") if isinstance(e.get("class"), str) and e.get("class") else "?")
+                              for e in exc if isinstance(e, dict)
+                              and e.get("peeked") is not True and e.get("judgedElsewhere") is not True})
+            if unread: bits.append(f"{len(unread)} exclusion class(es) never read ({', '.join(unread)})")
+        oos = r.get("outOfScope")
+        if isinstance(oos, list) and oos: bits.append(f"{len(oos)} out-of-scope function(s) performing a denied effect")
+        if r.get("incomplete") is True or bits:
+            print(f"  ⚠ incomplete  {'; '.join(bits) or 'part of the target'} — this tally does not cover the whole target")
     except Exception:
         print(f"  {os.path.basename(p)}: unreadable")
 print(f"  policy   {'wired: ' + str(keys.get('policy')) if keys.get('policy') else 'none — `candor init` proposes one'}")

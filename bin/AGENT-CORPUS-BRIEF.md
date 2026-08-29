@@ -138,3 +138,97 @@ measured, was true for one framework and entirely false for another.
 The cheapest version of this check is a `git log` on the cited file since the entry's date, and one run
 of the cited repro against HEAD. Report a stale entry as a finding: **the correction is worth as much as
 the fix**, because everything downstream was reasoning from it.
+
+# THE ATTACKS THAT WORK
+
+Rules 1–12 are principles. These are the specific things to *run*. Each one below found real defects on
+2026-08-29 — 53 findings, 19 cardinal sins, across four engines, the conformance suite, the CI machinery,
+the integrations and the release scripts. Counts are given so you can judge which to reach for first.
+
+## A. The revert test — for a FIX
+**Revert the fix. Does any test go red?** If not, the fix is unprotected and reads as covered.
+
+Found 4× in one day, in fixes that had shipped hours earlier. candor-java `a034371` — a ~470-line
+cardinal-sin fix — was reverted entirely and **855/855 stayed green**; its commit message described "two
+fixtures" and "five controls" that were never committed. candor-swift `7a89dbc` was worse: a test *named*
+for the case existed and could not discriminate the fix from its absence, because both its callers landed
+on `Unknown` either way.
+
+**A test that passes with AND without the fix is worse than no test, because it reads as coverage.** Prove
+the red by actually reverting, not by reasoning.
+
+## B. The unconditional-pass test — for a CHECKER
+**Replace the checker's body with `exit 0` / `sys.exit(0)`. Does the suite notice?**
+
+The single highest-yield attack of the day: **13 of 13 standalone conformance checkers survived it**,
+including `check_honesty.py` — the family's one cardinal-sin detector, whose own CONTROLS comment read
+"none" — and the flagship route-equality check. Cost: minutes per checker.
+
+## C. The guard-deletion test — for a GUARD
+**Delete each guard in turn. Does anything go red?** Found a `RS_PY_STREAM_FAILCLOSED` empty-stdin guard
+with zero fixture coverage, and several others. Cheap, mechanical, and it distinguishes a guard that is
+tested from one that is merely present.
+
+## D. Near-miss poison, never absence poison
+**A poison document must be structurally valid and differ from a good one in exactly ONE field's VALUE.**
+An absence poison (`{}`) only proves the checker looks at a key — never that it looks at what the key
+SAYS. That distinction hid bypasses through three consecutive hardening rounds.
+
+The comparison vocabulary is tiny and closed — identity→truthiness (`is not False` → `not x`), exact
+equality→membership/subset/falsy, a dropped `isinstance`, absent-key blindness. **`conformance/mutation_poison_gen.py`
+now derives these from each checker's own source**, because hand-authored poison encodes only the
+wrongness its author imagined, and four rounds measured that ceiling.
+
+## E. The over-charge control, on REAL code, on ENOUGH of it
+Every fix needs the control for the direction it did NOT intend. The best of the day: candor-java's record
+fix checked against **388 real third-party jars** (one diff, honest `invisible`, zero fabrication);
+candor-rust's peek fix against its own 4 crates under a real policy (77 and 128 findings, zero diffs);
+candor-swift against swift-collections' 4,965 units.
+
+**And enough corpora that the choice does not decide the answer.** A three-corpus measurement declared a
+fix's over-charge "zero"; a fourth corpus showed +22 rows, and seven showed the true range (0–9.6%).
+
+## F. Translate the QUESTION across engines — not the defect
+The reusable artefact is never the bug, it is the question that found it.
+- swift's peek scope-match sin → asked of the other three → **cardinal sin in ALL THREE**, by a simpler mechanism.
+- rust's `Drop` lost in a move-captured closure → asked of swift's `deinit` → **same class, four binder shapes silent**.
+- java's `--policy` accepted-and-dropped → **rust and ts identical**.
+
+When one engine yields, immediately ask the other three. Their mechanisms differ; the question does not.
+
+## G. Ask the authority — never reimplement it
+**Every cardinal sin found on 2026-08-29 traced to code that hand-rolled something already defined
+elsewhere.** SwiftPM's manifest selection, cargo's member globs, TOML's grammar, GitHub's push semantics,
+a second CHA, a deny-parser `policy.py` already owned. The worst case had TWO hand-rolled paths answering
+one question and disagreeing (`Drop` at scope exit vs `drop(x)`).
+
+Every durable fix did the reverse: `swift package dump-package`, the `glob` crate, the `toml` crate,
+re-running the engine's own `runScan`. **Where two paths compute the same fact, make them disagree.**
+
+## H. Ask every gate: when a check CANNOT RUN, does that reach the exit code?
+Three instruments failed green in one day, and in all three **the detector worked and the aggregator
+discarded the detection**. `apply_patch` printed `PATCH-ERROR` into a loop that ignored it — java's weekly
+soundness meta-gate went a quarter blind, silently. `gh` failed loudly into a `2>/dev/null`. A checker
+extraction failed and produced the same line as a successful catch.
+
+Detection is rarely the failure. **Aggregation is.**
+
+## I. Calibrate a NEW instrument by retro-rediscovery
+Before trusting a new detector, point it at bugs already found by hand and require it to find them.
+`conformance/retro_test.py` rediscovers **15/15** historical bypasses — and that control caught **three
+real bugs in the generator** before it passed. An instrument that cannot re-find known defects is not
+calibrated, whatever it reports.
+
+## J. Label EXECUTED vs ANALYSIS-ONLY, always, in separate lists
+A round reported four checkers "hand-analysed, no passing degenerate found." Executed, **three had real
+gaps**, one with zero fixture coverage at all. **"Analysed and found clean" and "attacked and survived"
+read identically in a report and mean completely different things.** Never let them share a list.
+
+## K. A claim of correctness suppresses the measurement that would falsify it
+Broke FIVE times in one day: *"cannot manufacture a false exemption"* (it could); *"a missed spelling here
+is LOUD, not silent"* (it was silent); a gate comment asserting a property the code lacked; a "verified
+clean" note that had reasoned from fixtures rather than from the checker; and a commit message claiming a
+rewrite it never made.
+
+**Every one read as considered, and that is exactly what stopped it being measured.** When you meet a
+comment explaining why something is safe, treat it as the highest-value thing in the file to attack.

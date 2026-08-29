@@ -6229,3 +6229,36 @@ interchange format.
 **Severity note:** this is an OVER-report attributed to the wrong function — not a cardinal sin. But it
 degrades trust in exactly the disclosure users are asked to read: someone who sees `invisible:
 [core_foundation]` on a no-op stub will discount the next entry too.
+
+## OWED: `dispatch-widened` exclusion class has no SPEC clause and no conformance row
+
+candor-swift `7378f4f` (the peek CHA cardinal-sin fix) introduces a NEW exclusion class,
+`dispatch-widened`, emitted when a context function's effect set grows under the peek's union and the
+new effect cannot be attributed to exactly one excluded declaration. **Disclosing under a new class is
+the right behaviour** — the alternative was dropping the finding, which is the cardinal sin the commit
+closes. But:
+
+- it is a new observable value in a field consumers read (`excluded[].class`)
+- **no SPEC clause defines it, and no conformance row pins it**
+- it exists in ONE engine
+
+That is exactly the gap that let rust and ts drift on ⟨0.34⟩ Item 1 this morning — four engines shipped
+prose citing a clause that did not exist, and the divergence was found by a review panel rather than a
+row, costing two follow-up fixes. **Row before port** is now written in CLAUDE.md; this landed the other
+way round because it arrived inside a cardinal-sin fix under time pressure, which is precisely when the
+rule matters most.
+
+**Owed, before ⟨0.34⟩ or in the rung after it:**
+1. A SPEC clause defining `dispatch-widened` — when it fires, what it means, and that it is a DISCLOSURE
+   not a verdict change. §2's exclusion-class vocabulary is the home.
+2. A conformance PART pinning it, with an over-charge control (a scan where dispatch is NOT widened must
+   not emit the class).
+3. **The four-way question**: can the other three engines' peeks widen dispatch the same way? rust-deep
+   resolves through its own callgraph, ts has structural typing, java has real virtual dispatch — **ask
+   of each whether a peek union can produce an effect the primary never computed.** If yes and they do
+   not disclose it, they carry the same cardinal sin candor-swift just fixed. This is the higher-value
+   half of the item.
+
+Related: the ⟨0.29⟩ peek's cross-file blind spot ([[candor-029-file-set]]) and the cross-engine cfg-branch
+identity question filed 2026-08-29 — three open items now sit on peek/identity semantics, and they should
+probably be designed together rather than as three separate rungs.

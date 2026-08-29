@@ -36,9 +36,48 @@ import sys
 
 
 def changed_files(repo, rev):
-    out = subprocess.run(["git", "-C", repo, "show", "--name-only", "--format=", rev],
+    """Returns (files, ok). ok=False means the true file set could not be determined at all, and the
+    caller must treat every workflow as required rather than read the empty list as "nothing changed".
+
+    THE SEVENTH FALSE GREEN (2026-08-29, adversarial review): `git show --name-only --format=` returns
+    an EMPTY list, exit 0 — not an error — for an ORDINARY MERGE COMMIT. `git show` prints no combined
+    diff for a merge unless asked (`-m`), so a merge that genuinely touched `bin/` read as zero changed
+    files and every path-filtered workflow classified NOT-REQUIRED, while GitHub's own push trigger (which
+    compares the real ref delta) would have fired. Reproduced live: a backdated merge commit touching
+    `bin/` returned `[]` here, exit 0; a non-merge control touching the identical file correctly returned
+    the file.
+
+    THE FIX: detect a merge (more than one parent) and diff it against its FIRST PARENT — the tip of the
+    branch immediately before the merge landed — instead of asking `git show` for a combined diff it does
+    not produce by default. This is the same one-rev-at-a-time scope `changed_files` already had (it has
+    never modeled a multi-commit push range, merge or not); a merge's first-parent diff is what that merge
+    itself changed on the branch, which is the piece GitHub's push-trigger comparison actually reduces to
+    for the ordinary two-parent case this function is asked about.
+
+    A THIRD failure mode gets the same treatment: if `rev` cannot be resolved to a commit at all (a typo,
+    a repo mid-rebase, a shallow clone missing the parent), that is not "no files changed" either — it is
+    "the question could not be answered", and main() below fails loudly rather than guessing "nothing
+    required".
+    """
+    parents = subprocess.run(["git", "-C", repo, "rev-list", "--parents", "-n", "1", rev],
+                             capture_output=True, text=True)
+    if parents.returncode != 0 or not parents.stdout.split():
+        return ([], False)
+    ids = parents.stdout.split()   # ids[0] is rev itself; ids[1:] are its parents (0, 1, or more)
+    if len(ids) <= 2:
+        # 0 or 1 parent: the ordinary case `git show` already answers correctly (a plain commit's own
+        # diff, or every file in a root commit that has no parent at all).
+        out = subprocess.run(["git", "-C", repo, "show", "--name-only", "--format=", rev],
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            return ([], False)
+        return ([ln.strip() for ln in out.stdout.splitlines() if ln.strip()], True)
+    # A MERGE (2+ parents): diff against the FIRST parent, never `git show`'s silent-empty default.
+    out = subprocess.run(["git", "-C", repo, "diff", "--name-only", f"{ids[1]}..{rev}"],
                          capture_output=True, text=True)
-    return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+    if out.returncode != 0:
+        return ([], False)
+    return ([ln.strip() for ln in out.stdout.splitlines() if ln.strip()], True)
 
 
 def glob_to_re(pat):
@@ -275,12 +314,93 @@ def selftest_duplicate_names():
     return fails
 
 
+def selftest_merge_commit():
+    """THE SEVENTH FALSE GREEN, exercised through the REAL subprocess against a REAL merge commit — same
+    discipline as selftest_duplicate_names() above, not a copy of changed_files()'s logic. `git show
+    --name-only --format=` prints nothing for an ordinary merge; before the fix that read as "no changed
+    files" and every path-filtered workflow classified NOT-REQUIRED.
+
+    Three cases: a merge that DOES touch the filtered path (must read REQUIRED — this is the bug), a merge
+    that does NOT (must still read NOT-REQUIRED — the fix must not simply mark every merge required
+    unconditionally, which would be a different false alarm), and a rev this reader cannot resolve at all
+    (must fail loudly, exit 2, rather than silently answer "nothing required").
+    """
+    import subprocess
+    import tempfile
+    import shutil
+
+    d = tempfile.mkdtemp()
+    fails = 0
+    try:
+        wfdir = os.path.join(d, ".github", "workflows")
+        os.makedirs(wfdir)
+        with open(os.path.join(wfdir, "shell-lint.yml"), "w", encoding="utf-8") as fh:
+            fh.write("name: shell-lint\non:\n  push:\n    branches: [main]\n    paths: ['bin/**']\n")
+        run = lambda *a: subprocess.run(["git", "-C", d, *a], capture_output=True, text=True)
+        genv = ["-c", "user.email=t@t", "-c", "user.name=t"]
+        run("init", "-q", "-b", "main")
+        os.makedirs(os.path.join(d, "bin"))
+        with open(os.path.join(d, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("base\n")
+        run(*genv, "add", "-A")
+        run(*genv, "commit", "-qm", "base")
+
+        def merge_touching(rel_path, content):
+            run("checkout", "-q", "-b", "feature")
+            with open(os.path.join(d, rel_path), "w", encoding="utf-8") as fh:
+                fh.write(content)
+            run(*genv, "add", "-A")
+            run(*genv, "commit", "-qm", f"feature: touch {rel_path}")
+            run("checkout", "-q", "main")
+            with open(os.path.join(d, "README.md"), "a", encoding="utf-8") as fh:
+                fh.write("main-side change\n")
+            run(*genv, "add", "-A")
+            run(*genv, "commit", "-qm", "main: unrelated")
+            run(*genv, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")
+            sha = run("rev-parse", "HEAD").stdout.strip()
+            run("branch", "-q", "-D", "feature")
+            return sha
+
+        merge_in_scope = merge_touching("bin/x.sh", "feature change\n")
+        out = subprocess.run([sys.executable, os.path.abspath(__file__), d, merge_in_scope, "main"],
+                             capture_output=True, text=True)
+        rows_in = dict(ln.split("\t")[:2] for ln in out.stdout.splitlines() if ln.strip())
+        ok_in = rows_in.get("shell-lint.yml") == "required"
+        print(f"  {'✔' if ok_in else '✘'} merge commit TOUCHING bin/ -> {rows_in.get('shell-lint.yml')} "
+              "(want required — the bug reported 'not-required', GitHub would have run it)")
+        if not ok_in:
+            fails += 1
+
+        merge_out_of_scope = merge_touching("docs.md", "prose\n")
+        out2 = subprocess.run([sys.executable, os.path.abspath(__file__), d, merge_out_of_scope, "main"],
+                              capture_output=True, text=True)
+        rows_out = dict(ln.split("\t")[:2] for ln in out2.stdout.splitlines() if ln.strip())
+        ok_out = rows_out.get("shell-lint.yml") == "not-required"
+        print(f"  {'✔' if ok_out else '✘'} merge commit NOT touching bin/ -> {rows_out.get('shell-lint.yml')} "
+              "(want not-required — the fix must not mark every merge required unconditionally)")
+        if not ok_out:
+            fails += 1
+
+        out3 = subprocess.run([sys.executable, os.path.abspath(__file__), d, "not-a-real-rev", "main"],
+                              capture_output=True, text=True)
+        ok3 = out3.returncode == 2 and not out3.stdout.strip() and "could not determine" in out3.stderr
+        print(f"  {'✔' if ok3 else '✘'} unresolvable rev -> exit {out3.returncode}, stdout={out3.stdout!r} "
+              "(want exit 2, empty stdout, a named stderr reason — never a silent 'nothing required')")
+        if not ok3:
+            fails += 1
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    return fails
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
         f1 = selftest()
         print()
         f2 = selftest_duplicate_names()
-        total = f1 + f2
+        print()
+        f3 = selftest_merge_commit()
+        total = f1 + f2 + f3
         print("wf-expected selftest (combined): " + ("OK" if total == 0 else f"FAILED — {total} case(s)"))
         return total
     repo = sys.argv[1]
@@ -288,7 +408,16 @@ def main():
     wfdir = os.path.join(repo, ".github", "workflows")
     if not os.path.isdir(wfdir):
         return 0
-    files = changed_files(repo, rev)
+    files, files_ok = changed_files(repo, rev)
+    if not files_ok:
+        # THE SEVENTH FALSE GREEN's other half: an undetermined file set must never fall through as an
+        # empty one. An empty `files` here reads, in classify(), as "no changed file matches any path
+        # filter" — the identical shape to a genuinely quiet commit — so this fails the whole call loudly
+        # instead, the same convention the detached-HEAD-with-no-branch-argument case below already uses.
+        sys.stderr.write(f"wf-expected: could not determine the changed-file set for {rev!r} in {repo!r} "
+                         "(unresolvable rev, or its parent is missing) — refusing to guess 'nothing "
+                         "required'. Verify by hand.\n")
+        return 2
     # THE BRANCH CAN BE PASSED IN, and it has to be. `rev-parse --abbrev-ref HEAD` answers the literal
     # string "HEAD" in a DETACHED checkout — which is neither empty (so the `or "main"` fallback below
     # never fires) nor any branch a `branches:` filter names, so every branch-filtered workflow read as

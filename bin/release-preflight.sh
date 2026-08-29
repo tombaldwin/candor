@@ -687,6 +687,45 @@ else
   [ "$n_any" = 0 ] && ok "every repo in the cut has a \`$WANT_VER\` section — release.sh will publish ITS notes, not the last release's"
 fi
 
+# THE EIGHTH FALSE GREEN's fallback-route twin (2026-08-29, adversarial review). The NONE-branch inside
+# [10] below asks an INFORMATIONAL question that has no commit to filter by at all: "is this repo's last
+# known CI state green, across every workflow it has". That used to be one unfiltered `gh run list --limit
+# 30` — a single page shared by the WHOLE repo's run history. A chatty sibling workflow (a 10-minute cron,
+# a matrix job that reruns often) can fill all 30 slots by itself, and a quiet workflow's real, permanent
+# `completed/failure` is then not merely listed and ignored — it is never RETURNED at all. Reproduced
+# directly against bin/_ci_verdict.py: a synthetic 30-row page of one noisy workflow's runs, containing
+# NOTHING of a second, quiet workflow's real permanent failure, prints "OK".
+#
+# THE FIX, same mechanism as bin/ci-watch.sh's fetch_earlier_commit_rows() (see its own header for the
+# full argument — not copied verbatim here because that one already has WF_PATH_MAP and gh_call() built
+# up around it from three other fixes, and forcing a shared abstraction across a bash script and this one
+# would cost more clarity than it returns): enumerate this repo's own workflow ids via `gh workflow list`
+# and fetch each one's OWN newest run on its OWN one-row page. A noisy sibling has no shared limit left to
+# fill, so a quiet workflow's real state cannot be aged off a page it no longer shares with anything.
+#
+# Returns 1 (and prints nothing) if the workflow list itself could not be read — "could not enumerate this
+# repo's workflows" is not the same claim as "every workflow enumerated is green", and the caller must not
+# collapse the two.
+ci_all_workflows_latest() {  # $1 = repo dir -> merged JSON array (each workflow's own newest run) on stdout
+  local rd="$1" wf_out ids id one all=""
+  wf_out="$(cd "$rd" && gh workflow list --json id -a --limit 100 2>/dev/null)"
+  [ $? -eq 0 ] && [ -n "$wf_out" ] || return 1
+  ids="$(printf '%s' "$wf_out" | jq -r '.[].id' 2>/dev/null)"
+  [ -n "$ids" ] || return 1
+  while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    one="$(cd "$rd" && gh run list --workflow "$id" --limit 1 \
+           --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null)"
+    [ -n "$one" ] && all="$all
+$one"
+  done <<< "$ids"
+  if [ -z "$all" ]; then
+    printf '[]'
+  else
+    printf '%s\n' "$all" | jq -s 'add' 2>/dev/null
+  fi
+}
+
 # ── [10] EVERY REPO'S CI MUST BE GREEN ON THE COMMIT BEING RELEASED ────────────────────────────────
 # Nothing in the release path looked at CI. You could publish a commit whose own build was red — and that
 # is not hypothetical: on 2026-08-03 candor-rust and candor-swift both went red on pushed HEADs, and the
@@ -722,7 +761,18 @@ else
     # newest-first order, and keep the FIRST occurrence per workflow ID (2026-08-29: this used to be
     # workflowName, which GitHub does not require to be unique across files — see _ci_verdict.py's own
     # header for the reproduction). `workflowDatabaseId` is requested below for exactly that reason.
-    verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
+    # THE EIGHTH FALSE GREEN (2026-08-29, adversarial review): `--limit 30` was ONE page shared by every
+    # workflow the repo has, filtered by headSha only AFTER `gh` returned it. If HEAD's own run had already
+    # scrolled off the 30 most recent runs REPO-WIDE — a noisy sibling workflow accumulating enough newer
+    # runs of its own — `_ci_verdict.py` never saw it at all and read "NONE" (no run for this commit),
+    # which the NONE branch below then treats as "matched no path filter" and falls back to reporting the
+    # repo's LAST KNOWN state instead — silently substituting a different, older answer for a real one it
+    # never got to see. `--commit` filters at the source instead of after a capped page: the runs come back
+    # already scoped to this exact sha, so a noisy sibling's volume elsewhere in the repo's history cannot
+    # push this commit's own runs out of the response. `--limit 100` is headroom for a commit that
+    # triggered more workflows than this repo has ever needed a limit for; `--commit` is what actually
+    # closes the gap, not the number.
+    verdicts="$(cd "$ROOT/$r" && gh run list --commit "$head_sha" --limit 100 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
       | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     # IN-PROGRESS IS NOT A FAILURE, IT IS A NOT-YET. `release.sh` steps 2–3 push the release TAGS, which
     # start candor-ts's OIDC `publish` and candor-swift's `release` — so the very next invocation of this
@@ -757,8 +807,9 @@ else
       # SAME HELPER AS THE INITIAL READ ABOVE — see the comment there and bin/_ci_verdict.py. Kept as one
       # call site each rather than one shared shell function around them, because the two loops differ in
       # everything BUT this line (one runs once, one polls); the call itself is now the only thing they
-      # share, and it is literally the same file, not a copy that could drift.
-      verdicts="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
+      # share, and it is literally the same file, not a copy that could drift. Including the eighth-false-
+      # green fix above (`--commit`, not a shared `--limit 30` page) — same reasoning, same file.
+      verdicts="$(cd "$ROOT/$r" && gh run list --commit "$head_sha" --limit 100 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null \
         | python3 "$HERE/_ci_verdict.py" "$head_sha" 2>/dev/null)"
     done
     # THE TIMEOUT IS JUDGED ON THE VERDICT, NOT THE CLOCK. This fired on the elapsed counter, so a repo
@@ -808,16 +859,33 @@ else
           # green" over a genuinely broken build. `_ci_verdict.py` with an empty head dedupes every
           # workflow's own latest completed run instead, so one green straggler cannot stand in for a red
           # one elsewhere. See _ci_verdict.py's header for the full argument.
-          raw="$(cd "$ROOT/$r" && gh run list --limit 30 --json headSha,conclusion,status,workflowName,workflowDatabaseId,createdAt 2>/dev/null)"
-          verdict="$(printf '%s' "$raw" | python3 "$HERE/_ci_verdict.py" "" 2>/dev/null)"
-          # The anchor sha is DISPLAY ONLY — which commit was freshest overall, so the message still names
-          # something concrete. It plays no part in the verdict above, which judges every workflow.
-          anchor="$(printf '%s' "$raw" | python3 -c "
+          #
+          # PER WORKFLOW, NOT ONE SHARED PAGE — see ci_all_workflows_latest()'s own header above for the
+          # eighth false green this replaces (a chatty sibling workflow filling a `--limit 30` page and
+          # aging a quiet workflow's real failure off it entirely, never returned at all).
+          if raw="$(ci_all_workflows_latest "$ROOT/$r")"; then
+            verdict="$(printf '%s' "$raw" | python3 "$HERE/_ci_verdict.py" "" 2>/dev/null)"
+            # The anchor sha is DISPLAY ONLY — which commit was freshest overall, so the message still names
+            # something concrete. It plays no part in the verdict above, which judges every workflow. Sorted
+            # by createdAt because the merged array is now in per-workflow-fetch order, not gh's newest-
+            # first order (each workflow contributes exactly one row here, fetched independently).
+            anchor="$(printf '%s' "$raw" | python3 -c "
 import json, sys
 runs = json.load(sys.stdin)
+runs.sort(key=lambda r: r.get('createdAt') or '', reverse=True)
 print(runs[0]['headSha'][:7] if runs else 'none')" 2>/dev/null)"
+          else
+            # A DISTINCT SENTINEL, never the empty string: `_ci_verdict.py` itself can also legitimately
+            # produce an empty verdict (a python crash on malformed JSON), and that case must still hit the
+            # `ERR|""` arm below and set ci_bad — collapsing both meanings onto "" would silently swallow
+            # THAT failure the moment this one exists to catch the other.
+            ci_bad=1
+            bad "$r: could not enumerate this repo's workflows to check its last known CI state — treat as NOT verified"
+            verdict="ENUM_FAILED"
+          fi
           case "$verdict" in
             OK) info "$r: HEAD matched no workflow path filter (pushed, docs-only); last known CI state ($anchor) is green across every workflow" ;;
+            ENUM_FAILED) ;;   # already reported above — do not also fall into the ERR|"" arm for it
             NONE) ci_bad=1; bad "$r: HEAD triggered no workflow, and this repo has no completed CI run to fall back on at all" ;;
             ERR|"") ci_bad=1; bad "$r: HEAD triggered no workflow, and CI status could not be read" ;;
             BAD*) ci_bad=1; bad "$r: HEAD triggered no workflow AND the last known state is not all green — ${verdict#BAD }" ;;

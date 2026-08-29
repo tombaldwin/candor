@@ -68,6 +68,115 @@ already closed it — nothing to file.
       ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
       candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
+## `[CLOSED 2026-08-29]` THE SEVENTH AND EIGHTH FALSE GREENS — A MERGE COMMIT'S FILE SET, AND A CAPPED PAGE HIDING A QUIET WORKFLOW
+
+**Both found and executed by an adversarial reviewer, not surfaced during normal use — the discipline
+that has caught most of this week's defects.** Both verified independently before touching anything
+(rule 12), then fixed with the same "one implementation, not a copy that could drift" convention this
+file's other CLOSED entries already establish.
+
+**SEVENTH: `git show --name-only --format= <rev>` returns an EMPTY file list, exit 0, for an ordinary
+MERGE COMMIT.** `bin/wf-expected.py`'s `changed_files()` used this as its sole reading of "what did this
+commit touch"; git prints no combined diff for a merge unless asked (`-m`), so a merge that genuinely
+touched `bin/` read as **zero changed files**, and every path-filtered workflow classified
+`not-required` — while GitHub's own push trigger, which compares the real ref delta, would have fired.
+
+Reproduced live before fixing anything: a throwaway repo, a feature branch touching `bin/x.sh`, an
+unrelated commit on `main`, then `git merge --no-ff` landing a real two-parent merge commit.
+
+    $ git show --name-only --format= <merge-sha>          # (nothing — exit 0)
+    $ python3 wf-expected.py . <merge-sha> main
+    shell-lint.yml    not-required    no changed file matches its path filter
+    # a non-merge control touching the identical file, same repo:
+    $ python3 wf-expected.py . <control-sha> main
+    shell-lint.yml    required        this commit touches bin/x.sh
+
+**THE FIX: detect a merge via `git rev-list --parents -n 1 <rev>` (2+ parents) and diff it against its
+FIRST PARENT** (`git diff --name-only <parent1>..<rev>`) instead of asking `git show` for a combined diff
+it does not produce by default. This is the same one-rev-at-a-time scope the function already had (it
+has never modeled a multi-commit push range, merge or not) — a merge's first-parent diff is exactly what
+that merge changed on the branch. `changed_files()` now returns `(files, ok)`; **an unresolvable rev
+(bad sha, missing parent) sets `ok=False` and `main()` exits 2 with a named stderr reason, never falling
+through to an empty list that would read as "nothing changed."** Same fail-loud convention this file
+already uses for a detached HEAD with no branch argument.
+
+**EIGHTH: `gh run list --branch main --limit 40` (ci-watch.sh) and `gh run list --limit 30`
+(release-preflight.sh's [10], all three call sites) are each ONE page SHARED by every workflow the repo
+has.** A chatty sibling — a 10-minute cron, a matrix job that reruns often — can fill every slot on that
+page by itself, and a QUIET workflow's real, permanent `completed/failure` is then not merely
+listed-and-ignored: it is **never returned by the API call at all**. Its absence reads as "nothing to
+report," indistinguishable from "this workflow has always been green" — and the fifth false green's
+dedup-by-id fix cannot help here, because that only decides which of several rows returned *together*
+wins; the losing row was never in the response to dedupe in the first place.
+
+Reproduced end-to-end against `ci-watch.sh`: a real throwaway repo with `ci-a.yml` (quiet, one real
+permanent `completed/failure`) and a chatty `cron-b.yml`, a stubbed `gh` answering
+`--branch main --limit 40` with 40 rows of `cron-b` and zero of `ci-a` —
+
+    candor-rust    build    ✔ success
+    ci-watch: OK — every workflow enumerated at every HEAD concluded success   EXIT=0
+
+`ci-a.yml` never mentioned anywhere in the output. **The same 40-row cap with `ci-a`'s failure left ON
+the page (not crowded out) is caught correctly** — the mechanism itself is sound; this was specifically
+about the page filling up. Reproduced separately and directly against `bin/_ci_verdict.py` (the module
+`release-preflight.sh`'s [10] pipes `gh`'s JSON through): a synthetic 30-row page of one noisy
+workflow's runs, containing nothing of a second workflow's real `completed/failure`, prints `OK`.
+
+**THE FIX, two shapes depending on whether a specific commit is already known:**
+- **`ci-watch.sh`'s earlier-commit safety net** and **`release-preflight.sh`'s NONE-branch fallback**
+  (no specific commit to filter by — both ask "what's this workflow's own latest state") now query
+  **per workflow**: `gh run list --workflow <id> --limit 1` (`ci-watch.sh`'s new
+  `fetch_earlier_commit_rows()`, using the ids `wf_path_map()` already fetches; `release-preflight.sh`'s
+  new `ci_all_workflows_latest()`, which also enumerates the ids itself via `gh workflow list`). A
+  workflow's own newest run cannot be aged off ITS OWN one-row page by another workflow's volume — there
+  is no shared limit left for a noisy sibling to fill. One `gh` call per workflow file instead of one
+  call per repo; every repo here has a handful of workflows, nowhere near enough for that to matter next
+  to the false-clear it closes. A `gh` failure on any ONE workflow's fetch is a named, red line but does
+  not stop the others from being checked.
+- **`release-preflight.sh`'s two HEAD-scoped call sites** (a specific commit IS known) switch to
+  `gh run list --commit "$head_sha" --limit 100` — filtering happens server-side, so a noisy sibling's
+  volume elsewhere in the repo's history cannot push this commit's own runs out of the response at all;
+  `--limit` stops being where the correctness lives.
+
+**CONTROLS, falsified against the pre-fix scripts:**
+- *Both defect cases* printed `OK`/exit 0 pre-fix (shown above); post-fix, the merge-commit case reads
+  `required` and the crowded-page case reproduces `ci-a` `✘ failure … its NEWEST run, on an earlier
+  commit`, `ci-watch: NOT GREEN`, exit 1.
+- *Over-charge control, the one that matters most*: an ordinary repo (one workflow, HEAD's own commit
+  touching its path, a clean green run) — **byte-identical** `ci-watch.sh` output and exit 0 before and
+  after, `diff` confirmed empty. Six other fixes landed in this script this week; this one does not touch
+  the healthy path.
+- *Partial*: the crowded-page reproduction repo above IS the partial case — `build.yml` (unaffected,
+  ordinary push-triggered workflow) prints exactly as before; only `ci-a.yml`, the one actually crowded
+  off the page, is newly named.
+
+`--selftest` extended in both files: `wf-expected.py` gained `selftest_merge_commit()` (a real merge
+commit touching the filtered path → `required`; a real merge NOT touching it → `not-required`, proving
+the fix doesn't mark every merge required unconditionally; an unresolvable rev → exit 2, empty stdout).
+`ci-watch.sh` gained two cases exercising `fetch_earlier_commit_rows()` directly against a stubbed `gh`
+shaped exactly like the live reproduction (chatty sibling + quiet permanent failure, one row per
+workflow id survives; a flaky fetch on ONE workflow is a red line but does not blind the check to the
+other's row). `bash bin/ci-watch.sh --selftest`, `python3 bin/wf-expected.py --selftest`: OK.
+`bash bin/verify-local.sh`: OK (all engine suites pass; unrelated pre-existing changelog-lag warning on
+candor-java/candor-ts, not touched here). `shellcheck -S warning bin/ci-watch.sh
+bin/release-preflight.sh`: clean.
+
+**RE-AUDITED (rule 9) for the same shape elsewhere in `bin/`** — every `git show`/`diff`/`log` and every
+`gh` list call across `bin/*.sh` and `bin/*.py`. Nothing else rises to fix-now. Two low-priority notes
+filed rather than fixed:
+- `release.sh`, `release-rehearsal.sh`, `verify-umbrella.sh` read `@{u}`/`rev-list --count '@{u}..HEAD'`
+  without forcing a `git fetch` first — a STALE remote-tracking ref, not a truncated list, is a different
+  failure family from the two just closed (network freshness, not pagination) but worth a future look.
+- `bin/probe.sh`'s staleness check uses BSD `stat -f %m` — silently empty (and the warning skipped) on
+  Linux. Not wired into any automated release/CI gate (manual diagnostic only), so portability debt, not
+  a live false-green.
+Confirmed clean: `changelog-lag.sh` (topology-based, already handles merges correctly), `_release_set.sh`,
+`spec-bump.sh`, `release-stage.sh`, `bootstrap-dev.sh`, `corpus.sh`, `_stage_changelogs.py`,
+`_release_notes.sh`, `selfconsistent.py`, `wf-steps.py`, `monotone.sh`, `verify-local.sh`,
+`probe-causes.sh`, `release-verify.sh`, `candor.test.sh` — no `pr list`/`issue list`/`release list`/
+paginated `curl` calls exist anywhere in `bin/`, and no other `git`/`gh` result is trusted as exhaustive
+without a completeness check.
+
 ## `[CLOSED 2026-08-29]` `ci-watch.sh`'s FIFTH FALSE GREEN — `workflowName` TREATED AS A UNIQUE KEY, AND IT ISN'T
 
 **A DIFFERENT CLASS than the first four.** Those were all "a subprocess failed and the silence read as a

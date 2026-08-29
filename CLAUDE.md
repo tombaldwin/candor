@@ -63,6 +63,22 @@ do not background it."** Name the mechanism, not the intention. This is worth re
 point about these instructions: a rule the agent must remember to APPLY is weaker than one that removes
 the option, and a rule that has failed six times is not a rule, it is a note.
 
+**Before pushing a repo, run ITS gates — from a fixed list, not from whatever the agent's report mentioned.**
+Measured 2026-08-29: candor-swift's `main` sat RED for FOUR commits while every push was reported green.
+I ran `ci/self-gate.sh` for candor-rust every time and never for candor-swift, because I followed each
+agent's verification list instead of a per-repo one. The failing gate — `self-gate` — was the one I never
+ran. **And I checked CI once that morning, then pushed ~15 more times across seven repos without looking
+again**, having spent the day hardening the very tool that would have told me.
+
+The self-gate failure was itself instructive: a fix EXTRACTED an existing subprocess call into a named
+helper (so two paths could share one implementation instead of duplicating a spawn — the right call), and
+because a named function binds its own unit, the engine's own boundary gate correctly reported a unit its
+declaration had never heard of. **The subprocess surface never grew; the declaration was stale.** candor
+caught candor, and nobody read it.
+
+**So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
+and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.
+
 ## The standing checks
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway

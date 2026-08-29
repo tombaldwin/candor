@@ -68,9 +68,85 @@ already closed it — nothing to file.
       ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
       candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
-## `[NEW]` FOUR DEFERRED CONFORMANCE-ROW CANDIDATES FROM THE 2026-08-26 FIX WAVE — THREE CLOSED 2026-08-27
+## `[CLOSED 2026-08-29]` `ci-watch.sh`'s THIRD FALSE GREEN — `wf-expected.py` READ THROUGH `2>/dev/null`
 
-Six rows were recommended by the agents that fixed their underlying defects (ts, java, rust, swift ×2)
+**MEASURED.** `bin/ci-watch.sh` ~line 278 (pre-fix) called `wf-expected.py "$d" HEAD 2>/dev/null | awk
+...` — no branch argument, real stderr discarded, exit code never read. `wf-expected.py`'s `main()`
+already documents this exact failure mode: on a DETACHED HEAD it cannot resolve a `branches:` filter,
+explains why on stderr, and exits 2 with empty stdout. Swallowed that way, the empty `required` list
+read as "nothing is required", and the row printed `✔ no run expected` — a false `ci-watch: OK` over a
+repo whose own workflow declares a matching `branches:`/`paths:` filter.
+
+Reproduced end-to-end before touching anything: a throwaway repo (a `branches: [main]`, `paths: ['**']`
+workflow) checked out `--detach`, plus a PATH-stubbed `gh` correctly emulating a real "no runs yet"
+`-q`-filtered empty response. Pre-fix: `ci-watch: OK`, exit 0, zero rows named. This is the THIRD false
+green this script has produced — after the argument-parsing bug (`b8c53a6`, 2026-08-28) and the
+unchecked `gh` calls (`98fe7df`, 2026-08-28) — each a *different* external subprocess, which is why the
+fix here also re-audits every subprocess the script invokes rather than re-patching just this one call
+site (see "audit boundary" note below).
+
+**THE FIX**, mirroring `bin/verify-umbrella.sh`'s already-correct call to the same script (its comment
+states the rationale verbatim: *"NOT `2>/dev/null`: this call's only failure mode is one that makes it
+answer 'nothing is required', and swallowing that turns a broken selector into a silent, plausible-
+looking pass."*): the per-repo branch is now resolved by `ci-watch.sh` itself (`git rev-parse
+--abbrev-ref HEAD`, falling back to `main` with a note on a detached checkout — never to silence) and
+passed explicitly as `wf-expected.py`'s third argument. The call is wrapped in a new `resolve_required()`
+function (parallel to the existing `gh_call()`), which captures real stderr and the real exit code; ANY
+nonzero exit — the detached-HEAD case or a genuine crash — is now a named, red row (`✘ wf-expected.py
+FAILED (exit N) — <stderr>`), never a silent "nothing required". `--selftest` gained two checks that
+exercise `resolve_required()` directly (not a re-implementation of it): one against a REAL throwaway
+detached repo (asserts a real `required` result, not `wf_failed`), one against a stubbed `python3`
+that crashes (asserts the crash is surfaced, never swallowed).
+
+**CONTROLS, falsified against the pre-fix binary:**
+- *Defect case*: the detached-HEAD repro above printed `OK`/exit 0 pre-fix; post-fix it prints `✘ NO RUN
+  AT HEAD, and these were required: · ci — …` and exits 1.
+- *Over-charge control*: a genuinely all-green, attached-branch repo (real commit, stubbed `gh` answering
+  a completed/success run at HEAD) produces **byte-identical** output and exit 0 before and after the fix
+  — `diff` confirmed empty. The fix does not touch the healthy path at all.
+- *Partial failure*: two repos, one clean (`candor-ts`, prints `✔ success`) and one detached-and-broken
+  (`candor-rust`, prints `✘ NO RUN AT HEAD`) — the clean repo's row is unaffected; the broken one is named
+  individually, not folded into an aggregate.
+
+**FULL SUBPROCESS AUDIT of `ci-watch.sh`** (the "audit boundary must not be drawn around its own
+trigger" rule — this is not scoped to just the `wf-expected.py` call handed over):
+- `gh` (3 call sites, `run list --commit`/`--workflow`/`--branch main`) — already wrapped in `gh_call()`
+  since `98fe7df`; exit code and real stderr both checked at every site. SAFE.
+- `python3 wf-expected.py` — THIS finding; now wrapped in `resolve_required()`, exit + stderr checked,
+  branch resolved locally rather than left to the callee's internal fallback. FIXED.
+- `git rev-parse HEAD` (the sha used for `--commit`) — `2>/dev/null`, exit unchecked. If it fails, `sha`
+  is empty and feeds `gh run list --commit ""`. Not exercised further this pass — `[ -d "$d" ]` already
+  guards against a missing checkout, and a git-repo-shaped directory whose `rev-parse HEAD` still fails
+  is a much narrower failure than a detached checkout (which is routine). **INFERRED, not measured**:
+  flagged as a residual, not closed.
+- `git log -1 --format=%ct HEAD` (commit-age check, the "just pushed, no run yet" grace window) — fails
+  closed by construction: `|| echo 0` makes a read failure look like an ancient commit, which routes to
+  the hard-failure branch (`NO RUN AT HEAD`), never to green. SAFE (fails closed).
+- `date` (start-time parsing for the stall check) — already fixed prior to this session: on failure
+  `started` is left empty (not defaulted to "now"), and an empty `started` prints `start time UNREADABLE`
+  and forces `rc=1`. SAFE, verified by reading the code, not re-derived.
+- `awk`/`sort`/`mktemp`/`grep`/`sed` — all operate on already-validated data (post-`gh_call` or post-
+  `resolve_required`) with static, controlled scripts; a crash here is a code bug, not a data-shaped
+  failure, and none of these calls' failure output is itself `2>/dev/null`'d. Lower risk than the two
+  named classes above; not independently fixed this pass.
+
+**SWEEP OF THE OTHER STANDING CHECKS for the same `wf-expected.py` call pattern**
+(`verify-local.sh`, `release-preflight.sh`, `release-verify.sh`, `release-test.sh`): **none of them call
+`wf-expected.py` at all** — `grep -rl wf-expected` across the umbrella returns only `ci-watch.sh` and
+`verify-umbrella.sh` (the latter already correct). Nothing to fix there for this specific pattern.
+
+**RE-ASKING "already fail-closed on `gh`" for every subprocess, not just `gh`**, in those same four
+scripts: `verify-local.sh` has no `2>/dev/null` at all. `release-preflight.sh`'s CI-verdict step ([10])
+pipes `gh run list ... 2>/dev/null | python3 bin/_ci_verdict.py ... 2>/dev/null` at three call sites —
+also stderr-discarding on both halves, but MEASURED (not assumed) to still be fail-closed by a different
+mechanism: `gh` failing produces empty stdout + nonzero exit (confirmed live against a nonexistent repo:
+`exit=1`, empty stdout, real stderr), and `_ci_verdict.py`'s `json.load` on empty stdin raises, which its
+`except Exception: print("ERR")` turns into the `ERR` verdict — a case `release-preflight.sh` already
+treats as `ci_bad=1`. `release-verify.sh`'s version-comparison calls (`curl`/`npm view`/`gh release
+view`) fail closed by construction too: every comparison is `[ "$v" = "$VER" ]` against an empty `$v`,
+which is false, so a swallowed failure surfaces as a named mismatch (`bad "...: '?' != $VER"`), never as
+a pass. **This is the "different mechanism, same property" shape the corpus brief warns about (rule 4)
+— confirmed by testing the actual failure shape, not by reading the comment and trusting it.**
 on 2026-08-26. Two landed same-day in candor-spec `conformance/run.sh` — PART 72 (route equality,
 four-way, mutant-falsified) and PART 73 (candor-swift's `#if`-shadow, falsified against the real
 pre-fix binary `bcb4bc8`). The other four were judged not landable to the same evidentiary bar in one

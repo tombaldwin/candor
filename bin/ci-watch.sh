@@ -149,6 +149,43 @@ is_stalled() {
   [ "$1" -gt "$threshold" ]
 }
 
+# THIRD FALSE GREEN, a different external subprocess than the previous two (the argument-parsing bug at
+# b8c53a6, the unchecked `gh` calls at 98fe7df): `python3 wf-expected.py "$d" HEAD 2>/dev/null` with $?
+# never checked. On a DETACHED HEAD (a release worktree, a rebase in progress) `git rev-parse --abbrev-ref
+# HEAD` inside the target repo answers the literal string "HEAD", which matches no `branches:` filter;
+# wf-expected.py already refuses exactly that case — exit 2, an explanation on stderr, empty stdout —
+# rather than guess. Discarding that stderr and never checking the exit code made an unanswered question
+# read as "nothing is required": REQUIRED_BUT_ABSENT never fires, HEAD needs no run, `ci-watch: OK`.
+# `verify-umbrella.sh` hit this identical shape and is the model (see its comment beside the same call):
+# resolve the branch here rather than trust the callee's fallback, and never `2>/dev/null` a call whose
+# only failure mode is one that makes it answer "nothing is required".
+#
+# A FUNCTION, DEFINED BEFORE --selftest BELOW, so the selftest exercises this exact code against a real
+# throwaway detached repo — not a copy of the logic that could drift from it the way the stall alarm once
+# sat broken under a selftest that only ever agreed with itself.
+#
+# Sets: required, wf_failed (0/1), wf_st, wf_branch, wf_branch_note, wf_errmsg. Globals, same convention
+# as gh_call's GH_OUT/GH_ERR above — this file has no functions returning structured data another way.
+resolve_required() {  # $1 = repo working dir   $2 = repo name (for the branch-note message only)
+  local rd="$1" rname="$2" errfile out
+  wf_branch="$(git -C "$rd" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  wf_branch_note=""
+  if [ -z "$wf_branch" ] || [ "$wf_branch" = "HEAD" ]; then
+    wf_branch="main"; wf_branch_note=" (assumed — $rname is on a detached HEAD)"
+  fi
+  errfile="$(mktemp "${TMPDIR:-/tmp}/ci-watch-wf.XXXXXX")"
+  out="$(python3 "$(dirname "${BASH_SOURCE[0]}")/wf-expected.py" "$rd" HEAD "$wf_branch" 2>"$errfile")"
+  wf_st=$?
+  wf_errmsg="$(cat "$errfile")"; rm -f "$errfile"
+  if [ "$wf_st" -ne 0 ]; then
+    wf_failed=1
+    required=""
+  else
+    wf_failed=0
+    required="$(printf '%s' "$out" | awk -F'\t' '$2=="required"')"
+  fi
+}
+
 if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
@@ -208,8 +245,53 @@ if [ "$SELFTEST" -eq 1 ]; then
   fi
   unset -f gh
 
+  # THE THIRD FALSE GREEN: resolve_required() over a REAL throwaway repo checked out DETACHED — the exact
+  # shape reported live (a release worktree, a rebase in progress), not a synthetic stand-in for it. Before
+  # the fix, `python3 wf-expected.py "$d" HEAD 2>/dev/null` on this repo would exit 2 with empty stdout —
+  # detached HEAD, no branch argument — and the discarded exit code let that read as "nothing required".
   echo
-  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, and a gh failure is never silent" \
+  _rrt="$(mktemp -d "${TMPDIR:-/tmp}/ci-watch-selftest.XXXXXX")"
+  mkdir -p "$_rrt/.github/workflows"
+  cat > "$_rrt/.github/workflows/ci.yml" <<'EOF'
+name: ci
+on:
+  push:
+    branches: [main]
+    paths: ['**']
+EOF
+  git -C "$_rrt" init -q -b main >/dev/null 2>&1
+  git -C "$_rrt" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1
+  git -C "$_rrt" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+  git -C "$_rrt" checkout -q --detach HEAD >/dev/null 2>&1
+  resolve_required "$_rrt" "selftest-repo"
+  if [ "$wf_failed" -eq 1 ]; then
+    echo "  ✘ resolve_required treated a detached HEAD as an unanswerable failure instead of resolving main (wf_st=$wf_st, $wf_errmsg)"
+    fails=$((fails+1))
+  elif [ -z "$required" ]; then
+    echo "  ✘ resolve_required found NOTHING required on a detached HEAD whose only workflow's push/branches/paths"
+    echo "    all match — this is the exact false green: an unanswered branch question silently read as 'no'"
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_required resolves a detached HEAD to a branch (main) instead of asking wf-expected.py to"
+    echo "    guess, and correctly finds \`ci\` required$wf_branch_note"
+  fi
+  rm -rf "$_rrt"
+
+  # AND A GENUINE FAILURE — of wf-expected.py itself, for any reason, not just the branch question — must
+  # still be a hard failure, never folded into an empty (so "nothing required") result. Same style as the
+  # gh stub above: replace the external tool with a function so the failure is exercised, not assumed.
+  python3() { echo "stub python3 crash" >&2; return 3; }
+  resolve_required "/nonexistent-but-irrelevant" "selftest-repo"
+  if [ "$wf_failed" -ne 1 ] || [ "$wf_st" != 3 ] || [ "$wf_errmsg" != "stub python3 crash" ] || [ -n "$required" ]; then
+    echo "  ✘ resolve_required did not surface a wf-expected.py crash as a hard failure (wf_failed=$wf_failed wf_st=$wf_st wf_errmsg='$wf_errmsg' required='$required')"
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_required surfaces a nonzero wf-expected.py exit and its real stderr, never silence"
+  fi
+  unset -f python3
+
+  echo
+  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, and neither is a wf-expected.py one" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
@@ -269,14 +351,17 @@ for repo in "${REPOS[@]}"; do
     continue
   fi
 
-  # WHICH WORKFLOWS MUST HAVE RUN, asked of the workflow files rather than of GitHub. Until this existed
+  # WHICH WORKFLOWS MUST HAVE RUN, asked of the workflow files rather than of GitHub via resolve_required()
+  # (defined above with gh_call and median_secs — see it for the full defect history). Until that existed
   # the script printed "no run at HEAD (path-filtered, or never triggered — verify before trusting)" and
   # then printed OK: honest in the row, fail-OPEN in the verdict, in the one script whose entire thesis is
-  # that a summary must never be greener than its rows. The two readings it could not separate are "this
-  # commit matched no path filter", which is fine, and "a workflow that should have run did not", which
-  # blocks a release. wf-expected.py separates them from the declared triggers.
-  required="$(python3 "$(dirname "${BASH_SOURCE[0]}")/wf-expected.py" "$d" HEAD 2>/dev/null \
-              | awk -F'\t' '$2=="required"')"
+  # that a summary must never be greener than its rows.
+  resolve_required "$d" "$repo"
+  if [ "$wf_failed" -eq 1 ]; then
+    printf "  %-14s %-26s ✘ wf-expected.py FAILED (exit %s)%s — %s\n" "$repo" "(wf-expected)" "$wf_st" \
+           "$wf_branch_note" "${wf_errmsg:-no stderr captured} — cannot tell what CI must run here"
+    rc=1
+  fi
 
   # FAULT HOOK, the pattern candor-spec's probe_check.py uses on the conformance generators: drop a row
   # that GitHub really returned and the REQUIRED-BUT-ABSENT arm below must go red. Without this the arm
@@ -289,7 +374,10 @@ for repo in "${REPOS[@]}"; do
   fi
 
   if [ -z "$rows" ]; then
-    if [ -z "$required" ]; then
+    if [ "$wf_failed" -eq 1 ]; then
+      : # already reported above — do not ALSO claim "no run expected" over a question that was never
+        # answered; that second, contradictory line is exactly how this defect read as green.
+    elif [ -z "$required" ]; then
       printf "  %-14s %-26s ✔ no run expected (no changed file matches any workflow's push trigger)\n" \
              "$repo" "(none)"
     else

@@ -6691,3 +6691,42 @@ entire fabrication. **Their names oversell their reach, and a reader seeing them
 conclude fabrication is gated generally. It is not.** Same shape as `mutation-gate.sh` honestly naming five
 parts while silently excluding fourteen standalone checkers: **a gate whose scope is narrower than its name,
 with nothing stating the boundary.**
+
+## OWED: PART 79 has no fixture for the `dlsym`/`unsafeBitCast` FFI mechanism
+
+Found 2026-08-29 while closing candor-swift `ec3e50f`'s missing tests (now landed at `35cfc73`).
+
+`ec3e50f` fixed THREE silent-pure FFI defects. **PART 79 pins mechanisms 1 and 3** — bodyless
+`@_silgen_name`/`@_extern` linkage (`swift-defect-silgen`) and the raw-syscall allowlist
+(`swift-defect-rawc`) — cross-engine against candor-rust's equivalent seam. **It has NO fixture for
+mechanism 2**: a function pointer resolved via `dlsym` and invoked through `unsafeBitCast`.
+
+candor-swift now has a local scan-level test for all three (`OpaqueFFIFallbackProcessTests.swift`), so
+this is not an open defect — but the cross-engine question for mechanism 2 has never been asked. **Does
+rust/java/ts disclose a `dlsym`-resolved pointer that is then CALLED?** That is the same
+translate-the-question move that turned one peek sin into four today.
+
+## The revert-test sweep: a MEASUREMENT of how much of today's work is protected
+
+Roughly thirty commits, each reverted in isolation with its own tests kept, across five engine repos:
+
+| repo | protected | gaps |
+|---|---|---|
+| candor-rust | 9 of 10 | `dd90fae` — closed at `017a9f1` |
+| candor-java | 2 of 4 | `a034371`, `37c9b10` — closed at `26083ed` |
+| candor-swift | 10 of 11, plus the older `ec3e50f` | `7a89dbc`'s test could not discriminate (`cd465a5`); `ec3e50f` had none (`35cfc73`) |
+| candor-ts | all | — |
+| candor-agents | all | — |
+
+**Every one of those suites was green either way.** This measurement is only obtainable by reverting; no
+amount of running the tests would have produced it.
+
+**Two results that need judgement, not a rule:** rust's sweep found two tests that CORRECTLY stay green on
+revert — one characterises an accepted unfixed residual, one is an over-charge control. **"Stayed green" is
+not automatically a gap.** An agent reporting "9 of 9 red" would have been wrong.
+
+**And the sharpest instance: `ec3e50f`'s tests actively CONCEALED the gap.** `native:dlopen` hits exist in
+the test tree — they feed a prewritten report to a gate. Anyone grepping for coverage finds them and
+concludes the fix is protected. Nothing exercised the scan that PRODUCES the disclosure, which is what the
+commit fixed. **Evidence that reads as coverage without being it** — the same shape as a test named for a
+case it cannot detect, and as a comment asserting a property the code lacks.

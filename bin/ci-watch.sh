@@ -186,6 +186,48 @@ resolve_required() {  # $1 = repo working dir   $2 = repo name (for the branch-n
   fi
 }
 
+# THE FOURTH CANDIDATE OF THE SAME SHAPE. The review that closed the third false green (above) flagged
+# this rather than fixed it: `git rev-parse HEAD` (the sha fed to `--commit`), `2>/dev/null`, exit
+# unchecked, filed as "INFERRED, not measured — if it fails, sha is empty". MEASURED before touching
+# anything, and the real failure is worse than that guess:
+#
+#   - An unborn branch (a repo with no commits — every fresh `git init` is in this state, and so is a
+#     checkout left behind by an interrupted clone or `git init`) is not a narrow case. On a non-bare
+#     unborn branch, `git rev-parse HEAD` exits 128 (checkable) — but it ALSO writes the literal string
+#     "HEAD" to stdout before erroring: git's own ambiguous-ref fallback echoes an unresolvable arg back
+#     verbatim rather than emitting nothing. On a BARE repo with no commits it is worse still — measured
+#     live, `git version 2.50.1 (Apple Git-155)`: exit 0, no stderr at all, stdout "HEAD". Checking `$?`
+#     alone, the fix this same file already applies to every other subprocess, would not have caught
+#     this one — the exit code says success.
+#   - Fed to `gh run list --commit "$sha"`, an empty OR garbage sha is not rejected by `gh` either —
+#     measured live against `tombaldwin/candor-rust`: `--commit ""` is silently treated as NO FILTER AT
+#     ALL, exit 0, and returns the newest real runs across every commit in the repo's history — genuine,
+#     green-looking rows attributed to a HEAD this script never actually resolved. (`--commit HEAD`, the
+#     literal echoed string, happens to match no real run in that repo today; that is a fluke of no run
+#     ever carrying that literal string as its sha, not a mechanism to rely on.)
+#
+# `--verify 'HEAD^{commit}'` closes this: it forces git to resolve HEAD to an actual commit OBJECT in
+# the object database, not merely a ref string that happens to print something. Measured against every
+# shape above plus two more adversarial ones — a `.git` file rewritten to point at a nonexistent gitdir,
+# and a DANGLING ref (HEAD -> refs/heads/main -> a sha absent from the object database, where a bare
+# `--verify HEAD` alone still resolves and returns that fake sha) — `--verify 'HEAD^{commit}'` is exit
+# 128 with empty stdout in every one of them, and byte-identical (same sha, exit 0) on a healthy repo.
+#
+# A FUNCTION, DEFINED BEFORE --selftest BELOW, same convention as resolve_required(): the selftest
+# exercises this exact code against real throwaway repos in each broken shape, not a copy of the logic.
+resolve_sha() {  # $1 = repo working dir -> sets sha, sha_failed (0/1), sha_errmsg
+  local rd="$1" errfile
+  errfile="$(mktemp "${TMPDIR:-/tmp}/ci-watch-sha.XXXXXX")"
+  sha="$(git -C "$rd" rev-parse --verify 'HEAD^{commit}' 2>"$errfile")"
+  local st=$?
+  sha_errmsg="$(cat "$errfile")"; rm -f "$errfile"
+  if [ "$st" -ne 0 ] || [ -z "$sha" ]; then
+    sha_failed=1
+  else
+    sha_failed=0
+  fi
+}
+
 if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
@@ -290,8 +332,58 @@ EOF
   fi
   unset -f python3
 
+  # THE FOURTH CANDIDATE: resolve_sha() over REAL throwaway repos in each broken shape measured above —
+  # not synthetic stand-ins for them, same reason every other arm in this selftest uses the real thing.
   echo
-  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, and neither is a wf-expected.py one" \
+  _sha_ok="$(mktemp -d "${TMPDIR:-/tmp}/ci-watch-selftest.XXXXXX")"
+  git -C "$_sha_ok" init -q -b main >/dev/null 2>&1
+  git -C "$_sha_ok" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init >/dev/null 2>&1
+  _want_sha="$(git -C "$_sha_ok" rev-parse HEAD)"
+  resolve_sha "$_sha_ok"
+  if [ "$sha_failed" -ne 0 ] || [ "$sha" != "$_want_sha" ]; then
+    echo "  ✘ resolve_sha failed on a healthy repo with a real commit (sha_failed=$sha_failed sha='$sha' want='$_want_sha')"
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_sha resolves a healthy repo's HEAD to its real commit sha"
+  fi
+  rm -rf "$_sha_ok"
+
+  _sha_unborn="$(mktemp -d "${TMPDIR:-/tmp}/ci-watch-selftest.XXXXXX")"
+  git -C "$_sha_unborn" init -q -b main >/dev/null 2>&1
+  resolve_sha "$_sha_unborn"
+  if [ "$sha_failed" -ne 1 ]; then
+    echo "  ✘ resolve_sha did not fail on an UNBORN branch (no commits) — a plain \`rev-parse HEAD\` here"
+    echo "    exits 128 but still WRITES the literal string \"HEAD\" to stdout, which is exactly the shape"
+    echo "    that fed a fabricated value into --commit"
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_sha fails closed on an unborn branch (no commits yet)"
+  fi
+  rm -rf "$_sha_unborn"
+
+  _sha_bare="$(mktemp -d "${TMPDIR:-/tmp}/ci-watch-selftest.XXXXXX")"
+  rm -rf "$_sha_bare"; git init -q --bare -b main "$_sha_bare" >/dev/null 2>&1
+  resolve_sha "$_sha_bare"
+  if [ "$sha_failed" -ne 1 ]; then
+    echo "  ✘ resolve_sha did not fail on a BARE repo with no commits — measured live: a plain \`rev-parse"
+    echo "    HEAD\` here exits 0 (a clean exit, not just wrong output) and prints \"HEAD\" as if it were a"
+    echo "    real sha. \$? alone would have missed this one; --verify HEAD^{commit} is what closes it."
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_sha fails closed on a bare repo with no commits (a plain rev-parse exits 0 there)"
+  fi
+  rm -rf "$_sha_bare"
+
+  resolve_sha "/nonexistent-not-a-repo-$$"
+  if [ "$sha_failed" -ne 1 ]; then
+    echo "  ✘ resolve_sha did not fail on a path that is not a git repository at all"
+    fails=$((fails+1))
+  else
+    echo "  ✔ resolve_sha fails closed on a path that is not a git repository"
+  fi
+
+  echo
+  [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, neither is a wf-expected.py one, and neither is a HEAD git cannot resolve" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
   exit "$fails"
 fi
@@ -324,7 +416,16 @@ median_secs() {
 for repo in "${REPOS[@]}"; do
   d="$ROOT/$repo"
   [ -d "$d" ] || { printf "  %-14s SKIP  (not checked out)\n" "$repo"; continue; }
-  sha="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
+  resolve_sha "$d"
+  if [ "$sha_failed" -eq 1 ]; then
+    # Named and red, never folded into "no run expected" or any other clean-looking branch below — see
+    # resolve_sha() above for what this closes (a bare or unborn repo can make a bare `rev-parse HEAD`
+    # print "HEAD" with exit 0) and why checking $? on a plain rev-parse would not have been enough.
+    printf "  %-14s %-26s ✘ git rev-parse FAILED (cannot resolve HEAD to a commit) — %s\n" "$repo" "(git)" \
+           "${sha_errmsg:-no stderr captured}"
+    rc=1
+    continue
+  fi
   # ONE ROW PER WORKFLOW: THE NEWEST. `gh run list --commit` returns EVERY run at that sha, and a
   # workflow with a concurrency group leaves superseded ones behind — a re-run, or a `workflow_dispatch`
   # firing while another is queued, cancels the older and both come back. The cancelled one then reads as

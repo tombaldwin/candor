@@ -68,6 +68,124 @@ already closed it — nothing to file.
       ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
       candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
+## `[CLOSED 2026-08-29]` `ci-watch.sh`'s FOURTH CANDIDATE — `git rev-parse HEAD` FOR `--commit`, CLOSED BEFORE IT FIRED
+
+**MEASURED, not fixed on the residual's own guess.** The write-up below (THIRD FALSE GREEN) flagged
+`git rev-parse HEAD 2>/dev/null` (the sha fed to `gh run list --commit "$sha"`) as an unmeasured
+residual and inferred that on failure `sha` comes out empty. Measured instead of assumed, the real
+failure is worse and takes a shape none of the three fixes that already fired this week share:
+
+- On a non-bare **unborn branch** (a repo with no commits — the state of every fresh `git init`, and
+  what a failed clone or interrupted `git init` in CI leaves behind), `git rev-parse HEAD` exits 128
+  (checkable) but ALSO writes the literal string `HEAD` to stdout before erroring — git's own
+  ambiguous-ref fallback echoes an unresolvable argument back verbatim rather than emitting nothing.
+- On a **bare** repo with no commits it is worse: measured live (`git version 2.50.1 (Apple Git-155)`),
+  `git rev-parse HEAD` exits **0** — a clean exit, no stderr at all — and still prints `HEAD`. Checking
+  `$?`, the exact discipline this file's `gh_call()` and `resolve_required()` already apply everywhere
+  else, would **not** have caught this one: the exit code says success.
+- Fed to `gh run list --commit "$sha"`, an empty sha is not rejected by `gh` either — measured live
+  against the real `tombaldwin/candor-rust`: `--commit ""` is silently treated as **no filter at all**,
+  exit 0, and returns the newest real runs across every commit in the repo's history. Those are genuine
+  runs with genuine `success` conclusions — a plausible, green-looking row attributed to a HEAD this
+  script never actually resolved, the same *shape* of false green as the three that already fired, via
+  a fourth and different subprocess.
+
+Reproduced end-to-end before fixing, using a throwaway `ROOT` tree so no real repo was touched: a
+`candor-rust` directory that is a bare repo with zero commits, `bin/ci-watch.sh candor-rust` run
+against it. Pre-fix: `sha` resolves to the literal string `HEAD`, `gh run list --commit HEAD` (stubbed
+and, separately, checked live) finds no run carrying that literal string as a sha and the row falls
+through to `NO RUN AT HEAD` or `no run expected` depending on whether the repo has local workflow
+files — i.e. it happens not to print `OK` in this exact reproduction, but only because no real run's
+sha is ever the seven-byte string `"HEAD"`; the confirmed-live `--commit ""` behavior (silently ignoring
+the filter and returning real recent runs) is the mechanism that would produce an actual false green,
+and it is one `git rev-parse` outcome away — the bare-repo case above reaches it, since an empty
+`TMPDIR`/mktemp race or a fresher git version could plausibly return an outright-empty stdout instead of
+the literal "HEAD" for the same unborn-branch shape. **Closed on the strength of that live-measured
+mechanism, not on waiting for the exact end-to-end row to reproduce OK/exit 0 from this one script.**
+
+**THE FIX**, matching `gh_call()`'s and `resolve_required()`'s discipline: `git -C "$d" rev-parse HEAD`
+is replaced by `git -C "$d" rev-parse --verify 'HEAD^{commit}'`, which forces git to resolve HEAD to an
+actual commit **object** in the object database rather than merely print a ref string. Wrapped in a new
+`resolve_sha()` function (parallel to `resolve_required()`), which captures real stderr and the real
+exit code into `sha`/`sha_failed`/`sha_errmsg`. Measured against every broken shape above plus two more
+adversarial ones — a `.git` file rewritten to point at a nonexistent gitdir, and a **dangling ref**
+(HEAD → `refs/heads/main` → a sha absent from the object database, where a bare `--verify HEAD` alone
+still resolves and returns that fake sha) — `--verify 'HEAD^{commit}'` is exit 128 with empty stdout in
+every one of them, and byte-identical (same real sha, exit 0) on a healthy repo. A failure is now a
+named, red row (`✘ git rev-parse FAILED (cannot resolve HEAD to a commit) — <stderr>`) that `continue`s
+past the rest of that repo's checks, never folded into `no run expected` or any other clean-looking
+branch. `--selftest` gained four checks exercising `resolve_sha()` directly against real throwaway
+repos, not synthetic stand-ins: a healthy repo with a real commit, an unborn branch, a bare repo with no
+commits (the case a plain `rev-parse` lets through with exit 0), and a path that is not a git repository
+at all.
+
+**CONTROLS, falsified against the pre-fix script:**
+- *Defect case*: a bare repo with no commits, standing in for `candor-rust`, printed nothing resembling
+  a hard failure pre-fix (the literal-"HEAD" sha reaches `gh` and matches no run, so the row fell through
+  to an existing branch rather than naming the real problem); post-fix it prints `✘ git rev-parse FAILED
+  (cannot resolve HEAD to a commit) — fatal: Needed a single revision` and exits 1.
+- *Over-charge control*: a genuinely healthy repo (a real commit, a matching `ci.yml`, a stubbed `gh`
+  answering `completed/success` at HEAD and an empty `--branch main`/`--workflow` history) produces
+  **byte-identical** output and exit 0 before and after the fix — `diff` confirmed empty across the full
+  three-line report plus summary.
+- *Partial failure*: three repos in one run — `candor-spec` and `candor-ts` clean (both print `✔
+  success`), `candor-rust` a bare unborn repo — name only `candor-rust`; the two clean rows are
+  untouched, byte-for-byte the same as the over-charge run.
+
+**RE-AUDIT of every remaining subprocess** (the audit-boundary rule: this must not stop at the one call
+handed over, and must re-examine what prior passes already called SAFE, not just take their word):
+
+- `gh` (3 call sites) — SAFE, unchanged from the prior audit: wrapped in `gh_call()`, exit and real
+  stderr both checked.
+- `python3 wf-expected.py` — SAFE, unchanged: wrapped in `resolve_required()`.
+- `git rev-parse HEAD` (sha) — **FIXED this pass**, see above.
+- `git rev-parse --abbrev-ref HEAD` (branch resolution inside `resolve_required()`) — re-examined, not
+  just re-asserted: this call runs *after* `resolve_sha()` has already gated entry to that repo, so by
+  construction HEAD already resolves to a real commit object by the time this line runs. `--abbrev-ref`
+  cannot fail once `HEAD^{commit}` has already succeeded — it only describes *how* the same already-
+  resolved ref was reached (a branch name, or the literal `HEAD` on a detached checkout, which is the
+  case the existing code already treats as a fallback-to-`main`, not a failure). **SAFE, and now safe by
+  construction rather than by the coincidence of the two calls agreeing.**
+- `git log -1 --format=%ct HEAD` (commit-age grace window) — re-verified, not re-asserted: `|| echo 0`
+  makes a read failure look like an epoch-zero commit. Traced the arithmetic rather than trusting the
+  comment: `_age = now - 0` is a huge positive number, `[ "$_age" -lt 90 ]` is false, so it routes to the
+  hard `NO RUN AT HEAD` failure branch, never to green. Also now gated by the same construction as
+  `--abbrev-ref` above — this line only runs for a repo `resolve_sha()` already proved has a resolvable
+  HEAD, so the specific way this call could fail (no HEAD at all) is excluded before it runs. SAFE.
+- `date` (three call sites, distinct risk each) — traced arithmetic for all three rather than repeating
+  the prior pass's verdict on only one of them:
+  - Stall-check start-time parsing (`date -u -j -f ... "$created"` / `date -u -d ...`) — SAFE, unchanged:
+    on failure `started` is left empty (not defaulted to "now"), which prints `start time UNREADABLE` and
+    forces `rc=1`.
+  - `now=$(date -u +%s)` (top of script, feeds the commit-age grace window) — **measured, not assumed**:
+    if `date` returns nothing, bash arithmetic treats the empty variable as `0`, so `_age = 0 -
+    <real commit epoch>` is a large **negative** number, which is `-lt 90` — the row prints `… no run yet
+    (HEAD is -1700000000s old — GitHub has not created it)` and counts as PENDING (exit 2), not green.
+    This never produces `OK`/exit 0; the output is visibly nonsensical rather than silently smooth, and
+    exit 2 is non-zero. Both `date` calls in the `--wait` polling loop (`deadline=$(( $(date +%s) + ... ))`
+    and the loop's own re-check) were traced the same way: an empty read makes the deadline default to
+    epoch-`WAIT_MAX`, in the past, but that path is only reached once a *non-pending* result already
+    exists (the loop exits before checking the deadline whenever `st -ne 2`), so it cannot turn a real
+    answer into a false one — worst case is a `--wait` invocation looping or erroring under an
+    environment where the `date` binary itself is unusable, which is a platform failure, not a logic gap
+    this script can close. Not independently fixed: none of these three call sites can produce exit 0
+    over an unjudged HEAD, which is the property this whole audit exists to guarantee.
+- `mktemp` (3 production call sites: `gh_call`, `resolve_required`, and the new `resolve_sha`) —
+  **measured, not assumed**: stubbed `mktemp` to fail and traced each wrapper live. A failed `mktemp`
+  leaves the errfile variable empty, and `command 2>"$errfile"` with an empty filename is a bash redirect
+  error — the command never even runs, and the enclosing `$(...)` reports the *redirect's* nonzero exit
+  status, which every call site already treats as failure (`"${GH_ERR:-no stderr captured}"` and its
+  siblings cover the resulting empty error-message string too, via `:-`). Confirmed live for `gh_call()`
+  and `resolve_required()`; `resolve_sha()` uses the identical pattern. SAFE by construction, not by luck.
+- `awk`/`sort`/`grep` — re-examined, not just re-asserted: every one of these operates on data that has
+  already passed through `gh_call()` or `resolve_required()`'s own exit-code gate, using static, literal
+  scripts (no interpolated data as an awk/sort *program*, only as its input stream). `sort -n` on empty
+  input, `awk` on an empty `GH_OUT`, and `grep -qF` all have exercised, well-defined behavior on empty
+  input (the `median_secs` NR==0 branch, matching a selftest row; `!seen[$1]++` on empty input yielding
+  empty `rows`, the ordinary "no runs at HEAD yet" case). SAFE.
+- `sed` — **does not appear in this script at all** (checked by grep, not assumed absent because no
+  prior audit mentioned a finding).
+
 ## `[CLOSED 2026-08-29]` `ci-watch.sh`'s THIRD FALSE GREEN — `wf-expected.py` READ THROUGH `2>/dev/null`
 
 **MEASURED.** `bin/ci-watch.sh` ~line 278 (pre-fix) called `wf-expected.py "$d" HEAD 2>/dev/null | awk
@@ -114,11 +232,10 @@ trigger" rule — this is not scoped to just the `wf-expected.py` call handed ov
   since `98fe7df`; exit code and real stderr both checked at every site. SAFE.
 - `python3 wf-expected.py` — THIS finding; now wrapped in `resolve_required()`, exit + stderr checked,
   branch resolved locally rather than left to the callee's internal fallback. FIXED.
-- `git rev-parse HEAD` (the sha used for `--commit`) — `2>/dev/null`, exit unchecked. If it fails, `sha`
-  is empty and feeds `gh run list --commit ""`. Not exercised further this pass — `[ -d "$d" ]` already
-  guards against a missing checkout, and a git-repo-shaped directory whose `rev-parse HEAD` still fails
-  is a much narrower failure than a detached checkout (which is routine). **INFERRED, not measured**:
-  flagged as a residual, not closed.
+- `git rev-parse HEAD` (the sha used for `--commit`) — **CLOSED 2026-08-29, see the dedicated section
+  below (`resolve_sha()`); MEASURED to be worse than this line's own guess** ("if it fails, sha is
+  empty"): a bare repo with no commits makes a plain `rev-parse HEAD` exit **0** and print the literal
+  string "HEAD" — `$?` alone would not have caught it.
 - `git log -1 --format=%ct HEAD` (commit-age check, the "just pushed, no run yet" grace window) — fails
   closed by construction: `|| echo 0` makes a read failure look like an ancient commit, which routes to
   the hard-failure branch (`NO RUN AT HEAD`), never to green. SAFE (fails closed).

@@ -68,6 +68,111 @@ already closed it — nothing to file.
       ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
       candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
+## `[CLOSED 2026-08-29]` `ci-watch.sh`'s FIFTH FALSE GREEN — `workflowName` TREATED AS A UNIQUE KEY, AND IT ISN'T
+
+**A DIFFERENT CLASS than the first four.** Those were all "a subprocess failed and the silence read as a
+pass." This one is a data-modeling assumption: `workflowName` (GitHub's `name:` field, a human-chosen
+display string) was used as the sole identity for a workflow everywhere this script groups, dedupes, or
+matches runs — and GitHub does **not** require that string to be unique across files in one repo.
+
+**MEASURED before touching anything.** Two real workflow files, `ci-a.yml` and `ci-b.yml`, both
+declaring `name: ci`. `gh run list` genuinely returns two rows for `"ci"` at the same commit. The primary
+row-dedup, `awk '!seen[$1]++'` keyed on field 1 = `workflowName`, kept whichever row `gh` listed first
+and **silently dropped the other's run — including a genuine failure**:
+
+    candor-rust    ci    ✔ success
+    ci-watch: OK — every workflow enumerated at every HEAD concluded success   EXIT=0
+
+Reproduced twice: first as the isolated mechanism (the exact `JQ_ROW` + `awk` pipeline from the unfixed
+script, piped a two-run synthetic JSON), then end-to-end (a real throwaway repo with `ci-a.yml`/`ci-b.yml`
+on disk, a stubbed `gh` answering both rows, the real `bin/ci-watch.sh` run against it via `PATH`) — same
+false `OK`, exit 0, in both.
+
+**THE FIX: identity is the FILE, never the display name.** `workflowDatabaseId` is GitHub's own numeric
+per-file identifier — confirmed live, `gh workflow list --json id,path`'s `id` is the exact same number
+`gh run list --json workflowDatabaseId` reports for that file's runs. Every row is now keyed on that;
+`workflowName` is kept only for the printed label, and disambiguated with its file whenever two rows
+shown in one run share a name (`ci (ci-a.yml)` / `ci (ci-b.yml)`).
+
+Two new functions, `wf_path_map()`/`path_for_id()`, fetch and query the id→file mapping once per repo
+(defined before `--selftest`, same convention as `resolve_required()`/`resolve_sha()`, so the selftest
+exercises the real function against a stubbed `gh`, never a copy of it). `dup_names_of()`/`label_for()`
+compute the printed disambiguation. A `wf_path_map()` failure degrades gracefully rather than aborting
+the repo (per-row success/failure judging needs none of it) but is a named, red line, and the two things
+that DO need it — the disambiguated label and the REQUIRED-BUT-ABSENT match below — are skipped rather
+than silently answered wrong.
+
+**`median_secs()` carried the SAME assumption in a worse shape**, found while auditing rather than
+handed over: it took a **display name**, guessed the workflow's filename as `"${name}.yml"` on the first
+call, and fell back to the **bare name** on a second call if the first found no history. Both guesses are
+wrong whenever a file's actual name differs from its `name:` field (the first is *always* wrong for
+`ci-a.yml`/`ci-b.yml`, since `"ci" + ".yml"` matches neither), and the bare-name fallback is actively
+dangerous under a collision: `--workflow ci` would pool `ci-a.yml`'s and `ci-b.yml`'s history into one
+blended median, silently disarming the stall check for both. Fixed by passing `workflowDatabaseId`
+directly to `--workflow` (confirmed live: `gh run list --workflow <numeric-id>` filters exactly, no
+guessing needed) — which also deleted the whole two-call guess-and-retry dance.
+
+**`wf-expected.py` had to move in the same fix, or the two would disagree** (this repo's own docstring
+now says so): its TSV's first column was the same `name:` display string. Reproduced as a *second*,
+narrower defect on ci-watch.sh's REQUIRED-BUT-ABSENT check: with wf-expected.py unfixed, two files named
+`ci` are indistinguishable there too — one being required and the other not is unanswerable. Fixed by
+emitting the workflow's **file** (`fn`, already computed, previously used only inside `why` text) as
+column 1. Selftest gained `selftest_duplicate_names()`, which runs the real `main()` as a subprocess
+against a real throwaway repo with two `name: ci` files — not a copy of `classify()`'s logic — and checks
+the printed keys are the two distinct filenames.
+
+**THE SAME ASSUMPTION, SWEPT ELSEWHERE (rule 9: do not bound the audit to the instance handed over):**
+
+- **`bin/verify-umbrella.sh`** — **a REAL regression, not a hypothetical**, caught only because fixing
+  wf-expected.py's column 1 broke it live: `wf_required()` was called with `$wfname` (the display name,
+  from `wf-steps.py`'s own output) against a `$REQUIRED` set that — once wf-expected.py emits files —
+  holds filenames. Verified on the real repo: `wf-expected.py . HEAD main` prints `shell-lint.yml`, not
+  `shell-lint`, so `wf_required "shell-lint"` would never match **even with no name collision at all**.
+  `wf-steps.py` already emits a `file` column at both call sites (it was sitting right there, unused for
+  this purpose) — fixed by matching on `$file` instead of `$wfname`. Proven three ways: (1) a throwaway
+  repo with one workflow (`shell-lint`/`shell-lint.yml`) whose path filter matches a changed file — now
+  correctly `WOULD RUN`; (2) a throwaway repo with `ci-a.yml` (`paths: bin/**`) and `ci-b.yml` (`paths:
+  other/**`) both named `ci` — touching `bin/` correctly runs only `ci-a`'s steps, skips `ci-b`'s, by
+  file, not name; (3) **byte-identical** `--list` output on a real historical candor commit, comparing
+  the pre-fix and post-fix scripts side by side (`git stash` toggle, not two separate checkouts).
+- **`bin/_ci_verdict.py`** (shared by `release-preflight.sh`'s **release gate** [10], both the initial
+  read and the post-wait re-check, plus the docs-only-commit fallback) — **the same defect, independently
+  present, in a RELEASE gate.** `seen.add(x.get("workflowName"))` deduped "the latest run of each
+  workflow" by display name; reproduced live (piped a two-run JSON, same name, different
+  `workflowDatabaseId`, one success one failure) and it printed `OK`. Fixed by keying on
+  `workflowDatabaseId` (falling back to `workflowName` only if a caller omits the field entirely, which
+  none now do). `release-preflight.sh`'s three `gh run list` call sites feeding it updated to request
+  `workflowDatabaseId`. Reproduction and fix both confirmed directly against the module (no `gh` needed —
+  it reads JSON from stdin); the ordinary case (unique names) re-verified `OK`/unchanged.
+- **`bin/verify-local.sh`, `bin/release-verify.sh`** — swept, clean. `verify-local.sh` keys everything by
+  repo name and step label, never deduping or matching on either — each `step()` call appends directly,
+  no lookup. `release-verify.sh` keys on literal `repo:tag` pairs and `gh release view <tag>` — a tag is
+  actually unique (git enforces it), unlike a workflow's `name:`. Neither shares the assumption.
+- **`release-preflight.sh`'s other ~12 checks** — swept for the same shape (a `gh`/JSON field used as an
+  implicit key) beyond the three feeding `_ci_verdict.py`; none found. The version/pin/changelog checks
+  key on repo names and file paths, both of which are genuinely unique here.
+
+**CONTROLS, falsified against the pre-fix `ci-watch.sh`:**
+- *Defect case*: the reproduction above — two same-named workflows, one failing — printed `OK`/exit 0
+  pre-fix; post-fix it prints both rows (`ci (ci-a.yml) ✔ success`, `ci (ci-b.yml) ✘ failure`), `NOT
+  GREEN`, exit 1.
+- *Over-charge control, the one that matters most*: an ordinary repo (`ci.yml`/`nightly.yml`, unique
+  names, both green) produces **byte-identical** output and exit 0 before and after the fix — `diff`
+  confirmed empty across the full report. Five fixes have now landed in this script; this one does not
+  touch the healthy path at all.
+- *Partial*: three workflows, one pair sharing the name `ci` (one green, one red) beside an unrelated
+  clean `lint` — only `ci (ci-b.yml)` is named as failing; `ci (ci-a.yml)` and `lint` print exactly as an
+  ordinary row would (the latter with no disambiguation suffix at all, since its name is not shared).
+
+`--selftest` extended (both `ci-watch.sh` and `wf-expected.py`): the dedup proof runs the REAL `JQ_ROW` +
+the REAL `awk` dedup expression against a synthetic two-run, same-name payload; `dup_names_of()`/
+`label_for()` and `wf_path_map()`/`path_for_id()` are exercised directly (the latter against a stubbed
+`gh`, both the success and failure shape); `wf-expected.py --selftest` runs `selftest_duplicate_names()`
+as a real subprocess. `bash bin/ci-watch.sh --selftest` and `python3 bin/wf-expected.py --selftest`: OK.
+`shellcheck -S warning bin/ci-watch.sh bin/verify-umbrella.sh bin/release-preflight.sh`: clean (matches
+`.github/workflows/shell-lint.yml`'s own severity threshold; the one new SC2016 info-level hit is the
+intentional `jq --arg` binding and does not fail that gate).
+
 ## `[CLOSED 2026-08-29]` `ci-watch.sh`'s FOURTH CANDIDATE — `git rev-parse HEAD` FOR `--commit`, CLOSED BEFORE IT FIRED
 
 **MEASURED, not fixed on the residual's own guess.** The write-up below (THIRD FALSE GREEN) flagged

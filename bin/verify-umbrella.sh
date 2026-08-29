@@ -96,6 +96,12 @@ python3 "$HERE/wf-steps.py" "$WT" --event push --os "$TARGET_OS" > "$STEPS" || {
 # whose header records what happens when a second copy of trigger logic exists. So it is asked, not
 # re-implemented, once per commit in the range about to be pushed (GitHub path-filters a push on the
 # union of its commits' files, not on the tip's alone).
+#
+# wf-expected.py's column 1 is the workflow FILE (fixed 2026-08-29 alongside ci-watch.sh's "fifth false
+# green": GitHub does not require `name:` to be unique across files, so a display name cannot be trusted
+# as identity). REQUIRED below is therefore a set of FILES, and wf_required() is called with `$file`
+# (wf-steps.py's own file column, already available at both call sites below) — never `$wfname` — or the
+# two readers of the same workflow files would disagree the moment two of them share a `name:`.
 REQUIRED="$TMP/required"; : > "$REQUIRED"
 RANGE_DESC="commit $SHORT alone"
 # THE BRANCH THE PUSH WILL LAND ON, stated rather than discovered. The worktree is DETACHED by
@@ -134,7 +140,7 @@ if [ "$ALL" = 0 ]; then
   sort -u -o "$REQUIRED" "$REQUIRED"
 fi
 
-wf_required() {  # $1 = workflow display name
+wf_required() {  # $1 = workflow FILE (e.g. "ci.yml") — never the display name, see the comment above
   [ "$ALL" = 1 ] && return 0
   grep -qxF "$1" "$REQUIRED"
 }
@@ -195,7 +201,7 @@ INSCOPE="$TMP/inscope"; : > "$INSCOPE"
 while IFS=$'\x1f' read -r status file wfname job _rest; do
   [ "$status" = "RUN" ] || continue
   [ -n "$ONLY_WF" ] && [ "$file" != "$ONLY_WF" ] && continue
-  wf_required "$wfname" && printf '%s|%s\n' "$file" "$job" >> "$INSCOPE"
+  wf_required "$file" && printf '%s|%s\n' "$file" "$job" >> "$INSCOPE"
 done < "$STEPS"
 sort -u -o "$INSCOPE" "$INSCOPE"
 
@@ -344,7 +350,7 @@ while IFS=$'\x1f' read -r status file wfname job runson label reason wd sh envb 
         printf "  %-15s %-18s %-46s %s\n" "${file%.yml}" "$job" "${label:0:46}" "${dreason#*	}" >> "$SKIPS"
         continue
       fi
-      if ! wf_required "$wfname"; then
+      if ! wf_required "$file"; then
         skipped=$((skipped+1))
         printf "  %-15s %-18s %-46s %s\n" "${file%.yml}" "$job" "${label:0:46}" \
           "GitHub would not trigger \`$wfname\` for this push (no changed file matches its path filter) — --all overrides" >> "$SKIPS"

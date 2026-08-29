@@ -1779,6 +1779,133 @@ printf '%s' "$unreadable" | grep -q "draft status is UNREADABLE" \
   || bad "an unreadable isDraft value produced no distinct diagnostic"
 rm -rf "$PV"
 
+say "7e. release-verify.sh — a STALE per-engine pin must not read as \"live everywhere\""
+# WHY THIS EXISTS. `bin/candor` carries ENGINE_PIN_JAVA/_TS/_RUST/_SWIFT beside the family ENGINE_PIN
+# (2026-08-25), and each is what its own front door actually reads (`npx candor-ts@$ENGINE_PIN_TS`,
+# `cargo install --version $ENGINE_PIN_RUST`, the swift download URL, the java jar URL — all in
+# bin/candor). Before this fix, release-verify.sh read ONLY the java pin, and even that only DISCLOSED a
+# divergence — it never failed one, in either direction. MEASURED against the pre-fix script: a fixture
+# with every artifact genuinely published at $VER and only `ENGINE_PIN_TS` left three minor versions
+# stale still printed "release-verify: OK — spec S / vV is live everywhere". The same fixture showed a
+# SEPARATE bug in the opposite direction: a java pin correctly AHEAD (the ordinary shape of an unfinished
+# one-engine patch — this file's own header says that "must not be a red monitor forever") made the
+# family-wide form FAIL, because the java URLs built from the pin were held to the same "/v$VER/" rule
+# jbang's catalog needs. Both are fixed the same way: rs_pin_report (release-verify.sh) judges the
+# DIRECTION — behind fails the family form, ahead is disclosed and passes — for all four engines, not
+# just java.
+PJ="$(mktemp -d)"; mkdir -p "$PJ/bin" "$PJ/root/candor/bin"
+# curl: crates.io's JSON shape for the four-crate check, and a bare 200 for every asset URL. Recognise
+# `-w` STRUCTURALLY (loop over every arg) rather than by exact position, so an unrelated flag reorder in
+# release-verify.sh cannot silently defang this stub the way a positional stub would.
+cat > "$PJ/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+url=""; w=0
+for a in "$@"; do
+  case "$a" in
+    http*) url="$a" ;;
+    -w) w=1 ;;
+  esac
+done
+case "$url" in
+  https://crates.io/api/v1/crates/*) echo "{\"crate\":{\"max_version\":\"${PJ_VER:-0.0.0}\"}}" ;;
+  *) [ "$w" = 1 ] && printf '200' || echo body ;;
+esac
+EOF
+cat > "$PJ/bin/npm"  <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = "view" ] && { echo "${PJ_VER:-0.0.0}"; exit 0; }
+exit 1
+EOF
+cat > "$PJ/bin/npx"  <<'EOF'
+#!/usr/bin/env bash
+echo "candor-ts v${PJ_VER:-0.0.0} (spec ${PJ_SPEC:-0.0})"
+EOF
+# gh: every release, for every repo/tag asked, reports back as a clean non-draft — this row is about the
+# pin logic, not the draft check (7d, above, already owns that).
+cat > "$PJ/bin/gh"   <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then echo "$3|false"; exit 0; fi
+exit 1
+EOF
+chmod +x "$PJ"/bin/*
+pjcandor() { # $1 = ENGINE_PIN_TS value under test ; every other per-engine pin stays empty
+  printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA=""\nENGINE_PIN_TS="%s"\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' "$1" \
+    > "$PJ/root/candor/bin/candor"
+}
+pjrun() { PJ_VER=0.33.0 PJ_SPEC=0.33 PATH="$PJ/bin:$PATH" CANDOR_ROOT="$PJ/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 2>&1; }
+
+# CONTROL: the ordinary state (no per-engine pin at all) must report OK — establishes the rows below are
+# measuring the PIN, not something wrong with the fixture.
+pjcandor ""
+printf '%s' "$(pjrun)" | grep -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywhere" \
+  && ok "CONTROL: no per-engine pin set — the ordinary state — reports OK" \
+  || bad "[fixture] the clean baseline did not report OK; the rows below would measure nothing"
+
+# THE DEFECT: candor-ts genuinely published at 0.33.0 (npm's `view` and the gh release both agree), but
+# ENGINE_PIN_TS left BEHIND at a three-minor-old version — the version `candor update` actually installs.
+pjcandor "0.30.0"
+tsout="$(pjrun)"
+printf '%s' "$tsout" | grep -q "release-verify: OK" \
+  && bad "a candor-ts pin left BEHIND the release read as \"live everywhere\" — the false green" \
+  || ok "a stale, BEHIND candor-ts pin fails the family-wide form"
+printf '%s' "$tsout" | grep -q "pins ts BEHIND this release — it is 0.30.0, not 0.33.0" \
+  && ok "…and names the engine, the pin's value and what it would still fetch" \
+  || bad "a failing ts pin produced no actionable diagnostic"
+
+# THE SAME QUESTION, ASKED OF RUST AND SWIFT — the reusable artefact is the question, not the one instance
+# it was found in (candor-ts, above).
+for kv in "ENGINE_PIN_RUST:rust" "ENGINE_PIN_SWIFT:swift"; do
+  var="${kv%%:*}"; key="${kv##*:}"
+  { echo 'ENGINE_PIN="0.33.0"'; echo 'ENGINE_PIN_JAVA=""'; echo 'ENGINE_PIN_TS=""'
+    echo 'ENGINE_PIN_RUST=""'; echo 'ENGINE_PIN_SWIFT=""'; } \
+    | sed "s/^$var=\"\"/$var=\"0.30.0\"/" > "$PJ/root/candor/bin/candor"
+  eout="$(pjrun)"
+  printf '%s' "$eout" | grep -q "release-verify: OK" \
+    && bad "a $key pin left BEHIND the release read as \"live everywhere\"" \
+    || ok "a stale, BEHIND $key pin fails the family-wide form too"
+  printf '%s' "$eout" | grep -q "pins $key BEHIND this release — it is 0.30.0, not 0.33.0" \
+    || bad "a failing $key pin produced no actionable diagnostic"
+done
+
+# THE OVER-CHARGE CONTROL, IN THE OTHER DIRECTION: a java pin AHEAD of the release (the ordinary, expected
+# shape of a one-engine patch still in flight) must NOT fail the family-wide form. Before this fix it did:
+# the java URLs built from the pin were held to the "/v$VER/" rule meant for jbang's catalog, so the
+# weekly monitor would have gone red the moment a legitimate one-engine patch existed — the false-red
+# found while fixing the false-green above.
+printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.34.0"\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' \
+  > "$PJ/root/candor/bin/candor"
+aheadout="$(pjrun)"
+printf '%s' "$aheadout" | grep -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywhere" \
+  && ok "CONTROL: a java pin AHEAD of the release (an in-flight one-engine patch) still reports OK" \
+  || { bad "an AHEAD java pin failed the family-wide form — the false-red this fix also closes"
+       printf '%s' "$aheadout" | grep -E '✘'; }
+printf '%s' "$aheadout" | grep -q "pins java SEPARATELY at 0.34.0" \
+  && ok "…and the divergence is still DISCLOSED, just not failed" \
+  || bad "an ahead java pin vanished silently instead of being disclosed"
+
+# AND A JAVA PIN BEHIND MUST STILL FAIL — same rule, same engine, now going through rs_pin_report instead
+# of the coincidental "/v$VER/" string mismatch that used to catch (only) this one direction for java.
+printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.30.0"\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' \
+  > "$PJ/root/candor/bin/candor"
+jbehindout="$(pjrun)"
+printf '%s' "$jbehindout" | grep -q "release-verify: OK" \
+  && bad "a java pin BEHIND the release read as \"live everywhere\"" \
+  || ok "a stale, BEHIND java pin still fails the family-wide form"
+
+# SCOPED: a diverged pin is DISCLOSED, never a failure — a scoped run does not claim "live everywhere" in
+# the first place, so failing it over a fact only the family form is answerable for would be the wrong gate.
+pjcandor "0.30.0"
+scopedout="$(PJ_VER=0.33.0 PJ_SPEC=0.33 PATH="$PJ/bin:$PATH" CANDOR_ROOT="$PJ/root" \
+             bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-spec 2>&1)"
+printf '%s' "$scopedout" | grep -q "release-verify: OK" \
+  && ok "CONTROL: the SAME stale ts pin does not fail a SCOPED run — it is not that run's question" \
+  || bad "a scoped run failed over a fact the family form alone is answerable for"
+printf '%s' "$scopedout" | grep -q "pins ts SEPARATELY at 0.30.0" \
+  && ok "…and is still disclosed, so an operator reading the scoped output is not blind to it" \
+  || bad "a diverged pin vanished entirely under a scoped run"
+rm -rf "$PJ"
+
 say "7. changelog-lag.sh — preflight [5b]"
 # [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.
 # This asks whether the description stopped moving while the thing it describes kept going. Two shapes

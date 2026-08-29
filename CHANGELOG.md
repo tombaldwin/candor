@@ -8,6 +8,52 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-29 — `release-verify.sh`'s false green: a stale ts/rust/swift front-door pin read as "live everywhere"
+
+- **The release path's own false green, found the same way as `ci-watch.sh`'s: attack the last line of
+  defence, not the steps before it.** `bin/candor` has carried `ENGINE_PIN_JAVA`/`_TS`/`_RUST`/`_SWIFT`
+  beside the family `ENGINE_PIN` since 2026-08-25 — each is what its own front door actually reads
+  (`npx candor-ts@$ENGINE_PIN_TS`, `cargo install --version $ENGINE_PIN_RUST`, the swift/java download
+  URLs). `release-verify.sh` — the only check that runs automatically post-publish (`release.sh` step 8)
+  and unattended on a schedule (`release-audit.yml`, weekly) — read and judged **only** the java pin. Its
+  npm/crates.io checks compared the registry's *latest* against the version under test, and the swift
+  asset check built its URL from that version directly; none of the three ever looked at the pin `candor
+  update` reads. **MEASURED**: a fixture with every artifact genuinely published at v0.33.0 and only
+  `ENGINE_PIN_TS` left stale at `0.30.0` (a leftover from an earlier one-engine ts patch) still printed
+  `release-verify: OK — spec 0.33 / v0.33.0 is live everywhere` — with no disclosure at all, not even a
+  note — while `candor update`/`candor init` would keep installing candor-ts 0.30.0 indefinitely. Rust and
+  swift reproduce identically; only java was ever asked.
+- **A second, opposite defect surfaced while fixing the first.** Java's existing pin check built its
+  artifact URLs from the pin and then ran them through a loop that requires every URL to contain
+  `/v$VER/` — a rule written for jbang's catalog (which should always name the version exactly). A java
+  pin correctly set **ahead** of the family line (the ordinary, expected shape of a one-engine patch still
+  in flight — this file's own header already says that state "must not be a red monitor forever") failed
+  the family-wide form outright, contradicting the documented intent. `release-audit.yml`'s weekly,
+  unattended run would have gone permanently red the first time a legitimate one-engine java patch
+  existed.
+- **Fix:** `rs_ver_lt()` (`bin/_release_set.sh`) does a plain X.Y.Z numeric comparison (the family's own
+  versions carry no pre-release/build suffixes, so no general semver grammar is needed). `rs_pin_report()`
+  (`bin/release-verify.sh`) applies the one directional rule to all four engines: on the family-wide form,
+  a pin **behind** the version under test is a failure naming the engine, its value and what a consumer
+  would still fetch; a pin **ahead** — or any divergence under a scoped `--only` run, which never claims
+  "live everywhere" — is disclosed, not failed, matching java's own established behaviour. Java's
+  artifact-URL construction now routes a genuinely diverged pin's URLs to a new `pin_urls` array that is
+  still resolved (a diverged pin AND a 404 is worse than a diverged pin alone) but not held to the
+  `/v$VER/` rule that exists for jbang's catalog, not for this.
+- **Controls, falsified against the pre-fix script**: a clean release (every per-engine pin empty) is
+  byte-for-byte identical before and after; a stale-behind pin for ts, rust AND swift each independently
+  reproduces the false green pre-fix and is caught post-fix; an ahead java pin reproduces the false-red
+  pre-fix and passes (disclosed, not failed) post-fix; a behind java pin still fails, now via the correct
+  mechanism instead of a coincidental string mismatch; a scoped `--only` run discloses but never fails on
+  the identical diverged pin. Ten new assertions in `release-test.sh` (258 → 268, all green);
+  `ci-watch.sh --selftest`, `verify-local.sh` and `shellcheck -S warning` all pass; `git diff` for this fix
+  touches only `bin/_release_set.sh`, `bin/release-verify.sh` and `bin/release-test.sh`.
+- **Not checked**: `release-verify.sh` still does not resolve a *specific* pinned ts/rust artifact version
+  on its registry (only the divergence itself, via the version-string comparison) the way java's per-pin
+  URL already does — a diverged-but-yanked ts/rust version would be caught as "behind", not additionally as
+  "and also gone". The two IDE plugin pins (`candorTsVersion`, `candorJavaVersion`) remain checked only by
+  `release-preflight [3]` pre-publish, as before this fix; that asymmetry is pre-existing and untouched.
+
 ## 2026-08-29 — `release-test.sh`'s own `gh` stubs regressed behind the eighth-false-green fix
 
 **`release-scripts` CI went red at `ac4a71b`/`a1ab7bf`** on `release-test (fixture tree)`, reproducing

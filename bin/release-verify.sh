@@ -123,6 +123,11 @@ declare -a urls=()
 # URLs whose OWNING pin this cut did not move. They are printed, never asserted and never resolved: they
 # are the family form's subject, and this run is not the family form. Empty for a family-wide cut.
 declare -a oos_urls=()
+# URLs built from a per-engine pin that has DELIBERATELY diverged from $VER (see rs_pin_report above).
+# Resolved below like `urls`, but NOT held to "/v$VER/" — that rule is `urls`'s own, for a source
+# (jbang's catalog) that should always name $VER exactly, and applying it here would fail a legitimately
+# AHEAD one-engine patch every time this runs, which is the false-red rs_pin_report exists to avoid.
+declare -a pin_urls=()
 # derive from the pin files rather than hardcoding, so this tracks the pins instead of drifting beside them
 jb="$ROOT_C/candor-java/jbang-catalog.json"
 if rs_in_set candor-java; then
@@ -140,10 +145,10 @@ fi
 # "run release-verify", not "re-run preflight".
 EPIN="$(rs_family_pin "$ROOT_C/candor/bin/candor")"
 # THE PER-ENGINE PIN IS THE ONE THAT ANSWERS "what does `candor update` fetch for THIS engine". Since
-# 2026-08-25 `bin/candor` carries a family pin plus an optional pin per engine, so the java URLs below
-# must be built from JPIN, not from EPIN: with a java-only patch in effect they are different versions,
-# and building them from the family line would resolve the assets of the release the patch REPLACED and
-# call the front door verified.
+# 2026-08-25 `bin/candor` carries a family pin plus an optional pin per engine — for ALL FOUR engines,
+# `RS_PIN_ENGINES` in _release_set.sh — so the java URLs below must be built from JPIN, not from EPIN:
+# with a java-only patch in effect they are different versions, and building them from the family line
+# would resolve the assets of the release the patch REPLACED and call the front door verified.
 JPIN="$(rs_engine_pin java "$ROOT_C/candor/bin/candor")"
 #
 # READING THE PIN IS UNCONDITIONAL: an unreadable pin is a fact about the file, not about the cut, and it
@@ -160,12 +165,54 @@ elif [ "$EPIN" != "$VER" ] && rs_is_full; then
 elif [ "$EPIN" != "$VER" ]; then
   oos "ENGINE_PIN is $EPIN — this cut did not move the family line, so \`candor update\` and \`candor init\` keep installing the $EPIN line for every engine not pinned separately. Assert the front door with: release-verify.sh ${EPIN%.*} $EPIN"
 fi
-if [ -n "$JPIN" ] && [ "$JPIN" != "$EPIN" ]; then
-  oos "the front door pins java SEPARATELY at $JPIN (family line $EPIN) — a one-engine patch. The java URLs below are resolved at $JPIN, which is what \`candor update\` fetches."
-fi
+# ⟨fix, 2026-08-29⟩ THE OTHER THREE ENGINES CARRY THE IDENTICAL MECHANISM AND NONE OF THEM WAS EVER READ
+# HERE. `bin/candor` has carried ENGINE_PIN_TS / _RUST / _SWIFT beside ENGINE_PIN_JAVA since the same
+# 2026-08-25 commit, and each is what its own front door actually reads: `npx candor-ts@$ENGINE_PIN_TS`,
+# `cargo install --version $ENGINE_PIN_RUST`, the swift download URL built from $ENGINE_PIN_SWIFT (see
+# bin/candor). But the npm/crates.io checks above compare the registry's *latest* against $VER, and the
+# swift artifact check below builds its URL from $VER directly — neither ever looks at the pin, so a
+# leftover ENGINE_PIN_TS/_RUST/_SWIFT from an earlier one-engine patch was invisible to this script, not
+# even DISCLOSED, while `candor update` kept serving that stale engine underneath a "live everywhere"
+# verdict. MEASURED: a fixture with every artifact genuinely published at $VER and only
+# `ENGINE_PIN_TS="0.30.0"` stale (three minor versions behind) still printed
+# "release-verify: OK — spec S / vV is live everywhere" — the exact class of false green this file's own
+# top-of-block comment describes for java, reproduced for the three engines that were never asked.
+#
+# THE SAME DIRECTIONAL RULE AS JAVA'S, now shared rather than left as its only instance: BEHIND $VER, on
+# the family-wide form, is a failure — the pin is holding an engine back after the family moved past it.
+# AHEAD is the ordinary, disclosed-not-failed shape of a one-engine patch still in flight (matching the
+# comment two paragraphs up). A SCOPED run always discloses rather than fails, exactly as JPIN already did,
+# because a scoped cut is not the form that claims "live everywhere" in the first place.
+rs_pin_report() { # $1 = engine key ; $2 = its pin's value ; $3 = repo ; $4 = what a consumer runs
+  local e="$1" p="$2" repo="$3" how="$4"
+  [ -n "$p" ] && [ "$p" != "$EPIN" ] || return 0
+  if rs_is_full && rs_ver_lt "$p" "$VER"; then
+    bad "the front door pins $e BEHIND this release — it is $p, not $VER — $how would still fetch $p for $repo"
+  else
+    oos "the front door pins $e SEPARATELY at $p (family line $EPIN) — $how fetches $p, not v$VER"
+  fi
+}
+TPIN="$(rs_engine_pin ts    "$ROOT_C/candor/bin/candor")"
+RPIN="$(rs_engine_pin rust  "$ROOT_C/candor/bin/candor")"
+SPIN="$(rs_engine_pin swift "$ROOT_C/candor/bin/candor")"
+rs_pin_report java  "$JPIN" candor-java   "the jar/native download \`candor update\` runs"
+rs_pin_report ts    "$TPIN" candor-ts    "\`npx candor-ts@…\`"
+rs_pin_report rust  "$RPIN" candor-rust  "\`cargo install --version …\`"
+rs_pin_report swift "$SPIN" candor-swift "the swift binary download \`candor update\` runs"
 for a in "candor-java-${JPIN:-$VER}-all.jar" candor-linux-x64 candor-macos-arm64; do
-  if rs_is_full; then urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${JPIN:-$VER}/$a")
-  else oos_urls+=("https://github.com/tombaldwin/candor-java/releases/download/v${JPIN:-$VER}/$a"); fi
+  u="https://github.com/tombaldwin/candor-java/releases/download/v${JPIN:-$VER}/$a"
+  if ! rs_is_full; then oos_urls+=("$u")
+  elif [ -n "$JPIN" ] && [ "$JPIN" != "$VER" ]; then
+    # DIVERGED FROM $VER ON PURPOSE (a one-engine patch pin, possibly AHEAD — see rs_pin_report above,
+    # which is what judges whether that is acceptable). Routed to `pin_urls`, NOT `urls`: the loop that
+    # walks `urls` demands every one contain "/v$VER/", which an ahead-pinned jar never will, and holding
+    # it to that rule is exactly the false-red the comment three paragraphs up says must not happen — the
+    # weekly monitor would go red forever the moment a legitimate one-engine java patch landed. `pin_urls`
+    # still gets resolved below; it just isn't held to a version string `rs_pin_report` already judged.
+    pin_urls+=("$u")
+  else
+    urls+=("$u")   # the ordinary case (JPIN unset, or already caught up to $VER) — unchanged from before.
+  fi
 done
 # …and for a SCOPED java cut, the release's OWN assets at $VER, which nothing else here would reach. The
 # jbang pin names only the jar, so without this the two native binaries — the entire reason a java-only
@@ -246,6 +293,14 @@ for u in $(printf '%s\n' "${urls[@]:-}" | sort -u); do
     *"/v$VER/"*) ;;
     *) bad "pin names a different version than v$VER — $u"; continue ;;
   esac
+  code=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 45 "$u" 2>/dev/null)
+  [ "$code" = "200" ] && ok "$code ${u##*/}" || bad "$code ${u##*/} — $u"
+done
+# PIN-DERIVED URLS — same resolve, deliberately NO "/v$VER/" requirement (see the declaration above and
+# rs_pin_report, which already judged whether this pin's divergence is acceptable). Still a fail-closed
+# `bad` if the artifact this pin names does not actually exist — a diverged pin AND a 404 is strictly
+# worse than a diverged pin alone, and nothing else here would catch that combination.
+for u in $(printf '%s\n' "${pin_urls[@]:-}" | sort -u); do
   code=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 45 "$u" 2>/dev/null)
   [ "$code" = "200" ] && ok "$code ${u##*/}" || bad "$code ${u##*/} — $u"
 done

@@ -267,21 +267,24 @@ ok "…names the unread file count" "1 file(s) candor could not read" bash -c "c
 
 # ADVERSARIAL: `excluded[].peeked:false` / a non-empty `outOfScope` must trip the caveat on their OWN,
 # not only through the shared `incomplete` flag — a report can carry one without the other (a partial
-# ⟨0.32⟩ implementation, or a future engine). `dispatch-widened` is the brand-new ⟨0.34⟩ class token, used
-# here to also prove `excluded[].class` (engine-chosen, SPEC §2 ⟨0.29⟩) never decides anything.
+# ⟨0.32⟩ implementation, or a future engine). `widened-target` is an arbitrary unknown class token, used
+# here to prove `excluded[].class` (engine-chosen, SPEC §2 ⟨0.29⟩) never decides anything.
 mkdir -p "$T/dashexc/.candor"
-printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$T/dashexc/.candor/report.pkg.scan.json"
+printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$T/dashexc/.candor/report.pkg.scan.json"
 ok "unread excluded class ALONE (no incomplete flag) trips the caveat" "⚠ incomplete" bash -c "cd '$T/dashexc' && CANDOR_DISPATCH_DRYRUN= '$D'"
-ok "…names the class, whatever it is called" "dispatch-widened" bash -c "cd '$T/dashexc' && CANDOR_DISPATCH_DRYRUN= '$D'"
+ok "…names the class, whatever it is called" "widened-target" bash -c "cd '$T/dashexc' && CANDOR_DISPATCH_DRYRUN= '$D'"
 
+# `outOfScope[].class` too is engine-chosen — `dispatch-widened` is the brand-new ⟨0.34⟩ token that
+# landed in candor-swift/candor-java/candor-ts the same day this round started, and no consumer had seen
+# it before this fix.
 mkdir -p "$T/dashoos/.candor"
-printf '{"candor":{"version":"mock","spec":"0.33"},"functions":[{"fn":"a","inferred":["Fs"]}],"outOfScope":[{"fn":"x.run","effects":["Exec"],"class":"build-output"}]}' > "$T/dashoos/.candor/report.pkg.scan.json"
+printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"outOfScope":[{"fn":"x.run","effects":["Exec"],"class":"dispatch-widened"}]}' > "$T/dashoos/.candor/report.pkg.scan.json"
 ok "outOfScope ALONE (no incomplete flag) trips the caveat" "⚠ incomplete" bash -c "cd '$T/dashoos' && CANDOR_DISPATCH_DRYRUN= '$D'"
 
 # OVER-CHARGE CONTROLS: a class the producer DID read (`judgedElsewhere`, same unknown token) and a
 # plain clean report must both stay silent — no caveat line at all.
 mkdir -p "$T/dashpeeked/.candor"
-printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$T/dashpeeked/.candor/report.pkg.scan.json"
+printf '{"candor":{"version":"mock","spec":"0.34"},"functions":[{"fn":"a","inferred":["Fs"]}],"excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$T/dashpeeked/.candor/report.pkg.scan.json"
 no "over-charge: peeked+judgedElsewhere (same unknown class) stays silent" "⚠ incomplete" bash -c "cd '$T/dashpeeked' && CANDOR_DISPATCH_DRYRUN= '$D'"
 mkdir -p "$T/dashclean/.candor"
 printf '{"candor":{"version":"mock","spec":"0.30"},"functions":[{"fn":"a","inferred":["Fs"]}]}' > "$T/dashclean/.candor/report.pkg.scan.json"

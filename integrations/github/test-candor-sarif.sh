@@ -253,20 +253,23 @@ ok "excluded/peeked:false alone (no incomplete): exit 0, results []" '[ "$rcexc"
 ok "…flagged, not clean"                            '[ "$(printf "%s" "$OUTEXC" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
 ok "…names CANDOR-INCOMPLETE and the class"          'grep -q "deploy-script" "$WORK/excerr"'
 
-echo '{"spec":"0.32","ok":false,"violations":[],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"build-output"}]}' > "$WORK/oosgate.json"
+# `outOfScope[].class` is engine-chosen vocabulary too (SPEC §2 ⟨0.29⟩) — `dispatch-widened` is the
+# brand-new ⟨0.34⟩ token that landed in candor-swift/candor-java/candor-ts (`mergeOrAppendOOS`/
+# `mergeOrAppend`) the same day this round started, and no consumer had seen it before this fix.
+echo '{"spec":"0.34","ok":false,"violations":[],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"dispatch-widened"}]}' > "$WORK/oosgate.json"
 OUTOOS=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/oosgate.json" 2>"$WORK/ooserr"); rcoos=$?
 ok "outOfScope alone (no incomplete): exit 0, results []" '[ "$rcoos" = 0 ] && [ "$(printf "%s" "$OUTOOS" | jq ".runs[0].results|length")" = 0 ]'
 ok "…flagged, not clean"                            '[ "$(printf "%s" "$OUTOOS" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
 ok "…names CANDOR-INCOMPLETE"                        'printf "%s" "$OUTOOS" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-INCOMPLETE\"" >/dev/null'
 
 # `excluded[].class` is engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and MUST NOT change behaviour — an
-# unread class under a brand-new/unknown token (the ⟨0.34⟩ `dispatch-widened` shape) is caught exactly
-# like any other, and a PEEKED class (or one marked `judgedElsewhere`) under that SAME unknown token is
-# the over-charge control and must stay clean.
-echo '{"spec":"0.34","ok":false,"violations":[],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$WORK/dwgate.json"
+# unread class under an arbitrary/unknown token is caught exactly like any other, and a PEEKED class (or
+# one marked `judgedElsewhere`) under that SAME unknown token is the over-charge control and must stay
+# clean.
+echo '{"spec":"0.34","ok":false,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$WORK/dwgate.json"
 OUTDW=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwgate.json" 2>"$WORK/dwerr")
-ok "unknown excluded class (dispatch-widened): still caught"  'grep -q "dispatch-widened" "$WORK/dwerr"'
-echo '{"spec":"0.34","ok":true,"violations":[],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$WORK/dwclean.json"
+ok "unknown excluded class (widened-target): still caught"  'grep -q "widened-target" "$WORK/dwerr"'
+echo '{"spec":"0.34","ok":true,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$WORK/dwclean.json"
 OUTDWC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwclean.json" 2>"$WORK/dwcerr")
 ok "…peeked+judgedElsewhere under the same unknown class: stays clean" '[ "$(printf "%s" "$OUTDWC" | jq -r ".runs[0].invocations // \"none\"")" = none ] && [ ! -s "$WORK/dwcerr" ]'
 

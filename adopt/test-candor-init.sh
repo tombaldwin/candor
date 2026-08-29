@@ -91,8 +91,8 @@ ok "the non-prefix sibling (apiv2) still ruled"  'printf "%s" "$OUTP" | grep -qE
 # proposals presented as an unqualified "every rule currently passes" — the layer a `pure` rule locks in
 # may reach an effect that lives in the unread part. Checked on `incomplete`/`unanalyzed`/`judgedNothing`
 # AND directly on `excluded[].peeked`/`outOfScope`, not only the shared flag (a producer can raise one
-# without the other). `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) — exercised under the brand-new
-# ⟨0.34⟩ `dispatch-widened` token to prove the class name never decides anything.
+# without the other). `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) — exercised under an arbitrary
+# `widened-target` token to prove the class name never decides anything.
 cat > "$WORK/increp.json" <<'JSON'
 {"candor":{"spec":"0.30"},"functions":[{"fn":"com.shop.repo.OrderRepo.save","inferred":["Fs"]}],
  "incomplete":true,"unanalyzed":[{"path":"src/Weird.java","reason":"malformed bytecode"}]}
@@ -104,15 +104,17 @@ ok "incomplete report: caveat also in the header" 'printf "%s" "$OUTINC" | grep 
 
 cat > "$WORK/excrep.json" <<'JSON'
 {"candor":{"spec":"0.34"},"functions":[{"fn":"com.shop.repo.OrderRepo.save","inferred":["Fs"]}],
- "excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
+ "excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
 JSON
 OUTEXC=$(python3 "$INIT" "$WORK/excrep.json" 2>"$WORK/excerr")
 ok "unread excluded class ALONE (no incomplete flag) still caveats" 'grep -q "INCOMPLETE" "$WORK/excerr"'
-ok "…names the class, whatever it is called"                        'grep -q "dispatch-widened" "$WORK/excerr"'
+ok "…names the class, whatever it is called"                        'grep -q "widened-target" "$WORK/excerr"'
 
+# `outOfScope[].class` too is engine-chosen — `dispatch-widened` is the brand-new ⟨0.34⟩ token that
+# landed in candor-swift/candor-java/candor-ts the same day this round started.
 cat > "$WORK/oosrep.json" <<'JSON'
-{"candor":{"spec":"0.33"},"functions":[{"fn":"com.shop.repo.OrderRepo.save","inferred":["Fs"]}],
- "outOfScope":[{"fn":"x.Deploy.run","effects":["Exec"],"class":"build-output"}]}
+{"candor":{"spec":"0.34"},"functions":[{"fn":"com.shop.repo.OrderRepo.save","inferred":["Fs"]}],
+ "outOfScope":[{"fn":"x.Deploy.run","effects":["Exec"],"class":"dispatch-widened"}]}
 JSON
 OUTOOS=$(python3 "$INIT" "$WORK/oosrep.json" 2>"$WORK/ooserr")
 ok "outOfScope ALONE (no incomplete flag) still caveats"            'grep -q "INCOMPLETE" "$WORK/ooserr"'
@@ -121,7 +123,7 @@ ok "outOfScope ALONE (no incomplete flag) still caveats"            'grep -q "IN
 # original clean fixture must both stay silent — no caveat anywhere.
 cat > "$WORK/peekedrep.json" <<'JSON'
 {"candor":{"spec":"0.34"},"functions":[{"fn":"com.shop.repo.OrderRepo.save","inferred":["Fs"]}],
- "excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
+ "excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
 JSON
 OUTPK=$(python3 "$INIT" "$WORK/peekedrep.json" 2>"$WORK/pkerr")
 ok "over-charge: peeked+judgedElsewhere (same unknown class) silent" '! grep -q "INCOMPLETE" "$WORK/pkerr" && ! printf "%s" "$OUTPK" | grep -q "INCOMPLETE"'

@@ -6730,3 +6730,37 @@ the test tree — they feed a prewritten report to a gate. Anyone grepping for c
 concludes the fix is protected. Nothing exercised the scan that PRODUCES the disclosure, which is what the
 commit fixed. **Evidence that reads as coverage without being it** — the same shape as a test named for a
 case it cannot detect, and as a comment asserting a property the code lacks.
+
+## Revert-test sweep of the HISTORICAL corpus — 11 of 11 protected, with a stated boundary
+
+Run 2026-08-29 over `SOUNDNESS.md`'s own R-item register, excluding today's commits (already swept).
+
+**Result: 11 of 11 commit-reverts went RED. Zero unprotected fixes** across R54, R55, R56, R57, R59, R60,
+R61, R62, R64 — spanning rust-scan, rust-deep, java, ts and swift.
+
+**Why that number must NOT be read as "the corpus is well covered":**
+1. The window swept (2026-08-26→28) sits immediately downstream of a pass already hunting this exact
+   failure mode. **R61's green is validating today's `35cfc73` fix, not independently discovering
+   soundness** — it was found unprotected hours earlier and fixed before this measurement ran.
+2. It is a three-day slice of a register spanning 2026-06-18 → now.
+3. **Nothing stayed green, so no judgement call arose** — unlike the same-day sweep, which found two tests
+   that CORRECTLY survive a revert (an accepted-residual characterisation and an over-charge control).
+
+**NOT REACHED, and this is the next slice worth taking:**
+- **R13–R53 (2026-06-18 → 07-19), including the 20-fix R32–R44 cross-engine DISPATCH WAVE** — by the
+  register's own account the largest concentration of cardinal-sin fixes in the project's history, and
+  entirely unswept.
+- Everything before 2026-06-18. candor-agents (no candidate in the window).
+- R18/R19, R45/R46/R48/R49/R52 were assessed and **deliberately not attempted**: a month-plus of later edits
+  to `Candor.java`/`collector.rs`/`decls.rs` makes a clean revert unlikely, and a shallow pass there was
+  judged worse than an honest gap.
+
+**Method notes worth reusing:**
+- Reverting R59's constant ALONE is a compile error (`cannot find value CALIBRATED_BUT_PARTIAL_CRATES`). A
+  build failure is NOT evidence about a test — the agent hand-edited the consumer line to get a true
+  SEMANTIC revert instead of reporting a dangling-symbol artifact.
+- R54's ts half and R59's `scan.rs` half both failed `git apply -R` (later commits restructured the
+  surroundings); hand-reverted by locating the spots by CONTENT, not line number.
+- **R57 and R64 are coupled** — `b4c3a22` is a refactor built on `0a5d493`, so R57 cannot be reverted
+  alone. Reverted together, with failures attributed by reading WHICH NAMED TESTS fired rather than assumed.
+- R58 excluded on purpose: SOUNDNESS.md marks it UNMEASURED, and it had already been closed at `802efe4`.

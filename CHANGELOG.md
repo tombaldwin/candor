@@ -8,6 +8,65 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-29 — the ⟨0.32⟩ refusal-as-pass sweep, finished: `excluded`/`outOfScope`, five more consumers
+
+- **BACKLOG.md's "the engines fail CLOSED, and every consumer converts that refusal into a PASS" class,
+  closed for the last two disclosure keys and the two consumers never checked against any of them.** The
+  first pass (below) covered `incomplete`/`unanalyzed`/`judgedNothing`/`refused` across `candor-review.sh`
+  / `candor-review-source.sh`, `candor-sarif` and the fingerprint. This pass added `excluded[].peeked` and
+  `outOfScope` — checked DIRECTLY, independent of the shared `incomplete` flag a producer is expected (but
+  not guaranteed) to also raise — after adversarial fixtures showed a report/gate carrying one of those
+  two keys WITHOUT `incomplete:true` fell straight through candor-review.sh's and candor-sarif's existing
+  checks into their "build/scan error, not a violation" branch, which the Claude Code Stop hook ALLOWS and
+  which candor-sarif rendered as a byte-identical clean, empty-results SARIF. Fixed in `candor-review.sh`,
+  `candor-review-source.sh`, `candor-sarif` (plus a BACKSTOP: any `ok:false` gate with empty `results` and
+  none of the causes this tool names is now a generic `CANDOR-UNKNOWN-FAIL` caveat rather than silence —
+  SPEC keeps adding causes and a boundary drawn around today's list would miss the next one) and
+  `candor-fingerprint.mjs` (brought in line with its existing incomplete/unanalyzed fix, for consistency).
+  Two consumers had never been checked against ANY of these keys: `bin/candor`'s bare status dashboard
+  tallied a report's effects with nothing checking completeness at all, and `adopt/candor-init` — a WORSE
+  place to miss it than most, because a `pure <layer>` rule it proposes from an incomplete scan is a claim
+  that can fail the very first real gate run over the unread part, shipped under "every rule below
+  currently passes." Both fixed with a caveat naming the cause. `excluded[].class`/`outOfScope[].class`
+  are engine-chosen vocabulary (SPEC §2 ⟨0.29⟩) and decide nothing in any of these fixes — exercised under
+  `dispatch-widened`, the ⟨0.34⟩ class that landed in candor-swift/candor-java/candor-ts the same day this
+  round started, to prove the token itself never matters. `integrations/vscode` and `integrations/
+  jetbrains` were read, not fixed: both are thin LSP clients spawning a bundled `candor-lsp.mjs` staged
+  from candor-ts, so the disclosure logic lives in that repo, not here. Every fix's over-charge control
+  (peeked+judgedElsewhere under the SAME unknown class; a genuinely clean/complete report; a real
+  violation alongside incompleteness) passes byte-for-byte / key-for-key unaffected.
+
+## 2026-08-29 — three silent-pass holes where a refused/incomplete verdict read as clean
+
+- **The first pass over `integrations/` as its own surface, and the most consequential class found in the
+  whole campaign — it defeats every hardening rung the engines have.** Three consumers each converted an
+  engine's fail-closed refusal into a clean pass, all the same shape: `incomplete`/`unanalyzed`/
+  `judgedNothing`/`refused` were never read. The Claude Code Stop hook's review scripts collapsed "engine
+  crashed" and "engine ran fine but refused to certify because part of the target was unread" into the
+  same `rc=2`, which the hook ALLOWS ("don't block on a misconfig") — a violation could sit in exactly the
+  part the engine admits it never read. `candor-sarif` produced a byte-identical, fully clean
+  empty-results SARIF for a REFUSED gate document and an INCOMPLETE one alike — a reviewer reading only
+  the persistent Security tab sees an all-clear. `candor-fingerprint.mjs` produced a maximally confident
+  badge (`structure: 1`, "100% order") over a report declaring a whole module unread. Fixed: the
+  completeness keys are read directly in all three, distinct from a genuine crash/misconfig (which stays
+  allowed, verified via an over-charge control in each).
+
+## 2026-08-29 — `ci-watch.sh`'s seventh and eighth false-green mechanisms
+
+- **Seventh: a merge commit read as touching nothing.** `git show --name-only --format=` returns an empty
+  file list, exit 0, for an ordinary merge commit, so `wf-expected.py`'s `changed_files()` read a merge
+  that genuinely touched a path-filtered directory as "nothing changed" and classified every workflow
+  not-required. Fixed by detecting merges (`git rev-list --parents`) and diffing against the first parent
+  instead; an unresolvable rev now fails loudly (exit 2) rather than falling through to an empty list.
+- **Eighth: one page shared by every workflow in a repo.** `gh run list --limit 40` (`ci-watch.sh`'s
+  earlier-commit safety net) and `gh run list --limit 30` (`release-preflight.sh`'s [10], all three call
+  sites) are each one page shared by every workflow in a repo — a chatty sibling workflow can age a quiet
+  workflow's real permanent failure off it entirely, never returned by the API call at all. Fixed with
+  per-workflow queries where no specific commit is known, and server-side `--commit` filtering where one
+  is. Both reproduced live before fixing (a real merge commit; a stubbed `gh` with a crowded page) and
+  both selftests extended to exercise the real functions against stubs, not copies of their logic.
+  Over-charge control (an ordinary green repo) is byte-identical before/after.
+
 ## 2026-08-29 — `ci-watch.sh`'s fifth false green: `workflowName` treated as a unique key, and it isn't
 
 - **A different class than the first four: not a swallowed subprocess failure, a data-modeling

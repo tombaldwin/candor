@@ -125,23 +125,25 @@ ok "SVG artifact is unaffected (byte-identical to complete)" 'cmp -s "$WORK/inc.
 # (e) SPEC ⟨0.30⟩/⟨0.32⟩: `excluded[].peeked:false` and a non-empty `outOfScope` must ALSO flag
 # `incomplete`, checked directly rather than only through the shared `incomplete` boolean a producer is
 # expected to raise alongside them (a partial ⟨0.32⟩ implementation, or a future engine, might not).
-# `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) — exercised here under `dispatch-widened`, the
-# brand-new ⟨0.34⟩ class, to prove the class TOKEN never decides anything.
+# `excluded[].class` is engine-chosen (SPEC §2 ⟨0.29⟩) — exercised here under `widened-target`, an
+# arbitrary unknown class token, to prove the class TOKEN never decides anything.
 cat > "$WORK/unread.json" <<'JSON'
 {"candor":{"spec":"0.34"},"functions":[
   {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
-],"excluded":[{"class":"dispatch-widened","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
+],"excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
 JSON
 cp "$WORK/incomplete.callgraph.json" "$WORK/unread.callgraph.json"
 JU=$(node "$FP" "$WORK/unread.json" --json --no-svg 2>"$WORK/unreaderr")
 ok "unread excluded class (no top-level incomplete): meta.incomplete is true" '[ "$(printf "%s" "$JU" | jq -r .incomplete)" = true ]'
-ok "…names the class in unreadClasses"                    '[ "$(printf "%s" "$JU" | jq -rc .unreadClasses)" = "[\"dispatch-widened\"]" ]'
-ok "…disclosed on stderr, naming the class"               'grep -q "dispatch-widened" "$WORK/unreaderr"'
+ok "…names the class in unreadClasses"                    '[ "$(printf "%s" "$JU" | jq -rc .unreadClasses)" = "[\"widened-target\"]" ]'
+ok "…disclosed on stderr, naming the class"               'grep -q "widened-target" "$WORK/unreaderr"'
 
+# `outOfScope[].class` too is engine-chosen — `dispatch-widened` is the brand-new ⟨0.34⟩ token that
+# landed in candor-swift/candor-java/candor-ts the same day this round started.
 cat > "$WORK/oos.json" <<'JSON'
-{"candor":{"spec":"0.33"},"functions":[
+{"candor":{"spec":"0.34"},"functions":[
   {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
-],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"build-output"}]}
+],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"dispatch-widened"}]}
 JSON
 cp "$WORK/incomplete.callgraph.json" "$WORK/oos.callgraph.json"
 JO=$(node "$FP" "$WORK/oos.json" --json --no-svg 2>"$WORK/ooserr")
@@ -150,12 +152,12 @@ ok "…outOfScopeCount reflects the entry"                            '[ "$(prin
 ok "…disclosed on stderr"                                           'grep -q "out-of-scope function" "$WORK/ooserr"'
 
 # OVER-CHARGE CONTROL: a class the producer DID read (`judgedElsewhere`), even under the SAME unknown
-# `dispatch-widened` token, must stay incomplete:false — the class name never decides anything, only the
+# `widened-target` token, must stay incomplete:false — the class name never decides anything, only the
 # two booleans do.
 cat > "$WORK/peeked.json" <<'JSON'
 {"candor":{"spec":"0.34"},"functions":[
   {"fn":"a","inferred":["Net"]},{"fn":"b","inferred":["Db"]},{"fn":"c","inferred":["Fs"]},{"fn":"d","inferred":[]}
-],"excluded":[{"class":"dispatch-widened","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
+],"excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
 JSON
 cp "$WORK/incomplete.callgraph.json" "$WORK/peeked.callgraph.json"
 JP=$(node "$FP" "$WORK/peeked.json" --json --no-svg 2>"$WORK/peekederr")

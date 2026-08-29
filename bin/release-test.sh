@@ -377,6 +377,49 @@ else
   bad "could not bound step 7's die string in release.sh — the remedy went UNCHECKED (nothing rendered)"
 fi
 
+say "1d. release.sh step 0 — a repo that is not a git repo must not read as clean"
+# THE NINTH FALSE GREEN (2026-08-30, adversarial review of release-rehearsal.sh and _release_notes.sh).
+# `git -C <missing-dir> status --porcelain` fails with a `fatal:` line to STDERR and prints NOTHING on
+# stdout — the same stdout a real "no changes" answer produces. Step 0's `[ -z "$(git ... status
+# --porcelain)" ]` reads both cases identically, so a repo that was never cloned (wrong CANDOR_ROOT, a
+# fresh machine mid-bootstrap — [[candor-anya-second-machine]]) sailed through as "clean and pushed"
+# without ever being examined, and the SAME shape existed in release-rehearsal.sh's mirror of this check
+# (below, section 10). PROVEN against the pre-fix script: it printed "✔ all mains clean + pushed" with
+# one of the seven repos deleted entirely.
+RS0="$(mktemp -d)"
+mkdir -p "$RS0/candor/bin"
+cp "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/_release_set.sh" "$RS0/candor/bin/"
+chmod +x "$RS0/candor/bin/release.sh"
+printf '#!/usr/bin/env bash\necho "stub preflight OK"\nexit 0\n' > "$RS0/candor/bin/release-preflight.sh"
+chmod +x "$RS0/candor/bin/release-preflight.sh"
+for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents; do
+  d="$RS0/$r"; mkdir -p "$d"
+  ( cd "$d" && git init -q && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m init )
+done
+( cd "$RS0/candor" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -q -m init )
+rs0_run() { CANDOR_ROOT="$RS0" bash "$RS0/candor/bin/release.sh" 0.32 0.32.2 2>&1; }
+# NAMED $rs0out/$rs0rc, NOT $out/$rc: this file uses those two as ambient scratch variables across
+# sections (section 2's Cargo.lock row reads a `$out` captured back in section 1), and this row sits
+# between them. The first version of this fix used `out`/`rc` here and clobbered section 1's capture,
+# turning section 2's real assertion red for a reason that had nothing to do with either check — the
+# exact "a fix that reddens ordinary runs" shape this project's own review process exists to catch.
+rs0out="$(rs0_run)"
+printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+  && ok "CONTROL: with every repo present and clean, step 0 passes" \
+  || { bad "CONTROL setup is broken — step 0 does not pass on an all-clean fixture, so the row below proves nothing"; printf '%s\n' "$rs0out" | tail -6; }
+rm -rf "$RS0/candor-java"
+rs0out="$(rs0_run)"; rs0rc=$?
+[ "$rs0rc" != 0 ] \
+  && ok "a repo missing entirely makes release.sh step 0 die, not pass" \
+  || bad "release.sh exited 0 with candor-java's directory deleted — THE NINTH FALSE GREEN IS BACK"
+printf '%s' "$rs0out" | grep -q "candor-java is not a git repo at" \
+  && ok "…and names the repo and says why, rather than dying on an unrelated later step" \
+  || bad "step 0 did not name the missing repo — '$(printf '%s' "$rs0out" | grep -m1 '✘')'"
+printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+  && bad "release.sh still printed \"all mains clean + pushed\" with a repo missing — the false claim survives" \
+  || ok "…and does not also claim \"all mains clean + pushed\""
+rm -rf "$RS0"
+
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
 # so an un-committed second run tests the refusal, not idempotence. (It did, and reported "not idempotent".)
@@ -2513,6 +2556,47 @@ printf '%s' "$ghfail" | grep -q "gh release upload v0.32.1 .* -R tombaldwin/cand
 rm -rf "$GHF"
 
 rm -rf "$CS"
+
+say "10. release-rehearsal.sh arm [1] — a repo that is not a git repo must not read as clean, nor drop out of the count"
+# THE NINTH FALSE GREEN, other half. Unlike release.sh (fixed above), this arm ALREADY checked
+# `[ -d "$d/.git" ]` before touching the repo — but on a miss it just printed "⊘ … not a git repo" and
+# `continue`d, never calling `problem()` and never counting toward `tree_bad`. So the summary line
+# ("all $tree_n repo(s) clean and pushed") still fired, counting a repo the arm never actually examined
+# as evidence it was fine. Detection worked; the surrounding aggregation discarded it — the same shape as
+# every other false green this family has found in its release machinery.
+RH="$(mktemp -d)"
+mkdir -p "$RH/bin"
+cp "$UMBRELLA/bin/release-rehearsal.sh" "$UMBRELLA/bin/_release_set.sh" "$RH/bin/"
+chmod +x "$RH/bin/release-rehearsal.sh"
+# Stub the three slow arms so this row tests ONLY the tree-state arm, in well under a second.
+for s in verify-local.sh verify-umbrella.sh release-preflight.sh; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$RH/bin/$s"; chmod +x "$RH/bin/$s"
+done
+for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+  d="$RH/$r"; mkdir -p "$d"
+  ( cd "$d" && git init -q && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m init )
+  git init -q --bare "$RH/remotes-$r.git"
+  ( cd "$d" && git remote add origin "$RH/remotes-$r.git" && git push -q -u origin HEAD )
+done
+rh_run() { CANDOR_ROOT="$RH" bash "$RH/bin/release-rehearsal.sh" 0.32 0.32.2 2>&1; }
+# NAMED $rhout/$rhrc, not the ambient $out/$rc this file reuses across sections — see the identical note
+# on section 1d above, which is where reusing those names actually broke an unrelated later row.
+rhout="$(rh_run)"; rhrc=$?
+[ "$rhrc" = 0 ] && printf '%s' "$rhout" | grep -q "no problems found in 4 arm(s)" \
+  && ok "CONTROL: with every repo present, clean and pushed, the rehearsal is green" \
+  || { bad "CONTROL setup is broken — the all-clean fixture is not green, so the row below proves nothing"; printf '%s\n' "$rhout" | tail -15; }
+rm -rf "$RH/candor-java"
+rhout="$(rh_run)"; rhrc=$?
+[ "$rhrc" != 0 ] \
+  && ok "a repo missing entirely makes the rehearsal exit non-zero, not \"no problems found\"" \
+  || bad "release-rehearsal exited 0 with candor-java's directory deleted — THE NINTH FALSE GREEN IS BACK"
+printf '%s' "$rhout" | grep -q "all 7 repo(s) clean and pushed" \
+  && bad "the summary still claims \"all 7 repo(s) clean and pushed\" with one of the seven missing" \
+  || ok "…and does not also claim all 7 repos were clean and pushed"
+printf '%s' "$rhout" | grep -q '\[1\] candor-java: not a git repo at' \
+  && ok "…and the missing repo is named as a PROBLEM in the summary, not just an informational line" \
+  || bad "the missing repo did not reach the problem list — '$(printf '%s' "$rhout" | grep -m1 'candor-java')'"
+rm -rf "$RH"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

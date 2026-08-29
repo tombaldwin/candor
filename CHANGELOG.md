@@ -8,6 +8,52 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — the ninth false green: a repo that was never cloned read as "clean and pushed" (unreleased)
+
+- **`release-rehearsal.sh` and `_release_notes.sh` had never been attacked as a pair before today.**
+  `_release_notes.sh` held up: near-miss poisons (a `## [0.32.10]` section sitting above the real
+  `## [0.32.1]` one, differing only in the version-number VALUE) still selected the right section, and its
+  existing REJECT/ACCEPT battery in `release-test.sh` already covers every refusal path by name. The find
+  was in the OTHER file, and in the real script it rehearses.
+- **The defect.** `git -C <missing-dir> status --porcelain` writes its `fatal:` error to stderr and prints
+  NOTHING on stdout — byte-for-byte the same stdout a genuinely clean tree produces. `release.sh` step 0's
+  `[ -z "$(git -C "$ROOT/$r" status --porcelain)" ]` cannot tell those two apart, and it had **no existence
+  check in front of it at all**. **MEASURED** against the real script: with `candor-java`'s directory
+  deleted outright (the ordinary shape of a wrong `CANDOR_ROOT`, or a fresh machine mid-bootstrap —
+  [[candor-anya-second-machine]] already cost four wrong assumptions the same way), it printed `✔ all mains
+  clean + pushed` and walked straight into step 1. `release-rehearsal.sh`'s mirror of this check (its own
+  header calls it "release.sh step 0, without the die") was closer but not clean either: it already tested
+  `[ -d "$d/.git" ]` before touching the repo, but on a miss it only printed an informational `⊘` line and
+  `continue`d — never calling its own `problem()`, never counting toward `tree_bad` — so the summary still
+  read `all 7 repo(s) clean and pushed`, counting the one repo it had just admitted it could not examine as
+  evidence that it was fine. Detection worked in both cases; the aggregation around it is what discarded
+  the finding, the same shape as every other false green this family has found in its release machinery.
+- **Fix.** `release.sh` step 0 now checks `[ -d "$ROOT/$r/.git" ]` before the status/rev-list checks and
+  `die`s by name if it is missing. `release-rehearsal.sh`'s arm [1] now treats that same miss as a
+  `problem()` (a `✘` row, counted in `tree_bad`) instead of an informational skip, so the summary can no
+  longer claim a repo it never examined was clean.
+- **Controls, falsified against the pre-fix scripts.** A clean, fully-present fixture is byte-for-byte
+  identical before and after in both scripts. With one repo's directory deleted: the pre-fix `release.sh`
+  printed the false `✔ all mains clean + pushed` and continued (reproduced on demand); the pre-fix
+  `release-rehearsal.sh` printed `no problems found in 4 arm(s)` and exited 0 (reproduced on demand); both
+  post-fix runs name the repo, refuse/count it as a problem, and exit non-zero. Two new sections in
+  `release-test.sh` (section 1d for `release.sh`, section 10 for `release-rehearsal.sh`), each with its own
+  CONTROL row asserting the all-clean fixture stays green — the first draft of these rows reused this
+  file's own ambient `$out`/`$rc` scratch variables and silently clobbered a capture an unrelated,
+  pre-existing row (the Cargo.lock arm in section 2) reads much later in the file; caught by re-running the
+  suite on a quiet machine after ruling out contention from a concurrent agent's own release-test.sh run,
+  not by inspection. Renamed to `$rs0out`/`$rs0rc`/`$rhout`/`$rhrc`. 268 → 276 assertions, all green;
+  `ci-watch.sh --selftest`, `verify-local.sh` and `shellcheck -S warning` all pass.
+- **Also checked and left alone.** `release-stage.sh` and `spec-bump.sh` carry the same
+  `[ -z "$(git … status --porcelain)" ]` idiom, but each already guards it with a bare `[ -d "$ROOT/$r" ]`
+  skip — a directory that plainly does not exist is not treated as clean there, only as "nothing to check
+  here," and both scripts die loudly further down the first time they try to read a file inside it. Lower
+  severity, out of today's two-file mandate, not touched.
+- **Not checked.** Whether the identical shape reaches `release-preflight.sh`'s own `[ -d "$ROOT/$r/.git" ]
+  || continue` guards ([10]'s CI-status loop, [11]'s conformance-reuse stamp) — those guard a DIFFERENT
+  question (may this check be skipped for a repo outside the cut) and were not re-derived here; a proper
+  sweep of that file was out of scope for this pass.
+
 ## 2026-08-29 — `release-verify.sh`'s false green: a stale ts/rust/swift front-door pin read as "live everywhere"
 
 - **The release path's own false green, found the same way as `ci-watch.sh`'s: attack the last line of

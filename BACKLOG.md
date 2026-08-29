@@ -6610,3 +6610,47 @@ time, on a surface never previously touched. The gate's own header set the thres
 finding a same-shape gap." **Today clears it. Build the generator: walk each checker's source, classify
 each comparison by shape, emit the matching near-miss family mechanically.** Hand-authored poison encodes
 only the wrongness its author imagined, and four rounds have now measured that ceiling.
+
+## THIRD instrument-that-cannot-fail: java's weekly soundness meta-gate went a quarter blind, silently
+
+Found 2026-08-29 alongside the record cardinal sin. FIXED at candor-java `3a84522`.
+
+`soundness/mutation_probe.sh` is the WEEKLY meta-check that the soundness battery still catches known bug
+classes — the instrument that verifies the instrument. A prior refactor (P7 decomposition) moved the
+exact-text anchors for 4 of its 14 curated mutations (`exec_pb`, `cha_edges`, `cb_unknown`, `deferred`).
+`apply_patch` CORRECTLY reported `PATCH-ERROR` — **and the run loop's `continue` never added that to
+`blindspots`, so the exit code stayed 0.** The weekly CI gate read green while a quarter of the battery
+went unverified, with nothing saying so.
+
+Confirmed the underlying guards were never actually broken — this was a harness gap, not a live
+regression. Re-anchored all four (`exec_pb` needed retargeting: its rule had itself been upgraded from an
+allowlist to a denylist, so the old text no longer existed anywhere), and `PATCH-ERROR`/`BUILD-FAIL` now
+count toward `blindspots`.
+
+**This is the third instrument today whose failure mode was GREEN**, after `mutation-gate.sh`'s own
+blindness to standalone checkers (13 of 13 survived an unconditional pass) and `ci-watch.sh`'s five
+false-green routes. The shared shape: **a component correctly detected a problem, and the surrounding
+loop discarded the detection.** In every case the detector worked and the aggregator lost it.
+
+**Ask of every gate: when one of its checks cannot run, does that reach the exit code?** Not "does it
+detect" — detection was never the failure. The four `PATCH-ERROR` lines were printed to stdout the whole
+time.
+
+## Java records: a component's effectful `equals`/`hashCode`/`toString` ran unattributed (CARDINAL SIN)
+
+FIXED at candor-java `3a84522`. A record's generated contract methods are a single `invokedynamic` into
+`java.lang.runtime.ObjectMethods` (JEP 384); the per-component work happens inside the JDK bootstrap, never
+in bytecode the record owns. `handleInvokeDynamic` correctly skipped the bootstrap's `H_GETFIELD` handles
+(feeding one to `methodId` would crash the scan) **but never reentered the component's own contract method
+either.** A record component whose declared type overrides `equals`/`hashCode`/`toString` effectfully ran
+that override silent-pure, all the way up to a bare `main()`.
+
+**Over-charge control, the strongest form used today:** candor-java's own output plus **388 real
+third-party jars** from local Maven/Gradle caches — byte-identical pre/post except ONE
+(`error_prone_core-2.50.0.jar`), where all 113 newly-surfaced record-contract methods land on
+`inferred: []` with an honest `invisible: ["com.google.common.collect"]` disclosure. **Never a fabricated
+effect.** (A second apparent diff was reproduced away as I/O contention from the 388-jar batch — the real
+one was independently reproduced twice.)
+
+**Environment gaps, stated:** `soundness/run_kotlin.sh` (kotlinc absent) and `kappa_libs_probe.py` (needs
+JDK 21, only 17 present) were NOT run — pre-existing, not introduced.

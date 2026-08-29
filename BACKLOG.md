@@ -6088,3 +6088,39 @@ behind a well-reasoned paragraph.
 Companion finding the same day: `ci-watch.sh`'s `git rev-parse` residual, also filed as "unmeasured", also
 turned out to be a live fourth false-green route ([CLOSED 2026-08-29], `candor 5833e4a`). **Two residuals
 filed with good arguments on one day; both were real defects when measured.**
+
+## OPEN DESIGN QUESTION — per-cfg-branch function identity (cross-engine)
+
+Surfaced 2026-08-29 by candor-rust `2e0521a`, **ruled ACCEPT-and-document there rather than patched**,
+because the correct fix is a cross-engine identity change, not a one-file edit.
+
+**The defect, reproduced:** two same-named functions under `#[cfg(target_os="macos")]` /
+`#[cfg(not(...))]` — one a no-op stub, one calling `core_foundation` — produce TWO report entries both
+carrying `invisible: ["core_foundation"]`. One is **falsely attributed to the pure stub**. `blind_direct`
+and `calls` are keyed by qualified function name, which both branches share. 25 more instances exist in
+`rust-lang/cargo`'s own tree.
+
+**Why the obvious fix is wrong, and how we know.** The first attempt deduped the report to one entry per
+name. An existing pinned test —
+`a_qualified_name_carried_by_two_cfg_gated_units_yields_one_violation_not_two` — forbids silently dropping
+a report entry, and caught it. **A control written for an earlier rung rejected a fix written today**,
+which is the whole argument for pinning behaviour rather than trusting review.
+
+**What a correct fix needs:** the DIRECT-write maps disambiguated per declaration while call edges stay
+name-keyed — a caller genuinely cannot know which cfg branch of a callee will be built. That changes the
+`"fn"` identity every consumer keys on: candor-query, gate baselines, and the other three engines.
+
+**The cross-engine question, which is the real item:** does the same shape exist elsewhere?
+- **java** — multi-release jars (`META-INF/versions/N/`), same FQN, different bytecode per release
+- **ts** — conditional exports / platform-forked modules resolving one specifier to several implementations
+- **swift** — `#if os()` around same-named declarations (candor-swift already handles `#if` shadowing for
+  DISPATCH; whether ATTRIBUTION has the same collision is unmeasured)
+
+**Ask of each engine: can two distinct declarations share one report identity, and if so does an effect
+from one get attributed to the other?** That is the question, not "does rust have cfg". Answer it four-way
+before designing, because a per-declaration identity that only one engine adopts breaks the report as an
+interchange format.
+
+**Severity note:** this is an OVER-report attributed to the wrong function — not a cardinal sin. But it
+degrades trust in exactly the disclosure users are asked to read: someone who sees `invisible:
+[core_foundation]` on a no-op stub will discount the next entry too.

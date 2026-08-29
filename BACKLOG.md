@@ -6391,8 +6391,8 @@ Held constant per engine: same tree, same binary, same effect — only the polic
 | engine | status |
 |---|---|
 | swift | FIXED `7378f4f` (needed a CHA-union fix; its peek DOES re-analyse in-scope callers) |
-| rust | **OPEN** — `scan_one` peeks the excluded set ONLY; no `--peek-context` analogue |
-| java | **OPEN** — two fixtures: source-peek AND multi-release jar (`META-INF/versions/17/`) |
+| rust | **FIXED `27f4beb`** — no re-analysis: cross-references each in-scope fn's dispatch SITES (a syntactic reachability fact, never an effect) against the peek's `type_to_traits`, then walks `rev_calls` for transitive ancestors. Widened past its trigger to `charge_stringify_bound`; 2 further CHA sites filed as an argued residual. |
+| java | **FIXED `a034371`** — both fixtures. Re-runs the SAME `runScan` over a union dir rather than hand-rolling a second dispatch resolver, which would have to reimplement bounded-CHA/sealed narrowing and would drift. Also fixed the ancillary classpath bug: `peeked:false`→`true` on a nested `build/classes` layout that likely made the source-peek arm INERT on ordinary repo-root scans. |
 | ts | **OPEN** — nominal AND pure-structural dispatch; the peek's tsconfig lists only excluded roots |
 
 **Why swift is the odd one out:** its peek already unioned in-scope files, so its bug needed dispatch
@@ -6400,8 +6400,28 @@ resolution to widen. The other three never re-examine the caller at all — they
 **Dispatch mechanism turned out irrelevant in ts** (structural and nominal fail identically), which is the
 tell: the failure is not in resolution, it is that the scope match is asked of the wrong entity.
 
-**The fix shape (smaller than swift's, per engine):** a peek finding must be scope-matched against — or
-attributed to — the CALLER PATH that reaches it, not only the excluded declaration's own name.
+**The fix shape:** a peek finding must be scope-matched against — or attributed to — the CALLER PATH that
+reaches it, not only the excluded declaration's own name.
+
+**CORRECTION to my brief, surfaced by the fixes.** I told all three engines to reuse swift's
+`dispatch-widened` class. **rust does not need it and should not have it** — its peek never unions, so the
+excluded declaration is always the sole named source and attribution is never ambiguous. swift and java DO
+need it, because their peeks union and a new effect can have no uniquely identifiable source.
+
+**So the clause must specify the PROPERTY, and make the fallback conditional:**
+> A peek finding MUST be scope-matched against, or attributed to, any in-scope caller whose own analysis
+> over the union of context and excluded material reaches the effect — not only the excluded declaration's
+> own qualified name. **Where the responsible declaration cannot be named with confidence**, the finding
+> MUST be disclosed against the in-scope call site under a `dispatch-widened` class rather than dropped.
+
+Writing it the other way round — mandating the class four-way — would force two engines to implement
+vocabulary they have no use for, which is how a report format acquires dead keys. **Three engines, three
+genuinely different mechanisms, one property.**
+
+**A pattern across all three fixes worth keeping:** each stopped reimplementing an authority and reused
+one. rust reuses facts the primary scan already computed; java re-runs its OWN `runScan` over a union
+rather than writing a second CHA; swift diffs against the primary's finalized effect sets. The fixes that
+failed today all hand-rolled a second implementation of something that already existed.
 
 **Owed alongside the three engine fixes:** a SPEC clause and a conformance PART. This is interchange
 behaviour, it is four-way, and `[[candor-034]]`'s own lesson is ROW BEFORE PORT. Note the fix will

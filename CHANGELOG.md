@@ -8,6 +8,50 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-29 — `release-test.sh`'s own `gh` stubs regressed behind the eighth-false-green fix
+
+**`release-scripts` CI went red at `ac4a71b`/`a1ab7bf`** on `release-test (fixture tree)`, reproducing
+exactly the false clear `[10]`'s NONE branch exists to catch: `✘ [10] NONE branch: the real gate's
+failure did not surface`. Bisected to a WORKTREE at `97f7ef3` (the commit immediately before the same
+day's "eighth false green" fix) — 258/258 green, no trace of the failure — proving it is not
+pre-existing and narrowing it to exactly one commit.
+
+**Root cause: the test's mocks, not `release-preflight.sh` or `_ci_verdict.py`.** The eighth-false-green
+fix (`3e0d1e2`) changed `[10]`'s NONE branch from one unfiltered `gh run list --limit 30` to
+`ci_all_workflows_latest()` — `gh workflow list` followed by a per-workflow `gh run list --workflow <id>
+--limit 1` — so a chatty sibling workflow cannot age a quiet one's real failure off a shared page. That
+commit updated `ci-watch.sh`'s own selftest for the analogous `fetch_earlier_commit_rows()` fix, but
+`release-test.sh`'s two fake `gh` binaries that exercise `release-preflight.sh`'s NONE branch (the `[10]`
+dedupe fixture and the CUT SET section's `GHGREEN` fixture, whose `headSha:"none"` always takes the
+NONE branch) still only answered the old `run list` shape. Against the real GitHub CLI this is a no-op —
+`gh workflow list --json id -a --limit 100` and `gh run list --workflow <id>` both work exactly as
+written, confirmed live against `tombaldwin/candor` — but against these two stubs, `gh workflow list`
+returned nothing, `ci_all_workflows_latest()` correctly reported "could not enumerate" (fail LOUD, not a
+real false clear), and that unrelated enumeration failure pre-empted the dedupe assertion before it ever
+ran, masking rather than exercising the very regression class the fixture was written to guard. Same root
+cause produced two more failures the initial report did not separately name: the CUT SET section's
+java-only-patch preflight run failed the same way for the same reason.
+
+**The "missing `candor-rust/…`/`candor-ts/…`/`candor-java/…`" lines reported as a second, "pre-existing"
+failure are not a separate check** — they are the isolated NONE-branch fixture's normal, by-design
+`CANDOR_ROOT` (it never populates sibling repos; it only exists to exercise `[10]`) dumped in full by the
+one failing assertion's error message. They disappear entirely once that assertion passes; a prior
+"pre-existing, confirmed via A/B against `e2fff48`" label was compared against the wrong side of the
+introducing commit (`e2fff48` postdates `3e0d1e2`, so it already carried the bug) and is corrected here —
+verified by the `97f7ef3` worktree bisection above, where neither the false clear nor the sibling-repo
+dump appears at all.
+
+**Fix:** both stubs now answer `gh workflow list` and `gh run list --workflow <id>` from the same
+`GH_RUNS`/`GHGREEN` fixture data already in the test (workflow ids assigned by distinct `workflowName`,
+consistently between the two calls), instead of only the retired single-page shape. No assertion was
+loosened, narrowed, or reworded — every row in `[10]`'s section and the CUT SET section passes unchanged;
+they simply now run against a mock that reflects what `release-preflight.sh` actually calls.
+`release-test.sh`: 258/258 (was 254 passed, 4 failed). Controls: `ci-watch.sh --selftest`,
+`wf-expected.py --selftest`, `candor.test.sh` and `verify-local.sh` all still pass, and `git diff` for
+this fix touches only `bin/release-test.sh` — `ci-watch.sh`, `_ci_verdict.py`, `wf-expected.py` and
+`release-preflight.sh` are byte-identical to before it, so their behaviour against a real repo (including
+an ordinary all-green one) is unchanged.
+
 ## 2026-08-29 — the ⟨0.32⟩ refusal-as-pass sweep, finished: `excluded`/`outOfScope`, five more consumers
 
 - **BACKLOG.md's "the engines fail CLOSED, and every consumer converts that refusal into a PASS" class,

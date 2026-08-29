@@ -6800,7 +6800,14 @@ items — all 21 reverts applied via plain `git apply -R` and built first try.
 routinely hit content drift and dangling-symbol failures; this one hit none, across three repos and seven
 weeks of churn. That is the whole difference.
 
-**THE GAP — ts `7a12017` item 2, the confinement-root default.** Reverting it leaves the suite GREEN: the
+**THE GAP — ts `7a12017` item 2 — REAL, but the severity was overstated and is now corrected.**
+The sweep reported "reverting it leaves the suite GREEN". **False at HEAD**: a test added by an unrelated
+commit 19 days later (`4faac08`) shares the exact `.candor/`-nested shape and DOES fail on revert. So the
+SUITE was never blind — but the **specific row written to document the fix** was, because its report prefix
+sits in a fixture workspace whose checked-in `.candor/config` resolves to the same directory as the old
+default, making the row true under both roots. **Rule 12 applied to a same-day finding: the sweep's claim
+was a snapshot and had already drifted.** Fixed at candor-ts `59ed357` with a discriminating fixture (report
+inside `.candor/`, no config, policy at the repo root) — RED on revert, GREEN at HEAD. Original text: the
 fixture builds the report prefix directly in the workspace root, **so the old (buggy) and new (fixed) roots
 resolve identically** and the test never separates the two candidates the fix exists to distinguish.
 Same shape as swift's `testSiblingCallIntoAHOFStillGetsJudged`. **Severity: it fails CLOSED** — the bug
@@ -6813,10 +6820,11 @@ sin. Still a real hole in R21's own coverage. Fix dispatched.
    words: *"JUnit-only reasoning would have wrongly filed this as unprotected."* **A partial suite cannot
    answer the revert question** — run everything the repo's CI runs, or the measurement is wrong in the
    direction that manufactures findings.
-2. **A pre-existing failure in candor-ts's `test.mjs` (`--agents prints the version header…`, present on an
-   unmodified checkout) aborts `npm test`'s `&&` chain**, so `test-lsp.mjs`, `test-watch.mjs` and `fuzz.mjs`
-   never ran for any of the three ts commits swept. **Three whole suites masked from the standard command**
-   — the detector-works-aggregator-discards shape again, this time in a package script. Under investigation.
+2. ~~A pre-existing `test.mjs` failure aborts `npm test`'s `&&` chain, masking three suites.~~
+   **INVESTIGATED AND WRONG.** The `--agents` failure does NOT reproduce at HEAD (`d5f6c0c`) or its two
+   most recent ancestors; a full `npm test` runs end-to-end at all three. Environmental in the sweep
+   agent's own setup, not a live masking problem. **I filed this as a concern before it was checked** —
+   recording the correction rather than deleting it.
 
 **Second-order finding, swift R41/R43:** without the fix, a conformer-less super-protocol chain
 **FABRICATES PURE** rather than disclosing `Unknown` — the pre-fix code was worse than merely silent.

@@ -293,6 +293,58 @@ label_for() {  # $1=id $2=name $3=dup_names_of() output
   fi
 }
 
+# THE EIGHTH FALSE GREEN (2026-08-29, adversarial review): the earlier-commit safety net used to be one
+# `gh run list --branch main --limit 40` call SHARED by every workflow this repo has. A chatty sibling (a
+# 10-minute cron, a matrix job that reruns often) can fill all 40 slots by itself, and a QUIET workflow's
+# real, permanent `completed/failure` is then not merely listed-and-ignored — it is never RETURNED at all.
+# Its absence from that page read as "nothing to report", the identical shape to "this workflow has always
+# been green", and the dedup-by-id fix (the fifth false green, above) cannot help: it only decides which of
+# several rows returned TOGETHER wins, and here the losing row was never in the response to dedupe at all.
+#
+# Reproduced live: a stub `gh` answering `--branch main --limit 40` with 40 rows of a noisy `cron-b.yml`
+# and zero rows of `ci-a.yml`, against a repo where `ci-a.yml`'s newest run is a real permanent failure —
+# `ci-watch: OK`, exit 0, `ci-a.yml` never mentioned anywhere in the output. The same 40-row cap with
+# `ci-a.yml`'s failure left ON the page (not crowded out) is caught correctly, so the mechanism itself is
+# sound and this was specifically about the page filling up.
+#
+# THE FIX: one call PER WORKFLOW, `--limit 1` each, using the ids `wf_path_map()` already fetched for this
+# repo (WF_PATH_MAP, set by the caller before this runs). A workflow's own newest run cannot be aged off
+# ITS OWN one-row page by another workflow's volume — there is no shared limit left for a noisy sibling to
+# fill. This is exactly `median_secs()`'s own approach below (`--workflow $wfid`, scoped to one workflow),
+# extended from "that workflow's run history" to "that workflow's newest run on main". The cost is one
+# `gh` call per workflow file instead of one call per repo; every repo here has a handful of workflows,
+# nowhere near enough for that to matter next to the false-clear it closes.
+#
+# Sets `latest` and `dupe_latest` in the SAME shape the caller already consumes (US-separated
+# id/name/status/conclusion/headSha rows) — the downstream loop that reads them is unchanged. A `gh`
+# failure on any ONE workflow's fetch is a named, red line (never folded into "no run", the same rule
+# every other `gh_call` site in this file already follows) but does not stop the other workflows from
+# being checked — one flaky call should not blind the check to every workflow it did not touch.
+#
+# DEFINED BEFORE --selftest BELOW, same convention as resolve_required()/resolve_sha(): the selftest
+# exercises this exact function against a stubbed `gh`, not a copy of its logic.
+fetch_earlier_commit_rows() {  # $1 = repo name -> sets `latest`, `dupe_latest`; returns 0 unless a `gh` call failed
+  local rname="$1" id name row combined="" failed=0
+  while IFS="$US" read -r id name; do
+    [ -z "$id" ] && continue
+    if gh_call run list -R "$OWNER/$rname" --workflow "$id" --branch main --limit 1 \
+               --json workflowDatabaseId,workflowName,status,conclusion,headSha; then
+      row="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" \
+             '.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .headSha')"
+      [ -n "$row" ] && combined="$combined
+$row"
+    else
+      printf "  %-14s %-26s ✘ gh FAILED (run list --workflow %s, the earlier-commit safety net) — %s\n" \
+             "$rname" "$name" "$id" "${GH_ERR:-no stderr captured}"
+      rc=1
+      failed=1
+    fi
+  done <<< "$WF_PATH_MAP"
+  latest="$(printf '%s\n' "$combined" | grep -v '^$')"
+  dupe_latest="$(dup_names_of "$latest")"
+  return "$failed"
+}
+
 if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   # (elapsed, median, factor, expect-stalled)
@@ -419,6 +471,67 @@ if [ "$SELFTEST" -eq 1 ]; then
     echo "  ✔ wf_path_map surfaces a \`gh workflow list\` failure rather than silently answering an empty map"
   fi
   unset -f gh
+
+  # THE EIGHTH FALSE GREEN: fetch_earlier_commit_rows() itself, over a stubbed `gh` shaped exactly like the
+  # live reproduction — a chatty cron-b.yml (999) and a quiet ci-a.yml (111) whose newest run is a real
+  # permanent failure. The stub REFUSES the old vulnerable call shape (`--branch main --limit 40`) outright,
+  # so this also proves the fix no longer depends on that shared page at all, not merely that it happens to
+  # get the right answer against it.
+  echo
+  WF_PATH_MAP="111${US}ci-a.yml
+999${US}cron-b.yml"
+  rc=0
+  gh() {
+    case "$*" in
+      *"--workflow 111"*)
+        echo '[{"workflowDatabaseId":111,"workflowName":"ci-a","status":"completed","conclusion":"failure","headSha":"deadbeef"}]' ;;
+      *"--workflow 999"*)
+        echo '[{"workflowDatabaseId":999,"workflowName":"cron-b","status":"completed","conclusion":"success","headSha":"cafe0001"}]' ;;
+      *"--branch main --limit"*)
+        echo "stub gh: THE OLD SHARED-PAGE CALL SHAPE — the fix must not make this call at all" >&2
+        return 8 ;;
+      *) echo "unexpected stub gh call: $*" >&2; return 9 ;;
+    esac
+  }
+  fetch_earlier_commit_rows "fake-repo"
+  n_rows=$(printf '%s\n' "$latest" | grep -c .)
+  has_ci_a_failure=$(printf '%s\n' "$latest" | awk -F"$US" '$1==111 && $4=="failure"' | grep -c .)
+  if [ "$rc" -ne 0 ] || [ "$n_rows" -ne 2 ] || [ "$has_ci_a_failure" -ne 1 ]; then
+    echo "  ✘ fetch_earlier_commit_rows dropped the quiet workflow's failure (rc=$rc rows=$n_rows ci-a-failure-present=$has_ci_a_failure) — got:"
+    printf '%s\n' "$latest" | sed 's/^/      /'
+    fails=$((fails+1))
+  else
+    echo "  ✔ fetch_earlier_commit_rows queries each workflow on its OWN page — a chatty cron-b.yml cannot"
+    echo "    age ci-a.yml's real permanent failure off a page it no longer shares with it"
+  fi
+  unset -f gh
+
+  # ONE WORKFLOW'S FLAKY gh CALL MUST NOT BLIND THE CHECK TO THE OTHERS: cron-b's fetch fails outright;
+  # ci-a's must still be attempted and still report its failure. rc must go red for the flaky call either
+  # way — a `gh` failure is never silently absorbed anywhere else in this file, and this call site is no
+  # exception.
+  rc=0
+  gh() {
+    case "$*" in
+      *"--workflow 111"*)
+        echo '[{"workflowDatabaseId":111,"workflowName":"ci-a","status":"completed","conclusion":"failure","headSha":"deadbeef"}]' ;;
+      *"--workflow 999"*)
+        echo "stub gh failure" >&2; return 6 ;;
+      *) echo "unexpected stub gh call: $*" >&2; return 9 ;;
+    esac
+  }
+  fetch_earlier_commit_rows "fake-repo"
+  has_ci_a_failure=$(printf '%s\n' "$latest" | awk -F"$US" '$1==111 && $4=="failure"' | grep -c .)
+  if [ "$rc" -ne 1 ] || [ "$has_ci_a_failure" -ne 1 ]; then
+    echo "  ✘ a failed fetch for ONE workflow (cron-b) either did not turn rc red (rc=$rc) or blinded the"
+    echo "    check to ci-a's own successfully-fetched failure (present=$has_ci_a_failure)"
+    fails=$((fails+1))
+  else
+    echo "  ✔ a flaky gh call for one workflow is a red line on its own, and does not blind the check to"
+    echo "    the other workflow's successfully-fetched row"
+  fi
+  unset -f gh
+  rc=0
 
   # THE THIRD FALSE GREEN: resolve_required() over a REAL throwaway repo checked out DETACHED — the exact
   # shape reported live (a release worktree, a rebase in progress), not a synthetic stand-in for it. Before
@@ -721,16 +834,14 @@ $(path_for_id "$wfid")"
   #
   # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
   # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
-  if gh_call run list -R "$OWNER/$repo" --branch main --limit 40 \
-             --json workflowDatabaseId,workflowName,status,conclusion,headSha,createdAt; then
-    latest="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" '.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .headSha')"
-    dupe_latest="$(dup_names_of "$latest")"
+  #
+  # PER WORKFLOW, NOT ONE SHARED PAGE — see fetch_earlier_commit_rows()'s own header above for the eighth
+  # false green this replaces (a noisy sibling filling a `--limit 40` page and aging a quiet workflow's
+  # real failure off it entirely). Skipped when WF_PATH_FAILED: with no workflow ids for this repo there
+  # is nothing to iterate per-workflow over, and that failure already forced a red line and rc=1 above.
+  if [ "$WF_PATH_FAILED" -eq 0 ]; then
+    fetch_earlier_commit_rows "$repo"
   else
-    # Cannot tell "no earlier run exists" from "the call failed" without checking — this IS finding B3
-    # (adversarial re-review, 2026-08-28): a stub gh that failed only this call still printed OK, exit 0.
-    printf "  %-14s %-26s ✘ gh FAILED (run list --branch main, the earlier-commit safety net) — %s\n" \
-           "$repo" "(gh)" "${GH_ERR:-no stderr captured}"
-    rc=1
     latest=""
     dupe_latest=""
   fi

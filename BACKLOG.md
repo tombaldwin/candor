@@ -6371,3 +6371,47 @@ rule matters most.
 Related: the ⟨0.29⟩ peek's cross-file blind spot ([[candor-029-file-set]]) and the cross-engine cfg-branch
 identity question filed 2026-08-29 — three open items now sit on peek/identity semantics, and they should
 probably be designed together rather than as three separate rungs.
+
+## FOUR-WAY CARDINAL SIN — a peek finding is scope-matched against the WRONG ENTITY
+
+Found 2026-08-29 by asking of rust/ts/java the question candor-swift's `7378f4f` answered for itself.
+**All three carry the same false all-clear, and for a SIMPLER reason than swift's.** EXECUTED fixtures in
+all three, each with a sound unscoped control.
+
+**The mechanism.** A peek re-analyses excluded files and reports findings under the EXCLUDED
+DECLARATION's own qualified name. The scope matcher is then run against THAT name
+(java: `Policy.scopeMatches(fn, r.scope())` where `fn` is always the peeked declaration). So a policy rule
+scoped to the IN-SCOPE CALLER can never match, and the effect is never disclosed:
+
+    scoped   `deny Net Runner`  ->  exit 0, "policy ✓", outOfScope: []
+    unscoped `deny Net`         ->  exit 2, names EvilDoer::work directly
+
+Held constant per engine: same tree, same binary, same effect — only the policy's SCOPE STRING varied.
+
+| engine | status |
+|---|---|
+| swift | FIXED `7378f4f` (needed a CHA-union fix; its peek DOES re-analyse in-scope callers) |
+| rust | **OPEN** — `scan_one` peeks the excluded set ONLY; no `--peek-context` analogue |
+| java | **OPEN** — two fixtures: source-peek AND multi-release jar (`META-INF/versions/17/`) |
+| ts | **OPEN** — nominal AND pure-structural dispatch; the peek's tsconfig lists only excluded roots |
+
+**Why swift is the odd one out:** its peek already unioned in-scope files, so its bug needed dispatch
+resolution to widen. The other three never re-examine the caller at all — they fail one step earlier.
+**Dispatch mechanism turned out irrelevant in ts** (structural and nominal fail identically), which is the
+tell: the failure is not in resolution, it is that the scope match is asked of the wrong entity.
+
+**The fix shape (smaller than swift's, per engine):** a peek finding must be scope-matched against — or
+attributed to — the CALLER PATH that reaches it, not only the excluded declaration's own name.
+
+**Owed alongside the three engine fixes:** a SPEC clause and a conformance PART. This is interchange
+behaviour, it is four-way, and `[[candor-034]]`'s own lesson is ROW BEFORE PORT. Note the fix will
+interact with `dispatch-widened` (candor-swift `7378f4f`, also unspec'd) — **design the two together.**
+
+**Ancillary, lower severity, java only, reported not fixed:** the source-peek's compile classpath is the
+literal scan-root path rather than resolved per-package, so a repo-root scan with nested `build/classes`
+makes the peek's own `javac` fail to resolve symbols. That failure is CLOSED (`peeked:false`, INCOMPLETE),
+not silent — but it likely renders the source-peek arm inert on many real repo-root scans.
+
+**Open, explicitly unconfirmed:** ts conditional exports — a genuine resolution divergence exists in the
+peek's synthetic tsconfig, but no case was found where it loses an effect SILENTLY, distinct from the
+scope bug above. Flagged as a question, not a finding.

@@ -6044,3 +6044,47 @@ already records the rule I broke.
 same shape and are already fail-closed on empty/failed lookups — `release-preflight`'s `[10]` routes an
 `ERR` verdict into its own `could not read CI status — treat as NOT verified` arm. **B3 was specific to
 ci-watch, not family-wide.**
+
+## The ⟨0.29⟩ peek cross-file blind spot — WAS A CARDINAL SIN, closed at candor-swift `9496d73`
+
+**Filed as a bounded residual, challenged by Tom, measured, and it was a false all-clear.** Recording the
+process failure because it is more reusable than the fix.
+
+**What it was.** The ⟨0.29⟩ peek re-scanned excluded files in ISOLATION. When an excluded file's effect
+reached through a call into a file that stayed IN SCOPE, the child could not resolve the callee and the
+function was **dropped from `functions` entirely — not even `Unknown`**, indistinguishable from a
+provably-pure function. All five `PEEKED_CLASSES`. Latent since ⟨0.29⟩, so it shipped across several
+releases.
+
+**Measured on a LEGITIMATELY excluded file** (a real `test-source`, no bug in the exclusion), rule scoped
+so only the excluded caller matches:
+
+    pre-fix:  exit 0, `candor-swift: policy ✓`, `outOfScope: []`
+    child:    analyzed.count: 1, functions: []      <- the caller is ABSENT
+
+⟨0.30⟩'s INCOMPLETE machinery never fired because the finding it keys on was never produced.
+
+**Fix:** a `--peek-context` flag carries the parent's own `sourcePaths`; the child unions both lists for
+one `analyze()`, so cross-file calls resolve as an ordinary scan would. Attribution is preserved by
+REQUIRING a match against the original excluded list before reporting — a context-set match is skipped
+(already judged by the primary gate). Four controls: the defect now exits 2 naming the caller; an excluded
+file with no cross-file reach is byte-identical; a broad `deny Net` matching BOTH reports only the excluded
+caller; and 30 callers + 3050 context files resolve in under a second against a 120s deadline.
+
+### THE PROCESS FAILURE — why this nearly shipped
+
+I accepted "bounded, not fixed" on an argument about DIFFICULTY (closing it risks the timeout/attribution
+defects the ⟨0.29⟩ hardening rounds closed) and one about BLAME (it predates ⟨0.34⟩, so it is not a
+regression). **Neither bears on whether the tool currently gives a wrong answer.** Tom pushed back —
+"why are we leaving residuals? are they not critical bugs?" — and the measurement took one fixture.
+
+**The rule this reinforces: [[feedback-always-fix-fixable-silent]] — a FIXABLE silent under-report gets
+fixed, gated and shipped, never banked as a residual.** The specific drift to watch for is accepting a
+residual because its ARGUMENT is good. "It is hard" and "it predates this rung" are both arguments about
+cost and blame, and neither is evidence about correctness. **Classify FIRST — is it a false all-clear or a
+disclosure gap? — and only then discuss cost.** Filing it the other way round let a cardinal sin sit
+behind a well-reasoned paragraph.
+
+Companion finding the same day: `ci-watch.sh`'s `git rev-parse` residual, also filed as "unmeasured", also
+turned out to be a live fourth false-green route ([CLOSED 2026-08-29], `candor 5833e4a`). **Two residuals
+filed with good arguments on one day; both were real defects when measured.**

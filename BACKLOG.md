@@ -6472,3 +6472,44 @@ component that reimplemented a shared parser instead of calling it.
 **Explicitly unattacked in that repo:** `stats.py`, `digest.py`, `savings.py`, `log_gate.py`,
 `agentsmd.py`; and `build_edges`, `classify_units`, cron-unit handling, hook-matcher edging, and `--link`'s
 combined path in `scan.py` were read but not probed.
+
+## A NEW CLASS: the engines fail CLOSED, and every consumer converts that refusal into a PASS
+
+Found 2026-08-29, first time `integrations/` has ever been attacked. Three instances, one shape, FIXED at
+`candor 0d483a8`. **This is the most consequential class found in the whole campaign**, because it defeats
+every hardening rung the engines have — ⟨0.21⟩ `outOfScope`, ⟨0.24⟩ `refused`, ⟨0.28⟩, ⟨0.30⟩ `incomplete`
+all exist to make a refusal VISIBLE, and the consumer threw it away.
+
+1. **`integrations/claude-code/candor-review.sh`** — reaches an agent directly. The Stop-hook scripts
+   collapsed "engine CRASHED" and "engine ran fine but REFUSED to certify because part of the target was
+   unread" into one `rc=2`, and `stop-hook.sh` ALLOWS `rc=2` ("don't block on a misconfig"). Reproduced
+   end-to-end: a report carrying `unanalyzed`/`incomplete:true`, exit 2, no `AS-EFF` line →
+   `"candor: review couldn't run (setup, rc=2)... not blocking."` **A violation could sit in exactly the
+   part the engine admits it never read.** Fixed: the completeness keys are read and that case returns
+   `rc=1` (block), distinct from a genuine crash (still `rc=2`, proven by an over-charge control).
+2. **`integrations/github/candor-sarif`** — a REFUSED gate document (`ok:false, refused:true`, and NO
+   `violations` key at all, because ⟨0.24⟩ says an empty array there would be a false claim) and an
+   INCOMPLETE one both produced a **byte-identical, fully clean empty-results SARIF**. A reviewer reading
+   the persistent GitHub Security tab rather than the Actions log sees an all-clear. Fixed via SARIF's own
+   `runs[].invocations` "tool did not fully succeed" channel (validated against the vendored 2.1.0 schema);
+   `results` untouched, and a genuinely clean gate gets no `invocations` key.
+3. **`fingerprint/`** — an `incomplete`/`unanalyzed` report still produced a maximally confident badge,
+   measured `structure: 1` ("100% order"), with nothing noting a whole module was never read. Fixed in
+   `--json`, on stderr, and in the HTML wrapper; the deterministic SVG stays byte-identical.
+
+**THE LESSON.** Fail-closed is not a property of an engine, it is a property of a PIPELINE. Every rung that
+made a refusal expressible was verified at the engine boundary and never at the consumer. **For any new
+disclosure key, ask what each consumer does when it is present — and specifically whether "the engine
+declined to answer" is distinguishable from "the engine answered clean."** In all three of these it was not.
+
+**Owed, and it is the same question one step further:** `dispatch-widened` landed in three engines TODAY
+and no consumer has been checked against it. Also unchecked: the `excluded`/`peeked`/`outOfScope`/
+`judgedElsewhere` family (only `incomplete`/`unanalyzed`/`judgedNothing`/`refused` were tested), and
+`integrations/vscode` + `integrations/jetbrains` entirely.
+
+**Clean negatives, executed:** the Action's exit→check-failure path has no `continue-on-error` masking a
+nonzero exit; both published-artifact pins RESOLVE over the network to real correctly-sized artifacts (not
+200-with-empty-body) — the ARTIFACT, not the string, per the 0.24 lesson.
+
+**Stale entry corrected (rule 12):** the BACKLOG note citing `candor-sarif` fingerprinting on
+`fn|rule|effects` (dated 2026-08-22) was superseded by `94a3695`/`68cedf7` on 2026-08-25.

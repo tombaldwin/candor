@@ -6393,7 +6393,7 @@ Held constant per engine: same tree, same binary, same effect — only the polic
 | swift | FIXED `7378f4f` (needed a CHA-union fix; its peek DOES re-analyse in-scope callers) |
 | rust | **FIXED `27f4beb`** — no re-analysis: cross-references each in-scope fn's dispatch SITES (a syntactic reachability fact, never an effect) against the peek's `type_to_traits`, then walks `rev_calls` for transitive ancestors. Widened past its trigger to `charge_stringify_bound`; 2 further CHA sites filed as an argued residual. |
 | java | **FIXED `a034371`** — both fixtures. Re-runs the SAME `runScan` over a union dir rather than hand-rolling a second dispatch resolver, which would have to reimplement bounded-CHA/sealed narrowing and would drift. Also fixed the ancillary classpath bug: `peeked:false`→`true` on a nested `build/classes` layout that likely made the source-peek arm INERT on ordinary repo-root scans. |
-| ts | **OPEN** — nominal AND pure-structural dispatch; the peek's tsconfig lists only excluded roots |
+| ts | **FIXED `8584572`** — records a syntactic `satisfies` annotation in the peek child, correlated against interfaces the primary already knows are dispatched into in-scope, recorded AT THE CHA SITE (reconstructing from the flat callgraph conflated real dispatch with a caller that merely also calls one implementer concretely — found and fixed in development). MCP/LSP inherit it: they read `outOfScope` from a written report and never recompute. |
 
 **Why swift is the odd one out:** its peek already unioned in-scope files, so its bug needed dispatch
 resolution to widen. The other three never re-examine the caller at all — they fail one step earlier.
@@ -6435,3 +6435,40 @@ not silent — but it likely renders the source-peek arm inert on many real repo
 **Open, explicitly unconfirmed:** ts conditional exports — a genuine resolution divergence exists in the
 peek's synthetic tsconfig, but no case was found where it loses an effect SILENTLY, distinct from the
 scope bug above. Flagged as a question, not a finding.
+
+## CLOSED FOUR-WAY: the peek scope-match cardinal sin
+
+swift `7378f4f`, rust `27f4beb`, java `a034371`, ts `8584572`. **Four engines, four genuinely different
+mechanisms, one property.** Still owed: the SPEC clause and conformance PART, written to the PROPERTY (a
+peek finding's scope test must consider every in-scope caller that reaches it) with the `dispatch-widened`
+fallback CONDITIONAL on attribution being genuinely ambiguous — swift, java and ts need that class; rust
+does not, because its peek never unions.
+
+**Real-world confirmation:** ts's over-charge testing found a genuine in-the-wild instance of this bug's
+shape in a `typestack/class-validator` clone (`ValidatorConstraintInterface`). This was never theoretical.
+
+## CARDINAL SIN in candor-agents' enforcement compiler — `deny Unknown` compiled to NOTHING
+
+Found 2026-08-29, first time this repo has ever been attacked. FIXED `69e9e98`.
+
+    compile_guard("deny Unknown")      -> {'deny': [], 'warnings': [], 'notes': []}   TOTAL SILENCE
+    compile_guard("deny Net Unknown")  -> {'deny': [], ...}   `Net` SILENTLY DROPPED TOO
+
+`Unknown` names every uncurated MCP server and unresolved capability, so `deny Unknown` is the rule most
+likely to be load-bearing on the enforcement surface — and it produced no `permissions.deny` entry and no
+diagnostic, printing the same line the CLI prints for an EMPTY policy. In the compound form `Unknown` was
+misread as an agent SCOPE, taking the genuine fleet-wide `deny Net` down with it.
+
+**Cause — the session's throughline:** `guard.py` hand-rolls its own positional deny-parser instead of
+reusing the authoritative one in `policy.py`, and so never inherited `policy.py`'s `Unknown` special case.
+Fixed by recognising `Unknown`/`Unknown[<class>]` as its own token class and, since guard genuinely cannot
+bind it to a `permissions.deny` entry, emitting an explicit warning rather than going silent.
+
+**Notable:** the rest of candor-agents pushed back hard — `drift`/`observe`/`scan`/`policy` are heavily
+hardened, nearly every guard carrying a comment naming the real defect it closed, and every mutation tried
+against them was already caught. **A verifiably clean negative on that surface.** The break was in the one
+component that reimplemented a shared parser instead of calling it.
+
+**Explicitly unattacked in that repo:** `stats.py`, `digest.py`, `savings.py`, `log_gate.py`,
+`agentsmd.py`; and `build_edges`, `classify_units`, cron-unit handling, hook-matcher edging, and `--link`'s
+combined path in `scan.py` were read but not probed.

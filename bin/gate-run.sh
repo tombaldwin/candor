@@ -72,6 +72,17 @@ sed -n 's/^        //p' "$RAW" > "$GATELIST"
 manual=$(grep -c '^      ~ ' "$RAW")
 total=$(grep -c '^        ' "$RAW")
 
+# THE DISK. Checked before the first gate and after every one, because the expensive case is the
+# MID-RUN crossing: a table with rows from both sides of the line and nothing saying which is which.
+# See bin/disk-guard.sh for what a full disk cost on 2026-08-30.
+# shellcheck source=bin/disk-guard.sh
+. "$(dirname "${BASH_SOURCE[0]}")/disk-guard.sh"
+if ! disk_guard_check "before any gate ran"; then
+  echo "gate-run: REFUSING TO START — there is not enough disk to trust the result." >&2
+  echo "  This is not a verdict about $repo. Free space and run again." >&2
+  exit 2
+fi
+
 run=0; ok=0; bad=0; skip=0; i=0
 while IFS= read -r cmd || [ -n "$cmd" ]; do
   # EVERY LINE IS ACCOUNTED FOR. The first arm below used to `continue` with no counter touched at
@@ -108,12 +119,25 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   run=$((run+1))
   if [ "$rc" -eq 0 ]; then ok=$((ok+1)); printf '  \033[32m%-6s\033[0m %s\n' "OK" "$cmd"
   else bad=$((bad+1)); printf '  \033[31m%-6s\033[0m %s  (rc=%s, %s)\n' "FAIL" "$cmd" "$rc" "$log"; fi
+  # AFTER the gate, not before: a gate that filled the disk itself is the one whose own rc is least
+  # trustworthy, and checking first would clear it and then believe it.
+  disk_guard_check "$cmd" || true
 done < "$GATELIST"
 
 printf '\n%s: %s gate(s) run, %s ok, %s failed, %s skipped, %s block line(s) not auto-run\n' \
   "$repo" "$run" "$ok" "$bad" "$skip" "$manual"
 [ "$manual" -gt 0 ] && printf '  (see `bash bin/gates.sh %s` for the ~ lines — those belong to multi-line steps and need reading)\n' "$repo"
 
+# THE DISK VERDICT COMES FIRST, ahead of the accounting check and ahead of NOT GREEN. A full disk
+# can CAUSE both — a gate that cannot write is a gate that did not run — so attributing it to
+# accounting or to a defect in the repo would name the wrong cause. It also outranks `bad > 0`
+# deliberately: a FAIL row produced after the crossing is not evidence of a defect, and reporting it
+# as one is how ENOSPC noise gets filed as a finding.
+if disk_guard_verdict_note >&2; then
+  echo "  Verdict withheld: this run measured $repo under a condition that fakes both failures and" >&2
+  echo "  empty results. $bad FAIL row(s) above are NOT findings until re-measured with room." >&2
+  exit 2
+fi
 # THE ACCOUNTING CHECK. Every gate line gates.sh printed must have been either run or named as
 # skipped. If the two numbers disagree, some gate went missing between the list and the loop and the
 # verdict below is about a set nobody chose — so refuse to give one.

@@ -256,3 +256,29 @@ rewrite it never made.
 
 **Every one read as considered, and that is exactly what stopped it being measured.** When you meet a
 comment explaining why something is safe, treat it as the highest-value thing in the file to attack.
+
+### L — run the guard on the OTHER platform
+
+**A guard that only ever executed on the author's OS has never been tested; it has been assumed.**
+Measured 2026-08-30, one hour after the test that exposed it was written.
+
+probe.sh read file mtimes as `stat -f %m FILE || stat -c %Y FILE` — the idiomatic BSD-then-GNU
+fallback, in a repo whose entire family is developed on macOS and gated on Linux. It is unsound, and
+unsound in the direction that hides itself. GNU's `-f` is *filesystem* status, so `%m` is read as a
+filesystem to stat: it prints a block/inode dump **for the real file, on stdout**, and only then exits 1
+on the bogus argument. So the `||` fires, the GNU form appends a correct epoch, and the capture holds
+both. Every downstream comparison died with `integer expression expected` and the staleness check
+concluded the binary was fresh. The scan a few lines below had no fallback at all.
+
+Two properties made it survive: it was **correct on the machine anyone would check it on**, and its
+failure mode was a **silent pass**, not an error. Nothing short of executing it elsewhere finds that.
+
+- Ask of any guard: **on which platforms has this branch ever actually run?** CI green is not an
+  answer unless a test *drives that branch* — this one had no test at all until the day it broke.
+- A fallback chain selected by **exit code** is a trap wherever the failing branch also writes stdout.
+  Prefer selecting the form ONCE, by whether it returns the shape you want.
+- Docker is enough: `ubuntu:latest`, copy the tree in, run the suite. Environmental failures
+  (absent PyYAML, absent siblings, no `gh`) are noise — grep for the assertion you care about by name
+  rather than reading the total.
+
+This is the same class as the *teeth only on macOS* row from 2026-08-16. It has now cost twice.

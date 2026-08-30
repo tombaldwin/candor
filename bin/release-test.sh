@@ -3305,10 +3305,18 @@ PR2="$(mktemp -d)"; mkdir -p "$PR2/candor-rust"
 # reason that was not this fixture. Treat that as a SKIP, the same convention this file already uses for a
 # missing tool, rather than either a false FAIL or silently trusting a result the environment could not
 # actually produce.
-if pgrep -f "conformance/run.sh" >/dev/null 2>&1 || pgrep -f "swift build" >/dev/null 2>&1 \
-   || pgrep -f "gradlew" >/dev/null 2>&1 || pgrep -f "cargo build" >/dev/null 2>&1 \
-   || pgrep -f "cargo test" >/dev/null 2>&1; then
-  note_skip "section 13b — this machine already has a conformance run or a build in flight (from another agent), which would make probe.sh's own machine-wide guard fire for reasons unrelated to this fixture. Re-run once the machine is quiet."
+probe_env_busy() {
+  pgrep -f "conformance/run.sh" >/dev/null 2>&1 || pgrep -f "swift build" >/dev/null 2>&1 \
+    || pgrep -f "gradlew" >/dev/null 2>&1 || pgrep -f "cargo build" >/dev/null 2>&1 \
+    || pgrep -f "cargo test" >/dev/null 2>&1
+}
+# A BOUNDED WAIT, not an immediate skip: this machine's interference is usually a short-lived check
+# (measured: a mutation-gate poison run, gone within a few seconds), so give it a few chances before
+# giving up rather than skipping on the first unlucky sample.
+_busy_tries=0
+while probe_env_busy && [ "$_busy_tries" -lt 5 ]; do sleep 2; _busy_tries=$((_busy_tries+1)); done
+if probe_env_busy; then
+  note_skip "section 13b — this machine still has a conformance run or a build in flight (from another agent) after waiting 10s, which would make probe.sh's own machine-wide guard fire for reasons unrelated to this fixture. Re-run once the machine is quiet."
   rm -rf "$PR2"
 else
 

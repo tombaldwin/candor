@@ -3097,6 +3097,159 @@ printf '%s' "$uvout" | grep -q "boom" \
   && ok "…and the failing step's own output reaches the report" || bad "the failing step's output did not reach the report"
 rm -rf "$UV"
 
+say "12b. verify-umbrella.sh — the SELECTION machinery: can a step that should run be skipped, or vice versa"
+# WHY THIS EXISTS. Section 12 proves the pass/fail SIGNAL works, but its fixture workflow carries no path
+# filter at all, so `wf_required()` — the function every RUN row in $STEPS is actually gated by — was
+# never driven in either direction. wf-steps.py and wf-expected.py each carry their own `--selftest`; the
+# code HERE that consumes their output (REQUIRED, wf_required(), the INSCOPE/dispatch loops) had none. A
+# skip is the single easiest place for a false green to hide — a step that silently does not run looks,
+# from the exit code alone, exactly like one that ran and passed.
+UV2="$(mktemp -d)"; mkdir -p "$UV2/tool" "$UV2/.github/workflows" "$UV2/bin"
+cp "$UMBRELLA/bin/verify-umbrella.sh" "$UMBRELLA/bin/wf-steps.py" "$UMBRELLA/bin/wf-expected.py" "$UV2/tool/"
+chmod +x "$UV2/tool/verify-umbrella.sh"
+cat > "$UV2/.github/workflows/filtered.yml" <<'EOF'
+name: Filtered
+on:
+  push:
+    branches: [main]
+    paths: ['bin/**']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the filtered step
+        run: echo FILTERED_RAN
+EOF
+cat > "$UV2/.github/workflows/always.yml" <<'EOF'
+name: Always
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the unfiltered step
+        run: echo ALWAYS_RAN
+EOF
+printf 'keep\n' > "$UV2/bin/.keep"; printf 'x\n' > "$UV2/docs.md"
+( cd "$UV2" && git init -q && git branch -m main 2>/dev/null && git add -A \
+  && git -c user.email=t@e -c user.name=t commit -qm base )
+
+# A commit that touches ONLY docs.md: GitHub would run `always.yml` (no filter) and would NOT run
+# `filtered.yml` (its paths do not include docs.md).
+printf 'y\n' >> "$UV2/docs.md"
+( cd "$UV2" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "docs only" )
+out2="$(bash "$UV2/tool/verify-umbrella.sh" 2>&1)"; rc2=$?
+# A step's own stdout ("echo ALWAYS_RAN") is only printed in the report when it FAILS (run_step keeps a
+# passing step's output out of the ledger) — so the evidence a step actually ran is its ROW, a job label
+# beside a ✔ mark, not its echoed text.
+printf '%s' "$out2" | grep -qE "the unfiltered step.*✔" \
+  && ok "a workflow with NO path filter runs on a docs-only commit" \
+  || bad "an unfiltered workflow did not run on a docs-only commit: $out2"
+printf '%s' "$out2" | grep -qE "the filtered step.*✔" \
+  && bad "a path-filtered workflow ran on a commit touching none of its paths — the skip machinery let a should-not-run step through" \
+  || ok "a path-filtered workflow correctly did NOT run on a commit outside its paths"
+printf '%s' "$out2" | grep -q 'GitHub would not trigger `Filtered`' \
+  && ok "…and the skip carries its OWN reason, not a bare absence" \
+  || bad "the filtered-out step's reason did not appear in the DID NOT RUN list: $out2"
+[ "$rc2" = 0 ] && printf '%s' "$out2" | grep -q "verify-umbrella: OK" \
+  && ok "one required step ran, one path-filtered step skipped — still an honest OK" \
+  || bad "a legitimate mixed ran/skipped outcome did not print OK (rc=$rc2): $out2"
+
+# Now a commit that DOES touch bin/**: both workflows must run.
+printf 'a\n' > "$UV2/bin/a.sh"
+( cd "$UV2" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "touch bin/a.sh" )
+out2b="$(bash "$UV2/tool/verify-umbrella.sh" 2>&1)"
+printf '%s' "$out2b" | grep -qE "the filtered step.*✔" \
+  && ok "…and once a commit DOES touch bin/**, the same path-filtered workflow runs" \
+  || bad "a workflow whose path filter the commit actually matches was still skipped: $out2b"
+rm -rf "$UV2"
+
+say "12c. verify-umbrella.sh — the multi-commit RANGE UNION, not just the pushed tip"
+# WHY THIS EXISTS. GitHub path-filters a push on the UNION of every commit's changed files, not the tip's
+# alone (this script's own comment above REQUIRED says so). The union loop over `base..SHA` had no test:
+# a push of several commits where only an EARLIER one touches a path-filtered workflow's paths is exactly
+# the shape a tip-only check would silently under-select.
+UV3="$(mktemp -d)"; mkdir -p "$UV3/tool" "$UV3/.github/workflows" "$UV3/bin"
+cp "$UMBRELLA/bin/verify-umbrella.sh" "$UMBRELLA/bin/wf-steps.py" "$UMBRELLA/bin/wf-expected.py" "$UV3/tool/"
+chmod +x "$UV3/tool/verify-umbrella.sh"
+cat > "$UV3/.github/workflows/bin.yml" <<'EOF'
+name: BinOnly
+on:
+  push:
+    branches: [main]
+    paths: ['bin/**']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the step
+        run: echo BIN_RAN
+EOF
+printf 'keep\n' > "$UV3/bin/.keep"
+( cd "$UV3" && git init -q && git branch -m main 2>/dev/null && git add -A \
+  && git -c user.email=t@e -c user.name=t commit -qm base )
+BASESHA="$(git -C "$UV3" rev-parse HEAD)"
+git -C "$UV3" update-ref refs/remotes/origin/main "$BASESHA"
+
+# Commit A (NOT the tip): touches bin/**.
+printf 'a\n' > "$UV3/bin/a.sh"
+( cd "$UV3" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "touch bin/a.sh" )
+# Commit B (the tip): touches only docs — alone it matches no filter at all.
+printf 'b\n' > "$UV3/README.md"
+( cd "$UV3" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "docs only, the tip" )
+
+out3="$(bash "$UV3/tool/verify-umbrella.sh" 2>&1)"
+printf '%s' "$out3" | grep -qE "the step.*✔" \
+  && ok "a path-filtered workflow runs when an EARLIER commit in the push range touched its paths, even though the TIP alone does not" \
+  || bad "the multi-commit range union is broken: an in-range commit touching bin/ did not make the workflow required — $out3"
+printf '%s' "$out3" | grep -q "the 2 commit(s) in" \
+  && ok "…and the report names the whole range, not just the tip" \
+  || bad "the range description did not name the 2-commit union: $out3"
+rm -rf "$UV3"
+
+say "12d. verify-umbrella.sh — a broken SELECTOR must abort, not silently answer \"nothing required\""
+# The comment above the wf-expected.py call is explicit that this call is NOT `2>/dev/null`-ed for exactly
+# this reason: swallowing its failure would turn a broken selector into a silent, plausible-looking pass
+# (every workflow reads not-required, everything skips, exit 0). Never actually driven.
+UV4="$(mktemp -d)"; mkdir -p "$UV4/tool" "$UV4/.github/workflows"
+cp "$UMBRELLA/bin/verify-umbrella.sh" "$UMBRELLA/bin/wf-steps.py" "$UV4/tool/"
+chmod +x "$UV4/tool/verify-umbrella.sh"
+cat > "$UV4/tool/wf-expected.py" <<'EOF'
+#!/usr/bin/env python3
+import sys
+sys.stderr.write("stub: wf-expected.py forced failure\n")
+sys.exit(1)
+EOF
+chmod +x "$UV4/tool/wf-expected.py"
+cat > "$UV4/.github/workflows/filtered.yml" <<'EOF'
+name: Filtered
+on:
+  push:
+    branches: [main]
+    paths: ['bin/**']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the step
+        run: echo SHOULD_NOT_APPEAR
+EOF
+( cd "$UV4" && git init -q && git branch -m main 2>/dev/null && git add -A \
+  && git -c user.email=t@e -c user.name=t commit -qm base )
+out4="$(bash "$UV4/tool/verify-umbrella.sh" 2>&1)"; rc4=$?
+[ "$rc4" = 2 ] \
+  && ok "a broken wf-expected.py (the selection helper) aborts the whole run, exit 2" \
+  || bad "a failing selection helper did not abort (rc=$rc4) — its failure could be silently swallowed into 'nothing required': $out4"
+printf '%s' "$out4" | grep -q "the selection cannot be trusted" \
+  && ok "…and says the selection itself is untrustworthy, not just \"something failed\"" \
+  || bad "no diagnostic naming the broken selector: $out4"
+printf '%s' "$out4" | grep -q "verify-umbrella: OK" \
+  && bad "a broken selector still printed the OK verdict" \
+  || ok "…and never reaches the OK verdict over an untrustworthy selection"
+rm -rf "$UV4"
+
 say "13. probe.sh — the differ-check and --concluded, its own two headline guards (zero dedicated tests until now)"
 # WHY THIS EXISTS. probe.sh's own header lists five wrong measurements its differ-check exists to catch
 # and five more its --concluded mode exists to catch, and states the whole point of the file: "a probe
@@ -3133,6 +3286,199 @@ printf '%s' "$noconc" | grep -q "DID NOT CONCLUDE" \
   && ok "…and says its rows above the stop are real but its absence of rows means nothing" \
   || bad "no DID NOT CONCLUDE diagnostic for a command that died mid-run"
 rm -rf "$PR"
+
+say "13b. probe.sh — quiet_tree_check and provenance, its other two headline guards (zero dedicated tests until now)"
+# WHY THIS EXISTS. Section 13 exercises the differ-check and --concluded. The two guards this file's own
+# header spends the MOST words on — a dirty/moving tree (failure 2: a conformance run read a half-written
+# file and reported a cardinal sin nobody had committed) and a stale binary (failure 4: a 2h-old release
+# build was probed while the suite builds and uses .build/debug) — had never been driven at all.
+PR2="$(mktemp -d)"; mkdir -p "$PR2/candor-rust"
+( cd "$PR2/candor-rust" && git init -q && git branch -m main 2>/dev/null \
+  && printf 'fn main(){}\n' > lib.rs && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
+
+# quiet_tree_check's pgrep calls scan the WHOLE MACHINE, by design (a build running ANYWHERE could be the
+# one about to replace the binary under test) — which means the "expect no refusal" rows below are only
+# meaningful when nothing ELSE on this box happens to match those same patterns. On a dedicated CI runner
+# that is always true; on a shared dev box running several agents at once (this file's own AGENT-CORPUS-
+# BRIEF.md: "concurrent agents on one box do contend") it sometimes is not — measured live while writing
+# this section, when an unrelated `swift build` from another agent made every one of these rows fail for a
+# reason that was not this fixture. Treat that as a SKIP, the same convention this file already uses for a
+# missing tool, rather than either a false FAIL or silently trusting a result the environment could not
+# actually produce.
+if pgrep -f "conformance/run.sh" >/dev/null 2>&1 || pgrep -f "swift build" >/dev/null 2>&1 \
+   || pgrep -f "gradlew" >/dev/null 2>&1 || pgrep -f "cargo build" >/dev/null 2>&1 \
+   || pgrep -f "cargo test" >/dev/null 2>&1; then
+  note_skip "section 13b — this machine already has a conformance run or a build in flight (from another agent), which would make probe.sh's own machine-wide guard fire for reasons unrelated to this fixture. Re-run once the machine is quiet."
+  rm -rf "$PR2"
+else
+
+# CONTROL: a clean tree, nothing running — no dirty note, no refusal.
+clean="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; cleanrc=$?
+[ "$cleanrc" = 0 ] && ok "a clean tree with nothing running is not flagged" \
+  || bad "a clean tree was refused (rc=$cleanrc): $clean"
+printf '%s' "$clean" | grep -q "dirty tree" \
+  && bad "a clean tree was reported dirty" || ok "…and prints no dirty-tree note"
+
+# An UNTRACKED-only file must NOT count as dirty — quiet_tree_check greps OUT `^?? ` lines on purpose.
+printf 'scratch\n' > "$PR2/candor-rust/untracked.tmp"
+untracked="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"
+printf '%s' "$untracked" | grep -q "dirty tree" \
+  && bad "an UNTRACKED file was reported as a dirty tree" \
+  || ok "an untracked file alone does not trip the dirty-tree note"
+rm -f "$PR2/candor-rust/untracked.tmp"
+
+# A MODIFIED TRACKED file must be named, and must NOT be fatal — you may be probing your own edit.
+printf 'fn main(){ changed(); }\n' > "$PR2/candor-rust/lib.rs"
+dirty="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; dirtyrc=$?
+printf '%s' "$dirty" | grep -q "dirty tree(s):.*candor-rust" \
+  && ok "a modified TRACKED file is named in the dirty-tree note" \
+  || bad "a dirty tracked file did not produce the dirty-tree note: $dirty"
+[ "$dirtyrc" = 0 ] && ok "…and a dirty tree is a NOTE, not a refusal" \
+  || bad "a merely-dirty tree was refused outright (rc=$dirtyrc)"
+git -C "$PR2/candor-rust" checkout -q -- lib.rs
+
+# A CONFORMANCE RUN IN FLIGHT is fatal — it reads engines from their working trees, and probing or
+# editing during it contaminates the run in both directions (failure 2 in this file's own header).
+mkdir -p "$PR2/candor-spec/conformance"
+printf '#!/bin/bash\nsleep 6\n' > "$PR2/candor-spec/conformance/run.sh"
+chmod +x "$PR2/candor-spec/conformance/run.sh"
+bash "$PR2/candor-spec/conformance/run.sh" & confpid=$!
+sleep 0.3
+inflight="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; inflightrc=$?
+kill "$confpid" 2>/dev/null; wait "$confpid" 2>/dev/null
+[ "$inflightrc" = 2 ] && ok "a conformance run IN FLIGHT refuses the probe outright" \
+  || bad "a live conformance run did not refuse the probe (rc=$inflightrc): $inflight"
+printf '%s' "$inflight" | grep -q "conformance run is IN FLIGHT" \
+  && ok "…and says why" || bad "no IN FLIGHT diagnostic: $inflight"
+rm -rf "$PR2/candor-spec"
+
+# A BUILD IN PROGRESS is fatal for the same reason — the binary being probed may be replaced mid-run.
+mkdir -p "$PR2/fakebin"
+printf '#!/bin/bash\nsleep 6\n' > "$PR2/fakebin/cargo"
+chmod +x "$PR2/fakebin/cargo"
+"$PR2/fakebin/cargo" build & buildpid=$!
+sleep 0.3
+building="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; buildingrc=$?
+kill "$buildpid" 2>/dev/null; wait "$buildpid" 2>/dev/null
+[ "$buildingrc" = 2 ] && ok "a build in progress (cargo build) refuses the probe" \
+  || bad "a live 'cargo build' process did not refuse the probe (rc=$buildingrc): $building"
+printf '%s' "$building" | grep -q "a build is running" \
+  && ok "…and says which" || bad "no build-in-progress diagnostic: $building"
+
+# PROVENANCE: a binary OLDER than the newest source file is a STALE measurement (failure 4).
+printf '#!/bin/bash\necho ran\n' > "$PR2/candor-rust/binary"; chmod +x "$PR2/candor-rust/binary"
+touch -t 202001010000 "$PR2/candor-rust/binary"
+touch -t 202601010000 "$PR2/candor-rust/lib.rs"
+stale="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-rust/binary" 2>&1)"; stalerc=$?
+[ "$stalerc" = 3 ] && ok "a binary OLDER than the newest source exits 3 (STALE)" \
+  || bad "a stale binary did not produce exit 3 (rc=$stalerc): $stale"
+printf '%s' "$stale" | grep -q "STALE: this binary is OLDER THAN THE SOURCE" \
+  && ok "…and names it as such, on the row" || bad "no STALE diagnostic for an old binary: $stale"
+
+# CONTROL: a binary NEWER than every source file must not be flagged.
+touch -t 202601020000 "$PR2/candor-rust/binary"
+fresh="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-rust/binary" 2>&1)"; freshrc=$?
+[ "$freshrc" = 0 ] && ok "a binary newer than every source file is not flagged stale" \
+  || bad "a fresh binary was flagged stale (rc=$freshrc): $fresh"
+printf '%s' "$fresh" | grep -q "STALE" \
+  && bad "a fresh binary printed a STALE diagnostic anyway" || ok "…and prints no STALE line"
+
+# The .build/release NOTE — a distinct binary from the one the suite actually builds and uses.
+mkdir -p "$PR2/candor-swift/.build/release"
+( cd "$PR2/candor-swift" && git init -q && git branch -m main 2>/dev/null \
+  && printf 'struct X {}\n' > lib.swift && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
+printf '#!/bin/bash\necho ran\n' > "$PR2/candor-swift/.build/release/candor-swift"
+chmod +x "$PR2/candor-swift/.build/release/candor-swift"
+touch -t 202601020000 "$PR2/candor-swift/.build/release/candor-swift"
+rel="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-swift/.build/release/candor-swift" 2>&1)"
+printf '%s' "$rel" | grep -q "conformance builds and uses .build/debug/" \
+  && ok "probing a .build/release binary is told conformance uses the OTHER one" \
+  || bad "no .build/debug NOTE for a .build/release subject: $rel"
+rm -rf "$PR2"
+fi
+
+say "14. changelog-lag.sh — the ONE-\`## Unreleased\`-per-file guard (zero dedicated tests until now)"
+# WHY THIS EXISTS. Section 7 exercises the RECENCY half of this script. The DUPLICATE-SECTION half at the
+# bottom of the file — the one release-stage.sh's own empty-stub trap depends on, since the stager renames
+# only the FIRST `## Unreleased` and a second one ships silently still labelled unreleased — had never
+# been driven directly.
+CD="$(mktemp -d)"
+mkclrepo() { # $1 = CHANGELOG.md body
+  local p="$CD/candor-ts"; rm -rf "$p"; mkdir -p "$p"
+  printf 'v1\n' > "$p/scan.mjs"
+  printf '%s' "$1" > "$p/CHANGELOG.md"
+  git -C "$p" init -q && git -C "$p" branch -m main 2>/dev/null
+  git -C "$p" add -A && git -C "$p" -c user.email=t@t -c user.name=t commit -qm init
+  git -C "$p" tag v0.1.0
+}
+cdrun() { CANDOR_ROOT="$CD" bash "$UMBRELLA/bin/changelog-lag.sh" candor-ts 2>&1; }
+
+mkclrepo '# Changelog
+
+## Unreleased
+
+## [0.1.0]
+
+first cut.
+'
+out="$(cdrun)"; rc=$?
+[ "$rc" = 0 ] && ok "a single Unreleased section passes" || bad "one Unreleased section failed (rc=$rc): $out"
+
+mkclrepo '# Changelog
+
+## Unreleased
+
+### something landed after the cut
+body
+
+## Unreleased
+
+## [0.1.0]
+
+first cut.
+'
+out="$(cdrun)"; rc=$?
+[ "$rc" = 1 ] && ok "TWO Unreleased sections above the first release FAIL" \
+  || bad "two Unreleased sections passed (rc=$rc): $out"
+printf '%s' "$out" | grep -q '2 `## Unreleased` sections' \
+  && ok "…and the count is named" || bad "the duplicate count did not appear: $out"
+printf '%s' "$out" | grep -q "the stager renames only the FIRST" \
+  && ok "…with the mechanism, not just a bare complaint" || bad "no explanation of WHY this matters: $out"
+
+# An OLD, historical '## [Unreleased] ...' heading sitting BELOW an already-numbered release (settled
+# history) must NOT be counted, per this script's own comment: flagging settled history reads as noise and
+# stops the check from being read at all.
+mkclrepo '# Changelog
+
+## Unreleased
+
+## [0.1.0]
+
+first cut.
+
+## [Unreleased] (nightly lint)
+
+some old note nobody is going to un-ship.
+'
+out="$(cdrun)"; rc=$?
+[ "$rc" = 0 ] && ok "a historical '## [Unreleased]' heading buried below a numbered release is ignored" \
+  || bad "settled history below the first release was wrongly counted as a duplicate (rc=$rc): $out"
+rm -rf "$CD"
+
+say "14b. _ci_verdict.py — attacked directly, not only through release-preflight.sh's fixtures"
+# WHY THIS EXISTS. Every existing row for this file (7b, above) drives it THROUGH release-preflight.sh's
+# stubbed \`gh\`, which always hands it well-formed JSON. The one defensive line actually IN the file — the
+# try/except around json.load, printing "ERR" rather than an uncaught traceback — had never once been fed
+# anything that would exercise it.
+malformed="$(printf 'not json{' | python3 "$UMBRELLA/bin/_ci_verdict.py" deadbeef)"; rcm=$?
+[ "$malformed" = "ERR" ] && [ "$rcm" = 0 ] \
+  && ok "malformed JSON on stdin prints ERR and exits 0, not an uncaught traceback" \
+  || bad "malformed JSON did not produce a clean ERR (rc=$rcm, out='$malformed')"
+
+empty="$(printf '' | python3 "$UMBRELLA/bin/_ci_verdict.py" deadbeef)"; rce=$?
+[ "$empty" = "ERR" ] && [ "$rce" = 0 ] \
+  && ok "empty stdin (a gh call that produced nothing) also prints ERR, not a silent empty verdict" \
+  || bad "empty stdin did not produce ERR (rc=$rce, out='$empty')"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

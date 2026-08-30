@@ -8,6 +8,77 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — the SELECTION machinery: `verify-umbrella.sh`'s skip logic, `probe.sh`'s other two guards, and two files "read but never attacked"
+
+The previous entry in this file gave `verify-umbrella.sh` and `probe.sh` their first dedicated tests, but
+scoped itself to "the two exit-code branches that matter most … not the full breadth of wf-steps.py/
+wf-expected.py selection, which already carry their own `--selftest`." That scoping missed the actual gap:
+those two files' *own* selftests only prove their output is internally consistent, never that
+`verify-umbrella.sh` — the code that *consumes* that output (`REQUIRED`, `wf_required()`, the INSCOPE and
+dispatch loops) — acts on it correctly. A skip is the easiest place for a false green to hide: a step that
+silently does not run looks, from the exit code alone, identical to one that ran and passed. Section 12's
+fixture workflow carried no path filter at all, so that consuming code had zero coverage in either
+direction.
+
+Three new fixtures, each proven RED on deletion before being kept:
+
+- **Path-filter selection**, both ways: a workflow whose paths the pushed commit does not touch is
+  correctly SKIPPED (with its own reason on the DID NOT RUN list, not a bare absence), and a sibling with
+  no filter at all still runs beside it. Forcing `wf_required()` to always answer true — the shape a
+  future edit could produce by accident — let the should-not-run step through; forcing it to always
+  answer false silently dropped the unfiltered one. Both are now caught.
+- **The multi-commit range union.** GitHub path-filters a push on the union of every commit's changed
+  files, not the tip's alone (`verify-umbrella.sh`'s own comment says so), and the loop that unions
+  `wf-expected.py` across `base..SHA` had never been driven. Fixture: two commits pushed together, an
+  EARLIER one touching a path-filtered workflow's paths and the TIP touching only docs. Reverting the
+  union to `revs="$SHA"` (tip only) reproduced exactly the silent under-selection the comment warns
+  about — the workflow read not-required and the step never ran.
+- **A broken selector must abort, not silently answer "nothing required."** The `wf-expected.py` call is
+  deliberately not `2>/dev/null`-ed, for a documented reason that had never been tested: swallowing its
+  failure turns a broken selector into a silent, plausible-looking pass. A wf-expected.py stub that always
+  fails now confirms `verify-umbrella.sh` aborts at exit 2 with "the selection cannot be trusted" rather
+  than reaching its `OK` verdict; un-swallowing the guard in a scratch copy reproduced precisely that: the
+  path-filtered step it should have refused to judge instead reported "not required" and exited 0.
+
+`probe.sh`'s other two headline guards — the ones its own header spends the most words on — got the same
+treatment. quiet_tree_check(): a dirty TRACKED file is named as a non-fatal NOTE (an untracked-only file
+is not, confirming the `grep -v '^?? '` exclusion); a real `conformance/run.sh` or `cargo build` process
+in flight refuses the probe outright (exit 2), each confirmed by deleting the corresponding check and
+watching a live process of that shape go unnoticed. provenance(): a binary older than the newest source
+file exits 3 and prints STALE (deleting the check let a stale binary probe silently), a fresh binary is
+never flagged, and a `.build/release/*` subject is told conformance builds and uses the other one. These
+rows are coupled to the real, machine-wide state `quiet_tree_check()` inspects by design — measured live
+while writing them, an unrelated `swift build` from another agent on this shared box made every "expect no
+refusal" row fail for a reason that was not the fixture, twice. Treated as a SKIP (this file's existing
+convention for "a tool this gate needs is not available"), not a FAIL, when the machine is not quiet.
+
+Two files this session's brief named as "read but never attacked directly":
+
+- **`changelog-lag.sh`'s one-`## Unreleased`-per-file guard** (the bottom third of the file, distinct from
+  the recency check §7 already exercised) had no fixture at all. Two `## Unreleased` headers above the
+  first release now fail with the count and the mechanism named; a single section passes; a *historical*
+  `## [Unreleased] (nightly lint)`-shaped heading sitting below an already-numbered release is correctly
+  ignored, per the script's own comment about settled history reading as noise. Neutering the count check
+  reproduced a real miss: the exact two-Unreleased-section shape this guard exists for read as a clean
+  `changelog-lag: OK`.
+- **`_ci_verdict.py`'s `try/except` around `json.load`** had only ever been driven through
+  `release-preflight.sh`'s stubbed `gh`, which always hands it well-formed JSON — so the one defensive
+  line actually in the file had zero direct coverage. Malformed JSON and empty stdin, fed to the script
+  directly, both print `ERR` and exit 0; removing the `try/except` turned the same input into an uncaught
+  traceback on stderr, exit 1, empty stdout — safe by construction downstream (every caller already treats
+  empty stdout the same as `ERR`), but no longer the documented, testable contract the file's own docstring
+  describes.
+
+`release-test.sh` closes at 366 assertions, up from 335. Every new assertion above was confirmed RED on
+deletion (the guard removed in a scratch copy, the exact fixture re-run, the false green reproduced) and
+GREEN restored before being kept; nothing here touched the production scripts themselves, so an ordinary
+run of any of them is unchanged.
+
+Left unreached, named rather than silently skipped: `verify-umbrella.sh --docker` (needs a real docker
+daemon, so the `DOCKER_SKIP` per-tool-missing path and the image build are untested here) and `--list`
+(enumerate-only mode); `probe.sh`'s "swift build" / "gradlew" / "cargo test" arms of the build-in-progress
+loop share their mechanism with the "cargo build" arm tested above but were not independently driven.
+
 ## 2026-08-30 — `verify-local.sh` gets a CANDOR_ROOT injection point, and four `release-verify.sh` gaps confirmed by mutation
 
 The previous entry's guard-deletion sweep named what it had NOT covered: `verify-local.sh` had no

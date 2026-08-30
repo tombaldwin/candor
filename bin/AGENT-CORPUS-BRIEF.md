@@ -237,6 +237,14 @@ extraction failed and produced the same line as a successful catch.
 
 Detection is rarely the failure. **Aggregation is.**
 
+A fourth, 2026-08-30, in the umbrella's own `bin/gate-run.sh` — the tool written that morning *because*
+a narrowed gate list had let ten silent under-reports reach main. Its list producer wrote to a
+`2>/dev/null` and its exit status was never read, so an unknown repo name produced an **empty list**,
+the loop ran zero times, zero failures aggregated to `OK — every gate ran and passed`, exit 0. Separately,
+the loop read the gate list on *stdin*, so the first gate that read stdin swallowed every gate below it:
+three gates in, `1 gate(s) run, 1 ok`, exit 0. **Ask of any aggregator: what does it print when the thing
+it aggregates over is EMPTY?** Zero failures is not zero gates.
+
 ## I. Calibrate a NEW instrument by retro-rediscovery
 Before trusting a new detector, point it at bugs already found by hand and require it to find them.
 `conformance/retro_test.py` rediscovers **15/15** historical bypasses — and that control caught **three
@@ -267,11 +275,28 @@ fallback, in a repo whose entire family is developed on macOS and gated on Linux
 unsound in the direction that hides itself. GNU's `-f` is *filesystem* status, so `%m` is read as a
 filesystem to stat: it prints a block/inode dump **for the real file, on stdout**, and only then exits 1
 on the bogus argument. So the `||` fires, the GNU form appends a correct epoch, and the capture holds
-both. Every downstream comparison died with `integer expression expected` and the staleness check
-concluded the binary was fresh. The scan a few lines below had no fallback at all.
+both. Every downstream comparison died with bash's `integer expected` and the staleness check concluded
+the binary was fresh. The scan a few lines below had no fallback at all. (Re-measured under
+`ubuntu:latest`: the pre-fix script exits **0** on a binary two years older than its source; the fixed
+one exits 3.)
 
 Two properties made it survive: it was **correct on the machine anyone would check it on**, and its
 failure mode was a **silent pass**, not an error. Nothing short of executing it elsewhere finds that.
+
+**And the fix's own audit boundary was drawn around its trigger — §9, immediately, in the same file.**
+Measured the next morning by grepping the *mechanism* (`stat -f`, `date -r`) rather than re-reading the
+file that triggered the audit:
+- **`date`, one line lower, inside the same `printf`.** BSD `date -r EPOCH` renders an epoch; GNU `date -r`
+  takes a FILE and wants `-d @EPOCH`. So on Linux *both* provenance timestamps rendered empty —
+  `built  · newest source  ` — which reads as nothing to report, not as a broken renderer.
+- **`bin/candor`'s `doctor` drift check**, an entirely different file, carrying `stat -f '%m'` **and**
+  `date -r` with no fallback at all. On Linux the `-gt` errored to stderr and evaluated false, so the
+  "installed build is older than your sources" warning **could never fire**. Confirmed by running the
+  real dispatcher in Docker, old and new, on one fixture.
+- The loud NOTE added *by the fix* for "stat did not yield an integer" sat behind a `|| return 0` that
+  returned first — **unreachable by its own stated trigger**. Attack K, on a comment written that hour.
+
+Grepping the mechanism costs one command. Two of these three were in files nobody had thought to look at.
 
 - Ask of any guard: **on which platforms has this branch ever actually run?** CI green is not an
   answer unless a test *drives that branch* — this one had no test at all until the day it broke.

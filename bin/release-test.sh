@@ -3257,6 +3257,30 @@ say "13. probe.sh — the differ-check and --concluded, its own two headline gua
 # the same way as verify-local.sh: added the identical CANDOR_ROOT injection point (probe.sh had none
 # either) so quiet_tree_check's sibling-repo walk does not touch the real, currently-dirty umbrella tree
 # mid-edit, then drove the two guards directly.
+#
+# THE SAME ENVIRONMENT GUARD 13b CARRIES, HOISTED — because this section needed it too and did not have
+# it. probe.sh's quiet_tree_check pgreps the WHOLE MACHINE, so another agent's conformance run refuses
+# every probe below with exit 2. Measured 2026-08-30: three rows here went red for a reason that was not
+# the subject, and the FIRST row went GREEN for a reason that was not the subject either — it asserts
+# "control==subject is REFUSED, exit 2", and a refusal for being busy is also exit 2. Two mechanisms
+# producing the same label, masking each other (AGENT-CORPUS-BRIEF rule 4), inside the file whose whole
+# subject is instruments that read the right thing.
+probe_env_busy() {
+  pgrep -f "conformance/run.sh" >/dev/null 2>&1 || pgrep -f "swift build" >/dev/null 2>&1 \
+    || pgrep -f "gradlew" >/dev/null 2>&1 || pgrep -f "cargo build" >/dev/null 2>&1 \
+    || pgrep -f "cargo test" >/dev/null 2>&1
+}
+# A BOUNDED WAIT, not an immediate skip: this machine's interference is usually a short-lived check
+# (measured: a mutation-gate poison run, gone within a few seconds), so give it a few chances before
+# giving up rather than skipping on the first unlucky sample.
+probe_wait_quiet() {
+  local t=0
+  while probe_env_busy && [ "$t" -lt 5 ]; do sleep 2; t=$((t+1)); done
+  probe_env_busy && return 1 || return 0
+}
+if ! probe_wait_quiet; then
+  note_skip "section 13 — a build or conformance run from another agent is still in flight after 10s. probe.sh's machine-wide guard refuses with exit 2 for that reason, which is the SAME exit code the differ-check uses, so these rows cannot tell the two apart. Re-run once the machine is quiet."
+else
 PR="$(mktemp -d)"
 ctl="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf X 2>&1)"; ctlrc=$?
 [ "$ctlrc" = 2 ] \
@@ -3286,6 +3310,7 @@ printf '%s' "$noconc" | grep -q "DID NOT CONCLUDE" \
   && ok "…and says its rows above the stop are real but its absence of rows means nothing" \
   || bad "no DID NOT CONCLUDE diagnostic for a command that died mid-run"
 rm -rf "$PR"
+fi
 
 say "13b. probe.sh — quiet_tree_check and provenance, its other two headline guards (zero dedicated tests until now)"
 # WHY THIS EXISTS. Section 13 exercises the differ-check and --concluded. The two guards this file's own
@@ -3305,17 +3330,8 @@ PR2="$(mktemp -d)"; mkdir -p "$PR2/candor-rust"
 # reason that was not this fixture. Treat that as a SKIP, the same convention this file already uses for a
 # missing tool, rather than either a false FAIL or silently trusting a result the environment could not
 # actually produce.
-probe_env_busy() {
-  pgrep -f "conformance/run.sh" >/dev/null 2>&1 || pgrep -f "swift build" >/dev/null 2>&1 \
-    || pgrep -f "gradlew" >/dev/null 2>&1 || pgrep -f "cargo build" >/dev/null 2>&1 \
-    || pgrep -f "cargo test" >/dev/null 2>&1
-}
-# A BOUNDED WAIT, not an immediate skip: this machine's interference is usually a short-lived check
-# (measured: a mutation-gate poison run, gone within a few seconds), so give it a few chances before
-# giving up rather than skipping on the first unlucky sample.
-_busy_tries=0
-while probe_env_busy && [ "$_busy_tries" -lt 5 ]; do sleep 2; _busy_tries=$((_busy_tries+1)); done
-if probe_env_busy; then
+# probe_env_busy / probe_wait_quiet are defined above section 13, which needs the same guard.
+if ! probe_wait_quiet; then
   note_skip "section 13b — this machine still has a conformance run or a build in flight (from another agent) after waiting 10s, which would make probe.sh's own machine-wide guard fire for reasons unrelated to this fixture. Re-run once the machine is quiet."
   rm -rf "$PR2"
 else
@@ -3487,6 +3503,257 @@ empty="$(printf '' | python3 "$UMBRELLA/bin/_ci_verdict.py" deadbeef)"; rce=$?
 [ "$empty" = "ERR" ] && [ "$rce" = 0 ] \
   && ok "empty stdin (a gh call that produced nothing) also prints ERR, not a silent empty verdict" \
   || bad "empty stdin did not produce ERR (rc=$rce, out='$empty')"
+
+say "15. gates.sh + gate-run.sh — the pre-push gate list and the tool that runs it (zero tests until now)"
+# WHY THIS EXISTS. gate-run.sh's own header says it exists because "the expensive thing is the thing that
+# gets quietly narrowed to five", and that green over an unrun gate is what it stops. Nothing tested it,
+# and on 2026-08-30 it printed "OK — every gate ran and passed", exit 0, over a repo bin/gates.sh had
+# never heard of: gates.sh printed nothing (its stderr went to /dev/null and its exit status was never
+# read), the loop ran zero times, and zero failures read as success. A verification tool that is itself
+# wrong converts unrun gates into reported-green, which is the exact failure it was built to prevent.
+# Both files carry a CANDOR_ROOT injection point now, for the same reason probe.sh grew one.
+GR="$(mktemp -d)"
+mkwf() { mkdir -p "$GR/$1/.github/workflows"; cat > "$GR/$1/.github/workflows/$2"; }
+grun()  { CANDOR_ROOT="$GR" bash "$UMBRELLA/bin/gate-run.sh" "$@" 2>&1; }
+glist() { CANDOR_ROOT="$GR" bash "$UMBRELLA/bin/gates.sh"    "$@" 2>&1; }
+
+# A NAME gates.sh DOES NOT KNOW is an error, not an empty list.
+mkdir -p "$GR/candor-old"
+out="$(glist candor-old)"; rc=$?
+[ "$rc" = 2 ] && ok "gates.sh refuses a repo name it does not know (exit 2), rather than printing nothing" \
+  || bad "an unknown repo name did not fail (rc=$rc): $out"
+out="$(grun candor-old)"; rc=$?
+[ "$rc" = 2 ] && ok "…and gate-run.sh propagates that: a gate LIST that could not be produced is exit 2" \
+  || bad "gate-run.sh did not propagate a failing gates.sh (rc=$rc): $out"
+printf '%s' "$out" | grep -q "gate LIST could not be produced" \
+  && ok "…and says the list is the thing that failed, not the gates" \
+  || bad "no diagnostic naming the LIST as the failure: $out"
+printf '%s' "$out" | grep -q "OK — every gate ran and passed" \
+  && bad "gate-run.sh printed the OK verdict over a repo whose gate list it could not read" \
+  || ok "…and never reaches the OK verdict over an unreadable gate list"
+
+# A repo gates.sh KNOWS, with no workflows at all: still not a pass.
+mkdir -p "$GR/candor-agents"
+out="$(grun candor-agents)"; rc=$?
+[ "$rc" = 2 ] && ok "a repo with NO workflows is INCOMPLETE (exit 2), not OK over an empty gate set" \
+  || bad "an empty gate set did not produce exit 2 (rc=$rc): $out"
+printf '%s' "$out" | grep -q "OK — every gate ran and passed" \
+  && bad "zero gates read as 'every gate ran and passed'" || ok "…and does not claim every gate passed"
+
+# THE CONTROL FOR ALL OF THE ABOVE. A tool that never says OK would pass every row so far while being
+# useless. So prove the green verdict is reachable on a repo whose one gate genuinely passes.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: true
+YML
+out="$(grun candor-agents)"; rc=$?
+[ "$rc" = 0 ] && ok "CONTROL: a repo whose only gate passes DOES reach OK, exit 0" \
+  || bad "the OK verdict is unreachable — every row above is vacuous (rc=$rc): $out"
+
+# A FAILING GATE MUST REACH THE EXIT CODE (attack H: detection is rarely the failure, aggregation is).
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: true
+      - name: b
+        run: false
+YML
+out="$(grun candor-agents)"; rc=$?
+[ "$rc" = 1 ] && ok "one failing gate among passing ones exits 1" \
+  || bad "a failing gate did not reach the exit code (rc=$rc): $out"
+printf '%s' "$out" | grep -q "gate-run: OK" \
+  && bad "a failing gate still printed OK" || ok "…and prints NOT GREEN, never OK"
+
+# A GATE THAT READS STDIN MUST NOT EAT THE GATE LIST. The loop reads its list on stdin, so without a
+# `</dev/null` the first stdin-reading gate swallows every gate below it — and the run then reports only
+# the gates that survived, with a clean OK. A silent narrowing that looks exactly like a short list.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: cat
+      - name: b
+        run: true
+      - name: c
+        run: true
+YML
+out="$(grun candor-agents)"; rc=$?
+printf '%s' "$out" | grep -q "3 gate(s) run" \
+  && ok "a gate that reads stdin does not swallow the gates below it (all 3 still run)" \
+  || bad "a stdin-reading gate narrowed the run: $(printf '%s' "$out" | grep 'gate(s) run')"
+[ "$rc" = 0 ] && ok "…and the run still concludes normally" || bad "stdin fixture did not conclude (rc=$rc): $out"
+
+# `working-directory:` IS PART OF THE COMMAND. Dropped, both candor-spec and the umbrella were
+# permanently un-greenable — and where a same-named script exists at the root, the wrong one runs.
+mkdir -p "$GR/candor-agents/sub"; printf 'x\n' > "$GR/candor-agents/sub/marker.txt"
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        working-directory: sub
+        run: test -f marker.txt
+YML
+out="$(glist candor-agents)"
+printf '%s' "$out" | grep -q "cd sub && test -f marker.txt" \
+  && ok "gates.sh prints a step's working-directory as an executable \`cd X && …\` prefix" \
+  || bad "the working-directory was dropped from the printed gate line: $out"
+out="$(grun candor-agents)"; rc=$?
+[ "$rc" = 0 ] && ok "…so gate-run.sh runs it where CI runs it, and the gate passes" \
+  || bad "a working-directory step did not run in its own directory (rc=$rc): $out"
+
+# A `${{ }}` EXPRESSION HAS NO LOCAL VALUE. bash calls it a bad substitution and exits 1, which reads
+# as a FAILING GATE — candor-java's `./dist/${{ matrix.asset }} --version` made that repo permanently red.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: ./dist/${{ matrix.asset }} --version
+      - name: b
+        run: true
+YML
+out="$(grun candor-agents)"; rc=$?
+printf '%s' "$out" | grep -q 'GitHub \${{ }} expression' \
+  && ok "an unexpanded GitHub expression is SKIPped and named, not run" \
+  || bad "the \${{ }} step was not named as unrunnable: $out"
+printf '%s' "$out" | grep -q "FAIL" \
+  && bad "an unexpandable GitHub expression was reported as a FAILING gate" \
+  || ok "…and is not miscounted as a failure"
+[ "$rc" = 2 ] && ok "…and a skipped gate makes the verdict INCOMPLETE (exit 2), never OK" \
+  || bad "a skipped gate did not produce INCOMPLETE (rc=$rc): $out"
+
+# BLOCK (`run: |`) LINES ARE COUNTED AS MANUAL AND NEVER EXECUTED — they are script fragments, and the
+# `~` marker gates.sh writes them with is at a different COLUMN from a gate line, so a line can be
+# neither both nor neither. If they were executed, the `exit 7` below would run.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: |
+          true
+          exit 7
+YML
+out="$(grun candor-agents)"; rc=$?
+printf '%s' "$out" | grep -q "0 gate(s) run, 0 ok, 0 failed, 0 skipped, 2 block line(s)" \
+  && ok "a multi-line block step contributes block lines, never executed gates" \
+  || bad "block-form accounting is wrong: $(printf '%s' "$out" | grep 'gate(s) run')"
+[ "$rc" = 2 ] && ok "…and block lines nobody ran make the verdict INCOMPLETE, not OK" \
+  || bad "unrun block lines did not produce INCOMPLETE (rc=$rc): $out"
+
+# EVERY block-scalar indicator, not just `|`. A FOLDED step (`run: >`) matched as a ONE-LINE step whose
+# command was the literal `>`, and the step's actual body vanished from the output altogether — not a
+# gate line, not a `~` line, absent. Latent (nothing in the family uses `>` today) and reachable by
+# writing one workflow, which is the silently-narrowed list both files exist to prevent.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: folded
+        run: >
+          echo one &&
+          echo two
+      - name: after
+        run: true
+YML
+out="$(glist candor-agents)"
+printf '%s' "$out" | grep -qx '        >' \
+  && bad "a folded 'run: >' step is printed as a gate whose command is the literal '>'" \
+  || ok "a folded 'run: >' step is not printed as a bare '>' gate"
+printf '%s' "$out" | grep -q '~ echo one &&' \
+  && ok "…and its body is kept, marked as block lines to read rather than run" \
+  || bad "the folded step's body vanished from the list entirely: $out"
+out="$(grun candor-agents)"; rc=$?
+printf '%s' "$out" | grep -q "1 gate(s) run, 1 ok, 0 failed, 0 skipped, 2 block line(s)" \
+  && ok "…and gate-run.sh counts it as 2 block lines beside the 1 real gate" \
+  || bad "folded-step accounting is wrong: $(printf '%s' "$out" | grep 'gate(s) run')"
+
+# An unrecognised second argument must not silently mean "not a dry run" and execute everything.
+# The fixture matters: over a repo that is INCOMPLETE anyway, exit 2 proves nothing, so use one whose
+# gate really would run, and assert on the diagnostic and on nothing having run.
+mkwf candor-agents ci.yml <<'YML'
+jobs:
+  t:
+    steps:
+      - name: a
+        run: true
+YML
+out="$(grun candor-agents --dryrun)"; rc=$?
+[ "$rc" = 2 ] && ok "a mistyped --dryrun is a usage error, not a live run of every gate" \
+  || bad "an unknown second argument was accepted (rc=$rc): $out"
+printf '%s' "$out" | grep -q "unknown argument '--dryrun'" \
+  && ok "…and names the argument it did not understand" || bad "no usage diagnostic: $out"
+printf '%s' "$out" | grep -q "gate(s) run" \
+  && bad "a mistyped flag still ran the gates" || ok "…and no gate ran under it"
+rm -rf "$GR"
+
+say "15b. probe.sh — the OTHER half of the BSD/GNU split in the same printf, driven on both flavours"
+# WHY THIS EXISTS. `stat` was fixed on 2026-08-30 and `date` — one line below it, in the same function,
+# in the same printf — was not. BSD `date -r EPOCH` renders an epoch; GNU `date -r` takes a FILE. So on
+# Linux both provenance timestamps rendered EMPTY ("built  · newest source  "), which reads as nothing
+# to report rather than as a broken renderer. Verified under ubuntu:latest in Docker.
+#
+# A row that only has teeth on Linux is the "teeth only on macOS" defect wearing the other hat, so this
+# drives BOTH flavours HERE by shimming `date` on PATH — the same trick for `stat`, whose failure path
+# was unreachable because a `|| return 0` returned before the loud NOTE it exists for could print.
+#
+# Same environment caveat as 13b, and for the same reason: probe.sh's quiet_tree_check greps the WHOLE
+# machine for a running build, so another agent's `swift build` refuses every probe below for a reason
+# that is not this fixture. Measured live while writing this section. Skip, never a false FAIL.
+if ! probe_wait_quiet; then
+  note_skip "section 15b — a build or conformance run from another agent is still in flight after 10s, which makes probe.sh's machine-wide guard refuse before it reaches the provenance line these rows read. Re-run once the machine is quiet."
+else
+PB="$(mktemp -d)"; mkdir -p "$PB/root/candor-rust" "$PB/shim"
+( cd "$PB/root/candor-rust" && git init -q && git branch -m main 2>/dev/null \
+  && printf 'fn main(){}\n' > lib.rs && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
+printf '#!/bin/bash\necho ran\n' > "$PB/root/candor-rust/binary"; chmod +x "$PB/root/candor-rust/binary"
+touch -t 202601020000 "$PB/root/candor-rust/binary"; touch -t 202601010000 "$PB/root/candor-rust/lib.rs"
+
+# CONTROL: this platform's own date, unshimmed. Both timestamps must render.
+base="$(CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
+printf '%s' "$base" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+  && ok "provenance renders both timestamps on this platform's own date(1)" \
+  || bad "a timestamp did not render on the native date(1): $(printf '%s' "$base" | grep built)"
+
+# THE OTHER FLAVOUR. A GNU-shaped `date`: `-r` wants a FILE, `-d @EPOCH` renders an epoch.
+cat > "$PB/shim/date" <<SHIM
+#!/bin/bash
+case "\$1" in
+  -r) [ -e "\$2" ] || { echo "date: \$2: No such file or directory" >&2; exit 1; }
+      exec /bin/date -r "\$(/usr/bin/stat -f %m "\$2")" "\$3" ;;
+  -d) exec /bin/date -r "\${2#@}" "\$3" ;;
+  *)  exec /bin/date "\$@" ;;
+esac
+SHIM
+chmod +x "$PB/shim/date"
+gnu="$(PATH="$PB/shim:$PATH" CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
+printf '%s' "$gnu" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+  && ok "…and on a GNU-shaped date(1), where \`date -r EPOCH\` is a file lookup that fails" \
+  || bad "provenance timestamps went blank under a GNU-shaped date: $(printf '%s' "$gnu" | grep built)"
+# CONTROL for the shim itself: it must actually be reached, or the row above proves nothing.
+PATH="$PB/shim:$PATH" date -r 1000000000 '+%s' >/dev/null 2>&1 \
+  && bad "the date shim was not on PATH (it still rendered an epoch via -r) — the row above is vacuous" \
+  || ok "…with the shim proven to be the date(1) that ran (its -r rejects an epoch)"
+
+# A stat that CANNOT read the mtime must print the loud NOTE, never return silently.
+cat > "$PB/shim/stat" <<'SHIM'
+#!/bin/bash
+exit 1
+SHIM
+chmod +x "$PB/shim/stat"
+noread="$(PATH="$PB/shim:$PATH" CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
+printf '%s' "$noread" | grep -q "staleness NOT checked" \
+  && ok "an unreadable mtime prints the loud NOTE (the \`|| return 0\` that skipped it is gone)" \
+  || bad "a failing stat returned silently — a silent 'fresh' is how the Linux bug survived: $noread"
+rm -rf "$PB"
+fi
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

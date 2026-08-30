@@ -8,6 +8,54 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — the gate-list tools attacked: `gate-run.sh` reported OK over zero gates, and the BSD/GNU fix had left three siblings behind
+
+`bin/gates.sh` and `bin/gate-run.sh` were written this morning to stop a gate list being quietly narrowed
+— the failure that let ten silent under-reports reach candor-rust's `main`. Neither had a test. Attacked,
+`gate-run.sh` carried the exact defect it exists to prevent, twice:
+
+- **Zero gates aggregated to `OK — every gate ran and passed`, exit 0.** `gates.sh` ran into a
+  `2>/dev/null` and its exit status was never read, so an unknown repo name (or a missing workflows
+  directory, or a dead `python3`) produced an EMPTY list, the loop ran zero times, and zero failures read
+  as success. `bash bin/gate-run.sh candor-old` printed the green verdict. Now: `gates.sh` refuses a name
+  it does not know, its stderr and exit status both reach `gate-run.sh`, and an empty gate set is
+  INCOMPLETE (exit 2). Attack H — the detector worked, the aggregator discarded it.
+- **A gate that reads stdin swallowed the gates below it.** The loop reads its own list on stdin, so
+  three gates in, a `run: cat` step ate the rest and the run reported `1 gate(s) run, 1 ok`, exit 0 —
+  a silent narrowing indistinguishable from a short list. Fixed with `</dev/null`, and backstopped by an
+  ACCOUNTING CHECK: run + skipped must equal the number of gate lines `gates.sh` printed, or there is no
+  verdict. That check also closes a third hole — a `case` arm that `continue`d without touching any
+  counter, while the file's own header claimed "the count you see is the count that exists".
+- **A folded `run: >` step printed as a gate whose command was the literal `>`**, with its body — the
+  lines below it — dropped from the output altogether: not a gate line, not a `~` line, absent. Latent
+  (nothing in the family uses `>` today) and reachable by writing one workflow. Every block-scalar
+  indicator is now recognised, and the real workflows' output is byte-identical.
+- **`working-directory:` was dropped**, so candor-spec (`bash check.sh`, under `lean`) and this repo
+  (`./gradlew buildPlugin`, under `integrations/jetbrains`) could never be green, and where a same-named
+  script exists at the root the wrong one would have run and passed. `gates.sh` now prints it as an
+  executable `cd X && …` prefix. An unexpanded `${{ matrix.asset }}` is likewise SKIPped and named rather
+  than reported as a FAILING gate — it made candor-java permanently red for no defect of its own.
+
+**And the `stat -f`/`stat -c` portability fix earlier the same day had drawn its boundary around its own
+trigger** (AGENT-CORPUS-BRIEF §9), found by grepping the mechanism rather than re-reading the file:
+
+- `date`, **one line lower in the same `printf`**: BSD `date -r EPOCH` renders an epoch, GNU `date -r`
+  takes a FILE. Both provenance timestamps rendered empty on every Linux runner.
+- `bin/candor`'s `doctor` drift check, a different file, with `stat -f '%m'` **and** `date -r` and no
+  fallback at all — on Linux the `-gt` errored to stderr and evaluated false, so "installed build is
+  older than your sources" **could never fire**. Confirmed by running the real dispatcher in
+  `ubuntu:latest`, old and new, against one fixture.
+- The loud NOTE the fix itself added for "stat did not yield an integer" sat behind a `|| return 0` that
+  returned first: **unreachable by its own stated trigger**, in a comment written that hour.
+
+New coverage, all proven RED against the pre-fix scripts with the `CANDOR_ROOT` injection held constant
+in both arms (25 assertions; both files grew that injection point, for the reason `probe.sh` grew one):
+release-test.sh sections 15 and 15b. 15b drives BOTH `date` flavours on one machine by shimming `date`
+on `PATH`, because a row with teeth only on Linux is the *teeth only on macOS* defect wearing the other
+hat. Section 13 also gained the environment guard 13b already had — on a busy box its rows went red for
+a reason that was not the subject, and its first row went **green** for a reason that was not the subject
+either: "control==subject is REFUSED, exit 2", and a refusal for being busy is also exit 2.
+
 ## 2026-08-30 — the SELECTION machinery: `verify-umbrella.sh`'s skip logic, `probe.sh`'s other two guards, and two files "read but never attacked"
 
 The previous entry in this file gave `verify-umbrella.sh` and `probe.sh` their first dedicated tests, but

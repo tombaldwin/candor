@@ -1380,15 +1380,28 @@ PY
       [ -d "$src/.git" ] || continue
       inst="$(command -v "$eng" 2>/dev/null)" || continue
       [ -n "$inst" ] || continue
-      # newest tracked source file in the repo vs the installed binary's mtime
+      # newest tracked source file in the repo vs the installed binary's mtime.
+      # BSD-ONLY `stat -f` / `date -r` WAS A SILENT NO-OP ON LINUX. GNU's `stat -f` is FILESYSTEM
+      # status, so it printed a block/inode dump onto stdout and `newest` became a non-integer; the
+      # `-gt` then errored to stderr and evaluated FALSE, so this warning could never fire. Same
+      # class, same day, as the one bin/probe.sh was fixed for — found by grepping the MECHANISM
+      # rather than stopping at the file that triggered the audit. See AGENT-CORPUS-BRIEF attack L.
+      # Both flavours are selected by asking for a KNOWN ANSWER, never by an exit code.
+      if [ -n "$(stat -c %Y / 2>/dev/null | tr -dc '0-9')" ]; then _mf=-c; _mv=%Y; else _mf=-f; _mv=%m; fi
       newest=$(find "$src" -name '*.rs' -o -name '*.swift' -o -name '*.mjs' 2>/dev/null \
                | grep -v -e '/\.build/' -e '/target/' -e '/node_modules/' \
-               | xargs stat -f '%m' 2>/dev/null | sort -rn | head -1)
-      ibin=$(stat -f '%m' "$inst" 2>/dev/null)
+               | xargs stat "$_mf" "$_mv" 2>/dev/null | sort -rn | head -1)
+      ibin=$(stat "$_mf" "$_mv" "$inst" 2>/dev/null)
+      case "$newest$ibin" in *[!0-9]*|'') newest=""; ibin="" ;; esac
       if [ -n "$newest" ] && [ -n "$ibin" ] && [ "$newest" -gt "$ibin" ]; then
         [ "$drift" -eq 0 ] && echo ""
+        if [ "$(date -d @1000000000 '+%s' 2>/dev/null)" = "1000000000" ]; then
+          _di="$(date -d "@$ibin" +%Y-%m-%d)"; _dn="$(date -d "@$newest" +%Y-%m-%d)"
+        else
+          _di="$(date -r "$ibin" +%Y-%m-%d)"; _dn="$(date -r "$newest" +%Y-%m-%d)"
+        fi
         printf "  ⚠ %-14s installed build is OLDER than %s's sources (%s vs %s)\n" \
-          "$eng" "$repo" "$(date -r "$ibin" +%Y-%m-%d)" "$(date -r "$newest" +%Y-%m-%d)"
+          "$eng" "$repo" "$_di" "$_dn"
         drift=1
       fi
     done

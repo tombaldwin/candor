@@ -6930,3 +6930,66 @@ Sequencing when the engines are free (they were agent-owned when this was decide
 4. Candidate C (A, carried interprocedurally through return types and fields) stays open with a
    fixture that must remain RED, so it cannot be mistaken for closed. UNMEASURED: whether A alone
    closes the common real-world shape. The Vec-of-boxed-callbacks form is probably C territory.
+
+## 2026-08-30 — HANDOFF: candor-rust wave 4 is REVERTED; the work is real but unshipped
+
+**Published state: `origin/main` = d073699, verified green end-to-end (fuzzer 60/60, workspace, ui
+39/0, integration 156/156, drop 40/40, self-gate, clippy). Nothing unverified is pushed.**
+
+Two attempts to land the same work, both failed, both caught by a gate rather than by review:
+
+1. `fa8e53a` — pushed, then reverted. `soundness/run.sh 60`: 60/0 at c04b28a, **50/10 at fa8e53a**;
+   all ten failing seeds carry the form `vec_contains_eq`, every failure `pure/omitted` over a real
+   effect. It reached main because I verified against the gate list in the AGENT'S REPORT (which
+   named `soundness/run_drop.sh`) instead of the repo's own list, which also has `soundness/run.sh`.
+2. `558863a` — local, NOT pushed. Re-land with the padding defect fixed. **Fails the ui harness on
+   macOS.** MEASURED, same machine, clean build (`cargo clean -p candor`), strictly serial, only the
+   commit differing: d073699 → ui_edition_2021 1/0 and ui 39/0; 558863a → ui_edition_2021 1 passed
+   **17 failed**, ui 37 passed **2 failed**.
+
+**First thing to check next session, not yet measured:** whether 558863a's three new `.stderr` files
+were blessed under LINUX. The agent re-ran `cargo test --lib` in Docker precisely because "those
+fixtures had only ever been blessed on macOS", and reported all 21 gates green. Attack L pointing the
+other way — verified on the other platform, and the macOS result never re-checked at the final commit.
+This is a hypothesis with a cheap test, NOT a finding.
+
+**The work itself is real and reproduced** (do not re-derive it): a rustc ICE on clean main (a local
+type in a HashSet — `local_trait_method_by_did` passed one generic arg for `Hash::hash<H: Hasher>`,
+which declares two); `register(<S as T>::run)` silent-pure; `Mutex/RwLock/RefCell<Guard>` and nested
+`Box<Box<Guard>>` silent-pure. Recoverable from fa8e53a, 558863a, and wip/wave4-container-recursion.
+
+The real cause of ten silent under-reports, MEASURED by tracing the args builder (and NOT the "short
+args list" my own revert message asserted — that was wrong):
+
+    trait_args_for PartialEq::eq known=[Eq00] built=[Eq00, ()] resolve=Ok(None)
+
+The list was well-formed and pointed at the WRONG IMPL. `PartialEq<Rhs = Self>` declares a trait
+parameter beyond Self; a uniform `()` filler asks about `<Eq00 as PartialEq<()>>::eq`, which does not
+exist. Trait parameters SELECT THE IMPL, so an unknown one must come from its own declared default,
+never from an inert filler; only the method's own parameters can take `()`.
+
+### Open, needing Tom
+- ⟨0.34⟩ built and unreleased, floor 0.33, non-additive.
+- `io::Error` Dynamic-arm amplification: any fn dropping a `std::io::Error` inherits the union of every
+  local `Error` impl's Drop effects. Sound, pre-existing, 5 units in 1 of 11 corpora — narrowing needs
+  a SPEC clause.
+- `coverage-gate-refresh` is genuinely red: 36 regressed, 81 newly-open rows, from live crates.io
+  drift (ureq 2→3, sea_orm, sqlx_core, rusqlite, lettre, redis). PROVEN not ours — the generator was
+  re-run with the change stashed and the outputs were byte-identical. Needs a triage owner.
+- candor-ts's `parsepolicy`/`whatif` parity rows are the ONLY checks pinning the shared policy parser
+  (now depended on by three modules) and NEVER RUN IN CI. Fixing that changes CI's hermeticity policy.
+
+### Cross-engine questions produced today, none with a conformance row yet
+- Does your engine resolve a method named as a VALUE the same way as that method CALLED?
+- Where do you synthesise a type argument you were not given, and does that argument SELECT an impl?
+- Does your refusal-marker lookup see §3.3.1's direct-file locator for a MULTI-report prefix?
+- (Filed separately) the boxed-closure Drop sin: measure swift `deinit` and java `Closeable` FIRST.
+
+### Machine facts worth not re-deriving
+- `timeout` and `gtimeout` are ABSENT on this box. Shipped scripts handle it (candor-swift's
+  realworld/run.sh degrades explicitly); the exposure is ad-hoc agent harnesses, which return a clean
+  zero having executed nothing. CLEAN NEGATIVE: no shipped gate is affected.
+- This shell is zsh: unquoted `$var` does NOT word-split, so `bash $g` where g="script.sh 60" fails
+  with 127. Cost three bogus gate results today.
+- Concurrent cargo runs on this box contend on the dylint driver and produce "build failed under
+  dylint" for every seed — a false negative indistinguishable from a real one. Run rust gates SERIALLY.

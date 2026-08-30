@@ -8,6 +8,55 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — the guard-deletion sweep: nine untested `release-preflight.sh` bad() branches, closed
+
+`bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §C — delete each guard in turn, does anything go
+red? — had never been run systematically over this repo's release scripts. It has now, over
+`release-verify.sh` and `release-preflight.sh` first (the two named highest-priority: the last line of
+defence, and the pre-cut gate). `release-verify.sh` came back clean on the checks it was pointed at ([3]
+the DRAFT-release catch, [7e] the per-engine pin staleness) — both already carry real fixture batteries
+(`release-test.sh` §7d/§7e) that fail when their `bad()` line is deleted. `release-preflight.sh` did not:
+**9 of its `bad()` branches — [1], [2], [2b], [3]'s STRICT-mode pin check, [4], [5], [6], and both of
+[8]'s arms — produced no red anywhere** when deleted, one at a time, and re-run against the full
+295-assertion suite (281 before this work). [12] (a spec rung described above its own declared version —
+the exact shape of the ⟨0.31⟩ non-additive near-miss) was untested in its entirety, both branches.
+
+Every csfix-built fixture `release-test.sh` already had was internally consistent — same declared spec
+everywhere, no stray prior-floor string, matching crate deps, agreeing repo lists, a spec whose highest
+rung equals its own version — which is exactly why these checks could run on every row in that file
+without ever taking their FAIL branch. A check that never sees its own failure state is untested,
+whatever colour the suite prints.
+
+**Method, not counting**: `[10]`'s CI-verdict machinery and `[3]`'s per-engine front-door pins were
+_not_ on this list — both already have extensive dedicated batteries (§7b, §8's per-engine-pin rows) that
+break on deletion, confirmed rather than assumed by re-checking after the fact.
+
+Fixed by adding §9b to `release-test.sh`: one battery, reusing the existing `csfix` fixture, with a
+targeted mutation per check (a one-rung-behind `SPEC_VERSION`, a stray `spec 0.31` comment, a bare-literal
+`"spec"`/`"0.31"` pair the [2] regex structurally cannot see, an un-bumped cross-repo pin under STRICT
+(non-advisory) mode, a stale hand-maintained build constant, a CHANGELOG that never mentions the floor, a
+rust crate requiring a sibling at the prior version, `release-verify.sh` and `changelog-lag.sh` each
+edited to check a narrower repo set than `release.sh` publishes, and a SPEC.md rung one ahead of its own
+declared version) plus, where the check has one, an explicit CONTROL proving the clean fixture doesn't
+already trip it. All 14 new assertions were run RED against the actual deletion and GREEN at HEAD before
+being kept — a test that cannot fail is worth nothing, and grep-matching a `bad()` message that only one
+line can produce is checked, not assumed, once per row.
+
+**Left unreached, by priority order, not by proof of safety**: `release.sh`/`release-stage.sh`/
+`_release_set.sh`/`_release_notes.sh` carry large existing batteries and were spot-checked rather than
+swept exhaustively. `release-verify.sh` has a handful of additional `bad()` lines with no matching test —
+npm's own version-mismatch line, the `adopt/` pin lines ("no pin found" / "pins X, not VER"), "no pinned
+download URLs found", and the artifact-URL version-mismatch line — found by the same method (grep for the
+message text in `release-test.sh`) but not confirmed by mutation or fixed. `verify-local.sh`,
+`verify-umbrella.sh` and `probe.sh` have **no dedicated tests of their own internal logic at all** — every
+reference to them elsewhere in this repo's scripts is as a STUBBED dependency of some other script's test,
+never a test of their own branching. `verify-local.sh` in particular has a single line
+(`[ -s "$FAILED" ] && rc=1`) that is the entire pass/fail signal for the whole script, untested, and unlike
+every other script in this family it has no `CANDOR_ROOT`-style injection point to fixture it with — adding
+one is a prerequisite for testing it, not just a test-writing exercise. `changelog-lag.sh` and
+`_ci_verdict.py` were read but not attacked directly (the latter is exercised extensively via `[10]`'s own
+battery). None of this is claimed clean; it is unexamined.
+
 ## 2026-08-30 — the umbrella's first revert sweep: 3 of 9 protected fixes were not
 
 A revert sweep (`bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §A: revert the fix, does any test go

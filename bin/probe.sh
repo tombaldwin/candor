@@ -115,6 +115,21 @@ else
   MT_FLAG=-f; MT_FMT=%m     # BSD / macOS
 fi
 
+# AND `date`, WHICH IS THE SAME SPLIT ONE LINE LOWER AND WAS LEFT BEHIND BY THE stat FIX.
+# BSD `date -r EPOCH` renders an epoch; GNU `date -r` takes a FILE and wants `-d @EPOCH` for an
+# epoch. So on Linux both timestamps in the provenance line below rendered EMPTY —
+# "built  · newest source  " — which reads as "nothing to report" rather than as a broken renderer.
+# Measured under ubuntu:latest in Docker on 2026-08-30, in the same function, in the same printf, one
+# hour after the stat half was fixed and the lesson written up as attack L. An audit's boundary must
+# not be drawn around its own trigger, and this one was.
+# Selected by ASKING FOR A KNOWN ANSWER, not by exit code: `date -d @1000000000 '+%s'` is
+# `1000000000` on GNU and empty on BSD, where `-d` is the daylight-saving flag.
+if [ "$(date -d @1000000000 '+%s' 2>/dev/null)" = "1000000000" ]; then
+  hhmmss() { date -d "@$1" '+%H:%M:%S' 2>/dev/null; }   # GNU coreutils
+else
+  hhmmss() { date -r "$1" '+%H:%M:%S' 2>/dev/null; }    # BSD / macOS
+fi
+
 provenance() {
   local bin="$1" repo="" bt
   case "$bin" in
@@ -125,7 +140,11 @@ provenance() {
     *) return 0 ;;
   esac
   [ -e "$bin" ] || return 0
-  bt=$(stat "$MT_FLAG" "$MT_FMT" "$bin" 2>/dev/null) || return 0
+  # NO `|| return 0` HERE. It was the first thing on this line, and it swallowed the exact case the
+  # NOTE below exists for: a stat that FAILS exits non-zero, so `|| return 0` returned silently and
+  # the loud path was only reachable by a stat that succeeded and printed a non-integer — which the
+  # single-selection above makes impossible. The guard was unreachable by its own stated trigger.
+  bt=$(stat "$MT_FLAG" "$MT_FMT" "$bin" 2>/dev/null)
   # A stat that did not yield an integer must be LOUD, never a silent "fresh" — that is exactly how
   # the `||` form above stayed broken on Linux for its whole life.
   case "$bt" in
@@ -149,8 +168,8 @@ provenance() {
          -not -path '*/target/*' -not -path '*/.build/*' -not -path '*/node_modules/*' -not -path '*/build/*' \
          -exec stat "$MT_FLAG" "$MT_FMT" {} \; 2>/dev/null | sort -rn | head -1)
   printf '  provenance: %s\n              built %s · newest source %s (HEAD %s)\n' \
-    "$bin" "$(date -r "$bt" '+%H:%M:%S' 2>/dev/null)" \
-    "${st:+$(date -r "$st" '+%H:%M:%S' 2>/dev/null)}" "$(git -C "$repo" log -1 --format=%h)"
+    "$bin" "$(hhmmss "$bt")" \
+    "${st:+$(hhmmss "$st")}" "$(git -C "$repo" log -1 --format=%h)"
   if [ -n "$st" ] && [ "$bt" -lt "$st" ]; then
     echo "  *** STALE: this binary is OLDER THAN THE SOURCE. You are measuring code that is not on disk." >&2
     STALE=1

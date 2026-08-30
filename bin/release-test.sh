@@ -4112,6 +4112,54 @@ dg_seq="$(CANDOR_DISK_FAKE_FREE_MB=9999,9999,100 bash -c '. "$0"; for _ in 1 2 3
   && ok "the fake-free sequence advances across subshell calls and holds its last value" \
   || bad "the injection point does not advance — every row above it is vacuous: got '$dg_seq'"
 
+# A GATE WHOSE INTERPRETER IS ABSENT DID NOT FAIL, IT DID NOT RUN. Sibling of the `${{ }}` arm that
+# already existed: that one exists because an unexpandable GitHub expression made candor-java
+# "permanently red for a reason that is not a defect in candor-java". A missing binary is the same
+# thing spelled differently, and only one of the two was handled. Measured 2026-08-30: CI provides
+# `python`, macOS ships only `python3`, and three umbrella gates reported FAIL at rc=127 while all
+# three of their assertions pass under python3.
+mkdir -p "$DG/nb/candor-rust/.github/workflows" "$DG/nb/candor-rust/ci"
+cat > "$DG/nb/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: absent interpreter
+        run: definitely-not-a-real-binary-xyz --version
+      - name: present
+        run: bash ci/a.sh
+YAML
+printf '#!/bin/sh\nexit 0\n' > "$DG/nb/candor-rust/ci/a.sh"; chmod +x "$DG/nb/candor-rust/ci/a.sh"
+dg_nb="$(CANDOR_ROOT="$DG/nb" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_nb_rc=$?
+printf '%s' "$dg_nb" | grep -q 'SKIP.*is not installed here' \
+  && ok "an absent interpreter is SKIPPED and named, not reported as a failing gate" \
+  || bad "a gate that could not run was reported as one that failed"
+[ "$dg_nb_rc" -eq 2 ] \
+  && ok "…and a skip still makes the verdict INCOMPLETE (rc=2) — unrunnable is still unrun" \
+  || bad "an absent interpreter did not withhold the verdict (rc=$dg_nb_rc)"
+printf '%s' "$dg_nb" | grep -q '1 gate(s) run' \
+  && ok "…and the present gate beside it still ran" \
+  || bad "the skip swallowed its neighbour"
+# THE OVER-CHARGE CONTROL FOR THE SKIP: a path this repo owns must NOT be excused. `./gradlew` or
+# `bin/foo.sh` going missing IS a defect, and a skip arm that swallowed it would delete the tool.
+mkdir -p "$DG/own/candor-rust/.github/workflows"
+cat > "$DG/own/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: our own missing script
+        run: ./ci/does-not-exist.sh
+YAML
+dg_own="$(CANDOR_ROOT="$DG/own" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_own_rc=$?
+[ "$dg_own_rc" -eq 1 ] && printf '%s' "$dg_own" | grep -q 'FAIL' \
+  && ok "a MISSING SCRIPT THIS REPO OWNS still FAILS — the skip does not excuse our own paths" \
+  || bad "the not-installed skip swallowed a missing script the repo owns (rc=$dg_own_rc)"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

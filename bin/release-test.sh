@@ -4160,6 +4160,38 @@ dg_own="$(CANDOR_ROOT="$DG/own" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&
   && ok "a MISSING SCRIPT THIS REPO OWNS still FAILS — the skip does not excuse our own paths" \
   || bad "the not-installed skip swallowed a missing script the repo owns (rc=$dg_own_rc)"
 
+# THE BSD/GNU mktemp SPLIT, driven on BOTH flavours. `mktemp -t NAME` appends randomness to a PREFIX
+# on BSD and demands a TEMPLATE containing XXXXXX on GNU. gates.sh used the BSD form, so on every
+# Linux runner its trigger classifier could not even be written: nothing was excluded-and-named and
+# release-scripts went red on the workflow that gates.sh had just made visible. Green on macOS, dead
+# on Linux — this is §15b's split (date -r, stat) one command over, so it gets the same treatment.
+gm_shim="$DG/gnu"; mkdir -p "$gm_shim"
+cat > "$gm_shim/mktemp" <<'SH'
+#!/bin/sh
+# GNU semantics: -t takes a TEMPLATE and refuses one with fewer than 6 trailing X's.
+for a in "$@"; do
+  case "$a" in
+    -*) ;;
+    *XXXXXX*) ;;
+    *) echo "mktemp: too few X's in template '$a'" >&2; exit 1 ;;
+  esac
+done
+exec /usr/bin/mktemp "$@"
+SH
+chmod +x "$gm_shim/mktemp"
+# Prove the shim is the mktemp that ran, or the row below is vacuous on a box whose real mktemp is
+# already lenient — the same non-vacuousness control §15b carries for its date shim.
+PATH="$gm_shim:$PATH" mktemp -t no-x-here >/dev/null 2>&1 \
+  && bad "the GNU mktemp shim did not reject a template without XXXXXX — the row below proves nothing" \
+  || ok "the GNU mktemp shim is the mktemp that ran (it rejects a bare -t prefix)"
+gm_out="$(PATH="$gm_shim:$PATH" CANDOR_ROOT="$DG/nb" bash "$UMBRELLA/bin/gates.sh" candor-rust 2>&1)"; gm_rc=$?
+[ "$gm_rc" -eq 0 ] && ! printf '%s' "$gm_out" | grep -q "too few X's" \
+  && ok "gates.sh runs under GNU mktemp semantics — the -t PREFIX form is gone" \
+  || bad "gates.sh still dies under GNU mktemp: $(printf '%s' "$gm_out" | head -1)"
+printf '%s' "$gm_out" | grep -q 'bash ci/a.sh' \
+  && ok "…and still prints the gate list, so the classifier actually ran on the GNU flavour" \
+  || bad "gates.sh survived GNU mktemp but produced no gate list — dead in a quieter way"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

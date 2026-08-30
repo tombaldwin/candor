@@ -42,7 +42,13 @@ fi
 
 # The trigger classifier used by the loop below. See the long comment at its call site for WHY the
 # question is "what does this workflow's own `on:` block say" and not "what is it called".
-TRIGGERS="$(mktemp -t candor-gates-triggers)"
+# `mktemp -t NAME` IS NOT PORTABLE AND FAILS ON EVERY LINUX RUNNER. On BSD/macOS `-t` takes a PREFIX
+# and appends the randomness itself; on GNU it takes a TEMPLATE and refuses one without `XXXXXX`
+# ("mktemp: too few X's in template"). This script then had no classifier at all, nothing was
+# excluded-and-named, and CI went red on the very workflow that this file's new trigger logic had
+# just made visible. Green on macOS, dead on Linux — the same BSD/GNU split §15b already pins for
+# `date -r` and `stat`, one command over. Spell the template explicitly; both agree on that form.
+TRIGGERS="$(mktemp "${TMPDIR:-/tmp}/candor-gates-triggers.XXXXXX")"
 trap 'rm -f "$TRIGGERS"' EXIT
 cat > "$TRIGGERS" <<'PY'
 import sys, re

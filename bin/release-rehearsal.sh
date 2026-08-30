@@ -105,7 +105,12 @@ tree_bad=0; tree_n=0
 for r in $CLEAN_REPOS; do
   tree_n=$((tree_n + 1))
   d="$ROOT/$r"
-  if [ ! -d "$d/.git" ]; then
+  # `rev-parse --git-dir`, not `-d "$d/.git"`: in a git WORKTREE the root `.git` is a FILE, so the
+  # `-d` form reported a good checkout as "not a git repo" and this arm produced a false PROBLEM —
+  # the mirror image of the false-clean it was added to stop. Same authority form as release.sh's
+  # step 0, which this arm is a read-only replay of; if the two drift apart the rehearsal stops
+  # rehearsing the thing it names.
+  if ! git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
     # NOT A SKIP. `git -C <missing> status --porcelain` fails to stderr and prints NOTHING to stdout —
     # identical to a real "no changes" answer to every check below — so a repo that was never cloned
     # (wrong CANDOR_ROOT, a fresh machine mid-bootstrap: [[candor-anya-second-machine]]) must not be

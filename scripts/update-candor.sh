@@ -28,6 +28,12 @@ cd "$HERE"
 # 1. the tag and UMBRELLA_VERSION must agree
 UV="$(sed -n 's/^UMBRELLA_VERSION="\([^"]*\)".*/\1/p' bin/candor)"
 [ "$UV" = "$VER" ] || { echo "refusing: bin/candor UMBRELLA_VERSION=$UV but tag is $TAG — bump them together."; exit 1; }
+# ASK GIT WHETHER IT CAN SEE THIS TREE AT ALL. `git status --porcelain` outside a checkout fails to
+# stderr and prints NOTHING on stdout, so the `-z` below reads "clean" over a tree that is not under
+# version control — an unpacked tarball, a copied directory. This script then tags and pushes.
+# Same mechanism, same authority form, as release.sh step 0; found by grepping `status --porcelain`
+# across bin/ and scripts/ rather than only the two sites the report named.
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "refusing: $HERE is not a git checkout — git cannot report its state, and 'no changes' from a tree git cannot read is not the same as clean."; exit 1; }
 [ -z "$(git status --porcelain)" ] || { echo "refusing: working tree is dirty — commit first."; exit 1; }
 [ -f "$FORMULA" ] || { echo "no formula at $FORMULA (set CANDOR_TAP)."; exit 1; }
 

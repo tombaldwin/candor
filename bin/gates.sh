@@ -39,6 +39,49 @@ if [ -n "$want" ]; then
     exit 2
   fi
 fi
+
+# The trigger classifier used by the loop below. See the long comment at its call site for WHY the
+# question is "what does this workflow's own `on:` block say" and not "what is it called".
+TRIGGERS="$(mktemp -t candor-gates-triggers)"
+trap 'rm -f "$TRIGGERS"' EXIT
+cat > "$TRIGGERS" <<'PY'
+import sys, re
+lines = open(sys.argv[1]).read().splitlines()
+i = 0
+while i < len(lines) and not re.match(r'''^["']?on["']?\s*:''', lines[i]):
+    i += 1
+if i >= len(lines) or lines[i].split(':', 1)[1].strip():
+    print(""); raise SystemExit          # no readable `on:`, or an inline one — PRINT the workflow
+keys, push_sub = [], []
+i += 1
+while i < len(lines):
+    if lines[i].strip() and not lines[i][:1].isspace():
+        break                            # dedented back out of the `on:` mapping
+    m = re.match(r'^  ([A-Za-z_]+)\s*:', lines[i])
+    if m:
+        keys.append(m.group(1))
+        if m.group(1) == 'push':
+            j = i + 1
+            while j < len(lines) and (not lines[j].strip() or lines[j].startswith('    ')):
+                s = re.match(r'^    ([A-Za-z_-]+)\s*:', lines[j])
+                if s and not lines[j].lstrip().startswith('#'):
+                    push_sub.append(s.group(1))
+                j += 1
+    i += 1
+# `push: tags: [v*]` needs a CUT, not a push. A `push:` restricted to anything else — or to nothing —
+# can land on a branch, so it gates a push and must be printed.
+tags_only = bool(push_sub) and set(push_sub) <= {'tags', 'tags-ignore'}
+gate = ('pull_request' in keys) or ('push' in keys and not tags_only)
+# EXCLUDING IS NARROWING, SO SAY WHAT IS BEHIND THE EXCLUSION. A bare "not a pre-push gate" reads as
+# "nothing here"; the step COUNT says how much this line is standing in front of, so a wrong call is
+# visible as a number rather than as an absence. This is the same reason gate-run.sh reports skipped
+# and block lines instead of dropping them.
+steps = sum(1 for l in lines if re.match(r'^\s*-?\s*run:', l))
+print("" if gate else "on: %s%s — not a pre-push gate; %d run step(s) behind this line" % (
+    ", ".join(keys) or "?", " (tags only)" if tags_only else "", steps))
+PY
+
+excluded=0
 for r in "${REPOS[@]}"; do
   [ -n "$want" ] && [ "$r" != "$want" ] && continue
   d="$ROOT/$r/.github/workflows"
@@ -46,10 +89,36 @@ for r in "${REPOS[@]}"; do
   if [ ! -d "$d" ]; then echo "  (no workflows directory at $d)"; continue; fi
   for wf in "$d"/*.yml "$d"/*.yaml; do
     [ -e "$wf" ] || continue
-    # Skip release/tag-triggered workflows: they need a cut, not a push. Named, not hidden.
-    case "$(basename "$wf")" in
-      release*|publish*|nightly*) printf '  -- %s (release/scheduled — not a pre-push gate)\n' "$(basename "$wf")"; continue ;;
-    esac
+    # WHICH WORKFLOWS GATE A PUSH IS DECIDED BY THEIR OWN `on:` BLOCK — NEVER BY THEIR FILENAME.
+    #
+    # This was `case "$(basename "$wf")" in release*|publish*|nightly*)`, and a name glob was wrong in
+    # BOTH directions on the repo that holds this file. Measured 2026-08-30:
+    #   * DROPPED a real gate. The umbrella's own `release-scripts.yml` is `on: push: branches:[main]`
+    #     + `pull_request` — it is the job that runs `bash bin/release-test.sh` — and it was excluded
+    #     from `gates.sh candor` by its NAME, under a parenthetical that read like a considered
+    #     decision. The gate list for this repo was silently narrowed by a string match, which is the
+    #     exact failure these two files exist to prevent (AGENT-CORPUS-BRIEF §9: a boundary drawn
+    #     around a NAME is as bad as one drawn around its trigger).
+    #   * KEPT three lines that cannot run. `corpus.yml` is schedule-only and builds SIBLINGS from
+    #     paths CI creates by checking them out into the workspace, so `cargo build --manifest-path
+    #     candor-rust/Cargo.toml` from the umbrella root fails on every desk — `gate-run.sh candor`
+    #     was permanently red for a reason that is not a defect, the same shape as candor-java's
+    #     unexpanded `${{ matrix.asset }}`, and a reader learns to discount the red.
+    #
+    # Ask the authority (attack G). Crude in the SAFE direction, like the rest of this file: a
+    # workflow is PRINTED unless the parse positively proves it cannot run on a push to a branch, so
+    # an `on:` shape this cannot read — or a dead python3 — over-prints rather than drops. The reason
+    # names the triggers it read, so a WRONG parse is visible on screen instead of being a short list.
+    #
+    # The classifier is written to a FILE at the top of this script rather than heredoc'd here: a
+    # heredoc nested inside `$(...)` is a shell parse hazard, and it is the first of the nine defects
+    # bin/release-test.sh's own header records (0.25). Reproduced while writing this line.
+    why="$(python3 "$TRIGGERS" "$wf")"
+    if [ -n "$why" ]; then
+      printf '  -- %s (%s)\n' "$(basename "$wf")" "$why"
+      excluded=$((excluded + 1))
+      continue
+    fi
     printf '  -- %s\n' "$(basename "$wf")"
     # `run:` steps, both the one-line and block forms. Crude on purpose: over-printing a line is
     # cheap, and a clever parser that silently drops a step is exactly the failure this prevents.
@@ -108,3 +177,8 @@ PY
   done
 done
 printf '\nRun every line above for the repo you are pushing. The gate you skip is the one that is red.\n'
+# COUNT WHAT WAS EXCLUDED, at the bottom, where the verdict is read. Each exclusion is already named
+# beside its workflow, but a per-workflow parenthetical scrolls past; a total does not. If this number
+# is not what you expect, the `on:` parse is wrong and the list above is short.
+[ "$excluded" -gt 0 ] && printf '%s workflow(s) excluded above as not-pre-push (schedule / dispatch / tag-only) — each named with its own triggers.\n' "$excluded"
+exit 0

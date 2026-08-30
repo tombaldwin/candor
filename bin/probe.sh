@@ -78,14 +78,25 @@ die() { echo "probe: $*" >&2; exit 2; }
 # A dirty tree is not automatically fatal (you may be probing your own edit) but it is NAMED, and a
 # running build/suite is fatal: that is failure (2), and it produced a false cardinal-sin accusation.
 quiet_tree_check() {
-  local dirty=""
+  local dirty="" unreadable=""
   for r in $ENGINES; do
     [ -d "$ROOT/$r" ] || continue
+    # A DIRECTORY THAT IS NOT A CHECKOUT ANSWERS "CLEAN". `status --porcelain` fails to stderr (here
+    # swallowed by the `2>/dev/null` this line already carried) and prints nothing on stdout, so the
+    # `-n` below is false and the repo silently drops out of the NOTE. Same mechanism as the
+    # release.sh/release-stage.sh/spec-bump.sh sites, found by grepping `status --porcelain` across
+    # bin/ rather than by re-reading the file that triggered the audit. Advisory here, not a gate —
+    # but "we did not look" must not render as "nothing to report", which is this repo's whole thesis.
+    if ! git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1; then
+      unreadable="$unreadable $r"
+      continue
+    fi
     if [ -n "$(git -C "$ROOT/$r" status --porcelain 2>/dev/null | grep -v '^?? ')" ]; then
       dirty="$dirty $r"
     fi
   done
   [ -n "$dirty" ] && echo "probe: NOTE — dirty tree(s):$dirty (your measurement includes uncommitted work)" >&2
+  [ -n "$unreadable" ] && echo "probe: NOTE — not a git checkout, tree state NOT checked:$unreadable" >&2
   if pgrep -f "conformance/run.sh" >/dev/null 2>&1; then
     die "a conformance run is IN FLIGHT. It reads engines from their working trees; measuring now, or
       editing now, contaminates it in both directions. Wait for it."

@@ -409,16 +409,152 @@ printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
   || { bad "CONTROL setup is broken — step 0 does not pass on an all-clean fixture, so the row below proves nothing"; printf '%s\n' "$rs0out" | tail -6; }
 rm -rf "$RS0/candor-java"
 rs0out="$(rs0_run)"; rs0rc=$?
+# THIS ROW USED TO READ ONLY `[ "$rs0rc" != 0 ]`, AND IT COULD NOT FAIL. Measured 2026-08-30 by
+# removing the injection above and re-running: with NO repo deleted, release.sh still exits non-zero,
+# because this fixture cannot reach a registry and dies at `cargo publish -p candor-report`. So the
+# exit code says "release.sh stopped", never "step 0 stopped it" — the row would have stayed green
+# with step 0 deleted outright, while being named for it. Its two siblings below always had teeth,
+# and the reason is the whole pattern: they assert on the DOCUMENT (step 0's own diagnostic, and the
+# ABSENCE of step 0's success claim), which no later failure can produce or suppress.
+# So the exit code is kept — it is still the operator-visible signal — and BOUNDED: the run must have
+# died BEFORE the publish step, which is the part only step 0 can cause.
 [ "$rs0rc" != 0 ] \
   && ok "a repo missing entirely makes release.sh step 0 die, not pass" \
   || bad "release.sh exited 0 with candor-java's directory deleted — THE NINTH FALSE GREEN IS BACK"
-printf '%s' "$rs0out" | grep -q "candor-java is not a git repo at" \
+printf '%s' "$rs0out" | grep -q "cargo publish" \
+  && bad "release.sh got as far as \`cargo publish\` with a repo missing — step 0 did not stop it, so the exit code above is about something else" \
+  || ok "…and dies AT step 0: the run never reaches \`cargo publish\`, which is what makes the row above attributable"
+printf '%s' "$rs0out" | grep -q "candor-java is not a git checkout at" \
   && ok "…and names the repo and says why, rather than dying on an unrelated later step" \
   || bad "step 0 did not name the missing repo — '$(printf '%s' "$rs0out" | grep -m1 '✘')'"
 printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
   && bad "release.sh still printed \"all mains clean + pushed\" with a repo missing — the false claim survives" \
   || ok "…and does not also claim \"all mains clean + pushed\""
+
+# ── THE SIBLINGS THAT FIX LEFT, both directions ────────────────────────────────────────────────────
+# The ninth-false-green fix guarded with `[ -d "$ROOT/$r/.git" ]`, and a DIRECTORY named `.git` is not
+# what "is this a checkout" means. Measured 2026-08-30, truth table over four tree shapes:
+#
+#                        -d "$d/.git"   git -C "$d" rev-parse --git-dir
+#   real checkout            TRUE                  TRUE
+#   git WORKTREE             FALSE  ← wrong        TRUE
+#   plain directory          FALSE                 FALSE
+#   missing directory        FALSE                 FALSE
+#
+# So the fix closed a false-clean and opened a false-DEATH: in a worktree the root `.git` is a FILE,
+# and `bin/verify-umbrella.sh` runs this repo's whole suite inside a throwaway worktree. Both rows
+# below are about the SAME line; neither can be satisfied by the other, which is the point.
+rm -rf "$RS0/candor-java"
+git -C "$RS0/candor-spec" worktree add -q --detach "$RS0/candor-java" >/dev/null 2>&1
+if [ -f "$RS0/candor-java/.git" ]; then
+  rs0out="$(rs0_run)"
+  printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+    && ok "a repo checked out as a git WORKTREE passes step 0 (its \`.git\` is a FILE, so \`-d\` said no)" \
+    || bad "step 0 rejected a legitimate git worktree — '$(printf '%s' "$rs0out" | grep -m1 'not a git')'"
+  git -C "$RS0/candor-spec" worktree remove --force "$RS0/candor-java" >/dev/null 2>&1
+else
+  note_skip "1d worktree row — \`git worktree add\` did not produce a \`.git\` FILE here, so the fixture cannot distinguish the two guard forms and the row would be vacuous"
+fi
+# …and the direction the ORIGINAL fix was right about must still hold for a directory that EXISTS but
+# is not a checkout — an unpacked tarball, a copied tree, an interrupted clone. `git -C <it> status
+# --porcelain` fails to stderr and prints nothing, byte-identical to "no changes".
+rm -rf "$RS0/candor-java"; mkdir -p "$RS0/candor-java"; printf 'x\n' > "$RS0/candor-java/README.md"
+rs0out="$(rs0_run)"; rs0rc=$?
+[ "$rs0rc" != 0 ] && printf '%s' "$rs0out" | grep -q "candor-java is not a git checkout at" \
+  && ok "a directory that is NOT a checkout dies at step 0 and is named, exactly as a missing one is" \
+  || bad "a present-but-unversioned directory did not die at step 0 (rc=$rs0rc) — 'no changes' from a tree git cannot read read as clean"
+printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+  && bad "release.sh claimed \"all mains clean + pushed\" over a directory git cannot read" \
+  || ok "…and does not claim the mains were clean"
 rm -rf "$RS0"
+
+say "1e. the SWEEP behind 1d — every place a tree's git state is read, not the two that were reported"
+# WHY A SEPARATE SECTION. The ninth-false-green fix (release.sh + release-rehearsal.sh) drew its
+# boundary around its own trigger, and a review found two more sites by grepping the MECHANISM:
+#
+#   grep -rn 'status --porcelain' bin/ scripts/      # who READS a tree's cleanliness
+#   grep -rn '\-d "[^"]*\.git"'   bin/ scripts/      # who GUARDS that read, and how
+#
+# Ten call sites across nine files, in two directions, both invisible on a healthy desk:
+#   * guarded by `-d "$dir"`      → a directory that is not a checkout reports "no changes" and reads
+#                                   CLEAN (release-stage.sh, spec-bump.sh, probe.sh, update-candor.sh)
+#   * guarded by `-d "$dir/.git"` → a git WORKTREE keeps a FILE there, so a good checkout reads as
+#                                   "not a git repo" (release.sh, release-rehearsal.sh,
+#                                   changelog-lag.sh, release-preflight.sh ×4, bin/candor,
+#                                   bootstrap-dev.sh)
+# The rows below pin one end-to-end example of each direction, plus the sweep itself — because a row
+# that pins only the instance it was handed is how this got to ten sites in the first place.
+
+# ── DIRECTION 1, end to end: release-stage.sh is about to WRITE ~19 edits into these trees ─────────
+ST0="$(mktemp -d)"
+mkdir -p "$ST0/candor/bin"
+cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_release_set.sh" "$ST0/candor/bin/"
+for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents; do
+  ( mkdir -p "$ST0/$r" && cd "$ST0/$r" && git init -q \
+    && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m init )
+done
+( cd "$ST0/candor" && git init -q && git add -A && git -c user.email=t@e -c user.name=t commit -qm init )
+st0_run() { CANDOR_ROOT="$ST0" bash "$ST0/candor/bin/release-stage.sh" 0.26.0 2>&1; }
+# THE CONTROL IS THE WHOLE ROW HERE. This fixture has no version sites, so the stager exits non-zero
+# EITHER WAY — an rc-only assertion would be green with no fault injected at all, which is the vacuous
+# shape this file has been bitten by. So both arms assert on the DIAGNOSTIC, and the control asserts
+# its ABSENCE.
+st0out="$(st0_run)"
+printf '%s' "$st0out" | grep -q "is not a git checkout" \
+  && bad "CONTROL is broken: the step-0 guard fires on an all-checkout fixture, so the row below proves nothing" \
+  || ok "CONTROL: with every repo a real checkout, release-stage's step 0 says nothing about checkouts"
+rm -rf "$ST0/candor-java"; mkdir -p "$ST0/candor-java"; printf 'x\n' > "$ST0/candor-java/README.md"
+st0out="$(st0_run)"
+printf '%s' "$st0out" | grep -q "candor-java at .* is not a git checkout" \
+  && ok "a present-but-unversioned directory is refused by release-stage.sh, not staged into" \
+  || bad "release-stage.sh staged into a directory git cannot read — its 'no changes' read as clean: $(printf '%s' "$st0out" | head -3)"
+rm -rf "$ST0"
+
+# ── DIRECTION 2, end to end: changelog-lag.sh's miss branch is fail-CLOSED, so `-d .git` made a ────
+# healthy worktree a permanent ✘ — a red a reader learns to discount, which is worse than no check.
+CL0="$(mktemp -d)"
+for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
+  ( mkdir -p "$CL0/$r" && cd "$CL0/$r" && git init -q \
+    && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m init )
+done
+rm -rf "$CL0/candor-ts"
+git -C "$CL0/candor-spec" worktree add -q --detach "$CL0/candor-ts" >/dev/null 2>&1
+if [ -f "$CL0/candor-ts/.git" ]; then
+  clout="$(CANDOR_ROOT="$CL0" bash "$UMBRELLA/bin/changelog-lag.sh" 2>&1)"
+  printf '%s' "$clout" | grep -q "candor-ts .*not a git checkout" \
+    && bad "changelog-lag.sh calls a git WORKTREE 'not a git checkout' and counts it as lag" \
+    || ok "changelog-lag.sh reads a git WORKTREE as the checkout it is (its \`.git\` is a FILE)"
+  # THE OVER-CHARGE CONTROL: the branch must still fire for a directory that really is not a checkout,
+  # or the row above is satisfied by a guard that was simply deleted.
+  rm -rf "$CL0/candor-swift"; mkdir -p "$CL0/candor-swift"
+  clout="$(CANDOR_ROOT="$CL0" bash "$UMBRELLA/bin/changelog-lag.sh" 2>&1)"
+  printf '%s' "$clout" | grep -q "candor-swift .*not a git checkout" \
+    && ok "…and still refuses a directory that genuinely is not one (the guard was widened, not deleted)" \
+    || bad "the not-a-checkout branch no longer fires at all — the row above is vacuous"
+else
+  note_skip "1e worktree rows — \`git worktree add\` did not produce a \`.git\` FILE here, so the fixture cannot tell the two guard forms apart"
+fi
+rm -rf "$CL0"
+
+# ── AND THE SWEEP ITSELF, so the NEXT site is caught by this file and not by the next review ───────
+# `[ -d "<dir>/.git" ]` is never a correct test for "is this a git checkout" — it is false for every
+# worktree. The authority is `git -C "<dir>" rev-parse --git-dir`. This row is deliberately a grep
+# over the shipped scripts rather than a behaviour fixture: the failure it pins is a SPELLING that
+# spreads by copy-paste, and it spread to ten sites before anything noticed.
+strays="$(grep -rn --include='*.sh' --include='candor' -e '-d "[^"]*/\.git"' -e "-d '[^']*/\.git'" \
+            "$UMBRELLA/bin" "$UMBRELLA/scripts" 2>/dev/null \
+          | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v '/release-test\.sh:')"
+[ -z "$strays" ] \
+  && ok "no script under bin/ or scripts/ still tests for a checkout with \`-d …/.git\` (false for every worktree)" \
+  || bad "\`-d …/.git\` is back as a checkout test — false for a git worktree: $(printf '%s' "$strays" | head -3 | tr '\n' ' ')"
+# CONTROL FOR THE GREP: prove the pattern can actually match, or the row above passes because the
+# expression is broken rather than because the tree is clean. A grep row with no positive control is
+# the "0 violations from an instrument never shown able to fail" shape this whole family is about.
+SWP="$(mktemp -d)"; printf 'if [ -d "$ROOT/x/.git" ]; then :; fi\n' > "$SWP/decoy.sh"
+grep -rn --include='*.sh' -e '-d "[^"]*/\.git"' "$SWP" >/dev/null 2>&1 \
+  && ok "…with the grep proven able to match (it finds a planted \`-d \"\$ROOT/x/.git\"\`)" \
+  || bad "the sweep grep matches nothing even against a planted instance — the row above is vacuous"
+rm -rf "$SWP"
 
 say "2. release-stage.sh is idempotent and refuses a dirty tree"
 # Commit ALL of them first: run 1 leaves every fixture repo dirty, and the stager refuses a dirty tree —
@@ -2858,8 +2994,21 @@ printf '%s' "$ctl" | grep -q "pin does not reference" \
   || ok "CONTROL: …and PINS_ADVISORY=1 downgrades the identical state to advisory, as release.sh step 0 needs"
 
 # --- [4] a hand-maintained build constant that disagrees with the version being cut -------------------
+# THIS ROW COULD NOT FAIL EITHER, AND FOR A DIFFERENT REASON THAN 1d's: the FIXTURE already broke the
+# invariant before anything was injected. `csfix` builds candor-ts/package.json at 0.32.0 while
+# preflight is asked for 0.32.1, so [4]'s WANT_VER arm — its only `bad()` — fired with or without the
+# perl edit, and the grep matched either way. Measured 2026-08-30 by removing the injection.
+# The section header promises each row "breaks the ONE invariant the check exists for", so make that
+# true: bring the manifest to the version being cut FIRST (a CONTROL that must pass), then break it.
 csfix "$CSF"
-perl -pi -e 's/"version": "0\.32\.0"/"version": "0.32.9"/' "$CSF/candor-ts/package.json"
+perl -pi -e 's/"version": "0\.32\.0"/"version": "0.32.1"/' "$CSF/candor-ts/package.json"
+ctl4="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-ts 2>&1)"
+printf '%s' "$ctl4" | grep -q "a build version.*!= requested 0.32.1" \
+  && { bad "[4] CONTROL: the fixture already fails [4] with nothing injected — the row below cannot attribute anything"; \
+       printf '%s\n' "$ctl4" | grep -i 'build version' | head -3; } \
+  || ok "[4] CONTROL: with candor-ts's manifest AT the version being cut, [4] passes"
+perl -pi -e 's/"version": "0\.32\.1"/"version": "0.32.9"/' "$CSF/candor-ts/package.json"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-ts 2>&1)"
 printf '%s' "$red" | grep -q "a build version.*!= requested 0.32.1" \
@@ -3033,9 +3182,14 @@ say "11b. verify-local.sh — an unrecognised or absent \$ONLY must not read as 
 # check before every push.
 VE="$(mktemp -d)"
 badname="$(CANDOR_ROOT="$VE" bash "$UMBRELLA/bin/verify-local.sh" candor-rustt 2>&1)"; badrc=$?
-[ "$badrc" != 0 ] \
-  && ok "an unrecognised engine name is a usage error, not a silent no-op" \
-  || bad "verify-local.sh 'candor-rustt' (typo) exited 0 having matched nothing"
+# `!= 0` COULD NOT SEE THE GUARD THIS ROW IS NAMED FOR. Measured 2026-08-30 by deleting verify-local's
+# whole engine-name `case` branch: rc was STILL non-zero, because with no name matched `$RAN` stays
+# empty and the downstream NOTHING RAN guard exits 1. Two different guards, one exit test, and the row
+# was attributing to the wrong one. They use DIFFERENT codes — usage error 2, NOTHING RAN 1 — so
+# asserting the code rather than its non-zeroness restores the attribution for free.
+[ "$badrc" = 2 ] \
+  && ok "an unrecognised engine name is a usage error (exit 2), not a silent no-op — and not the NOTHING RAN exit 1" \
+  || bad "verify-local.sh 'candor-rustt' (typo) did not produce the usage exit 2 (rc=$badrc); a non-zero from the NOTHING RAN guard is a different check answering"
 printf '%s' "$badname" | grep -q "is not a candor engine" \
   && ok "…and says WHY, rather than leaving the operator to guess" \
   || bad "no diagnostic for the unrecognised engine name"
@@ -3675,6 +3829,146 @@ printf '%s' "$out" | grep -q "1 gate(s) run, 1 ok, 0 failed, 0 skipped, 2 block 
   && ok "…and gate-run.sh counts it as 2 block lines beside the 1 real gate" \
   || bad "folded-step accounting is wrong: $(printf '%s' "$out" | grep 'gate(s) run')"
 
+# …AND EVERY CHOMPING FORM OF IT, because the one that was covered is the only one that was LOUD.
+# YAML's folded scalar takes an optional chomping indicator, so a step may be written `>`, `>-` or
+# `>+`. Under the pre-fix regex all three were emitted as a GATE LINE whose command was the indicator
+# itself and the body was dropped — but what `eval` then does with them differs completely. Measured
+# 2026-08-30 against the pre-fix parse, holding gate-run.sh and this fixture constant and changing
+# ONLY gates.sh's block-scalar regex:
+#
+#   `>`   → bash syntax error   → rc 1, a FAIL row          (wrong reason, but VISIBLE)
+#   `>-`  → a REDIRECTION       → rc 0, `gate-run: OK`, and a file named `-` appears in the repo
+#   `>+`  → a REDIRECTION       → rc 0, `gate-run: OK`, and a file named `+` appears in the repo
+#
+# So the covered variant was the single one that could not report green over an unrun gate, and the
+# two uncovered ones both did — while writing a file into the tree being verified. A fixture set that
+# stops at the spelling in the bug report inherits the bug report's blind spot.
+#
+# HONEST NOTE ON WHICH OF THESE ROWS WERE FALSIFIED. Against the pre-fix regex, 15 rows in this
+# section go red — every row for `>-` and `>+`, both junk-file rows, and the body/indicator rows for
+# `>`. The two VERDICT rows for `>` alone (`does not exit 0`, `never prints OK`) stay GREEN there,
+# because `eval ">"` is a bash syntax error and the pre-fix tool therefore failed LOUDLY on that one
+# spelling. They are kept — they are the same assertion applied uniformly and they discriminate
+# against other regressions — but they are not evidence about THIS fix, and nobody should read the
+# loop's uniformity as twelve falsified rows.
+for ind in '>' '>-' '>+'; do
+  # Quoted: `strip` is a real command, and shellcheck SC2209 flags a bare assignment from one.
+  case "$ind" in '>') itag='plain' ;; '>-') itag='strip' ;; *) itag='keep' ;; esac
+  mkwf candor-agents ci.yml <<YML
+jobs:
+  t:
+    steps:
+      - name: folded-$itag
+        run: $ind
+          bash soundness/run.sh 60
+YML
+  out="$(glist candor-agents)"
+  printf '%s' "$out" | grep -q '~ bash soundness/run.sh 60' \
+    && ok "gates.sh keeps the BODY of a \`run: $ind\` step, as a block line to read" \
+    || bad "the body of a \`run: $ind\` step vanished from the list entirely: $out"
+  printf '%s' "$out" | grep -qx "        $ind" \
+    && bad "\`run: $ind\` printed the INDICATOR itself as a runnable gate command" \
+    || ok "…and never prints \`$ind\` at the 8-space column, where gate-run.sh would eval it"
+  out="$(grun candor-agents)"; rc=$?
+  [ "$rc" != 0 ] \
+    && ok "…so gate-run.sh over a \`$ind\` step does not exit 0 (rc=$rc — the body is unrun, and says so)" \
+    || bad "gate-run.sh exited 0 over a \`run: $ind\` step whose body nothing ran"
+  printf '%s' "$out" | grep -q "gate-run: OK" \
+    && bad "gate-run.sh printed the OK verdict over an unrun \`run: $ind\` body" \
+    || ok "…and never reaches the OK verdict"
+done
+# THE INDICATOR MUST NOT HAVE BEEN EVAL'D AT ALL, and the verdict alone cannot tell you that. `eval
+# ">-"` is not a failed command, it is a successful REDIRECTION: it creates a file named `-` inside
+# the repo the tool is verifying. A run that reported INCOMPLETE for some other reason would satisfy
+# every row above while still having written into the tree.
+for junk in - +; do
+  [ -e "$GR/candor-agents/$junk" ] \
+    && bad "a folded step's indicator was eval'd as a redirection — it created a file named '$junk' in the repo being verified" \
+    || ok "no file named '$junk' exists in the fixture repo — the indicator was never eval'd"
+done
+
+# WHICH WORKFLOWS ARE PRE-PUSH GATES COMES FROM THEIR `on:` BLOCK, NOT THEIR FILENAME. gates.sh used
+# `case "$(basename)" in release*|publish*|nightly*)`, and on the repo that HOLDS it that name glob
+# excluded `release-scripts.yml` — `on: push: branches:[main]`, the job that runs THIS FILE — from
+# `gates.sh candor` entirely. A gate list narrowed by a string match, under a parenthetical that read
+# like a considered decision. Wrong in the other direction too: schedule-only `corpus.yml` was kept,
+# and its `cargo build --manifest-path candor-rust/…` cannot resolve outside CI's checkout layout, so
+# `gate-run.sh candor` was permanently red for a reason that is not a defect.
+mkdir -p "$GR/candor-agents/.github/workflows"; rm -f "$GR/candor-agents/.github/workflows/ci.yml"
+cat > "$GR/candor-agents/.github/workflows/release-things.yml" <<'YML'
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  t:
+    steps:
+      - name: a
+        run: true
+YML
+cat > "$GR/candor-agents/.github/workflows/publish.yml" <<'YML'
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  t:
+    steps:
+      - name: a
+        run: exit 3
+      - name: b
+        run: exit 3
+YML
+cat > "$GR/candor-agents/.github/workflows/weekly.yml" <<'YML'
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+jobs:
+  t:
+    steps:
+      - name: a
+        run: exit 3
+YML
+out="$(glist candor-agents)"
+printf '%s' "$out" | grep -qx '        true' \
+  && ok "a workflow NAMED release-* is printed when its own \`on:\` says push/pull_request" \
+  || bad "a push-triggered workflow was excluded by its NAME — the gate list is short: $out"
+printf '%s' "$out" | grep -q 'publish.yml (on: .*tags only.* — not a pre-push gate;' \
+  && ok "…and a \`push: tags:\` workflow is excluded, NAMED, with the triggers it was judged on" \
+  || bad "a tag-only workflow was not excluded-and-named: $(printf '%s' "$out" | grep publish)"
+printf '%s' "$out" | grep -q 'weekly.yml (on: schedule.* — not a pre-push gate;' \
+  && ok "…and so is a schedule-only one" || bad "a schedule-only workflow was not excluded-and-named: $out"
+printf '%s' "$out" | grep -qx '        exit 3' \
+  && bad "a step from an excluded workflow still reached the gate list" \
+  || ok "…and no step from either excluded workflow reached the gate list"
+# EXCLUDING IS NARROWING, SO IT MUST BE COUNTED. A per-workflow parenthetical scrolls past; the total
+# at the bottom is where a wrong `on:` parse shows up as a number instead of as an absence.
+printf '%s' "$out" | grep -q '2 workflow(s) excluded above as not-pre-push' \
+  && ok "…and the count of exclusions is printed at the bottom, beside the verdict" \
+  || bad "exclusions were not counted in the trailer: $(printf '%s' "$out" | tail -2)"
+printf '%s' "$out" | grep -q '2 run step(s) behind this line' \
+  && ok "…each naming how many run steps it stands in front of, so \"excluded\" cannot read as \"empty\"" \
+  || bad "an exclusion line does not say how many steps are behind it: $(printf '%s' "$out" | grep publish)"
+# AND THE FAIL-SAFE DIRECTION. An `on:` shape the parse cannot read must OVER-PRINT, never drop: this
+# file's own rule is that a clever parser silently dropping a step is the failure it exists to prevent.
+cat > "$GR/candor-agents/.github/workflows/odd.yml" <<'YML'
+"on": [push, workflow_dispatch]
+jobs:
+  t:
+    steps:
+      - name: a
+        run: echo ODD_KEPT
+YML
+out="$(glist candor-agents)"
+printf '%s' "$out" | grep -q 'echo ODD_KEPT' \
+  && ok "an inline/quoted \`on:\` the classifier cannot decompose is PRINTED, not dropped" \
+  || bad "an unparseable \`on:\` block silently dropped the workflow's steps: $out"
+rm -f "$GR/candor-agents/.github/workflows/release-things.yml" \
+      "$GR/candor-agents/.github/workflows/publish.yml" \
+      "$GR/candor-agents/.github/workflows/weekly.yml" \
+      "$GR/candor-agents/.github/workflows/odd.yml"
+
 # An unrecognised second argument must not silently mean "not a dry run" and execute everything.
 # The fixture matters: over a repo that is INCOMPLETE anyway, exit 2 proves nothing, so use one whose
 # gate really would run, and assert on the diagnostic and on nothing having run.
@@ -3758,4 +4052,4 @@ fi
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi
 printf '\033[32mrelease-test: OK — %d assertions\033[0m%s\n' "$pass" \
-  "$( [ "$skipped" -gt 0 ] && printf ' (%d SKIPPED — a missing tool, not a pass)' "$skipped" )"
+  "$( [ "$skipped" -gt 0 ] && printf ' (%d SKIPPED — NOT a pass; read the • lines above for why)' "$skipped" )"

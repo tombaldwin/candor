@@ -75,6 +75,16 @@ note(){ printf '  \033[33m•\033[0m %s\n' "$*"; }
 # block a patch. Family-wide this is all seven, as it has always been.
 for r in $RS_SET; do
   [ -d "$ROOT/$r" ] || continue
+  # A DIRECTORY IS NOT A CHECKOUT, AND THE DIFFERENCE IS INVISIBLE TO THE `-z` BELOW. `git -C <dir>
+  # status --porcelain` over anything git cannot read fails to STDERR and prints NOTHING on stdout —
+  # byte-identical to a real "no changes". The `-d "$ROOT/$r"` above was the whole guard, so a
+  # directory that is not a checkout (an unpacked tarball, a half-finished clone, a stale copy) sailed
+  # through step 0 and this run then STAGED ~19 edits into it, unversioned and unrevertable.
+  # `git -C … rev-parse --git-dir` is the authority; `-d "$ROOT/$r/.git"` is not, because a git
+  # worktree's `.git` is a FILE. The `continue` above is kept deliberately: a repo that is ABSENT is
+  # caught downstream by `sub()`'s "missing file", while one that is PRESENT and unreadable is not.
+  git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 \
+    || die "$r at $ROOT/$r is not a git checkout — 'no changes' from a tree git cannot read is indistinguishable from a clean one, and this run is about to write to it"
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit or stash first"
 done
 rs_is_full || printf '  \033[33m•\033[0m %s\n' "SCOPED: staging $RS_SET only — every other repo keeps the version it last published"

@@ -6993,3 +6993,174 @@ never from an inert filler; only the method's own parameters can take `()`.
   with 127. Cost three bogus gate results today.
 - Concurrent cargo runs on this box contend on the dylint driver and produce "build failed under
   dylint" for every seed — a false negative indistinguishable from a real one. Run rust gates SERIALLY.
+
+
+# Review panel findings, 2026-08-30 — STAGED (umbrella is agent-owned; move into BACKLOG.md when free)
+
+## SEVERE — live repros, all pre-existing or newly-uncovered
+
+1. **candor-java: `gateJsonIsAtConfig` has THREE call sites, not the "twin" dc1f934 closed.**
+   `if (true) return;` at Candor.java:3289 leaves 888/888 GREEN. Mutated binary:
+   `--json <elsewhere>/.candor/config` -> EXIT 0, config 17 -> 704 bytes, prints "nothing hidden".
+   Guard is CORRECT at HEAD; the COVERAGE is the hole. `--json` is the quieter destroyer than
+   `--gate-json`. This is the third round in a row this key has produced a finding.
+
+2. **candor-ts: scan.mjs carries its OWN copies of all three `--gate-json` sink guards that
+   c1a2381/ee82d38 just closed for query.mjs.** Neutering all three -> 1702/1702 GREEN. Repros: a
+   hard-linked sink severed leaving a STALE GREEN under the other name; a symlink severed; a
+   `.candor/config` OVERWRITTEN at exit 1. THE SIBLING ROUTE, same day as the fix.
+
+3. **candor-ts: the ⟨0.32⟩ refusal marker is CLI-ONLY — a §3.1 route divergence in the SILENT
+   direction.** Same bytes, same directory: `gate --report` exits 2 naming the refusal; MCP
+   `candor_gate` returns `{"ok":true,"violations":[]}`. Pre-existing, BOTH locator spellings.
+
+4. **candor-agents: removing `scope_matches`' empty-scope guard raises IndexError INSIDE `check(...)`,
+   aborting the harness** — no FAIL row, no summary, ~460 later checks never run. The comment claims
+   it is pinned so a caller "fails a test, not a crash". It crashes. A harness that dies mid-run
+   reports fewer checks, not a failure.
+
+## META-GATES THAT CANNOT FAIL (candor-spec)
+
+5. **probe_check.py: replace all 8 generators with bodies that assert nothing -> `PROBE CHECK: OK`,
+   exit 0.** Evidence is text plus a nonzero exit, never tied to source. The instrument that proves
+   our instruments can fail cannot itself fail.
+6. **probe_check.py: `COVERED` is a table iterated with NO FLOOR** — move today's two new entries back
+   to UNCOVERED and it prints `OK — 6 properties`, exit 0.
+7. **PART 61: delete `rc=1` from `p61_row`, leave `P61_BAD=1` -> all three legs green.** The exact
+   attack-H fail-open (DIVERGE printed, exit 0) that 421e342 built `run_bashfunc_flag` to close for
+   PART 63 — one section away. We closed the class and left the neighbour.
+8. **PART 68: 7 of 9 branches deletable with all four legs green**; the leg named "(a) THE HISTORICAL
+   DEFECT ITSELF" stays green because hash-uniqueness rejects first.
+9. **mutation-gate: two-sided arity drift is unguarded.** Delete a conjunct from run.sh AND its
+   expectation from the call line together -> `mutation-gate: OK`, 240 rows instead of 241, no ratchet.
+
+## UMBRELLA (release-test.sh) — vacuous rows and a confound
+
+10. §1d "a repo missing entirely makes release.sh step 0 die": green with no repo deleted (release.sh
+    dies at `cargo publish` anyway). Two sibling rows DO have teeth.
+11. §9b [4]: green with the injection removed — csfix builds at 0.32.0 and preflight is asked for
+    0.32.1, so the bad() fires either way. Section header claims each row breaks the ONE invariant.
+12. §11b "an unrecognised engine name is a usage error": delete the whole name-validation branch and
+    rc is still 1, because the NOTHING RAN guard downstream decides the exit. Named for a guard it
+    cannot see.
+13. **§13 has NO busy-guard though §13b does** — measured live: with another agent's `swift build`
+    running, §13's first row passed FOR THE WRONG REASON (quiet_tree_check also exits 2, and runs
+    first). Three rows false-RED.
+14. **§13b's busy pattern `pgrep -f "gradlew"` matches the persistent Gradle DAEMON, not a running
+    build** — the bounded 10s wait never clears, so 13b is silently skipped on any box that has ever
+    run ./gradlew. Loud under CI (note_skip -> bad), invisible locally. My own fix from this morning.
+
+## ABSENCE POISON / UNCHECKED EXIT / PLATFORM
+
+15. candor-java `AnalysisContextInputGrowthTest` iterates the list it pins: shrink to 3 -> RED, shrink
+    to 10 -> GREEN. Real size is 46, so the `size() > 5` floor is blind over a 46->6 shrink.
+16. **candor-swift, attack L: the SwiftPM readability test opens with `XCTSkipIf(geteuid() == 0)`, and
+    the Linux leg runs swift:6.1 AS ROOT with no `--user`** (measured: `id -u` -> 0; root reads
+    through chmod 000). It skips on the ENTIRE Linux leg. Its Xcode sibling gets the same property by
+    INJECTING readFile — platform-independent, no skip. The fix is one file over.
+17. candor-agents "CRLF-terminated lines parse as two rules": deleting the whole normalisation leaves
+    553/553 green (`.strip(" \t\n\v\f\r")` one line down handles it). The **bare-`\r`** case the
+    guard's own comment names has ZERO coverage and yields a silently under-protective policy at
+    exit 0. The test's comment asserts guard-deletion found it unprotected — attack K.
+18. candor-agents `_same_artifact` empty-path row: green with the guard removed (`realpath("")`
+    returns cwd, satisfying the assertion regardless).
+19. candor-swift `testUncoveredRuleRefusesAndNamesOnlyTheUnaskedOne`: the needle `"Net,"` can NEVER
+    match — rules print sorted, so Net is last and followed by `.`. The gate does falsely name the
+    asked rule under mutation and the test stays green.
+20. candor-swift `XcodeTargetScopeTests`' `probe()` discards `.code`; the over-charge control passes
+    for any run that dies with empty stderr.
+21. candor-ts `lsp.mjs:284`'s new `hasReport` guard: deleting it leaves 117/117 green.
+22. candor-ts attack K: `partialIsFatal` is cited as the justifying mechanism in FIVE places including
+    an assertion NAME, and ee82d38 deleted it hours later the same day.
+23. probe.sh `date -r "$bt"` is BSD-only — GNU `date -r` means REFERENCE FILE, so provenance prints
+    "built  · newest source " on every Linux runner. Cosmetic; the STALE verdict is unaffected.
+
+## CLEAN NEGATIVES — do not re-derive
+- candor-java 24/24 new tests RED. candor-swift 23 mutations/16 guards all RED. candor-spec 117/117
+  legs RED (the "20-leg gap" was a unit mismatch: legs vs degradations are different denominators).
+  candor-agents 63 of 66. candor-ts 21 guards RED. Umbrella ~14 guards RED plus a vacuity arm where
+  25 of 27 rows went red with the injection removed.
+- **Attack L, positive:** umbrella §13b's STALE row DOES catch the Linux stat bug. Four-cell matrix,
+  only the stat implementation and selection form varying: pre-fix + GNU -> exit 0 and staleness
+  silently skipped (test RED); pre-fix + BSD -> exit 3 (test GREEN — macOS is blind); fixed -> exit 3
+  under both.
+- candor-swift's new URL_SCHEMES test does NOT have the trap: it spells out `expected`, asserts
+  equality, THEN loops, and goes red on both shrink and growth.
+
+## NOT REACHED
+candor-rust entirely. No engine suite run on Linux (attack L answered by shims + CI config, not a
+Linux run). Not run: smoke.sh, ci/self-gate.sh, soundness/, fuzz, conformance/run.sh, test-watch.mjs.
+candor-spec's ~124 pre-existing rows confirmed only to HAVE accept-known-good counterparts.
+Findings 1-3 all translate cross-engine (attack F) and none was asked of the other engines.
+
+# PANEL 4 (engine-diff review) — headline items NOT covered above
+
+## CARDINAL SIN, PRE-EXISTING, candor-swift — exit 0 / ok:true over an undeclared entitlement
+`PrivacyManifestCLI.swift:494` is the FOURTH copy of a skip set living at :74, :438 and
+`XcodeTargets.swift:1593`. Three carry "Carthage"; this one does not — and the comment two lines
+below says "Same exclusions as the Info.plist discovery". Identical trees, ONLY the vendor dir name
+varying:
+    Pods/     -> exit 1  ok:false  entitlementUnderDeclared:["NSCriticalMessagingUsageDescription"]
+    Carthage/ -> exit 0  ok:true   key ABSENT from the document
+The Carthage copy is discovered too, so found.count>1 -> `several` -> the app's own entitlements file
+is never read. The HUMAN surface prints "· several .entitlements files here — not read"; the --json
+surface prints NOTHING (that else-if is guarded by !pm.json,!pm.xml). CI reading the document sees a
+clean pass. Blame: 8fd19eb; 914b0b0 added Carthage to the other three and missed this one.
+
+## HIGH — bin/gates.sh drops a YAML FOLDED block, and gate-run reports OK over the gate it displaced
+NOT fixed by c98cda7. For `run: >`, `>-`, `>+` it prints the INDICATOR as the command and never emits
+the body. Measured:
+    - name: soundness
+      run: >-
+        bash soundness/run.sh 60
+  ->  OK  true / OK  >-  /  gate-run: OK — every gate ran and passed.  exit=0
+`bash soundness/run.sh 60` — the gate CLAUDE.md records as costing ten silent under-reports today —
+never appears. `eval ">-"` is a REDIRECTION: exits 0, reports OK standing in for the gate it
+displaced, and CREATES A FILE NAMED `-` in the repo, in a tool whose header says it must not mutate a
+tree it does not own. Latent (no family workflow uses `>` today), reachable by writing one.
+release-test.sh section 15 has ~20 rows for these scripts and EVERY fixture is a one-liner or `run: |`.
+
+## MEDIUM — candor-agents guard's compiled deny got WEAKER today, silently
+2920419 made guard.server_effects delegate to scan.read_mcp with curated-table-first precedence.
+Same policy, same .mcp.json (filesystem declaring ["Fs","Net"]), nothing else varied:
+    PRE : deny = [WebFetch, WebSearch, mcp__filesystem]
+    POST: deny = [WebFetch, WebSearch]      exit 0, no warning about the dropped declaration
+The commit's test covers only the NARROWING direction. Matches scan + DECLARING.md ("curated
+outranks"), so not a spec violation — but DECLARING.md asserts two paragraphs above that "a typo must
+never silently narrow the reported surface".
+
+## MEDIUM — candor-java 88dae3d's new test cannot see half its guard
+Deleting the third branch of ReportCompleteness#absorb leaves ALL 888 tests green, its own test
+included. Proven with a mirror test that does go red. The comment claims the control is "not merely
+happen to agree with a naive AND" — but it sets other.predates033=false, exactly what a naive false
+satisfies. Mislabels a disclosed cause; never moves an exit code.
+
+## MEDIUM — the umbrella's "ninth false green" fix was not swept past its trigger
+6553f77 closed `git -C <missing> status --porcelain` reading as clean in release.sh and
+release-rehearsal.sh. TWO SIBLINGS guard on `-d "$ROOT/$r"` (the directory) not `.../.git`, so a
+directory that is not a checkout still reads clean — reproduced end-to-end, dirty real repo as
+control: bin/release-stage.sh:77 (step 0 passes, proceeds to stage) and bin/spec-bump.sh:176.
+ALSO: today's new `-d .../.git` guard is FALSE FOR A GIT WORKTREE (.git is a file there), so
+release.sh would die on a legitimate worktree root. Authority form: `git -C "$d" rev-parse --git-dir`.
+
+## RECORD-ACCURACY CORRECTIONS
+- **candor-swift bc4f548's headline is FALSE.** Its message and CHANGELOG.md:47 say
+  `unaskedCrossPolicyRules` had "ZERO process-level test coverage anywhere in the tree". Disarming it
+  AT bc4f548^ produced 19 failures across 6 pre-existing tests, including one that builds precisely
+  the scannedUnder construction the claim says no test made. The new test is fine; the FINDING is wrong.
+- **candor-java's ⟨0.34⟩ peek-classpath-as-input has NO SPEC CLAUSE AND NO ROW.** `grep -c
+  peek-classpath SPEC.md` -> 0. PART 65D drives the flag for PEEK behaviour, not sink guarding, and
+  §3.3.1's input enumeration does not name it. A ⟨0.34⟩-labelled behaviour that has already broken
+  once, unpinned — "write the row before the port", unmet. Java-only.
+- **CLAUDE.md's new paragraph says "candor-rust has 21 gate lines". The tool prints 39** (32
+  auto-runnable + 7 skipped). My error, third of the same class today.
+
+## THE ANSWER TO THE PANEL'S QUESTION
+No commit pushed today introduced a silent under-report in an ENGINE's verdict. Four engines
+revert-tested, guard-deleted and A/B'd with byte-identical over-charge controls. candor-spec: nothing
+found. The two defects today's work DID introduce are a false GREEN in the umbrella's new
+verification tooling and a silent loss of enforcement in candor-agents' guard fragment.
+
+## HIGHEST-VALUE NEXT QUESTION (attack F, not asked of anyone)
+candor-ts's refusal-marker locator shape `<prefix>.<crate>.scan.json` is exactly the RUST WORKSPACE
+shape. candor-rust is the likeliest sibling victim.

@@ -105,6 +105,25 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
     *'git clone'*|*'git push'*|*'git tag'*)
       why="mutates a tree this tool does not own" ;;
   esac
+  # A GATE WHOSE INTERPRETER IS NOT INSTALLED HERE DID NOT FAIL — IT DID NOT RUN. This is the exact
+  # sibling of the `${{ }}` arm three cases up: that one exists because an unexpandable GitHub
+  # expression made candor-java "permanently red for a reason that is not a defect in candor-java",
+  # and a missing binary is the same thing by a different spelling. Only one of the two was handled.
+  # Measured 2026-08-30 on this box: CI provides `python`, macOS ships only `python3`, so three
+  # umbrella gates reported FAIL at rc=127 while all three assertions pass under python3.
+  # Checked BEFORE running, on the leading word, rather than by treating rc=127 as a skip after the
+  # fact: a gate that runs and whose SCRIPT then hits a missing tool has really failed, and reading
+  # 127 off the whole command cannot tell those two apart. Skipping makes the verdict INCOMPLETE,
+  # never OK — an unrunnable gate is still an unrun gate.
+  if [ -z "$why" ]; then
+    _lead="${cmd%% *}"
+    case "$_lead" in
+      # Only a bare command word. Anything with a slash is a path this repo owns (./gradlew,
+      # bin/foo.sh) and its absence IS a defect; builtins and assignments are not lookups at all.
+      */*|cd|echo|set|export|if|for|while|'['|test|*=*) ;;
+      *) command -v "$_lead" >/dev/null 2>&1 || why="\`$_lead\` is not installed here (CI provides it)" ;;
+    esac
+  fi
   if [ -n "$why" ]; then
     skip=$((skip+1)); printf '  %-6s %s (%s)\n' "SKIP" "$cmd" "$why"; continue
   fi

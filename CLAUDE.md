@@ -76,6 +76,14 @@ because a named function binds its own unit, the engine's own boundary gate corr
 declaration had never heard of. **The subprocess surface never grew; the declaration was stale.** candor
 caught candor, and nobody read it.
 
+**The per-repo list is now printed, not remembered: `bash bin/gates.sh <repo>`** extracts every `run:`
+step from that repo's own CI workflows. It exists because the rule above failed a SECOND time on
+2026-08-30 — I verified candor-rust against the gate list in an agent's report (which named
+`soundness/run_drop.sh`) instead of the repo's own, and the gate I skipped, `soundness/run.sh 60`, was
+the red one: TEN silent under-reports reached `main` and had to be reverted. Both times I ran a
+NEIGHBOURING gate with a similar name and read its pass as coverage. `candor-rust` has 21 gate lines;
+I had been running five.
+
 **So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
 and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.
 

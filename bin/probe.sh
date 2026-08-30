@@ -99,6 +99,22 @@ quiet_tree_check() {
 # ── binary provenance ──────────────────────────────────────────────────────────────────────────────
 # Failure (4): the suite builds candor-swift into .build/debug and ad-hoc probing reaches for
 # .build/release. They drift the moment an agent commits without a release rebuild.
+
+# BSD `stat -f %m` vs GNU `stat -c %Y`, selected ONCE — and NOT by `cmd_bsd || cmd_gnu`.
+#
+# That fallback is what shipped here, and it is unsound in the direction that hides itself. GNU's
+# `-f` is *filesystem* status, so `stat -f %m FILE` reads `%m` as a filesystem to stat: it prints a
+# block/inode dump FOR THE REAL FILE on stdout, and only then exits 1 on the bogus argument. The
+# `||` therefore fires, the GNU form appends a correct epoch, and the capture holds BOTH — every
+# comparison downstream dies with "integer expression expected" and the staleness check concludes
+# "fresh". Inoperative on every Linux runner; invisible on macOS, where the first form just works.
+# Found only because a test was finally written that drives the STALE branch (release-test 13b).
+if [ -n "$(stat -c %Y / 2>/dev/null | tr -dc '0-9')" ]; then
+  MT_FLAG=-c; MT_FMT=%Y     # GNU coreutils
+else
+  MT_FLAG=-f; MT_FMT=%m     # BSD / macOS
+fi
+
 provenance() {
   local bin="$1" repo="" bt
   case "$bin" in
@@ -109,7 +125,12 @@ provenance() {
     *) return 0 ;;
   esac
   [ -e "$bin" ] || return 0
-  bt=$(stat -f %m "$bin" 2>/dev/null || stat -c %Y "$bin" 2>/dev/null) || return 0
+  bt=$(stat "$MT_FLAG" "$MT_FMT" "$bin" 2>/dev/null) || return 0
+  # A stat that did not yield an integer must be LOUD, never a silent "fresh" — that is exactly how
+  # the `||` form above stayed broken on Linux for its whole life.
+  case "$bt" in
+    ''|*[!0-9]*) echo "  NOTE: could not read $bin's mtime — staleness NOT checked." >&2; return 0 ;;
+  esac
   # COMPARE AGAINST THE NEWEST SOURCE FILE, NOT THE HEAD COMMIT.
   #
   # The first version compared the binary's mtime to the repo HEAD commit time and warned STALE when it
@@ -126,7 +147,7 @@ provenance() {
   # on disk right now. It does not care when anything was committed.
   st=$(find "$repo" -type f \( -name '*.rs' -o -name '*.java' -o -name '*.mjs' -o -name '*.swift' \) \
          -not -path '*/target/*' -not -path '*/.build/*' -not -path '*/node_modules/*' -not -path '*/build/*' \
-         -exec stat -f %m {} \; 2>/dev/null | sort -rn | head -1)
+         -exec stat "$MT_FLAG" "$MT_FMT" {} \; 2>/dev/null | sort -rn | head -1)
   printf '  provenance: %s\n              built %s · newest source %s (HEAD %s)\n' \
     "$bin" "$(date -r "$bt" '+%H:%M:%S' 2>/dev/null)" \
     "${st:+$(date -r "$st" '+%H:%M:%S' 2>/dev/null)}" "$(git -C "$repo" log -1 --format=%h)"

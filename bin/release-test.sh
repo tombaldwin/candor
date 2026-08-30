@@ -4017,12 +4017,20 @@ printf '%s' "$base" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest sourc
   || bad "a timestamp did not render on the native date(1): $(printf '%s' "$base" | grep built)"
 
 # THE OTHER FLAVOUR. A GNU-shaped `date`: `-r` wants a FILE, `-d @EPOCH` renders an epoch.
+# THE SHIM MUST NOT ITSELF BE PLATFORM-BOUND. Its first cut rendered via `/bin/date -r EPOCH` and
+# `/usr/bin/stat -f %m` — both BSD-only — so on a Linux runner the GNU-shaped double could not
+# render at all, probe.sh's detection fell through to its BSD branch, and the row went red against
+# code that was correct. Green on macOS, red on Linux, blaming the wrong file: a test double that
+# only works on one platform is worse than no row, because it reports the platform it ran on rather
+# than the property it names. `_render` asks each flavour in turn and uses whichever answers.
 cat > "$PB/shim/date" <<SHIM
 #!/bin/bash
+_render() { /bin/date -d "@\$1" "\$2" 2>/dev/null || /bin/date -r "\$1" "\$2" 2>/dev/null; }
 case "\$1" in
   -r) [ -e "\$2" ] || { echo "date: \$2: No such file or directory" >&2; exit 1; }
-      exec /bin/date -r "\$(/usr/bin/stat -f %m "\$2")" "\$3" ;;
-  -d) exec /bin/date -r "\${2#@}" "\$3" ;;
+      _m="\$(/usr/bin/stat -f %m "\$2" 2>/dev/null || /usr/bin/stat -c %Y "\$2" 2>/dev/null)"
+      _render "\$_m" "\$3" ;;
+  -d) _render "\${2#@}" "\$3" ;;
   *)  exec /bin/date "\$@" ;;
 esac
 SHIM

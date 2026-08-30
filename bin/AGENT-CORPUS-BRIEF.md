@@ -157,6 +157,30 @@ on `Unknown` either way.
 **A test that passes with AND without the fix is worse than no test, because it reads as coverage.** Prove
 the red by actually reverting, not by reasoning.
 
+### A.1 — the revert test does NOT apply to a commit that hardens a TEST
+Measured 2026-08-30 on candor-spec. Most of its recent commits harden `mutation-gate.sh`'s own poison
+generation rather than fixing a checker. **Reverting a poison-hardening commit and re-running against the
+current, already-correct checkers is guaranteed green regardless** — a correct checker rejects weak and
+strong poison alike. Applied naively it would have declared NINE commits "protected" on evidence that could
+not have said otherwise.
+**The inverted form is the real test:** degrade a copy of the checker exactly as the commit describes, then
+confirm the OLD poison set wrongly ACCEPTED it and the NEW one CATCHES it. Seconds per bypass via the
+extraction helpers, versus eight minutes for a full suite run that proves nothing.
+
+### A.2 — a test inherits the blind spot of the bug report that prompted it
+**Three repos, three instances, one night.** This is the audit-boundary rule (§9) applied to FIXTURES.
+- **rust**: four calibration tables share one impostor-exemption shape; every fixture drove only `log`, the
+  crate the original bug happened to involve. Deleting the guard from the other three left the suite green.
+- **swift**: a platform filter whose own comment says "same as the Xcode side". The Xcode side was untested
+  AND had no safety net — the file vanished from the scope set with zero disclosure.
+- **java**: one CHA exemption with two independent call sites; the second reachable only through a generic
+  `Comparable<T>` bridge across a chained dependency.
+- **umbrella**: nine untested guards in `release-preflight.sh`, because **every fixture the suite builds is
+  internally consistent on exactly the dimensions those checks police** — ~250 rows could never fire them.
+
+**When you fix a bug, ask what ELSE has this shape, and write the fixture for the sibling you were NOT
+handed.** A comment saying "same as X" is a direct instruction to go test X.
+
 ## B. The unconditional-pass test — for a CHECKER
 **Replace the checker's body with `exit 0` / `sys.exit(0)`. Does the suite notice?**
 

@@ -81,11 +81,28 @@ step from that repo's own CI workflows. It exists because the rule above failed 
 2026-08-30 — I verified candor-rust against the gate list in an agent's report (which named
 `soundness/run_drop.sh`) instead of the repo's own, and the gate I skipped, `soundness/run.sh 60`, was
 the red one: TEN silent under-reports reached `main` and had to be reverted. Both times I ran a
-NEIGHBOURING gate with a similar name and read its pass as coverage. `candor-rust` has 21 gate lines;
-I had been running five.
+NEIGHBOURING gate with a similar name and read its pass as coverage. `candor-rust` has **39** gate
+lines plus 114 block lines; I had been running five.
+
+That "39" was written here as "21" the same day I built the tool, from memory, in the paragraph whose
+entire subject is not trusting memory. A review panel caught it. **Print the number, do not state it** —
+`bash bin/gates.sh candor-rust | grep -c '^        '`.
 
 **So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
 and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.
+
+**A full disk fakes a FAIL and fakes an empty result, and says neither.** Measured 2026-08-30: one
+session directory reached 26G, the volume hit zero mid-wave, and four agents were left running suites
+whose failures were indistinguishable from findings — while the harness could no longer write a
+command's own output file, so commands **died before executing and returned nothing**. Do not make this
+a habit to remember; `bin/gate-run.sh` now checks `bin/disk-guard.sh` before the first gate and after
+**every** one, and latches. The dangerous case is the MID-RUN crossing, not the start: a run that begins
+with room and fills halfway puts rows from both sides of the line in one table and does not say which is
+which, so a startup-only check is blind to precisely the case that bites. The disk verdict outranks
+`NOT GREEN` deliberately — a FAIL after the crossing is not a finding.
+
+When dispatching a wave, the cost is per-agent and concurrent: rust builds, Docker legs and Gradle
+daemons are GB each. `bash bin/disk-guard.sh` before dispatching is a second's work.
 
 ## The standing checks
 

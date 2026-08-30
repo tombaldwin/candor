@@ -4049,6 +4049,79 @@ printf '%s' "$noread" | grep -q "staleness NOT checked" \
 rm -rf "$PB"
 fi
 
+say "16. disk-guard.sh — a full disk fakes both a FAIL and an empty result, and says neither"
+# Measured 2026-08-30: the volume hit zero mid-wave, four agents were running suites, and the
+# harness could not write a command's own output file — so commands died BEFORE EXECUTING and
+# returned nothing. The rows below hold the ONE distinction that matters: a FAIL produced after the
+# crossing must not be reported as a finding, while a FAIL on a healthy disk still must be.
+DG="$(mktemp -d)"
+mkdir -p "$DG/root/candor-rust/.github/workflows" "$DG/root/candor-rust/ci"
+cat > "$DG/root/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: one
+        run: bash ci/a.sh
+      - name: two
+        run: bash ci/b.sh
+YAML
+printf '#!/bin/sh\nexit 0\n' > "$DG/root/candor-rust/ci/a.sh"
+printf '#!/bin/sh\nexit 1\n' > "$DG/root/candor-rust/ci/b.sh"
+chmod +x "$DG/root/candor-rust/ci/a.sh" "$DG/root/candor-rust/ci/b.sh"
+
+# THE CONTROL COMES FIRST, deliberately. A guard that withholds every verdict would pass every row
+# below it while having deleted the tool. This arm proves a real failure is still reported as one.
+dg_ctl="$(CANDOR_ROOT="$DG/root" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_ctl_rc=$?
+[ "$dg_ctl_rc" -eq 1 ] && printf '%s' "$dg_ctl" | grep -q 'NOT GREEN' \
+  && ok "healthy disk: a genuinely failing gate is still NOT GREEN (rc=1) — the control" \
+  || bad "the over-charge control broke: a real FAIL no longer reports as one (rc=$dg_ctl_rc)"
+
+# Breached BEFORE the first gate: refuse to start, and say it is not a verdict about the repo.
+dg_pre="$(CANDOR_DISK_FAKE_FREE_MB=100 CANDOR_ROOT="$DG/root" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_pre_rc=$?
+[ "$dg_pre_rc" -eq 2 ] && printf '%s' "$dg_pre" | grep -q 'REFUSING TO START' \
+  && ok "below the floor at the start: REFUSING TO START, rc=2" \
+  || bad "a run started with no disk to trust it (rc=$dg_pre_rc)"
+printf '%s' "$dg_pre" | grep -q 'not a verdict about' \
+  && ok "…and names itself as not a verdict about the repo, so it cannot be read as a red repo" \
+  || bad "the refusal did not distinguish itself from a failing repo"
+
+# THE ROW THIS SECTION EXISTS FOR: healthy at the start, breached partway. A start-only check is
+# blind to this, which is why the guard is called after every gate and latches.
+dg_mid="$(CANDOR_DISK_FAKE_FREE_MB=9999,100 CANDOR_ROOT="$DG/root" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_mid_rc=$?
+[ "$dg_mid_rc" -eq 2 ] \
+  && ok "crossed MID-RUN: rc=2, not the rc=1 the identical failing gate produces when healthy" \
+  || bad "a mid-run crossing did not withhold the verdict (rc=$dg_mid_rc)"
+printf '%s' "$dg_mid" | grep -q 'NOT findings until re-measured' \
+  && ok "…and says the FAIL rows are NOT findings — the whole point, or ENOSPC gets filed as a bug" \
+  || bad "a FAIL row under a crossed floor was left readable as a finding"
+printf '%s' "$dg_mid" | grep -q 'first seen at: bash ci/a.sh' \
+  && ok "…and names the gate it first crossed at, so the trustworthy prefix is identifiable" \
+  || bad "the crossing point was not named; the table cannot be split into before and after"
+printf '%s' "$dg_mid" | grep -qv 'NOT GREEN' \
+  && ok "…and does NOT print NOT GREEN, which would attribute the failure to the repo" \
+  || bad "a disk failure was attributed to the repo under test"
+
+# THE INJECTION POINT MUST ITSELF WORK. The first version advanced its cursor in a variable inside a
+# `$(...)` subshell, so the sequence never moved, every call returned the FIRST value, and the
+# mid-run row above could not fire. It passed the start-breach row regardless. Pin the mechanism.
+dg_seq="$(CANDOR_DISK_FAKE_FREE_MB=9999,9999,100 bash -c '. "$0"; for _ in 1 2 3 4; do disk_guard_min_mb .; done' "$UMBRELLA/bin/disk-guard.sh" | tr '\n' ' ')"
+[ "$dg_seq" = "9999 9999 100 100 " ] \
+  && ok "the fake-free sequence advances across subshell calls and holds its last value" \
+  || bad "the injection point does not advance — every row above it is vacuous: got '$dg_seq'"
+
+# Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
+dg_shim="$DG/shim"; mkdir -p "$dg_shim"
+printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"
+dg_nodf_rc=0
+PATH="$dg_shim:$PATH" bash "$UMBRELLA/bin/disk-guard.sh" --quiet || dg_nodf_rc=$?
+[ "$dg_nodf_rc" -eq 2 ] \
+  && ok "a df that FAILS is treated as below the floor — 'I could not tell' is not 'there is room'" \
+  || bad "an unreadable filesystem reported healthy (rc=$dg_nodf_rc)"
+rm -rf "$DG"
+
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi
 printf '\033[32mrelease-test: OK — %d assertions\033[0m%s\n' "$pass" \

@@ -6907,3 +6907,26 @@ JUnit alone would have filed it wrongly.
 backlog entries, a test name and a gate's own scope statement all asserted something true-sounding that
 nobody re-derived. **The defence that worked every time: revert it, delete it, feed it poison, or ask the
 authority. Never re-read it.**
+
+## 2026-08-30 — DECISION (Tom): the boxed-closure Drop cardinal sin is measured FOUR-WAY before it is fixed
+
+The defect is filed in candor-rust/BACKLOG.md (2026-08-30, top entry): a guard whose Drop does I/O,
+moved into a closure, boxed as a trait object and never called, is silently pure. CHA cannot see it —
+a closure satisfies Fn through compiler-synthesized dispatch, so it is not in the set CHA enumerates.
+
+**Tom's ruling: do not start with the rust fix.** First ask the same question of the other engines —
+swift's deinit captured by an escaping closure that is never invoked, and a java/kotlin lambda
+capturing a Closeable — because if they share it this is a CLASS, and the family rule is that the
+SPEC clause and conformance PART come before the ports. Taking it four-way without a row is exactly
+the mistake this file records against me from the 0.34 Item 1 port.
+
+Sequencing when the engines are free (they were agent-owned when this was decided):
+1. Reproduce the analogous shape in swift and java. Report the measurement even if it is negative —
+   a clean negative here is worth recording, because it converts this from a class to a rust bug.
+2. If shared: SPEC clause + conformance PART first, then port. If rust-only: no clause, fix rust.
+3. Candidate A (track the unsizing coercion from construction to the Drop terminator on the same
+   local, same body) is the fix either way. Candidate B (charge at construction) is REJECTED and the
+   argument is recorded — it mislocates the caller that actually runs the effect.
+4. Candidate C (A, carried interprocedurally through return types and fields) stays open with a
+   fixture that must remain RED, so it cannot be mistaken for closed. UNMEASURED: whether A alone
+   closes the common real-world shape. The Vec-of-boxed-callbacks form is probably C territory.

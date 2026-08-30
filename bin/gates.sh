@@ -48,7 +48,9 @@ while i < len(lines):
             i += 1
             while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > len(indent)):
                 if lines[i].strip():
-                    print("       ", lines[i].strip())
+                    # `~` marks a line lifted from a multi-line block. It is part of a script, not
+                    # necessarily a standalone command, so bin/gate-run.sh must not execute it blind.
+                    print("      ~", lines[i].strip())
                 i += 1
             continue
         print("       ", rest)

@@ -21,11 +21,27 @@
 # re-run directly, and prints what it SKIPPED (a missing toolchain) rather than passing over it silently.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# CANDOR_ROOT lets the test harness point this at a FIXTURE tree instead of the real siblings, like the
+# other release scripts (release-preflight.sh, release-stage.sh, release.sh, release-verify.sh,
+# spec-bump.sh). Without it this script's own pass/fail signal — `[ -s "$FAILED" ] && rc=1` — could only
+# ever be exercised by breaking a real engine's real test suite, which is exactly how it stayed untested.
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 ONLY="${1:-}"
+# A NAME THAT ISN'T ONE OF THESE MATCHES NOTHING, SILENTLY. `want()` below is a plain string compare, so a
+# typo (`candor-rus`) or a stale name matched zero blocks before this guard existed — every engine block
+# skipped, nothing SKIPPED-labelled either (that only fires when the directory exists but the toolchain
+# doesn't), and the script fell through to "verify-local: OK — every step of every engine present passed"
+# having run nothing at all. Reject an unrecognised name up front instead of letting it silently mean "all
+# clear".
+case "$ONLY" in
+  ""|candor-rust|candor-ts|candor-java|candor-swift|candor-agents) : ;;
+  *) echo "verify-local: '$ONLY' is not a candor engine. Known: candor-rust candor-ts candor-java candor-swift candor-agents" >&2
+     exit 2 ;;
+esac
 rc=0
 skipped=""
-TMP="$(mktemp -d)"; RESULTS="$TMP/results"; FAILED="$TMP/failed"; : > "$RESULTS"; : > "$FAILED"
+TMP="$(mktemp -d)"; RESULTS="$TMP/results"; FAILED="$TMP/failed"; RAN="$TMP/ran"
+: > "$RESULTS"; : > "$FAILED"; : > "$RAN"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 # MEASURED 2026-08-20, which is why this now runs concurrently: candor-ts `node test.mjs` takes 298s
@@ -35,6 +51,7 @@ trap 'rm -rf "$TMP"' EXIT INT TERM
 step() {  # step <repo> <label> <cmd...>  — run from the repo's dir, which the caller has cd'd into
   local repo="$1" label="$2"; shift 2
   local t0 t1
+  echo 1 >> "$RAN"
   t0=$(date +%s)
   if ! out="$("$@" 2>&1)"; then
     t1=$(date +%s)
@@ -144,6 +161,19 @@ sort "$RESULTS"
 [ -s "$FAILED" ] && rc=1
 echo
 [ -n "$skipped" ] && echo "  SKIPPED (toolchain absent, NOT passed):$skipped"
+# A RUN THAT EXECUTED NOTHING IS NOT A PASS. The known-name guard above catches a typo'd $ONLY; this
+# catches every other route to the same shape — a valid name whose directory is not checked out, or (with
+# no argument at all) a tree with no engine siblings present. `rc` would otherwise stay 0 and
+# "every step of every engine present passed" would print having checked zero of them — the identical
+# false-green shape verify-umbrella.sh's own "NOTHING RAN" guard exists for, except that script's zero-run
+# is a legitimate answer about path-filter selection and exits 0; here there is no such legitimate reason,
+# so it is a FAILURE.
+if [ ! -s "$RAN" ]; then
+  echo "verify-local: NOTHING RAN — 0 steps executed${ONLY:+ for '$ONLY'}. Either the engine's directory"
+  echo "  is not checked out at $ROOT, or no toolchain on this machine could run any present engine's suite."
+  echo "  This is a FAILURE, not a pass: nothing here was actually verified."
+  exit 1
+fi
 if [ "$rc" -eq 0 ]; then
   echo "verify-local: OK — every step of every engine present passed"
   echo "  This is not a substitute for CI: conformance is four-way and lives in candor-spec"

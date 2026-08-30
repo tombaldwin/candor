@@ -67,7 +67,10 @@
 set -uo pipefail
 
 ENGINES="candor-rust candor-java candor-ts candor-swift candor-spec"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# CANDOR_ROOT, the same injection point every release script carries — added so the differ-check and
+# `--concluded` marker logic (this script's own two headline guards) can be driven against a fixture
+# instead of only ever being exercised by hand against the real siblings.
+ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 die() { echo "probe: $*" >&2; exit 2; }
 

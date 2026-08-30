@@ -8,6 +8,50 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — `verify-local.sh` gets a CANDOR_ROOT injection point, and four `release-verify.sh` gaps confirmed by mutation
+
+The previous entry's guard-deletion sweep named what it had NOT covered: `verify-local.sh` had no
+CANDOR_ROOT-style injection point at all, so its entire pass/fail signal — one line,
+`[ -s "$FAILED" ] && rc=1` — had never been driven by anything but a real engine's real suite breaking.
+Every other appearance of `verify-local.sh` in `release-test.sh` was as a STUBBED dependency of some
+other script's test (the release-rehearsal.sh battery), never as the thing under test.
+
+Fixed by adding the identical `${CANDOR_ROOT:-…}` convention every other release script already carries
+(`release-preflight.sh`, `release.sh`, `release-stage.sh`, `spec-bump.sh`, `release-verify.sh`), then
+driving it directly: a fixture engine step that fails exits non-zero, names the failing repo+label, and
+prints the FAILED verdict; an all-green fixture exits 0 with byte-identical output (elapsed-seconds
+aside); a step that fails only AFTER a delay is still caught, confirming the `wait` between launching the
+backgrounded steps and reading `$FAILED` — deleting `wait` in a scratch copy reproduced a false
+`verify-local: OK` while the failing background job was still running.
+
+A second guard-deletion finding, not merely an untested line: `want()`, the `$ONLY`-scoping helper, was a
+plain string compare with no validation. A typo'd engine name, or a valid name whose directory simply
+was not checked out, matched zero blocks — no SKIPPED line either, since that only fires when the
+directory exists but the toolchain doesn't — and still reached `verify-local: OK — every step of every
+engine present passed` having run zero steps. Fixed with an explicit known-engine check (usage error,
+exit 2, for an unrecognised name) plus a `NOTHING RAN` verdict (exit 1) for every other route to the same
+shape, mirroring — and, unlike `verify-umbrella.sh`'s own version of this guard, FAILING rather than
+passing, because there is no legitimate "selection" reason for zero engine steps here.
+
+Applied the same treatment, budget allowing, to the two other release scripts with zero dedicated tests:
+`verify-umbrella.sh` (copied into a throwaway git repo carrying a trivial workflow, since its `REPO` is
+derived from its own script location rather than an env var — a failing step now provably makes it exit
+non-zero) and `probe.sh` (given the same CANDOR_ROOT injection point, then its two headline guards driven
+directly: the control/subject differ-check refuses an agreeing pair rather than reporting it as a
+finding, and `--concluded` tells a real failure apart from a command that died before printing its own
+marker).
+
+Separately: four `release-verify.sh` `bad()` branches had been named by grepping the file for messages
+that never appear anywhere in `release-test.sh` — the npm version-mismatch line, both adopt/ pin lines
+(`candor.yml`'s `CANDOR_JAVA_VERSION`, `candor-digest.yml`'s `candor-agents@v`), "no pinned download URLs
+found", and the artifact-URL version-mismatch line (a `jbang-catalog.json` `script-ref` left at the prior
+release while `ENGINE_PIN_JAVA` itself moved on) — but never confirmed by mutation. All four were
+confirmed genuine by deleting each in a scratch copy and re-running its exact fixture: every one produced
+a false `release-verify: OK` with the check's own line gone. None needed a code fix — every one already
+worked — so the fix here is the four fixture batteries (`release-test.sh` §7f/§7g/§7h) that now fail if
+any of them regresses. `release-test.sh` closes at 335 assertions, up from 295 before this entry and the
+one above it combined.
+
 ## 2026-08-30 — the guard-deletion sweep: nine untested `release-preflight.sh` bad() branches, closed
 
 `bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §C — delete each guard in turn, does anything go

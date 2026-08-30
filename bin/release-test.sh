@@ -1996,6 +1996,192 @@ printf '%s' "$scopedout" | grep -q "pins ts SEPARATELY at 0.30.0" \
   || bad "a diverged pin vanished entirely under a scoped run"
 rm -rf "$PJ"
 
+say "7f. release-verify.sh — the npm version-mismatch line, and both adopt/ pin lines"
+# WHY THIS EXISTS. Four release-verify.sh `bad()` branches were found by grepping the file for messages
+# that never appear anywhere in this harness, never confirmed by actually driving them: the npm
+# version-mismatch line, the two adopt/ pin lines (candor.yml's CANDOR_JAVA_VERSION, candor-digest.yml's
+# candor-agents@v), "no pinned download URLs found", and the artifact URL version-mismatch line. Every
+# existing fixture in this file (7d, 7e, 8, 9b) keeps npm and the adopt/ pins genuinely in step with $VER,
+# so none of those rows could ever have exercised the branch that fires when they are NOT. This section and
+# 7g/7h below are that confirmation, by deletion: each was run once with the `bad()` line under test
+# commented out in a scratch copy, and every existing 295-assertion baseline stayed green — proving the gap
+# was real, not merely unlikely.
+NV="$(mktemp -d)"; mkdir -p "$NV/bin" "$NV/root/candor/bin" "$NV/root/candor/adopt"
+printf 'ENGINE_PIN="0.33.0"\n' > "$NV/root/candor/bin/candor"
+cat > "$NV/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = "view" ] && { echo "${NPM_VER:-0.0.0}"; exit 0; }
+exit 1
+EOF
+cat > "$NV/bin/npx" <<'EOF'
+#!/usr/bin/env bash
+echo "candor-ts v${NPM_VER:-0.0.0} (spec 0.33)"
+EOF
+# Generic: whatever tag is asked for comes back as that tag, non-draft. This section is not about the
+# draft check (7d owns that) or about which repos are in scope (8 owns that).
+cat > "$NV/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then echo "$3|false"; exit 0; fi
+exit 1
+EOF
+chmod +x "$NV"/bin/*
+nvrun() { NPM_VER="$1" PATH="$NV/bin:$PATH" CANDOR_ROOT="$NV/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-ts 2>&1; }
+ctl="$(nvrun 0.33.0)"
+printf '%s' "$ctl" | grep -q "release-verify: OK" \
+  && ok "CONTROL: npm genuinely serving 0.33.0 passes, so the row below measures the mismatch" \
+  || { bad "[fixture] the clean npm baseline did not pass; the row below would prove nothing"; printf '%s\n' "$ctl" | tail -6; }
+red="$(nvrun 0.30.5)"
+printf '%s' "$red" | grep -q "candor-ts: npm version '0.30.5' != 0.33.0" \
+  && ok "[npm] a stale registry version is caught and named, not averaged into a pass" \
+  || bad "[npm] deleted: npm serving a version other than the one just cut passed silently"
+printf '%s' "$red" | grep -q "release-verify: OK" \
+  && bad "[npm] a version mismatch on the registry still reported the run OK overall" \
+  || ok "…and the run as a whole is FAILED, not a note beside a green verdict"
+rm -rf "$NV"
+
+# --- both adopt/ pin lines: candor.yml's CANDOR_JAVA_VERSION and candor-digest.yml's candor-agents@v ----
+# Scoped to exactly the two pins' owner repos, so crates.io/npm/the artifact URLs never need stubbing —
+# this section is purely about the adopt/ loop.
+AD="$(mktemp -d)"; mkdir -p "$AD/bin" "$AD/root/candor/bin" "$AD/root/candor/adopt"
+printf 'ENGINE_PIN="0.33.0"\n' > "$AD/root/candor/bin/candor"
+cat > "$AD/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then echo "$3|false"; exit 0; fi
+exit 1
+EOF
+cat > "$AD/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+w=0; for a in "$@"; do [ "$a" = "-w" ] && w=1; done
+[ "$w" = 1 ] && printf '200' || echo body
+EOF
+chmod +x "$AD"/bin/*
+adfiles() {  # $1 = java version string ; $2 = agents version string
+  printf '          CANDOR_JAVA_VERSION: %s\n' "$1" > "$AD/root/candor/adopt/candor.yml"
+  printf '        run: pipx install "git+https://github.com/tombaldwin/candor-agents@v%s"\n' "$2" \
+    > "$AD/root/candor/adopt/candor-digest.yml"
+}
+adrun() { PATH="$AD/bin:$PATH" CANDOR_ROOT="$AD/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-java,candor-agents 2>&1; }
+adfiles 0.33.0 0.33.0
+ctl="$(adrun)"
+printf '%s' "$ctl" | grep -q "candor/adopt/candor.yml pins 0.33.0" \
+  && ok "CONTROL: candor.yml's CANDOR_JAVA_VERSION genuinely at 0.33.0 is confirmed, not silent" \
+  || { bad "[fixture] the clean adopt/ baseline did not confirm candor.yml; the row below proves nothing"; printf '%s\n' "$ctl" | tail -10; }
+printf '%s' "$ctl" | grep -q "candor/adopt/candor-digest.yml pins 0.33.0" \
+  && ok "CONTROL: candor-digest.yml's candor-agents@v genuinely at 0.33.0 is confirmed too" \
+  || bad "[fixture] the clean adopt/ baseline did not confirm candor-digest.yml"
+adfiles 0.32.0 0.33.0
+red="$(adrun)"
+printf '%s' "$red" | grep -q "candor/adopt/candor.yml pins 0.32.0, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.32.0" \
+  && ok "[adopt java] a stale CANDOR_JAVA_VERSION is caught and named, not left for the next \`candor init\` to discover" \
+  || bad "[adopt java] deleted: candor.yml left at the prior java version passed silently"
+adfiles 0.33.0 0.31.5
+red2="$(adrun)"
+printf '%s' "$red2" | grep -q "candor/adopt/candor-digest.yml pins 0.31.5, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.31.5" \
+  && ok "[adopt agents] a stale candor-agents@v pin is caught and named" \
+  || bad "[adopt agents] deleted: candor-digest.yml left at the prior agents version passed silently"
+printf '%s' "$red2" | grep -q "release-verify: OK" \
+  && bad "[adopt agents] a stale consumer-facing pin still reported the run OK overall" \
+  || ok "…and the run as a whole is FAILED over a pin nothing else in this file checks"
+rm -rf "$AD"
+
+say "7g. release-verify.sh — an artifact URL naming a DIFFERENT version than the one under verification"
+# WHY THIS EXISTS. jbang-catalog.json's `script-ref` is read straight off disk (grep, not derived from
+# ENGINE_PIN_JAVA), so it can go stale independently of the pin — release-stage.sh editing every OTHER
+# staged site but missing this one is exactly the class 0.25/0.26 shipped (see this file's own header).
+# `case "$u" in *"/v$VER/"*) ;; *) bad "pin names a different version..." ;; esac` is the one line that
+# would catch it, and nothing here had ever driven a jbang URL whose version disagreed with $VER while
+# ENGINE_PIN_JAVA itself was correct — every existing fixture (search "jbang-catalog.json" above) keeps
+# the two in step.
+JV="$(mktemp -d)"; mkdir -p "$JV/bin" "$JV/root/candor/bin" "$JV/root/candor-java"
+printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.33.0"\n' > "$JV/root/candor/bin/candor"
+cat > "$JV/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then echo "$3|false"; exit 0; fi
+exit 1
+EOF
+cat > "$JV/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+w=0; for a in "$@"; do [ "$a" = "-w" ] && w=1; done
+[ "$w" = 1 ] && printf '200' || echo body
+EOF
+chmod +x "$JV"/bin/*
+jvrun() { PATH="$JV/bin:$PATH" CANDOR_ROOT="$JV/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-java 2>&1; }
+printf '{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v0.33.0/candor-java-0.33.0-all.jar"}' \
+  > "$JV/root/candor-java/jbang-catalog.json"
+ctl="$(jvrun)"
+printf '%s' "$ctl" | grep -q "release-verify: OK" \
+  && ok "CONTROL: jbang-catalog.json genuinely at v0.33.0 passes" \
+  || { bad "[fixture] the clean jbang baseline did not pass; the row below proves nothing"; printf '%s\n' "$ctl" | tail -12; }
+printf '{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v0.32.1/candor-java-0.32.1-all.jar"}' \
+  > "$JV/root/candor-java/jbang-catalog.json"
+red="$(jvrun)"
+printf '%s' "$red" | grep -q "pin names a different version than v0.33.0" \
+  && ok "[artifact ver] jbang-catalog.json left at the prior release is caught, even though ENGINE_PIN_JAVA itself moved" \
+  || bad "[artifact ver] deleted: a stale jbang-catalog.json URL passed silently while the pin looked fine"
+printf '%s' "$red" | grep -q "release-verify: OK" \
+  && bad "[artifact ver] a version-mismatched pinned URL still reported the run OK overall" \
+  || ok "…and the run as a whole is FAILED"
+rm -rf "$JV"
+
+say "7h. release-verify.sh — \"no pinned download URLs found\" when a diverged pin empties the list"
+# WHY THIS EXISTS. The urls[] array is fed from TWO places: jbang-catalog.json's own text, and a URL BUILT
+# from ENGINE_PIN_JAVA — and the latter is routed to pin_urls (not urls) the moment the pin diverges from
+# $VER (see release-verify.sh's own comment on `pin_urls`, "NOT held to the /v$VER/ rule"). Route java's
+# only contribution to pin_urls, give candor-swift a version old enough that its own asset check legitimately
+# expects nothing (candor-swift shipped no binaries before 0.27 — this file's own case statement says so),
+# and urls[] is empty while EXPECT_URLS is still 1 — the exact shape `bad "no pinned download URLs found"`
+# exists for. AHEAD (not behind) on purpose, so this measures the emptiness guard alone, not the
+# already-covered (7e) BEHIND-pin failure riding along and explaining the row for the wrong reason.
+UF="$(mktemp -d)"; mkdir -p "$UF/bin" "$UF/root/candor/bin"
+cat > "$UF/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+url=""; w=0
+for a in "$@"; do case "$a" in http*) url="$a" ;; -w) w=1 ;; esac; done
+case "$url" in
+  https://crates.io/api/v1/crates/*) echo "{\"crate\":{\"max_version\":\"${UF_VER:-0.0.0}\"}}" ;;
+  *) [ "$w" = 1 ] && printf '200' || echo body ;;
+esac
+EOF
+cat > "$UF/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = "view" ] && { echo "${UF_VER:-0.0.0}"; exit 0; }
+exit 1
+EOF
+cat > "$UF/bin/npx" <<'EOF'
+#!/usr/bin/env bash
+echo "candor-ts v${UF_VER:-0.0.0} (spec ${UF_SPEC:-0.0})"
+EOF
+cat > "$UF/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then echo "$3|false"; exit 0; fi
+exit 1
+EOF
+chmod +x "$UF"/bin/*
+ufrun() { UF_VER=0.20.5 UF_SPEC=0.20 PATH="$UF/bin:$PATH" CANDOR_ROOT="$UF/root" \
+            bash "$UMBRELLA/bin/release-verify.sh" 0.20 0.20.5 2>&1; }
+# CONTROL: the same historical version, JPIN unset (ordinary state) — java's URLs land in urls[] the
+# ordinary way and the emptiness guard must NOT fire.
+printf 'ENGINE_PIN="0.20.5"\n' > "$UF/root/candor/bin/candor"
+ctl="$(ufrun)"
+printf '%s' "$ctl" | grep -q "no pinned download URLs found" \
+  && bad "[fixture] the CONTROL (no diverged pin) already reports no URLs found — the row below proves nothing" \
+  || ok "CONTROL: with ENGINE_PIN_JAVA unset, java's assets land in urls[] the ordinary way"
+# THE DEFECT: ENGINE_PIN_JAVA diverges (AHEAD — a disclosed, not-failed state per 7e), which routes java's
+# only urls[] contribution to pin_urls instead; candor-swift's own asset check contributes nothing at this
+# VER by design. urls[] is now empty while EXPECT_URLS is 1.
+printf 'ENGINE_PIN="0.20.5"\nENGINE_PIN_JAVA="0.21.0"\n' > "$UF/root/candor/bin/candor"
+red="$(ufrun)"
+printf '%s' "$red" | grep -q "no pinned download URLs found" \
+  && ok "[empty urls] a diverged java pin emptying urls[] is caught, not silently passed as nothing to check" \
+  || bad "[empty urls] deleted: EXPECT_URLS=1 with zero resolvable urls passed as if nothing needed checking"
+printf '%s' "$red" | grep -q "release-verify: OK" \
+  && bad "[empty urls] an empty, expected-nonempty urls[] still reported the run OK overall" \
+  || ok "…and the run as a whole is FAILED, not a quiet pass over nothing checked"
+rm -rf "$UF"
+
 say "7. changelog-lag.sh — preflight [5b]"
 # [5] asks whether the changelog MENTIONS the floor, which a section cut at staging time passes forever.
 # This asks whether the description stopped moving while the thing it describes kept going. Two shapes
@@ -2779,6 +2965,174 @@ printf '%s' "$rhout" | grep -q '\[1\] candor-java: not a git repo at' \
   && ok "…and the missing repo is named as a PROBLEM in the summary, not just an informational line" \
   || bad "the missing repo did not reach the problem list — '$(printf '%s' "$rhout" | grep -m1 'candor-java')'"
 rm -rf "$RH"
+
+say "11. verify-local.sh — the CANDOR_ROOT injection and the pass/fail signal itself"
+# WHY THIS EXISTS. verify-local.sh's entire pass/fail signal is one line — `[ -s "$FAILED" ] && rc=1` —
+# and it had no CANDOR_ROOT-style injection point at all, unlike every other release script (see
+# release-preflight.sh, release.sh, release-stage.sh, spec-bump.sh, release-verify.sh, all sourced or
+# grepped above). Every OTHER appearance of verify-local.sh in this file is as a STUBBED dependency of
+# some other script's test (see the `for s in verify-local.sh …` loop further down) — never as the thing
+# under test. So this line has never been driven, in either direction, by anything but a real engine's
+# real suite breaking. Fixed by adding the identical `${CANDOR_ROOT:-…}` convention; this section is the
+# test that convention exists to make possible.
+VL="$(mktemp -d)"; mkdir -p "$VL/candor-agents"
+vlpy() { printf 'import sys\nsys.exit(%s)\n' "$1" > "$VL/candor-agents/test.py"; }
+vlrun() { CANDOR_ROOT="$VL" bash "$UMBRELLA/bin/verify-local.sh" candor-agents 2>&1; }
+# Strip the elapsed-seconds field before any byte-for-byte comparison — real, so it is not itself
+# fabricated, but its VALUE is wall-clock timing and asserting on that would make this row flaky rather
+# than meaningful.
+normtime() { printf '%s' "$1" | sed -E 's/\(([0-9]+)s\)/(Ns)/g'; }
+
+vlpy 0
+green1="$(vlrun)"; greenrc1=$?
+[ "$greenrc1" = 0 ] && ok "an all-green fixture exits 0" || bad "an all-green fixture exited $greenrc1"
+printf '%s' "$green1" | grep -q "verify-local: OK" \
+  && ok "…and prints the OK verdict" || bad "an all-green fixture did not print the OK verdict"
+green2="$(vlrun)"
+[ "$(normtime "$green1")" = "$(normtime "$green2")" ] \
+  && ok "…and two green runs are byte-identical (elapsed-seconds aside)" \
+  || { bad "two green runs of the identical fixture differed"
+       diff <(normtime "$green1") <(normtime "$green2") | head -6; }
+
+vlpy 1
+red="$(vlrun)"; redrc=$?
+[ "$redrc" != 0 ] \
+  && ok "a failing engine step makes verify-local.sh exit non-zero" \
+  || bad "a failing python3 test.py step still exited 0 — the ONE pass/fail line is broken"
+printf '%s' "$red" | grep -qE "candor-agents.*python3 test\.py.*✘ FAILED" \
+  && ok "…and NAMES the failing step (repo + label), not just a bare non-zero exit" \
+  || bad "a failing step's identity did not reach the output — '$(printf '%s' "$red" | grep -m1 candor-agents)'"
+printf '%s' "$red" | grep -q "verify-local: FAILED" \
+  && ok "…and prints the FAILED verdict, not OK beside a nonzero exit" \
+  || bad "a failing run printed something other than the FAILED verdict"
+
+# GUARD-DELETION TARGET: `wait` between launching the background steps and `[ -s "$FAILED" ] && rc=1`.
+# Every step runs in `( … ) &`, so without `wait` the main shell can reach the pass/fail check before a
+# SLOW step has written to $FAILED at all — exactly the "detector worked, aggregator discarded it" shape
+# this session's brief describes elsewhere. A step that fails INSTANTLY (the row above) cannot tell a
+# present `wait` apart from an absent one, because the race window is too narrow to matter. This one can:
+# confirmed by actually deleting the `wait` line in a scratch copy and re-running this exact fixture, which
+# then printed "verify-local: OK" while the backgrounded sleep was still running.
+printf 'import sys, time\ntime.sleep(1)\nsys.exit(1)\n' > "$VL/candor-agents/test.py"
+slow="$(vlrun)"; slowrc=$?
+[ "$slowrc" != 0 ] \
+  && ok "a step that fails AFTER a delay is still caught — \`wait\` closes the race before the verdict" \
+  || bad "a slow-failing step raced past the pass/fail check and exited 0 — the \`wait\` guard is not doing its job"
+printf '%s' "$slow" | grep -q "verify-local: FAILED" \
+  && ok "…and the verdict itself reflects it, not just the exit code" \
+  || bad "a slow-failing step's FAILED verdict did not print"
+rm -rf "$VL"
+
+say "11b. verify-local.sh — an unrecognised or absent \$ONLY must not read as \"nothing to check, so OK\""
+# GUARD-DELETION FINDING, not a pre-existing test. `want()` is a plain string compare with no validation
+# against it, so before this fix a typo'd engine name (or a valid name whose directory is simply not
+# checked out) matched zero blocks, printed nothing — not even a SKIPPED line, which only fires when the
+# directory exists but the toolchain doesn't — and still reached "verify-local: OK — every step of every
+# engine present passed" having run ZERO steps. The identical false-green shape verify-umbrella.sh's own
+# "NOTHING RAN" guard exists for, on the one script CLAUDE.md tells every agent to trust as a standing
+# check before every push.
+VE="$(mktemp -d)"
+badname="$(CANDOR_ROOT="$VE" bash "$UMBRELLA/bin/verify-local.sh" candor-rustt 2>&1)"; badrc=$?
+[ "$badrc" != 0 ] \
+  && ok "an unrecognised engine name is a usage error, not a silent no-op" \
+  || bad "verify-local.sh 'candor-rustt' (typo) exited 0 having matched nothing"
+printf '%s' "$badname" | grep -q "is not a candor engine" \
+  && ok "…and says WHY, rather than leaving the operator to guess" \
+  || bad "no diagnostic for the unrecognised engine name"
+
+missing="$(CANDOR_ROOT="$VE" bash "$UMBRELLA/bin/verify-local.sh" candor-agents 2>&1)"; missingrc=$?
+[ "$missingrc" != 0 ] \
+  && ok "a recognised engine name whose directory is not checked out is a FAILURE, not a quiet OK" \
+  || bad "verify-local.sh ran zero steps for a missing candor-agents/ and still exited 0"
+printf '%s' "$missing" | grep -q "NOTHING RAN" \
+  && ok "…and says so explicitly, distinct from every-step-passed" \
+  || bad "a zero-step run produced no NOTHING RAN diagnostic"
+printf '%s' "$missing" | grep -q "verify-local: OK" \
+  && bad "a zero-step run printed the OK verdict" \
+  || ok "…and the OK verdict never prints over zero steps"
+rm -rf "$VE"
+
+say "12. verify-umbrella.sh — the pass/fail signal itself (zero dedicated tests until now)"
+# WHY THIS EXISTS. verify-umbrella.sh has no CANDOR_ROOT-style injection point at all — REPO is derived
+# from its OWN script location (`dirname "${BASH_SOURCE[0]}"/..`), not an env var — so the only way to
+# exercise it has been to run it against THIS repo's real workflows, which cannot make a step fail on
+# demand. Given the same treatment release-rehearsal.sh's own test already uses (section 10, above): copy
+# the script plus its two collaborators into a throwaway git repo carrying a trivial workflow, so `REPO`
+# resolves to the fixture by construction. Scoped to the two exit-code branches that matter most — a
+# failing step must make the run exit non-zero, a clean one must exit 0 — not to the full breadth of
+# wf-steps.py/wf-expected.py selection, which already carry their own --selftest.
+UV="$(mktemp -d)"; mkdir -p "$UV/bin" "$UV/.github/workflows"
+cp "$UMBRELLA/bin/verify-umbrella.sh" "$UMBRELLA/bin/wf-steps.py" "$UMBRELLA/bin/wf-expected.py" "$UV/bin/"
+chmod +x "$UV/bin/verify-umbrella.sh"
+uvwf() {  # $1 = the step's shell command
+  cat > "$UV/.github/workflows/test.yml" <<EOF
+name: Test
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the step
+        run: $1
+EOF
+  ( cd "$UV" && git add -A && git -c user.email=t@e -c user.name=t commit -q -m step )
+}
+( cd "$UV" && git init -q && git checkout -q -b main )
+uvwf "exit 0"
+uvout="$(bash "$UV/bin/verify-umbrella.sh" --all 2>&1)"; uvrc=$?
+[ "$uvrc" = 0 ] && ok "an all-green workflow exits 0" || { bad "an all-green workflow exited $uvrc"; printf '%s\n' "$uvout" | tail -6; }
+printf '%s' "$uvout" | grep -q "verify-umbrella: OK" \
+  && ok "…and prints the OK verdict" || bad "an all-green run did not print the OK verdict"
+
+uvwf 'echo boom; exit 1'
+uvout="$(bash "$UV/bin/verify-umbrella.sh" --all 2>&1)"; uvrc=$?
+[ "$uvrc" != 0 ] \
+  && ok "a failing workflow step makes verify-umbrella.sh exit non-zero" \
+  || bad "a failing step still exited 0 — verify-umbrella's own pass/fail signal is broken"
+printf '%s' "$uvout" | grep -q "verify-umbrella: FAILED" \
+  && ok "…and prints the FAILED verdict" || bad "a failing run did not print the FAILED verdict"
+printf '%s' "$uvout" | grep -q "boom" \
+  && ok "…and the failing step's own output reaches the report" || bad "the failing step's output did not reach the report"
+rm -rf "$UV"
+
+say "13. probe.sh — the differ-check and --concluded, its own two headline guards (zero dedicated tests until now)"
+# WHY THIS EXISTS. probe.sh's own header lists five wrong measurements its differ-check exists to catch
+# and five more its --concluded mode exists to catch, and states the whole point of the file: "a probe
+# that will be cited … gets the same treatment as a row." Nothing had ever given IT that treatment. Fixed
+# the same way as verify-local.sh: added the identical CANDOR_ROOT injection point (probe.sh had none
+# either) so quiet_tree_check's sibling-repo walk does not touch the real, currently-dirty umbrella tree
+# mid-edit, then drove the two guards directly.
+PR="$(mktemp -d)"
+ctl="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf X 2>&1)"; ctlrc=$?
+[ "$ctlrc" = 2 ] \
+  && ok "control and subject producing IDENTICAL output is REFUSED (exit 2), not reported as a finding" \
+  || bad "control==subject was not refused (exit $ctlrc) — the differ-check is not doing its job"
+printf '%s' "$ctl" | grep -q "CONTROL AND SUBJECT AGREE" \
+  && ok "…and says why: the probe is presumed BROKEN, not that the two arms agree meaningfully" \
+  || bad "no diagnostic for an agreeing control/subject pair"
+diff="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; diffrc=$?
+[ "$diffrc" = 0 ] \
+  && ok "control and subject producing DIFFERENT output is accepted, not refused" \
+  || bad "a genuinely discriminating control/subject pair was refused (exit $diffrc)"
+printf '%s' "$diff" | grep -q "control and subject DIFFER" \
+  && ok "…and says the probe discriminates" || bad "no confirmation that the probe discriminates"
+
+conc="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" --concluded DONE -- bash -c 'echo DONE; exit 7' 2>&1)"; concrc=$?
+[ "$concrc" = 7 ] \
+  && ok "--concluded forwards the SUBJECT's own exit code when its marker printed" \
+  || bad "--concluded did not forward exit 7 (got $concrc)"
+printf '%s' "$conc" | grep -q "concluded (marker 'DONE' present)" \
+  && ok "…and says the output IS a verdict" || bad "no 'concluded' confirmation for a marker that printed"
+noconc="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" --concluded DONE -- bash -c 'echo partial; exit 1' 2>&1)"; noconcrc=$?
+[ "$noconcrc" = 4 ] \
+  && ok "a command that dies before printing its own marker is DID-NOT-CONCLUDE (exit 4), not read as a real result" \
+  || bad "a command that never reached its marker was not flagged DID NOT CONCLUDE (got $noconcrc)"
+printf '%s' "$noconc" | grep -q "DID NOT CONCLUDE" \
+  && ok "…and says its rows above the stop are real but its absence of rows means nothing" \
+  || bad "no DID NOT CONCLUDE diagnostic for a command that died mid-run"
+rm -rf "$PR"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

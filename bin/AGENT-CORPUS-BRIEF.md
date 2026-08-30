@@ -282,3 +282,28 @@ failure mode was a **silent pass**, not an error. Nothing short of executing it 
   rather than reading the total.
 
 This is the same class as the *teeth only on macOS* row from 2026-08-16. It has now cost twice.
+
+### M — "it drives a real binary" is not a reason a check cannot be attacked
+
+Measured 2026-08-30 on candor-spec, where this misreading cost TWO WAVES of hardening.
+
+The mutation gate's own SCOPE header said the uncovered conformance rows "drive real engine binaries
+rather than taking a document directly … a different, larger project". Every part later hardened drives
+real binaries. The header was true and irrelevant, which is the dangerous combination.
+
+**A check's verdict does not turn on the expensive thing it invokes. It turns on the comparison
+DOWNSTREAM of it** — an `if` chain, a cell checker, an aggregator — and that comparison's entire input
+is usually a few exit codes and JSON documents you can supply directly. The engine run is upstream of
+the thing you are attacking, so its cost is not your cost.
+
+So when something looks unattackable, separate two questions that get silently merged:
+- what does this check RUN? (may be huge, slow, four engines, a full build)
+- what does its VERDICT actually read? (nearly always small, and usually argv-shaped)
+
+Only the second one bounds the work. If you cannot answer the second, you have not looked yet.
+
+**The coordinator made the matching error in the same session, one level up.** I told the agent that
+three parts all needed "real fixture or stub engineering", having measured that on TWO of them; the
+third ran through two already-extractable functions and needed no engine at all. A brief that reports
+what it measured can go stale honestly. One that states a conclusion drawn from a sample cannot — and
+an agent that believes it will skip exactly the cheap work you sent it to do.

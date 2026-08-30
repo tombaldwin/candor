@@ -2602,6 +2602,141 @@ printf '%s' "$ghfail" | grep -q "gh release upload v0.32.1 .* -R tombaldwin/cand
   || bad "the gh release upload remedy is missing from the die message"
 rm -rf "$GHF"
 
+say "9b. release-preflight.sh — FAIL branches a guard-deletion sweep found nothing drives: [1][2][2b][3][4][5][6][8][12]"
+# WHY THIS SECTION EXISTS. Every other row that runs a real (non-stubbed) release-preflight.sh over
+# csfix's fixture keeps it internally consistent — same declared spec everywhere, no stray prior-floor
+# string, matching crate deps, agreeing repo lists, a spec whose highest rung equals its own declared
+# version. That consistency is what makes the OTHER rows in this file trustworthy; it also means eleven
+# of preflight's `bad()` calls have never once fired in this harness — deleting any of them left the
+# ✔/✘ symbol you would grep for STILL PRESENT via unrelated rows, or absent from the count entirely, and
+# `bash bin/release-test.sh` stayed 281/281 green either way. Confirmed by actually deleting each guard
+# in turn (bin/release-preflight.sh lines for [1], [2], [2b], [3]'s strict pin bad(), [4], [5], [6], both
+# [8] arms and all of [12]) and re-running this file: every deletion left it at "281 assertions", nothing
+# in CI or verify-local would have caught a regression in any of them. Each row below breaks the ONE
+# invariant the check exists for and proves the specific message still reaches the operator.
+csfix "$CSF"
+
+# --- [1] engines DISAGREE on the declared spec -------------------------------------------------------
+perl -pi -e 's/const SPEC_VERSION = "0\.32"/const SPEC_VERSION = "0.31"/' "$CSF/candor-ts/query.mjs"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "engines DISAGREE on the declared spec" \
+  && ok "[1] a candor-ts spec one rung behind every other engine is caught, not averaged away" \
+  || bad "[1] deleted: a genuine cross-engine spec split passed silently — 0.23->0.24's own failure shape"
+csfix "$CSF"
+ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$ctl" | grep -q "all declare spec 0.32" \
+  && ok "CONTROL: …and the untouched fixture agrees, so the row above is measuring the split, not noise" \
+  || bad "[1] CONTROL is broken — the clean fixture does not even print the agreement line"
+
+# --- [2] a leftover PRIOR-FLOOR ('spec 0.31') string in shipped, non-fixture, non-excluded source -----
+csfix "$CSF"
+printf '\n# legacy: spec 0.31 support was dropped here\n' >> "$CSF/candor-agents/pyproject.toml"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "leftover 'spec 0.31' in shipped source" \
+  && ok "[2] a bump-miss-shaped 'spec 0.31' string in shipped source is caught" \
+  || bad "[2] deleted: the exact bump-miss signature this check exists for passed silently"
+csfix "$CSF"
+ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$ctl" | grep -q "no leftover 'spec 0.31' strings" \
+  && ok "CONTROL: …and the untouched fixture has none — the row above measures the injected string" \
+  || bad "[2] CONTROL is broken — the clean fixture already reports a leftover"
+
+# --- [2b] the BARE-LITERAL form ('"spec"' ... '"0.31"' on one line) the [2] grep structurally misses --
+csfix "$CSF"
+printf '\n// legacy: obj?.["spec"] as? String == "0.31"\n' >> "$CSF/candor-ts/scan.mjs"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "bare-literal spec assertion at the prior floor" \
+  && ok "[2b] a bare-literal \"spec\"/\"0.31\" pair (the [2] regex cannot see) is caught" \
+  || bad "[2b] deleted: the literal-assertion bump-miss shape passed silently"
+
+# --- [3] a cross-repo pin that does NOT name the version being cut, in STRICT (non-advisory) mode -----
+# Every other row exercising [3] sets PINS_ADVISORY=1 (the deadlock-avoidance mode release.sh step 0
+# actually runs under). Nothing in this harness had ever called preflight in the STRICT mode an operator
+# uses when checking "did step 6 actually move the pins" — so the one branch that turns a forgotten pin
+# bump into a hard failure had zero coverage.
+csfix "$CSF"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "adopt java.*pin does not reference 0.32.1" \
+  && ok "[3] STRICT mode fails a java-owned pin that was never moved to the version being cut" \
+  || bad "[3] deleted: a stale cross-repo pin passed in the exact mode an operator runs by hand"
+ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$ctl" | grep -q "pin does not reference" \
+  && bad "CONTROL: PINS_ADVISORY=1 should downgrade the same unmoved pin to advisory, not fail it" \
+  || ok "CONTROL: …and PINS_ADVISORY=1 downgrades the identical state to advisory, as release.sh step 0 needs"
+
+# --- [4] a hand-maintained build constant that disagrees with the version being cut -------------------
+csfix "$CSF"
+perl -pi -e 's/"version": "0\.32\.0"/"version": "0.32.9"/' "$CSF/candor-ts/package.json"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-ts 2>&1)"
+printf '%s' "$red" | grep -q "a build version.*!= requested 0.32.1" \
+  && ok "[4] candor-ts's own package.json left at the wrong version fails, not just release-stage's edit" \
+  || bad "[4] deleted: a hand-maintained build constant disagreeing with the cut passed silently"
+
+# --- [5] a CHANGELOG that never mentions the floor being cut -------------------------------------------
+csfix "$CSF"
+printf '# Changelog\n\n## Unreleased\n\n## [0.31.5] - 2026-07-01\n\nold notes, never touched since.\n' \
+  > "$CSF/candor-agents/CHANGELOG.md"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "candor-agents CHANGELOG.md has no 0.32 entry" \
+  && ok "[5] a CHANGELOG that never mentions the floor fails, even for a repo outside the cut" \
+  || bad "[5] deleted: a changelog describing a different release entirely passed silently"
+
+# --- [6] a rust crate requiring a candor sibling at a PRIOR version (the mid-publish cargo failure) ----
+csfix "$CSF"
+cat >> "$CSF/candor-rust/crates/candor-report/Cargo.toml" <<'EOF'
+
+[dependencies]
+candor-classify = { path = "../candor-classify", version = "0.32.0" }
+EOF
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-rust 2>&1)"
+printf '%s' "$red" | grep -q "requires a candor sibling at 0.32.0, not 0.32.1" \
+  && ok "[6] a sibling dep left at the prior version is caught (cargo publish dies mid-sequence otherwise)" \
+  || bad "[6] deleted: the exact 0.25 failure shape (a stale intra-workspace dep) passed silently"
+
+# --- [8] the publisher (release.sh) and verifier (release-verify.sh) naming DIFFERENT repo sets -------
+csfix "$CSF"
+perl -pi -e 's/"candor-agents:v\$VER" //' "$CSF/candor/bin/release-verify.sh"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "publisher and verifier disagree" \
+  && ok "[8] release.sh publishing a repo release-verify.sh never checks is caught" \
+  || bad "[8] deleted: the publisher/verifier repo-list split (the 4-vs-7 defect) passed silently"
+
+# --- [8]'s own sibling check: changelog-lag.sh auditing a DIFFERENT repo set than release.sh cuts ------
+csfix "$CSF"
+perl -pi -e 's/candor-agents //' "$CSF/candor/bin/changelog-lag.sh"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "changelog-lag \[5b\] checks a DIFFERENT set" \
+  && ok "[8] changelog-lag.sh silently dropping a repo release.sh still cuts is caught" \
+  || bad "[8] deleted: an eighth-family-repo-shaped drop from changelog-lag's list passed silently"
+
+# --- [12] SPEC.md describing a rung above the version it declares (the ⟨0.31⟩ non-additive near-miss) -
+csfix "$CSF"
+printf '**Version 0.32**\n⟨0.32⟩ a rung marker.\n⟨0.33⟩ a rung ahead of its own declared number.\n' \
+  > "$CSF/candor-spec/SPEC.md"
+red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$red" | grep -q "SPEC.md declares Version 0.32 but describes ⟨0.33⟩" \
+  && ok "[12] a spec rung ahead of its own declared version is caught (a routine cut would ship it)" \
+  || bad "[12] deleted: the ⟨0.31⟩-shaped near-miss (text ahead of its number) passed silently"
+csfix "$CSF"
+ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
+      bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
+printf '%s' "$ctl" | grep -q "highest rung ⟨0.32⟩ is within the declared 0.32" \
+  && ok "CONTROL: …and the untouched fixture's rung matches its version, so the row above measures the gap" \
+  || bad "[12] CONTROL is broken — the clean fixture does not even print the within-floor line"
+
 rm -rf "$CS"
 
 say "10. release-rehearsal.sh arm [1] — a repo that is not a git repo must not read as clean, nor drop out of the count"

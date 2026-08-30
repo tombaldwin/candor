@@ -57,7 +57,16 @@ for r in $CLEAN_REPOS; do
   # CANDOR_ROOT, a fresh machine mid-bootstrap) sails through as "clean and pushed" without ever being
   # examined — proven: `git -C <missing-dir> status --porcelain` prints its fatal error to stderr only,
   # and both checks below evaluate true on the empty stdout that leaves.
-  [ -d "$ROOT/$r/.git" ] || die "$r is not a git repo at $ROOT/$r — this cut publishes it and cannot verify a tree that is not there"
+  # ASK GIT, NEVER `-d .git`. In a `git worktree` the `.git` at the root is a FILE, not a directory,
+  # so the `-d` form this line used to carry answered FALSE for a perfectly good checkout and killed
+  # the cut. `bin/verify-umbrella.sh` runs the umbrella's whole suite inside a throwaway worktree, and
+  # a worktree is an ordinary way to keep a sibling engine checked out twice. Truth table measured
+  # 2026-08-30 — real checkout / worktree / plain directory / missing directory — `rev-parse --git-dir`
+  # is the only one of the three candidate forms that is right on all four. Residual, stated rather
+  # than assumed away: a mere SUBDIRECTORY of some other repo also passes, and then `status --porcelain`
+  # below reports that outer repo's dirt — which fails CLOSED (dies as dirty), never as clean.
+  git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 \
+    || die "$r is not a git checkout at $ROOT/$r — this cut publishes it and cannot verify a tree that is not there"
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || die "$r has uncommitted changes — commit + push first"
   [ "$(git -C "$ROOT/$r" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" = "0" ] || die "$r has unpushed commits — push main first"
 done

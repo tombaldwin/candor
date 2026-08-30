@@ -62,7 +62,10 @@ newest() { # repo-dir, since-rev, pathspec… -> committer timestamp of the newe
 lag=0
 for r in $REPOS; do
   d="$ROOT/$r"
-  [ -d "$d/.git" ] || { printf '  \033[31m✘\033[0m %-14s not a git checkout at %s — NOT CHECKED\n' "$r" "$d"
+  # `rev-parse --git-dir`, not `-d "$d/.git"`: a git worktree keeps a FILE there, and this branch is
+  # fail-CLOSED (it counts as lag), so the `-d` form turned a healthy worktree into a permanent ✘
+  # that a reader learns to discount. Same authority form as release.sh step 0.
+  git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || { printf '  \033[31m✘\033[0m %-14s not a git checkout at %s — NOT CHECKED\n' "$r" "$d"
                         lag=$((lag+1)); continue; }
   tag="$(git -C "$d" tag --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]' | head -1)"
   [ -n "$tag" ] || { printf '  \033[33m·\033[0m %-14s no release tag — nothing to measure since\n' "$r"; continue; }

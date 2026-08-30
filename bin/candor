@@ -1377,7 +1377,8 @@ PY
     drift=0
     for pair in "candor-rust:candor-scan" "candor-rust:candor-query" "candor-swift:candor-swift" "candor-ts:candor-ts"; do
       repo="${pair%%:*}"; eng="${pair##*:}"; src="$HOME/git/$repo"
-      [ -d "$src/.git" ] || continue
+      # worktree-safe: `.git` is a FILE in a worktree, so `-d` skipped the drift check silently.
+      git -C "$src" rev-parse --git-dir >/dev/null 2>&1 || continue
       inst="$(command -v "$eng" 2>/dev/null)" || continue
       [ -n "$inst" ] || continue
       # newest tracked source file in the repo vs the installed binary's mtime.

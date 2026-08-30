@@ -750,7 +750,10 @@ else
   # build would make the patch hostage to work it does not ship. Family-wide this is the same seven repos
   # it always was.
   for r in $RS_SET; do
-    [ -d "$ROOT/$r/.git" ] || continue
+    # `rev-parse --git-dir`, not `-d .git`: a git WORKTREE keeps a FILE there, so the `-d` form
+    # silently `continue`d past a real checkout and this check reported CI green over a repo it
+    # never asked about. See release.sh step 0 for the measured truth table.
+    git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 || continue
     head_sha="$(git -C "$ROOT/$r" rev-parse HEAD 2>/dev/null)"
     # THE DEDUPE LIVES IN ONE PLACE: bin/_ci_verdict.py, called from both this initial read and the
     # post-wait re-check below. It used to be pasted twice — sorted by `createdAt`, which `gh` reports at
@@ -964,7 +967,7 @@ else
   if [ ! -f "$STAMP" ]; then reuse=0; why="no recorded green run"; fi
   for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
     [ "$reuse" = 1 ] || break
-    [ -d "$ROOT/$r/.git" ] || continue
+    git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 || continue   # worktree-safe; see release.sh step 0
     if [ -n "$(git -C "$ROOT/$r" status --porcelain)" ]; then reuse=0; why="$r has uncommitted changes"; break; fi
     was="$(grep -E "^$r " "$STAMP" 2>/dev/null | awk '{print $2}')"
     now="$(git -C "$ROOT/$r" rev-parse HEAD)"
@@ -992,7 +995,7 @@ else
     # for a state the suite never ran against. The honesty of the stamp cannot live on one side only.
     stamp_dirty=""
     for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
-      [ -d "$ROOT/$r/.git" ] || continue
+      git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 || continue   # worktree-safe; see release.sh step 0
       [ -n "$(git -C "$ROOT/$r" status --porcelain)" ] && stamp_dirty="$stamp_dirty $r"
     done
     if [ -n "$stamp_dirty" ]; then
@@ -1001,7 +1004,8 @@ else
     else
     { echo "# $(date -u +%Y-%m-%dT%H:%M:%SZ) conformance green"
       for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
-        [ -d "$ROOT/$r/.git" ] && echo "$r $(git -C "$ROOT/$r" rev-parse HEAD)"
+        git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1 \
+          && echo "$r $(git -C "$ROOT/$r" rev-parse HEAD)"   # worktree-safe; see release.sh step 0
       done; } > "$STAMP"
     fi
   else

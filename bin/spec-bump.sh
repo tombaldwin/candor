@@ -174,6 +174,17 @@ say "0. preconditions"
 dirty=0
 for r in candor-spec candor-rust candor-java candor-ts candor-swift candor-agents candor; do
   [ -d "$ROOT/$r" ] || continue
+  # Same hole, same shape, as release-stage.sh step 0 — and found by grepping the MECHANISM
+  # (`status --porcelain`) across bin/ rather than re-reading the file that triggered the audit.
+  # `-d "$ROOT/$r"` proves a DIRECTORY exists, not that git can read it; over anything git cannot
+  # read, `status --porcelain` prints nothing on stdout and the `-z` below calls it clean. This
+  # script then rewrites seven files across seven repos into it. `rev-parse --git-dir` is the
+  # authority and is also true for a git WORKTREE, where `.git` is a file rather than a directory.
+  if ! git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1; then
+    bad "$r at $ROOT/$r is not a git checkout — a tree git cannot read reports 'no changes', which is not the same as clean"
+    dirty=1
+    continue
+  fi
   [ -z "$(git -C "$ROOT/$r" status --porcelain)" ] || { bad "$r has uncommitted changes"; dirty=1; }
 done
 [ "$dirty" = 0 ] || { echo; echo "spec-bump: commit or stash first — a rehearsal must start from a known tree."; exit 1; }

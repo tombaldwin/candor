@@ -58,7 +58,10 @@ esac
 say "repos under $ROOT (they MUST be siblings — the tooling resolves ../../<repo>)"
 mkdir -p "$ROOT"
 for r in "${REPOS[@]}"; do
-  if [ -d "$ROOT/$r/.git" ]; then
+  # worktree-safe: `-d "$ROOT/$r/.git"` is FALSE for a git worktree, so bootstrap tried to clone
+  # over an existing checkout. git refuses a non-empty target, so this failed LOUDLY rather than
+  # destroying anything — fixed here because it is the same mechanism, found by the same grep.
+  if git -C "$ROOT/$r" rev-parse --git-dir >/dev/null 2>&1; then
     ok "$r (present)"
   else
     git clone -q "git@github.com:tombaldwin/$r.git" "$ROOT/$r" && ok "$r (cloned)" || die "clone failed: $r"
@@ -67,8 +70,8 @@ done
 if [ "$WITH_CORPORA" = 1 ]; then
   # READ-ONLY corpora. Nothing should ever write into these — copy to /tmp before scanning. They are
   # other people's repositories and one of them is the live CI consumer.
-  [ -d "$ROOT/pollen/.git" ] || git clone -q git@github.com:tombaldwin/pollen.git "$ROOT/pollen" || warn "pollen clone failed (optional)"
-  [ -d "$ROOT/uflexi/.git" ] || git clone -q git@bitbucket.org:polyhq/uflexi.git "$ROOT/uflexi" || warn "uflexi clone failed (needs Bitbucket auth; optional)"
+  git -C "$ROOT/pollen" rev-parse --git-dir >/dev/null 2>&1 || git clone -q git@github.com:tombaldwin/pollen.git "$ROOT/pollen" || warn "pollen clone failed (optional)"
+  git -C "$ROOT/uflexi" rev-parse --git-dir >/dev/null 2>&1 || git clone -q git@bitbucket.org:polyhq/uflexi.git "$ROOT/uflexi" || warn "uflexi clone failed (needs Bitbucket auth; optional)"
   ok "corpora attempted"
 fi
 

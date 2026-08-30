@@ -81,12 +81,16 @@ step from that repo's own CI workflows. It exists because the rule above failed 
 2026-08-30 — I verified candor-rust against the gate list in an agent's report (which named
 `soundness/run_drop.sh`) instead of the repo's own, and the gate I skipped, `soundness/run.sh 60`, was
 the red one: TEN silent under-reports reached `main` and had to be reverted. Both times I ran a
-NEIGHBOURING gate with a similar name and read its pass as coverage. `candor-rust` has **39** gate
-lines plus 114 block lines; I had been running five.
+NEIGHBOURING gate with a similar name and read its pass as coverage. I had been running five of them.
 
-That "39" was written here as "21" the same day I built the tool, from memory, in the paragraph whose
-entire subject is not trusting memory. A review panel caught it. **Print the number, do not state it** —
-`bash bin/gates.sh candor-rust | grep -c '^        '`.
+**How many are there? Do not answer that from this file — run the tool.** This paragraph said "21"
+on 2026-08-30, written from memory the same day I built the tool, in the passage whose entire subject
+is not trusting memory; a review panel caught it and the real figure was 39. I then corrected it to
+"39" and committed — and it was stale within the same push wave, because a commit in that very wave
+changed which workflows `gates.sh` selects and the answer became 34. Twice wrong, in opposite ways,
+in one day. **The count is a function of HEAD, so print it:**
+
+    bash bin/gates.sh <repo> | grep -c '^        '
 
 **So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
 and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.

@@ -8,6 +8,50 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-30 — the umbrella's first revert sweep: 3 of 9 protected fixes were not
+
+A revert sweep (`bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §A: revert the fix, does any test go
+red?) had already run against all five ENGINE repos and come back 24/24 protected. The umbrella had never
+been swept. It came back 3/9 gaps — each verified by actually reverting the production change in a
+throwaway copy (`git show <fix>^:<file> > <copy>/<file>`, never `git checkout <fix>^ -- <file>`, which
+would also silently revert any LATER commit that touched the same file) and confirming the new test goes
+RED there and GREEN at HEAD.
+
+- **GAP 1 — 97f7ef3 (`workflowName` treated as a unique key) was untested on 3 of its 5 touched files.**
+  Every dedupe fixture in `release-test.sh` omitted `workflowDatabaseId` entirely, so all of them travelled
+  `_ci_verdict.py`'s FALLBACK branch (key = `workflowName`, because the id was absent) and proved nothing
+  about the id-keyed path the fix actually added — the exact mechanism behind `release-preflight.sh [10]`,
+  the real release gate. Added a fixture with two rows sharing `workflowName: "ci"` but distinct
+  `workflowDatabaseId` (one success, one failure): reverting `_ci_verdict.py`'s dedup key back to
+  `workflowName` alone reproduces the bug this commit's own message described — the second file's failure
+  silently dropped as a same-name "duplicate" — 2 assertions RED on revert, green at HEAD. A same-id CONTROL
+  (a genuine rerun) confirms the fix does not just stop deduping altogether.
+- **GAP 2 — 3e0d1e2's page-limit fix (`ci_all_workflows_latest()`) was GREEN, and the test harness's own
+  `gh` stub MASKED the gap.** The stub's `run list` (unfiltered) ignored `--limit` entirely and returned the
+  whole `$GH_RUNS` array regardless, so no fixture — however crowded — could ever reproduce the "chatty
+  sibling fills the shared page and ages a quiet workflow's real failure off it" defect through this
+  harness; the existing mixed/allgreen fixtures used only 2 total rows, well under any real page cap, so
+  they passed for the wrong reason. Fixed the stub to enforce `--limit N` on the unfiltered path (the same
+  cutoff real `gh` applies), then added a 41-row fixture (40 fresh "chatty" runs + 1 older "ci" failure at
+  position 41) — reverting `release-preflight.sh`'s NONE-branch back to a single `gh run list --limit 30`
+  reproduces the false clear; 2 assertions RED on revert, green at HEAD.
+- **GAP 3 — 6d91870's `excluded[].peeked`/`outOfScope` fix landed byte-identically in both
+  `candor-review.sh` and `candor-review-source.sh`, but `test-stop-hook.sh` only ever drove the JVM
+  variant (`$REV`) with the three new fixtures.** `$SRCREV` (`candor-review-source.sh`) existed in the file
+  and was already exercised for the EARLIER incomplete/unanalyzed fix, but nothing wired it to the
+  excluded/outOfScope fixtures added alongside this one — a regression in `candor-review-source.sh` alone
+  could ship silently. Mirrored all three fixtures (unread excluded class, outOfScope alone, the
+  peeked+judgedElsewhere over-charge control) in the source-engine mock shape (`<src> --out <prefix>`),
+  plus one end-to-end run through the real Stop hook — matching the existing dual-engine pattern already
+  used for the incomplete/unanalyzed fix in this same file, rather than a new abstraction. Reverting
+  `candor-review-source.sh`'s hunk alone: 5 assertions RED, everything else in the suite unaffected.
+- **Controls.** All 276 pre-existing `release-test.sh` assertions plus the 5 new ones stay green at HEAD
+  (281 total); all 73 `test-stop-hook.sh` assertions green at HEAD (7 new); `ci-watch.sh --selftest` and
+  `wf-expected.py --selftest` unaffected; `bin/verify-local.sh` OK across all six repos; an ordinary
+  all-green run is unaffected. Each gap's revert was verified in a throwaway copy — never on the working
+  tree — with only the one targeted file's production change undone, so no other commit's coverage could
+  be disturbed.
+
 ## 2026-08-30 — the ninth false green: a repo that was never cloned read as "clean and pushed" (unreleased)
 
 - **`release-rehearsal.sh` and `_release_notes.sh` had never been attacked as a pair before today.**

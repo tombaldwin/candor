@@ -213,6 +213,32 @@ OUT=$(CANDOR_CMD="bash $UNREADENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=
 ok "unread excluded class ALONE (no incomplete flag) BLOCKS (rc=1)" '[ "$rc" = 1 ]'
 ok "…names the class, whatever it is called"                        'printf "%s" "$OUT" | grep -q "widened-target"'
 
+# GAP 3 (2026-08-30 revert sweep): the row above only ever drove candor-review.sh ($REV). The
+# excluded/outOfScope fix landed byte-identically in candor-review-source.sh too (6d91870's own message
+# says so), and NOTHING in this file ever invoked $SRCREV with one of these three fixtures — a revert of
+# the fix in candor-review-source.sh ALONE stayed green here. Same fixture, source-engine form (`<src>
+# --out <prefix>` instead of `<classes> --json <out>`).
+UNREADSCAN="$WORK/mock-unread-scan.sh"
+cat > "$UNREADSCAN" <<'UNREADSCANEOF'
+#!/usr/bin/env bash
+prefix="$3"
+cat > "$prefix.json" <<JSON
+{"candor":{"spec":"0.34"},"functions":[],
+ "excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}
+JSON
+exit 2
+UNREADSCANEOF
+chmod +x "$UNREADSCAN"
+OUT=$(CANDOR_SCAN="bash $UNREADSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent "$SRCREV" 2>&1); rc=$?
+ok "source review: unread excluded class ALONE (no incomplete flag) BLOCKS (rc=1)" '[ "$rc" = 1 ]'
+ok "source review: …names the class, whatever it is called"                        'printf "%s" "$OUT" | grep -q "widened-target"'
+# …and through the REAL hook, not the direct script — proving the plumbing (CANDOR_REVIEW=$SRCREV) blocks
+# the turn over this shape, the same end-to-end check the incomplete/unanalyzed fix already got above.
+OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
+  | CANDOR_REVIEW="$SRCREV" CANDOR_SCAN="bash $UNREADSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent \
+    CANDOR_HOOK_NOTICE=summary CANDOR_HOOK_SKIP=0 CANDOR_ACTIVITY_LOG=off "$HOOK" 2>/dev/null)
+ok "…and the STOP HOOK blocks the turn over an unread excluded class (not a silent allow)" '[ "$(printf "%s" "$OUT" | jq -r .decision)" = block ]'
+
 # `outOfScope[].class` too is engine-chosen — `dispatch-widened` is the brand-new ⟨0.34⟩ token that landed
 # in candor-swift/candor-java/candor-ts the same day this round started, and no consumer had seen it
 # before this fix.
@@ -231,6 +257,22 @@ OUT=$(CANDOR_CMD="bash $OOSENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/no
 ok "outOfScope ALONE (no incomplete flag) BLOCKS (rc=1)"            '[ "$rc" = 1 ]'
 ok "…names outOfScope in the detail"                                 'printf "%s" "$OUT" | grep -q "outOfScope:"'
 
+# GAP 3, source-engine mirror (see the note above the UNREADSCAN block).
+OOSSCAN="$WORK/mock-oos-scan.sh"
+cat > "$OOSSCAN" <<'OOSSCANEOF'
+#!/usr/bin/env bash
+prefix="$3"
+cat > "$prefix.json" <<JSON
+{"candor":{"spec":"0.34"},"functions":[{"fn":"app.checkout","inferred":["Db"]}],
+ "outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"dispatch-widened"}]}
+JSON
+exit 2
+OOSSCANEOF
+chmod +x "$OOSSCAN"
+OUT=$(CANDOR_SCAN="bash $OOSSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent "$SRCREV" 2>&1); rc=$?
+ok "source review: outOfScope ALONE (no incomplete flag) BLOCKS (rc=1)" '[ "$rc" = 1 ]'
+ok "source review: …names outOfScope in the detail"                     'printf "%s" "$OUT" | grep -q "outOfScope:"'
+
 # OVER-CHARGE CONTROL: a class the producer DID read (`judgedElsewhere`, e.g. a derived build-output copy)
 # — even under the SAME unknown `widened-target` token — must stay clean. Proves the class name never
 # decides anything; only the two booleans do.
@@ -248,6 +290,22 @@ chmod +x "$PEEKEDENG"
 OUT=$(CANDOR_CMD="bash $PEEKEDENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
 ok "over-charge control: peeked+judgedElsewhere (same unknown class) stays clean (rc=0)" '[ "$rc" = 0 ]'
 ok "…and is not flagged incomplete"                                  '! printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
+
+# GAP 3, source-engine mirror (see the note above the UNREADSCAN block) — the over-charge control too.
+PEEKEDSCAN="$WORK/mock-peeked-scan.sh"
+cat > "$PEEKEDSCAN" <<'PEEKEDSCANEOF'
+#!/usr/bin/env bash
+prefix="$3"
+cat > "$prefix.json" <<JSON
+{"candor":{"spec":"0.34"},"functions":[{"fn":"a","inferred":["Log"]}],
+ "excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}
+JSON
+exit 0
+PEEKEDSCANEOF
+chmod +x "$PEEKEDSCAN"
+OUT=$(CANDOR_SCAN="bash $PEEKEDSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent "$SRCREV" 2>&1); rc=$?
+ok "source review over-charge control: peeked+judgedElsewhere (same unknown class) stays clean (rc=0)" '[ "$rc" = 0 ]'
+ok "source review: …and is not flagged incomplete"                  '! printf "%s" "$OUT" | grep -q "ANALYSIS INCOMPLETE"'
 
 # ── maxHops: the graph-depth of a change (FEEDBACK-SPEC's last deferred field, unlocked by the 0.11
 #    surface machinery). A 2-hop chain (top → mid → leaf) where leaf gains Fs must print "deepest

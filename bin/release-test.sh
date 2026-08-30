@@ -1606,6 +1606,27 @@ multi="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\
 printf '%s' "$multi" | grep -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: two distinct workflows, both green, stays green" \
   || bad "[10] dedupe CONTROL: distinct (non-duplicate) workflow names broke the verdict"
+
+# THE FIFTH FALSE GREEN, the shape 97f7ef3 actually fixed (2026-08-30 revert sweep). Every dedupe row
+# above omits workflowDatabaseId entirely, so all of them travel _ci_verdict.py's FALLBACK branch (key =
+# workflowName, because the id is absent) and prove nothing about the id-keyed path the fix added. Two
+# workflow FILES that both declare `name: ci` share a workflowName but never a workflowDatabaseId — the
+# defect this commit's own message reproduced live: "two entries for 'ci' with different
+# workflowDatabaseId, one success one failure, printed OK". Same shape here, id-keyed dedupe must NOT
+# merge them.
+idsplit="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":222}]")"
+printf '%s' "$idsplit" | grep -q "ci:failure" \
+  && ok "[10] dedupe: two FILES sharing workflowName 'ci' but distinct workflowDatabaseId — the failure is not merged away" \
+  || bad "[10] dedupe: a second file's genuine failure was dropped as a same-NAME 'duplicate' (the fifth false green is back)"
+printf '%s' "$idsplit" | grep -q "repos green on HEAD" \
+  && bad "[10] dedupe: printed the all-green summary over a distinct-id failure sharing a display name" \
+  || ok "[10] dedupe: …and no all-green summary alongside it"
+# OVER-CHARGE CONTROL: a genuine RERUN of the SAME file (same workflowDatabaseId, two rows from retries)
+# must still dedupe to its latest (listed-first) result — the id-keyed fix must not simply stop deduping.
+idsame="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-30T10:05:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-30T10:00:00Z\"}]")"
+printf '%s' "$idsame" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe CONTROL: same workflowDatabaseId (a genuine rerun) still collapses to its latest (listed-first) result" \
+  || bad "[10] dedupe CONTROL: id-keyed dedupe stopped collapsing genuine reruns of the same workflow"
 rm -rf "$PF"
 
 # THE THIRD SIBLING (2026-08-26 code review): the NONE branch — a commit that triggered no workflow at
@@ -1633,13 +1654,24 @@ case "$1 $2" in
   "workflow list")
     printf '%s' "$GH_RUNS" | jq -c '[.[].workflowName] | unique | to_entries | map({id: (.key+1)})' ;;
   "run list")
-    wf=""; shift 2
-    while [ $# -gt 0 ]; do case "$1" in --workflow) wf="$2"; shift 2 ;; *) shift ;; esac; done
+    wf=""; lim=""; shift 2
+    while [ $# -gt 0 ]; do case "$1" in --workflow) wf="$2"; shift 2 ;; --limit) lim="$2"; shift 2 ;; *) shift ;; esac; done
     if [ -n "$wf" ]; then
       name="$(printf '%s' "$GH_RUNS" | jq -r --argjson wf "$wf" '[.[].workflowName] | unique | .[$wf-1]')"
       printf '%s' "$GH_RUNS" | jq -c --arg n "$name" '[.[] | select(.workflowName==$n)] | .[0:1]'
     else
-      printf '%s\n' "$GH_RUNS"
+      # THE STUB BUG (2026-08-30 revert sweep): `gh run list --limit N` (no `--workflow`) is a SHARED
+      # PAGE across every workflow the repo has, and real `gh` truncates to it — that truncation IS the
+      # eighth false green (a chatty sibling filling the page and ageing a quiet workflow's real failure
+      # off it, never returned at all). This branch used to ignore `--limit` and return the WHOLE
+      # $GH_RUNS array regardless, so no fixture — however crowded — could ever reproduce the page cutoff
+      # through this harness, which is exactly how the ci_all_workflows_latest() fix (GAP 2 below) shipped
+      # untested behind a test that only ever looked tested.
+      if [ -n "$lim" ]; then
+        printf '%s' "$GH_RUNS" | jq -c --argjson n "$lim" '.[0:$n]'
+      else
+        printf '%s\n' "$GH_RUNS"
+      fi
     fi
     ;;
   *) exit 0 ;;
@@ -1675,6 +1707,21 @@ allgreen="$(nonerun '[{"headSha":"aaa1111aaa1111aaa1111aaa1111aaa1111aaaa","conc
 printf '%s' "$allgreen" | grep -q "last known CI state (aaa1111) is green across every workflow" \
   && ok "[10] NONE branch CONTROL: every workflow actually green — informational pass, names the anchor sha" \
   || bad "[10] NONE branch CONTROL: an all-green repo did not pass cleanly: $allgreen"
+
+# THE EIGHTH FALSE GREEN, the shape 3e0d1e2 actually fixed (2026-08-30 revert sweep). "mixed"/"allgreen"
+# above feed exactly ONE row per workflow, so even the OLD bare `gh run list --limit 30` (unfiltered, no
+# per-workflow query) would have "found" the quiet workflow's real state — the stub's own `--limit`
+# enforcement was missing until the fix just above, so no fixture size could ever have told the two
+# mechanisms apart. 40 fresh "chatty" runs bury a single, older "ci" failure at position 41 — past any
+# `--limit 30` cutoff a SHARED page would apply, but still reachable by ci_all_workflows_latest()'s
+# PER-WORKFLOW `--workflow <id> --limit 1` query, which never shares a page with the chatty sibling at all.
+crowded="$(nonerun "$(jq -n '[range(0;40) | {headSha: ("chatty-" + (.|tostring)), conclusion: "success", status: "completed", workflowName: "chatty", createdAt: "2026-08-30T10:00:00Z"}] + [{headSha: "quiet-1", conclusion: "failure", status: "completed", workflowName: "ci", createdAt: "2026-08-30T09:00:00Z"}]')")"
+printf '%s' "$crowded" | grep -q "ci:failure" \
+  && ok "[10] NONE branch: a quiet workflow's failure survives a 41-row page a chatty sibling fills (the eighth false green is back if this fails)" \
+  || bad "[10] NONE branch: a chatty sibling's 40 runs buried the quiet workflow's real failure — THE EIGHTH FALSE GREEN IS BACK"
+printf '%s' "$crowded" | grep -q "repos green on HEAD" \
+  && bad "[10] NONE branch: printed the all-green summary over a page-buried failure" \
+  || ok "[10] NONE branch: …and no all-green summary alongside it"
 rm -rf "$N"
 
 say "7c. release-preflight.sh [11] — the conformance REUSE stamp cannot outrun the tree"

@@ -237,7 +237,19 @@ for PRIOR in $PRIORS; do
       --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -iw spec | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
+    | while IFS= read -r _l; do
+        # THE WORD TEST MUST SEE THE ASSERTION, NOT THE PATH. This was `| grep -iw spec` over grep's
+        # own `path:line:content` output, so `candor-spec/SPEC.md` matched on the FILENAME — every
+        # line in the spec carrying the prior floor was flagged whatever it said. Measured at the
+        # ⟨0.34⟩ cut: SPEC.md:1307, prose ILLUSTRATING numeric-vs-lexicographic ordering (`"0.9"`
+        # sorts before `"0.33"` numerically and after it as a string), was reported as a bare-literal
+        # spec assertion. The only ways to clear it were to edit the body of a normative MUST — which
+        # moves its ledger SHA and correctly fails the MUST LEDGER — or to bypass preflight. A gate
+        # whose only remedies are "damage the spec" or "skip the gate" is worse than no gate.
+        _c="${_l#*:}"; _c="${_c#*:}"
+        printf '%s' "$_c" | grep -qiw spec && printf '%s\n' "$_l"
+      done \
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
   else
     # Same loud/advisory split as [2] — [2b] was the half that still dumped every fixture, which is the

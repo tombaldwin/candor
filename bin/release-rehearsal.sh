@@ -182,7 +182,14 @@ rc_of() { cat "$TMP/$1.rc" 2>/dev/null || echo 99; }
 # tells you whether the last fix helped.
 harvest() {  # $1 arm number ; $2 rc-key ; $3 log ; $4 grep -E pattern for one finding per line
   [ "$(rc_of "$2")" != 0 ] || return 0
-  local found=0 line
+  local found=0 line total
+  # COUNT THE WHOLE SET BEFORE TRUNCATING IT. `head -25` capped the findings while the summary below
+  # went on to claim "ALL of them, in one pass" — measured 2026-08-31 by a release panel: preflight
+  # produced 26 ✘ lines, the rehearsal reported 25 and called it complete, and **the dropped 26th was
+  # the umbrella release-notes refusal**, i.e. a genuine blocker hidden by the harness's own cap. A
+  # silent truncation that also asserts completeness is this project's cardinal sin one level up, in
+  # the tool whose entire purpose is to find everything in one pass.
+  total=$(grep -cE "$4" "$3")
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     found=$((found + 1))
@@ -190,6 +197,11 @@ harvest() {  # $1 arm number ; $2 rc-key ; $3 log ; $4 grep -E pattern for one f
   done <<EOF
 $(grep -E "$4" "$3" | head -25)
 EOF
+  # The cap stays (a 300-line dump helps nobody) but it must NAME what it dropped, and the dropped
+  # count must reach the problem list so the summary's own total includes it.
+  if [ "${total:-0}" -gt "$found" ]; then
+    problem "[$1] …and $(( total - found )) further finding(s) NOT SHOWN — the display caps at 25. Read $3 in full; the summary's \"all of them\" covers the COUNT, not the listing."
+  fi
   # A non-zero arm whose pattern matched nothing must still produce a line. Otherwise a failure the
   # harvester cannot parse disappears, and the run reports "no problems" while exiting non-zero.
   [ "$found" = 0 ] && problem "[$1] arm exited non-zero with no line this report could parse — read $3"

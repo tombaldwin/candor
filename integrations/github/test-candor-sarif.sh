@@ -256,7 +256,7 @@ ok "…names CANDOR-INCOMPLETE and the class"          'grep -q "deploy-script" 
 # `outOfScope[].class` is engine-chosen vocabulary too (SPEC §2 ⟨0.29⟩) — `dispatch-widened` is the
 # brand-new ⟨0.34⟩ token that landed in candor-swift/candor-java/candor-ts (`mergeOrAppendOOS`/
 # `mergeOrAppend`) the same day this round started, and no consumer had seen it before this fix.
-echo '{"spec":"0.34","ok":false,"violations":[],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"dispatch-widened"}]}' > "$WORK/oosgate.json"
+echo '{"spec":"0.34","ok":false,"violations":[],"outOfScope":[{"fn":"x.Deploy.run","path":"dist/shipped.js","effects":["Exec"],"class":"dispatch-widened"}]}' > "$WORK/oosgate.json"  # ⟨0.34⟩ incidental — this row tests the backstop, not the version
 OUTOOS=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/oosgate.json" 2>"$WORK/ooserr"); rcoos=$?
 ok "outOfScope alone (no incomplete): exit 0, results []" '[ "$rcoos" = 0 ] && [ "$(printf "%s" "$OUTOOS" | jq ".runs[0].results|length")" = 0 ]'
 ok "…flagged, not clean"                            '[ "$(printf "%s" "$OUTOOS" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
@@ -266,10 +266,10 @@ ok "…names CANDOR-INCOMPLETE"                        'printf "%s" "$OUTOOS" | 
 # unread class under an arbitrary/unknown token is caught exactly like any other, and a PEEKED class (or
 # one marked `judgedElsewhere`) under that SAME unknown token is the over-charge control and must stay
 # clean.
-echo '{"spec":"0.34","ok":false,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$WORK/dwgate.json"
+echo '{"spec":"0.34","ok":false,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":false,"reason":"widened dispatch target unread"}]}' > "$WORK/dwgate.json"  # ⟨0.34⟩ incidental — this row tests the backstop, not the version
 OUTDW=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwgate.json" 2>"$WORK/dwerr")
 ok "unknown excluded class (widened-target): still caught"  'grep -q "widened-target" "$WORK/dwerr"'
-echo '{"spec":"0.34","ok":true,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$WORK/dwclean.json"
+echo '{"spec":"0.34","ok":true,"violations":[],"excluded":[{"class":"widened-target","count":2,"peeked":true,"judgedElsewhere":true,"reason":"already judged"}]}' > "$WORK/dwclean.json"  # ⟨0.34⟩ incidental — this row tests the backstop, not the version
 OUTDWC=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/dwclean.json" 2>"$WORK/dwcerr")
 ok "…peeked+judgedElsewhere under the same unknown class: stays clean" '[ "$(printf "%s" "$OUTDWC" | jq -r ".runs[0].invocations // \"none\"")" = none ] && [ ! -s "$WORK/dwcerr" ]'
 
@@ -277,13 +277,13 @@ ok "…peeked+judgedElsewhere under the same unknown class: stays clean" '[ "$(p
 # incomplete, not excluded/outOfScope) must still not present its empty `results` as a clean scan — SPEC
 # keeps adding causes (⟨0.29⟩ excluded, ⟨0.30⟩ outOfScope, ⟨0.32⟩ peeked, ⟨0.33⟩ scannedUnder…) and a
 # boundary drawn around today's enumerated list would miss the next one exactly as it missed these two.
-echo '{"spec":"0.34","ok":false,"violations":[]}' > "$WORK/unkgate.json"
+echo '{"spec":"0.34","ok":false,"violations":[]}' > "$WORK/unkgate.json"  # ⟨0.34⟩ incidental — this row tests the backstop, not the version
 OUTUNK=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/unkgate.json" 2>"$WORK/unkerr")
 ok "ok:false, no recognized cause: still flagged"    '[ "$(printf "%s" "$OUTUNK" | jq -r ".runs[0].invocations[0].executionSuccessful")" = false ]'
 ok "…names CANDOR-UNKNOWN-FAIL"                      'printf "%s" "$OUTUNK" | jq -e ".runs[0].invocations[0].toolExecutionNotifications[0].descriptor.id==\"CANDOR-UNKNOWN-FAIL\"" >/dev/null'
 # …and the backstop must NEVER fire beside a real violation (results non-empty) — that case already
 # discloses itself, and a redundant caveat there would be noise, not a missing signal.
-echo '{"spec":"0.34","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.checkout","effects":["Fs"],"detail":"x"}]}' > "$WORK/unkgate2.json"
+echo '{"spec":"0.34","ok":false,"violations":[{"rule":"AS-EFF-006","fn":"app.domain.Order.checkout","effects":["Fs"],"detail":"x"}]}' > "$WORK/unkgate2.json"  # ⟨0.34⟩ incidental — this row tests the backstop, not the version
 OUTUNK2=$(python3 "$SARIF" "$WORK/report.json" --gate "$WORK/unkgate2.json" 2>"$WORK/unkerr2")
 ok "ok:false WITH a real violation: no backstop noise" '[ "$(printf "%s" "$OUTUNK2" | jq ".runs[0].results|length")" = 1 ] && [ ! -s "$WORK/unkerr2" ]'
 

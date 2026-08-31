@@ -10,6 +10,12 @@ keeps its own.
 
 ## 2026-08-31 — UPGRADING FROM 0.33.1: re-baselining is not review (released 2026-08-31 as 0.34.0)
 
+- **Cross-repo pins → 0.34.0** (`bin/candor` `ENGINE_PIN`, `adopt/candor.yml`,
+  `adopt/candor-digest.yml`, the vscode + jetbrains `candorTs`/`candorJava` pins). These name
+  PUBLISHED artifacts, so they move only after the engines exist — `release.sh` step 7 refuses
+  to cut the umbrella until they do, because brew hashes the umbrella tarball and a 0.34.0
+  front door pinned to 0.33.1 would keep `candor update` installing the previous engines.
+
 **Read this before upgrading a gate that already passes.** ⟨0.34⟩ is a NON-ADDITIVE rung, and the
 engine wave shipped alongside it CORRECTS the classifier in both directions. The corrections are
 right; the risk is that one direction is invisible to every instrument we have.

@@ -8,6 +8,47 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-08-31 (unreleased) — UPGRADING FROM 0.33.1: re-baselining is not review
+
+**Read this before upgrading a gate that already passes.** ⟨0.34⟩ is a NON-ADDITIVE rung, and the
+engine wave shipped alongside it CORRECTS the classifier in both directions. The corrections are
+right; the risk is that one direction is invisible to every instrument we have.
+
+**The load-bearing sentence.** After you regenerate a baseline, **diff the new baseline against the
+old**. Effects this release *removes* will never trip any gate, because `gains` and the baseline guard
+alarm only on effects APPEARING. Measured on real code: candor-rust drops effects on **110 functions
+across 257 crate-versions** (including `Db` on `rusqlite::Connection::from_handle` and `Fs` on
+`tempfile::tempdir()`), and candor-swift removes **179 `Unknown` rows** across 13 packages. A scoped
+`deny` that went quiet after this upgrade needs eyes, not a re-run.
+
+Each of those removals is a fabrication fix — the old engine was charging an effect that never
+happened (`format!("{}", guard)` does not run the guard's destructor). But a gate that stops firing
+looks identical whether the rule was wrong or the code was fixed.
+
+**What changes, loudly** (these announce themselves, and are fine migrations):
+
+- **`--policy` on the twelve descriptive verbs is now a usage error, exit 2.** It was silently
+  accepted and dropped. The diagnostic names the replacement: apply a policy with
+  `gate --report <locator> --policy <file>`, or use `whatif` / `fix` / `fix-gate` / `unverified`.
+- **MCP and LSP surfaces now refuse over a refused report set.** They previously answered
+  `{"ok":true,"violations":[]}` — a clean pass over a scan that had refused. If your agent
+  integration starts seeing refusals, it is seeing them for the first time, not newly.
+- **candor-agents deny sets get WIDER.** MCP tier resolution is now a UNION rather than
+  curated-table precedence, so a server whose name collides with a curated one no longer has its own
+  `candorEffects` declaration silently dropped.
+
+**What changes quietly** (the direction to review by hand):
+
+- **candor-swift gains effects in application-shaped code.** 19 construction positions that were
+  silently pure now charge — `_ = Guard()`, array and dictionary elements, call arguments, `if let` /
+  `guard let` subjects, tuple destructuring, ternary arms. Standalone libraries measured ZERO change;
+  the disruption lands on apps with scoped gates.
+- **A same-version-string upgrade is the trap.** If you install from git rather than a published
+  artifact, both builds call themselves `0.33.1`, the baseline guard keys on the VERSION and not the
+  spec, and you get an exit-1 AS-EFF-005 wave attributed to your code over identical source. Upgrading
+  to the published 0.34.0 moves the version string and takes the loud path instead.
+
+
 ## 2026-08-30 (unreleased) — the gate-list tools attacked: `gate-run.sh` reported OK over zero gates, and the BSD/GNU fix had left three siblings behind
 
 `bin/gates.sh` and `bin/gate-run.sh` were written this morning to stop a gate list being quietly narrowed

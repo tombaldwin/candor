@@ -63,6 +63,14 @@ do not background it."** Name the mechanism, not the intention. This is worth re
 point about these instructions: a rule the agent must remember to APPLY is weaker than one that removes
 the option, and a rule that has failed six times is not a rule, it is a note.
 
+**FAILED A SEVENTH TIME, 2026-08-31, and the phrasing above was not the problem.** The brief said "Run
+long commands IN THE FOREGROUND and wait — do not background them"; the agent backgrounded a 256-crate
+corpus run anyway and ended its turn. **The reason the naming-the-mechanism fix is incomplete: a
+foreground `sleep` is BLOCKED by this harness, so once a job is backgrounded an agent has no in-turn way
+to wait for it — stopping really is its only move.** So the instruction must also say what to wait
+*with*: **the Monitor tool with an until-loop.** Give agents the waiting mechanism up front, not just
+the prohibition, or the prohibition is unenforceable the moment they disobey it once.
+
 **Before pushing a repo, run ITS gates — from a fixed list, not from whatever the agent's report mentioned.**
 Measured 2026-08-29: candor-swift's `main` sat RED for FOUR commits while every push was reported green.
 I ran `ci/self-gate.sh` for candor-rust every time and never for candor-swift, because I followed each

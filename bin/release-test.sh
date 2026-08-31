@@ -4235,6 +4235,64 @@ printf '%s' "$ss_out" | grep -qE '(OK|ok)[[:space:]]+bash ci/mid.sh|1 ok' \
   && ok "a gate that says 'skipping' mid-run but ends on a pass line stays OK — the control" \
   || bad "the self-skip match swallowed a genuinely passing gate: $(printf '%s' "$ss_out" | grep 'mid.sh')"
 
+# THE FRONT-LOADED SKIP SPELLING. Section 16's first cut matched only the SUFFIX style found in the
+# soundness scripts, and missed EIGHT real exit points — seven in this repo, one in candor-rust — all
+# `{ echo "SKIP: <reason>"; exit 0; }`. Measured end-to-end 2026-08-31 by an adversarial review:
+# three such gates reported "OK — every gate ran and passed". The fix's calibration set never
+# included this repo's OWN test scripts, so the class it claimed to close still had members.
+mkdir -p "$DG/fl/candor-rust/.github/workflows" "$DG/fl/candor-rust/ci"
+cat > "$DG/fl/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: front-loaded
+        run: bash ci/f1.sh
+      - name: java-style suffix
+        run: bash ci/f2.sh
+      - name: genuine pass whose summary ENDS in a skip count
+        run: bash ci/f3.sh
+YAML
+printf '#!/bin/sh\necho "SKIP: needs jq"\nexit 0\n' > "$DG/fl/candor-rust/ci/f1.sh"
+printf '#!/bin/sh\necho "soundness(kotlin): kotlinc not installed — SKIPPED"\nexit 0\n' > "$DG/fl/candor-rust/ci/f2.sh"
+printf '#!/bin/sh\necho "40 passed, 0 failed, 3 skipped"\nexit 0\n' > "$DG/fl/candor-rust/ci/f3.sh"
+chmod +x "$DG/fl/candor-rust/ci/f1.sh" "$DG/fl/candor-rust/ci/f2.sh" "$DG/fl/candor-rust/ci/f3.sh"
+fl_out="$(CANDOR_ROOT="$DG/fl" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"
+printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f1.sh' \
+  && ok "a FRONT-LOADED \`SKIP: <reason>\` is caught (8 real instances missed by the suffix-only match)" \
+  || bad "the front-loaded SKIP spelling still reports as a passing gate"
+printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f2.sh' \
+  && ok "…and the suffix spelling still is, so widening the match did not lose the original" \
+  || bad "adding the front-loaded arm broke the suffix arm"
+# THE OVER-CHARGE CONTROL, and it is not hypothetical: a bare `\bSKIPPED$` arm matched this line
+# under grep -i and downgraded a genuine full pass. Caught by this fixture, not by review.
+printf '%s' "$fl_out" | grep -qE '\bOK[^m]*m? *bash ci/f3.sh|1 ok' \
+  && ok "…and a summary ENDING '3 skipped' is still a PASS — the match needs structure, not the word" \
+  || bad "a genuine pass whose summary ends in a skip count was downgraded to SELFSKIP"
+
+# `df` COLUMN-SHIFT. The Filesystem and Mounted-on fields can both contain SPACES (an SMB/AFP/NFS
+# share named `//server/Shared Drive x`), which shifts `$4` and made the guard report 930+ TB free on
+# a nearly-full disk — a full disk passing the check, and df exits 0 so nothing downstream could tell.
+df_shim="$DG/dfs"; mkdir -p "$df_shim"
+cat > "$df_shim/df" <<'SH'
+#!/bin/sh
+cat <<'ROWS'
+Filesystem 1024-blocks Used Available Capacity Mounted on
+//bigserver/Shared Drive x 999999999999 1 2 99% /Volumes/x
+ROWS
+SH
+chmod +x "$df_shim/df"
+df_got="$(PATH="$df_shim:$PATH" bash -c ". \"$UMBRELLA/bin/disk-guard.sh\"; disk_free_mb /" 2>/dev/null)"
+[ "${df_got:-0}" -lt 100 ] \
+  && ok "a df row with a SPACED device name does not report a huge free value (got ${df_got} MB)" \
+  || bad "the column-shift is back: a nearly-full filesystem reported ${df_got} MB free"
+# Non-vacuousness: prove the shim is the df that ran, or the row above says nothing.
+PATH="$df_shim:$PATH" df -Pk / 2>/dev/null | grep -q 'Shared Drive' \
+  && ok "…with the shim proven to be the df that ran" \
+  || bad "the df shim was not on PATH — the row above is vacuous"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-08-31 — UPGRADING FROM 0.33.1: re-baselining is not review (unreleased)
+## 2026-08-31 — UPGRADING FROM 0.33.1: re-baselining is not review (released 2026-08-31 as 0.34.0)
 
 **Read this before upgrading a gate that already passes.** ⟨0.34⟩ is a NON-ADDITIVE rung, and the
 engine wave shipped alongside it CORRECTS the classifier in both directions. The corrections are
@@ -49,7 +49,7 @@ looks identical whether the rule was wrong or the code was fixed.
   to the published 0.34.0 moves the version string and takes the loud path instead.
 
 
-## 2026-08-30 — the gate-list tools attacked: `gate-run.sh` reported OK over zero gates, and the BSD/GNU fix had left three siblings behind (unreleased)
+## 2026-08-30 — the gate-list tools attacked: `gate-run.sh` reported OK over zero gates, and the BSD/GNU fix had left three siblings behind (released 2026-08-31 as 0.34.0)
 
 `bin/gates.sh` and `bin/gate-run.sh` were written this morning to stop a gate list being quietly narrowed
 — the failure that let ten silent under-reports reach candor-rust's `main`. Neither had a test. Attacked,
@@ -97,7 +97,7 @@ hat. Section 13 also gained the environment guard 13b already had — on a busy 
 a reason that was not the subject, and its first row went **green** for a reason that was not the subject
 either: "control==subject is REFUSED, exit 2", and a refusal for being busy is also exit 2.
 
-## 2026-08-30 — the SELECTION machinery: `verify-umbrella.sh`'s skip logic, `probe.sh`'s other two guards, and two files "read but never attacked" (unreleased)
+## 2026-08-30 — the SELECTION machinery: `verify-umbrella.sh`'s skip logic, `probe.sh`'s other two guards, and two files "read but never attacked" (released 2026-08-31 as 0.34.0)
 
 The previous entry in this file gave `verify-umbrella.sh` and `probe.sh` their first dedicated tests, but
 scoped itself to "the two exit-code branches that matter most … not the full breadth of wf-steps.py/
@@ -168,7 +168,7 @@ daemon, so the `DOCKER_SKIP` per-tool-missing path and the image build are untes
 (enumerate-only mode); `probe.sh`'s "swift build" / "gradlew" / "cargo test" arms of the build-in-progress
 loop share their mechanism with the "cargo build" arm tested above but were not independently driven.
 
-## 2026-08-30 — `verify-local.sh` gets a CANDOR_ROOT injection point, and four `release-verify.sh` gaps confirmed by mutation (unreleased)
+## 2026-08-30 — `verify-local.sh` gets a CANDOR_ROOT injection point, and four `release-verify.sh` gaps confirmed by mutation (released 2026-08-31 as 0.34.0)
 
 The previous entry's guard-deletion sweep named what it had NOT covered: `verify-local.sh` had no
 CANDOR_ROOT-style injection point at all, so its entire pass/fail signal — one line,
@@ -212,7 +212,7 @@ worked — so the fix here is the four fixture batteries (`release-test.sh` §7f
 any of them regresses. `release-test.sh` closes at 335 assertions, up from 295 before this entry and the
 one above it combined.
 
-## 2026-08-30 — the guard-deletion sweep: nine untested `release-preflight.sh` bad() branches, closed (unreleased)
+## 2026-08-30 — the guard-deletion sweep: nine untested `release-preflight.sh` bad() branches, closed (released 2026-08-31 as 0.34.0)
 
 `bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §C — delete each guard in turn, does anything go
 red? — had never been run systematically over this repo's release scripts. It has now, over
@@ -261,7 +261,7 @@ one is a prerequisite for testing it, not just a test-writing exercise. `changel
 `_ci_verdict.py` were read but not attacked directly (the latter is exercised extensively via `[10]`'s own
 battery). None of this is claimed clean; it is unexamined.
 
-## 2026-08-30 — the umbrella's first revert sweep: 3 of 9 protected fixes were not (unreleased)
+## 2026-08-30 — the umbrella's first revert sweep: 3 of 9 protected fixes were not (released 2026-08-31 as 0.34.0)
 
 A revert sweep (`bin/AGENT-CORPUS-BRIEF.md`'s "THE ATTACKS THAT WORK" §A: revert the fix, does any test go
 red?) had already run against all five ENGINE repos and come back 24/24 protected. The umbrella had never
@@ -305,7 +305,7 @@ RED there and GREEN at HEAD.
   tree — with only the one targeted file's production change undone, so no other commit's coverage could
   be disturbed.
 
-## 2026-08-30 — the ninth false green: a repo that was never cloned read as "clean and pushed" (unreleased)
+## 2026-08-30 — the ninth false green: a repo that was never cloned read as "clean and pushed" (released 2026-08-31 as 0.34.0)
 
 - **`release-rehearsal.sh` and `_release_notes.sh` had never been attacked as a pair before today.**
   `_release_notes.sh` held up: near-miss poisons (a `## [0.32.10]` section sitting above the real

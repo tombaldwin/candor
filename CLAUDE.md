@@ -25,6 +25,19 @@ someone else's job, which is the only reason it works.
 
 ## Two rules that recur
 
+**ONE OWNER PER REPO IS NOT ENOUGH: `conformance/run.sh` READS EVERY ENGINE'S WORKING TREE.** Measured
+2026-08-31. A candor-swift agent ran the four-way suite while candor-rust had an uncommitted fix in its
+tree; the suite therefore measured a candor-rust that was not `main`, and the coordinator measuring
+candor-rust at the same moment contaminated it back. **Two agents can own different repos and still
+corrupt each other's results**, because the shared instrument reads trees, not commits.
+
+`bin/probe.sh` already detects this and says so — *"a conformance run is IN FLIGHT. It reads engines
+from their working trees; measuring now, or editing now, contaminates it in both directions. Wait for
+it."* That guard is the reason this was caught rather than believed. So: **before dispatching an agent
+that will run four-way conformance, make sure every OTHER engine tree is clean and committed** — and
+when one is running, do not measure or edit any engine. A four-way result taken over someone else's
+work-in-progress is not a measurement of anything that exists.
+
 **One owner per repo, and per shared file.** Three agents sharing `candor-spec` cost a silently-dropped
 commit and a killed conformance run. An agent that notices a problem in a repo it does not own should
 **report it, not fix it** — that is what makes single-ownership workable rather than a way to drop things.

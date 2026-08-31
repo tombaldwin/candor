@@ -136,7 +136,29 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   ( cd "$d" && eval "$cmd" ) >"$log" 2>&1 </dev/null
   rc=$?
   run=$((run+1))
-  if [ "$rc" -eq 0 ]; then ok=$((ok+1)); printf '  \033[32m%-6s\033[0m %s\n' "OK" "$cmd"
+  # A GATE THAT SKIPS ITSELF AND EXITS 0 IS COUNTED AS PASSED BY EVERYTHING, INCLUDING THIS FILE.
+  # This tool's header says SKIPPED IS NOT PASSED — but that only ever governed skips THIS script
+  # decided. A script that decides for itself and returns 0 was landing in the `ok` column.
+  # Measured 2026-08-31 across two repos: candor-rust's oracle.sh, oracle_pf.sh, disclosure_recall.sh,
+  # realworld/run.sh and realworld/run_deep.sh all print "needs Linux + strace (got Darwin) —
+  # skipping" and exit 0; candor-java's run_kotlin.sh prints "kotlinc not installed — SKIPPED" and
+  # exits 0. A local run reported 29/29 OK when 24 had executed.
+  # Worse on the CI side: candor-rust's oracle.sh exits 0 when `strace` is merely ABSENT, so a failed
+  # install would give a GREEN job over an unrun oracle. The only thing preventing that today is the
+  # separate apt-get step failing first.
+  # MATCHED ON THE LAST NON-EMPTY LINE ONLY, not anywhere in the output: these scripts announce the
+  # skip as their final word, while an ordinary gate may legitimately say "skipping" about a sub-step
+  # mid-run. Narrow on purpose — a false positive here understates coverage, which is loud, but a tool
+  # that is permanently INCOMPLETE is a red nobody reads.
+  # THE DURABLE FIX IS AT SOURCE: a self-skipping gate should exit non-zero (3) so no caller has to
+  # pattern-match its prose. Until every repo does, this reads the prose and says so.
+  _last=""
+  [ -f "$log" ] && _last=$(grep -v '^[[:space:]]*$' "$log" 2>/dev/null | tail -1)
+  if [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|\bSKIPPED\.?$'; then
+    skip=$((skip+1)); run=$((run-1))
+    printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
+    printf '         it exited 0 but its own last line says it did not run: %s\n' "$_last"
+  elif [ "$rc" -eq 0 ]; then ok=$((ok+1)); printf '  \033[32m%-6s\033[0m %s\n' "OK" "$cmd"
   else bad=$((bad+1)); printf '  \033[31m%-6s\033[0m %s  (rc=%s, %s)\n' "FAIL" "$cmd" "$rc" "$log"; fi
   # AFTER the gate, not before: a gate that filled the disk itself is the one whose own rc is least
   # trustworthy, and checking first would clear it and then believe it.

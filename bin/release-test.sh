@@ -4200,6 +4200,41 @@ printf '%s' "$gm_out" | grep -q 'bash ci/a.sh' \
   && ok "…and still prints the gate list, so the classifier actually ran on the GNU flavour" \
   || bad "gates.sh survived GNU mktemp but produced no gate list — dead in a quieter way"
 
+# A GATE THAT SKIPS ITSELF AND EXITS 0. This file's own tool said "SKIPPED IS NOT PASSED" while
+# counting exactly that as passed, because the rule only ever governed skips gate-run.sh DECIDED.
+# Measured 2026-08-31: five candor-rust gates and one candor-java gate print a skip line and return 0.
+mkdir -p "$DG/ss/candor-rust/.github/workflows" "$DG/ss/candor-rust/ci"
+cat > "$DG/ss/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: self-skipper
+        run: bash ci/skip.sh
+      - name: mentions skipping mid-run but passes
+        run: bash ci/mid.sh
+YAML
+printf '#!/bin/sh\necho "soundness oracle: needs Linux + strace (got Darwin) — skipping"\nexit 0\n' > "$DG/ss/candor-rust/ci/skip.sh"
+printf '#!/bin/sh\necho "skipping seed 3"\necho "40 passed, 0 failed"\nexit 0\n' > "$DG/ss/candor-rust/ci/mid.sh"
+chmod +x "$DG/ss/candor-rust/ci/skip.sh" "$DG/ss/candor-rust/ci/mid.sh"
+ss_out="$(CANDOR_ROOT="$DG/ss" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; ss_rc=$?
+printf '%s' "$ss_out" | grep -q 'SELFSKIP' \
+  && ok "a gate that exits 0 while its last line says it skipped is SELFSKIP, not OK" \
+  || bad "a self-skipping gate was counted as passed — the exact thing 'SKIPPED IS NOT PASSED' forbids"
+[ "$ss_rc" -eq 2 ] \
+  && ok "…and it makes the verdict INCOMPLETE (rc=2), never OK" \
+  || bad "a self-skipping gate did not withhold the verdict (rc=$ss_rc)"
+printf '%s' "$ss_out" | grep -q 'its own last line says it did not run' \
+  && ok "…and QUOTES the line, so the claim can be checked rather than trusted" \
+  || bad "the SELFSKIP row did not show its evidence"
+# THE OVER-CHARGE CONTROL: matching 'skipping' ANYWHERE would turn ordinary gates into skips, and a
+# tool that is permanently INCOMPLETE is a red nobody reads. Only the LAST non-empty line counts.
+printf '%s' "$ss_out" | grep -qE '(OK|ok)[[:space:]]+bash ci/mid.sh|1 ok' \
+  && ok "a gate that says 'skipping' mid-run but ends on a pass line stays OK — the control" \
+  || bad "the self-skip match swallowed a genuinely passing gate: $(printf '%s' "$ss_out" | grep 'mid.sh')"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

@@ -4293,6 +4293,37 @@ PATH="$df_shim:$PATH" df -Pk / 2>/dev/null | grep -q 'Shared Drive' \
   && ok "…with the shim proven to be the df that ran" \
   || bad "the df shim was not on PATH — the row above is vacuous"
 
+# EXIT 3, THE SELF-SKIP CONVENTION. candor-rust's five strace gates adopted it 2026-08-31; this reader
+# had to learn it in the same change, or they would have flipped from SELFSKIP to FAIL on every
+# non-Linux box — a fix reading as a break. The prose match stays as the fallback for repos that have
+# not adopted it yet.
+mkdir -p "$DG/e3/candor-rust/.github/workflows" "$DG/e3/candor-rust/ci"
+cat > "$DG/e3/candor-rust/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: exit-3 self-skip
+        run: bash ci/s3.sh
+      - name: a genuine failure
+        run: bash ci/fail.sh
+YAML
+printf '#!/bin/sh\necho "oracle: needs Linux + strace (got Darwin)"\nexit 3\n' > "$DG/e3/candor-rust/ci/s3.sh"
+printf '#!/bin/sh\necho "assertion failed"\nexit 1\n' > "$DG/e3/candor-rust/ci/fail.sh"
+chmod +x "$DG/e3/candor-rust/ci/s3.sh" "$DG/e3/candor-rust/ci/fail.sh"
+e3_out="$(CANDOR_ROOT="$DG/e3" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; e3_rc=$?
+printf '%s' "$e3_out" | grep -q 'SELFSKIP.*s3.sh' \
+  && ok "a gate exiting 3 is SELFSKIP — the convention, not a prose match" \
+  || bad "exit 3 was not read as a self-skip: it would report FAIL over a gate that chose not to run"
+printf '%s' "$e3_out" | grep -q 'FAIL.*fail.sh' \
+  && ok "…and a genuine exit 1 beside it still FAILS — the control" \
+  || bad "the exit-3 arm swallowed a real failure"
+[ "$e3_rc" -eq 1 ] \
+  && ok "…and the verdict is NOT GREEN, decided by the real failure rather than the skip" \
+  || bad "verdict was $e3_rc, not 1"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

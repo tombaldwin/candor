@@ -176,7 +176,17 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   # caught it — the reviewer had flagged that direction as fragile-but-not-yet-real, and adding the
   # front-loaded arm without re-checking the old one is what made it real. It was also redundant:
   # arm 1 already catches "— SKIPPED" via its delimiter.
-  if [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*[:—-]|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*$'; then
+  # EXIT 3 IS THE CONVENTION; the prose match is the fallback for scripts that have not adopted it.
+  # candor-rust's five strace gates now exit 3 on self-skip (2026-08-31), which is exactly what this
+  # tool asked for — a caller should not have to pattern-match English. Without this arm they would
+  # have flipped from SELFSKIP to FAIL on every non-Linux box the moment that landed: the reader must
+  # learn the convention in the same change that the writers adopt it, or the fix reads as a break.
+  if [ "$rc" -eq 3 ]; then
+    skip=$((skip+1)); run=$((run-1))
+    printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
+    printf '         it exited 3 — the self-skip convention: it did not run%s\n' \
+      "${_last:+, and said so: $_last}"
+  elif [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*[:—-]|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*$'; then
     skip=$((skip+1)); run=$((run-1))
     printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
     printf '         it exited 0 but its own last line says it did not run: %s\n' "$_last"

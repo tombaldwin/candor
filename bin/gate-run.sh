@@ -83,7 +83,7 @@ if ! disk_guard_check "before any gate ran"; then
   exit 2
 fi
 
-run=0; ok=0; bad=0; skip=0; i=0
+run=0; ok=0; bad=0; skip=0; i=0; bad_pre_disk=0
 while IFS= read -r cmd || [ -n "$cmd" ]; do
   # EVERY LINE IS ACCOUNTED FOR. The first arm below used to `continue` with no counter touched at
   # all, so a matching line was neither run, nor skipped, nor manual — it just left the totals, while
@@ -154,7 +154,29 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   # pattern-match its prose. Until every repo does, this reads the prose and says so.
   _last=""
   [ -f "$log" ] && _last=$(grep -v '^[[:space:]]*$' "$log" 2>/dev/null | tail -1)
-  if [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|\bSKIPPED\.?$'; then
+  # TWO SPELLINGS, because matching only the SUFFIX missed EIGHT REAL EXIT POINTS in this family —
+  # seven in this very repo and one in candor-rust — found by an adversarial review 2026-08-31:
+  #   suffix-style   "soundness oracle: needs Linux + strace (got Darwin) — skipping"
+  #   FRONT-LOADED   "SKIP: needs jq" · "SKIP: needs python3" · "SKIP: needs node"
+  #                  "SKIP: test needs jq" · "SKIP: candor-query not built (run: cargo build …)"
+  # All are `{ echo "SKIP: …"; exit 0; }`. Measured end-to-end against the real script: three such
+  # gates reported `OK — every gate ran and passed`. The fix's own calibration set was the five rust
+  # + one java soundness scripts named in its comment; it never included this repo's OWN test
+  # scripts, so the class it claimed to close still had members. Section 16 pinned only the suffix
+  # style, which is why the rows were green.
+  # The front-loaded arm is anchored at the START and requires a delimiter, so an ordinary summary
+  # ending "…, 3 skipped" cannot trip it — that false-positive direction would make the tool
+  # permanently INCOMPLETE, which is a red nobody reads.
+  # THREE ARMS, each requiring STRUCTURE rather than the mere presence of the word:
+  #   1. suffix after a delimiter   "… (got Darwin) — skipping"  ·  "… not installed — SKIPPED"
+  #   2. front-loaded before one    "SKIP: needs jq"  ·  "SKIP: candor-query not built"
+  #   3. the bare word on its own line
+  # A bare `\bSKIPPED$` arm was here and is DELETED: under `grep -i` it matched the ordinary summary
+  # "40 passed, 0 failed, 3 skipped", downgrading a genuine full pass to SELFSKIP. My own fixture
+  # caught it — the reviewer had flagged that direction as fragile-but-not-yet-real, and adding the
+  # front-loaded arm without re-checking the old one is what made it real. It was also redundant:
+  # arm 1 already catches "— SKIPPED" via its delimiter.
+  if [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*[:—-]|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*$'; then
     skip=$((skip+1)); run=$((run-1))
     printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
     printf '         it exited 0 but its own last line says it did not run: %s\n' "$_last"
@@ -162,8 +184,15 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   else bad=$((bad+1)); printf '  \033[31m%-6s\033[0m %s  (rc=%s, %s)\n' "FAIL" "$cmd" "$rc" "$log"; fi
   # AFTER the gate, not before: a gate that filled the disk itself is the one whose own rc is least
   # trustworthy, and checking first would clear it and then believe it.
+  # Remember how many FAILs existed BEFORE the disk ever crossed. A failure recorded while the disk
+  # was healthy cannot be ENOSPC noise, and telling the reader to disregard it would bury a real bug
+  # behind an unrelated condition. Measured by an adversarial review 2026-08-31: a genuine rc=1 at
+  # gate 1 with a healthy disk was reported as "NOT a finding" because the disk crossed at gate 3.
+  _bad_before_crossing=$bad
   disk_guard_check "$cmd" || true
+  [ "$CANDOR_DISK_BROKE" -eq 1 ] || bad_pre_disk=$_bad_before_crossing
 done < "$GATELIST"
+rm -f "${TMPDIR:-/tmp}/.candor-disk-guard-cursor-$$"
 
 printf '\n%s: %s gate(s) run, %s ok, %s failed, %s skipped, %s block line(s) not auto-run\n' \
   "$repo" "$run" "$ok" "$bad" "$skip" "$manual"
@@ -175,8 +204,18 @@ printf '\n%s: %s gate(s) run, %s ok, %s failed, %s skipped, %s block line(s) not
 # deliberately: a FAIL row produced after the crossing is not evidence of a defect, and reporting it
 # as one is how ENOSPC noise gets filed as a finding.
 if disk_guard_verdict_note >&2; then
+  _suspect=$((bad - bad_pre_disk))
   echo "  Verdict withheld: this run measured $repo under a condition that fakes both failures and" >&2
-  echo "  empty results. $bad FAIL row(s) above are NOT findings until re-measured with room." >&2
+  echo "  empty results." >&2
+  if [ "$bad_pre_disk" -gt 0 ]; then
+    # NOT "$bad FAIL rows are not findings". A FAIL recorded before the crossing happened on a
+    # healthy disk and IS a finding; saying otherwise buries a real bug behind an unrelated
+    # condition. Split them, and say which is which.
+    echo "  $bad_pre_disk FAIL row(s) occurred BEFORE the crossing, on a healthy disk — those ARE" >&2
+    echo "  real findings and must not be dismissed. $_suspect after it are unusable until re-run." >&2
+  else
+    echo "  $bad FAIL row(s) above are NOT findings until re-measured with room." >&2
+  fi
   exit 2
 fi
 # THE ACCOUNTING CHECK. Every gate line gates.sh printed must have been either run or named as

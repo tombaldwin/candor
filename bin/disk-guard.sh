@@ -43,7 +43,22 @@ disk_free_mb() {
   # Not `df ... | awk`: a pipeline hides df's own failure, and this file exists because instruments
   # that cannot fail get believed. Capture first, check, then parse.
   out=$(df -Pk "$target" 2>/dev/null) || { echo "" ; return 1; }
-  printf '%s\n' "$out" | awk 'NR==2 { print int($4 / 1024) }'
+  # NOT `$4`. A POSIX df row is Filesystem/blocks/used/available/capacity/mount, but the FIRST and
+  # LAST fields can both contain SPACES — an SMB/AFP/NFS mount named `//server/Shared Drive x`, or a
+  # mount point with a space — and either shifts the columns. Measured 2026-08-31 by an adversarial
+  # review: a spaced device name made this return 976562499 (930+ TB) for a nearly-full filesystem,
+  # i.e. the guard reporting enormous free space on a disk that is out of it. The DANGEROUS
+  # direction, and df exits 0, so nothing downstream could tell.
+  # Anchor on the CAPACITY field instead: it is the only one that ends in `%`, and `available` is
+  # always immediately before it. That is stable no matter how many spaces the device or mount has.
+  # Then require the result to be a plain integer; anything else is a parse we do not understand and
+  # must fail closed rather than guess.
+  printf '%s\n' "$out" | awk '
+    NR==2 {
+      for (i = 1; i <= NF; i++)
+        if ($i ~ /%$/ && i > 1) { v = $(i-1); break }
+      if (v ~ /^[0-9]+$/) print int(v / 1024); else print -1
+    }'
 }
 
 # The two filesystems a run can exhaust are not always the same one: the repo may be on the data
@@ -68,6 +83,23 @@ disk_guard_min_mb() {
     # one cursor.
     local cur idx val n=1
     cur="${TMPDIR:-/tmp}/.candor-disk-guard-cursor-$$"
+    # CLEANED UP, and LOUD IF IT CANNOT BE WRITTEN. Measured by an adversarial review 2026-08-31:
+    # with an unwritable TMPDIR the `> "$cur" || true` below swallowed the failure, the cursor never
+    # advanced, every call returned the FIRST value forever, and the mid-run crossing this injection
+    # point exists to simulate silently could not fire — the SAME symptom as the original subshell
+    # bug, reached by a different route. A test harness that cannot fail is the thing this file is
+    # about. It also leaked one cursor file per run, unlike gates.sh's own TRIGGERS trap.
+    # `touch`, NOT `: > "$cur"` — the latter TRUNCATES, which would reset the index on every call and
+    # reintroduce the stuck-cursor bug in a third way. And NO `trap ... EXIT` here: this function is
+    # called via `$(...)`, so a trap set inside would fire at each SUBSHELL exit and delete the
+    # cursor immediately. Cleanup belongs to the caller; gate-run.sh does it.
+    if ! touch "$cur" 2>/dev/null; then
+      echo "disk-guard: CANDOR_DISK_FAKE_FREE_MB is set but its cursor at $cur is not writable —" >&2
+      echo "  the sequence cannot advance, so every call would return the first value and a" >&2
+      echo "  mid-run crossing could not fire. Refusing to pretend." >&2
+      echo -1
+      return
+    fi
     idx=$(cat "$cur" 2>/dev/null) || idx=0
     [ -z "$idx" ] && idx=0
     # Walk to the idx'th field; the LAST value repeats once the list is exhausted, so a short

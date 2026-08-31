@@ -4324,6 +4324,36 @@ printf '%s' "$e3_out" | grep -q 'FAIL.*fail.sh' \
   && ok "…and the verdict is NOT GREEN, decided by the real failure rather than the skip" \
   || bad "verdict was $e3_rc, not 1"
 
+# THE STAGER MUST NAME A MARKER IT COULD NOT MATCH. Its count reads as completeness; measured
+# 2026-08-31, six dated headings carried `(unreleased)` placed after the DATE rather than at the END,
+# none matched, one pre-existing well-formed heading was stamped, and it printed "1 dated heading(s)
+# marked released" at exit 0. The notes extractor then refused with a remedy naming the command that
+# had just said OK.
+sg="$DG/stage"; mkdir -p "$sg/candor"
+cat > "$sg/candor/CHANGELOG.md" <<'MD'
+# Changelog
+## 2026-08-31 — well formed (unreleased)
+body
+## 2026-08-30 (unreleased) — marker after the DATE, malformed
+body
+## 2026-08-29 (unreleased) — also malformed
+body
+MD
+sg_out="$(ROOT="$sg" VER=0.99.0 DATE=2026-08-31 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
+printf '%s' "$sg_out" | grep -q 'WARN candor: 3 dated heading(s) carry' \
+  && ok "the stager NAMES markers it could not match, rather than counting only what it stamped" \
+  || bad "a malformed \`(unreleased)\` marker is silently unstamped: $(printf '%s' "$sg_out" | head -1)"
+printf '%s' "$sg_out" | grep -q 'STILL LABELLED unreleased' \
+  && ok "…and says what happens if it ships — the consequence, not just the count" \
+  || bad "the warning did not state the consequence"
+# CONTROL: a changelog whose markers are ALL well-formed must not warn.
+sg2="$DG/stage2"; mkdir -p "$sg2/candor"
+printf '# Changelog\n## 2026-08-31 — all good (unreleased)\nbody\n' > "$sg2/candor/CHANGELOG.md"
+sg2_out="$(ROOT="$sg2" VER=0.99.0 DATE=2026-08-31 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
+printf '%s' "$sg2_out" | grep -qv 'WARN candor' \
+  && ok "…and stays quiet when every marker is well formed — the control" \
+  || bad "the warning fires on a correct changelog"
+
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"
 printf '#!/bin/sh\nexit 1\n' > "$dg_shim/df"; chmod +x "$dg_shim/df"

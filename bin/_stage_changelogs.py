@@ -178,6 +178,21 @@ elif os.path.exists(u):
         print("STUB candor: no dated heading marked `(unreleased)` → opened `## %s — family build bump` "
               "(REVIEW IT: rewrite in the umbrella's voice, or delete it if this cut changes nothing there)" % DATE)
     else:
+        t_before_sub = t
         t = pat.sub(lambda m2: "%s (released %s as %s)" % (m2.group(1), DATE, VER), t)
         open(u, "w").write(t)
+        # A MARKER THIS PATTERN DID NOT MATCH IS THE DANGEROUS CASE, because the count above reads as
+        # completeness. Measured 2026-08-31: six dated headings carried `(unreleased)` placed after the
+        # DATE instead of at the END of the heading, so none matched, exactly one pre-existing
+        # well-formed heading was stamped, and this line printed "1 dated heading(s) marked released"
+        # and exited 0. `_release_notes.sh` then refused at exit 3 with a remedy naming the command
+        # that had just reported OK — and the operator-plausible escape (mark only the newest) would
+        # have shipped four sections of real work inside the tag permanently unlabelled, every gate
+        # green. Count the WORD, compare against what the PATTERN took, and name the difference.
+        loose = len(re.findall(r"^## \d{4}-\d{2}-\d{2}[^\n]*\(unreleased\)", t_before_sub, re.M))
+        if loose > n:
+            print("WARN candor: %d dated heading(s) carry `(unreleased)` but only %d matched — the marker "
+                  "belongs at the END of the heading (`## DATE — title (unreleased)`), not after the date. "
+                  "The unmatched %d will ship inside the tag STILL LABELLED unreleased."
+                  % (loose, n, loose - n))
         print("OK candor: %d dated heading(s) marked released (%s as %s)" % (n, DATE, VER))

@@ -6995,7 +6995,79 @@ never from an inert filler; only the method's own parameters can take `()`.
   dylint" for every seed — a false negative indistinguishable from a real one. Run rust gates SERIALLY.
 
 
-# Review panel findings, 2026-08-30 — STAGED (umbrella is agent-owned; move into BACKLOG.md when free)
+# Review panel findings, 2026-08-30 — ALL CLOSED 2026-08-31, seven repos pushed, CI green at every HEAD
+
+**Status: done.** Every finding below was taken by a single-owner agent, verified by ME against each
+repo's own `bin/gates.sh` list (not the agent's report), pushed, and confirmed by `ci-watch.sh`.
+Commits: swift `2f18c6d`+`ba76678`+`f2fee39`, java `b66384d`, ts `d6bda52`, agents `f02deac`,
+spec `6c6a3c5`, umbrella `2c505f2`→`ce296b0`.
+
+## FOUR OF THE PANEL'S OWN CLAIMS DID NOT SURVIVE MEASUREMENT — do not re-derive them
+1. **The `bin/gates.sh` folded-block sin (HIGH) is FALSE at HEAD.** `c98cda7` did fix it; the finding
+   says it did not. Measured: `gates.sh` emits the BODY, `gate-run.sh` reports INCOMPLETE rc=2, no
+   file named `-` is created. **But the panel's MECHANISM was real against the PRE-FIX binary, and my
+   own refutation was itself too broad**: a `run: >` fixture already existed, so my "zero fixtures"
+   claim was wrong too. The real gap was the CHOMPING variants — `>` is a bash syntax error (loud,
+   rc 1) while `>-` and `>+` are REDIRECTIONS (rc 0, `gate-run: OK`, a file created). The one variant
+   that had a fixture was the only one that could not report green over an unrun gate.
+2. **Findings 13 and 14 do not reproduce.** §13 HAS the busy-guard (`release-test.sh:3281`, added by
+   `c98cda7` AFTER the panel measured) and it is load-bearing — deleting it reproduces the reported
+   symptom exactly. And `pgrep -f "gradlew"` does NOT match the Gradle daemon: its command line is
+   `GradleDaemon`/`gradle-daemon-main`, confirmed against five live Gradle JVMs.
+3. **The handoff's "candor-ts parity rows NEVER RUN IN CI" is FALSE.** `parsepolicy`/`whatif` rows are
+   unconditional in `test.mjs`; CI runs `npm test` → `node test.mjs --parallel`. They run. The
+   "fixing that changes CI's hermeticity policy" decision is MOOT.
+4. **The panel was RIGHT that CLAUDE.md's gate count was wrong, and my correction was ALSO wrong.**
+   "21" → I wrote "39" → the same wave's `gates.sh` change made it 34. Two wrong numbers in one day,
+   in opposite directions, the second written while correcting the first. CLAUDE.md now states the
+   COMMAND, never a number.
+
+## WHAT THE AGENTS FOUND THAT THE PANEL DID NOT ASK FOR
+- **java: three sink routes the panel missed** (`--json <cfg>` and two `gate`-verb routes), ALL
+  destroying at **exit 2** — a caller checking only status sees a clean refusal, so every assertion
+  had to be on BYTES. The `gate` verb asks its guard TWICE, so neither call alone was measurable.
+- **ts: the `--out` REPORT set goes through the same writer** (`writeAtomic` is a one-line alias), so
+  a symlinked `<prefix>.json` was the report-shaped spelling of the verdict-shaped hole, on BOTH
+  routes, with no row anywhere. Enumerating SINKS rather than call sites is what found it — twice.
+- **agents: naming your MCP server after a curated one silently drops your own declaration.** Two
+  `.mcp.json` differing ONLY in the server name, both declaring `["Fs","Net"]`, `deny Net worker`:
+  `acme` → exit 1; `filesystem` → **exit 0, `policy ✓`, disclosed nowhere.** Ruled (c): the
+  precedence itself was wrong. Both tiers assert a LOWER BOUND, so the sound join is the UNION.
+- **swift: a corrupt `.entitlements` returned `[]` and was certified clean** — live at HEAD, found
+  while building the peek bound, not by the brief.
+- **spec: the PART 61 patch's own comment asserted ~78 other prints were "bound by construction"** —
+  an inference about lines nobody had counted, written into a fail-open lint. The sweep (109/109
+  parts) proved it TRUE and unenforced. Then the fix's binding pattern matched inside STRING
+  LITERALS, so PART 36's flag read as bound because its message contains the words "on exit 2".
+
+## THE VERDICT DECISION TOM MADE, AND WHY THE FIRST CONSTRUCTION WAS WRONG
+Tom ruled the swift `entitlementsUnread` refusal SHOULD move the verdict. I briefed the bound as
+"fire when an unread file could bear on a key this run checks", using `uncheckedKeys`. **That was
+unsound in both readings** — the map is a static ONE-entry constant, so the bound either fires on
+nearly every repo (unaffordable) or never (the sin stays). The agent found the crux question carried
+a false constraint: the refusal was never that candidates are unsafe to READ, only that none can be
+ATTRIBUTED. Reading all candidates without attributing is exactly ⟨0.30⟩'s peek, which gives an exact
+bound — empty ⇒ provably as sound as an attributed pass; non-empty ⇒ unknowable ⇒ exit 2.
+
+## THE CROSS-ENGINE QUESTION IS NARROWER THAN FILED
+ts's MCP/LSP refusal divergence **does not translate**: java has neither route (measured), and rust
+and swift have no MCP or LSP surface at all — the only `mcp` hits in their trees are prose comments
+referring to candor-ts. §3.1 route-equality needs two routes to diverge between. **What survives is a
+single-engine lookup question**: rust's locator is `<prefix>.<crate>.scan.json`; does its
+refusal-marker lookup see §3.3.1's direct-file locator for a MULTI-report prefix? Needs a build. OPEN.
+
+## THE DAY'S OWN LESSON, MEASURED
+**The disk hit zero mid-wave** (a foreign session dir at 26G) and four agents were left producing
+results indistinguishable from findings, while the harness could no longer write a command's own
+output file — so commands died BEFORE EXECUTING and returned nothing while looking like they ran.
+`bin/disk-guard.sh` now runs before the first gate and after EVERY one, and latches; its verdict
+outranks `NOT GREEN` because a FAIL after the crossing is not evidence of a defect. Two agents found
+live mutations still applied in their trees after the kill, and one had a gate PASS with a mutation
+in place — **`git diff` your production sources before trusting anything a killed agent left.**
+
+---
+(original staged text follows)
+
 
 ## SEVERE — live repros, all pre-existing or newly-uncovered
 

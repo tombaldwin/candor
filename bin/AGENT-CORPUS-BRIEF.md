@@ -212,6 +212,34 @@ candor-swift against swift-collections' 4,965 units.
 **And enough corpora that the choice does not decide the answer.** A three-corpus measurement declared a
 fix's over-charge "zero"; a fourth corpus showed +22 rows, and seven showed the true range (0–9.6%).
 
+### E1. WHEN THE EVIDENCE IS A BIG A/B, THE **REMOVALS** ARE THE CLAIM UNDER TEST
+A fabrication-fix reports something like `ADDED 2  REMOVED 66  CHANGED 318` and explains the removals as
+fabrications correctly excluded. **That explanation is a hypothesis, and it is the one that hides a
+cardinal sin**, because a removed row means the engine now certifies that function PURE — absence is the
+sin's signature, so a wrong removal and a right one are the same bytes.
+
+Measured 2026-09-01, candor-java. The fix traced **three** of the largest diffs, found them consistent,
+and said so honestly. A full audit of all 66 — every row, no sampling — found **73 rows correct and 35 a
+second, different cardinal sin**: a field write judged by LINEAR bytecode adjacency when the write was a
+control-flow merge, so `this.x = supplied != null ? supplied : defaultLambda;` recorded an arbitrary
+caller-supplied callback as the safe default. Four unrelated real libraries, including a public AWS SDK
+builder API. `deny Unknown` went exit 1 → exit 0.
+
+So:
+- **Audit the removal set in FULL, not a sample.** Tracing the biggest few is not testing the claim; the
+  35 bad rows were not the biggest.
+- **Ground-truth from `javap`/source, never from candor's own report.** Do not let the engine adjudicate a
+  question about the engine.
+- **Bucket by MECHANISM, not by count.** "66 removals" is not a finding; "two mechanisms, one correct and
+  one a sin" is. A second cause hiding behind the first is what gets missed once the first is found.
+- **Report the near-misses.** That audit self-caught and retracted a suspected third mechanism after
+  re-checking raw JSON against its own paraphrase, and marked its two weakest rows "spot-checked, not
+  proven". An audit that hides its own near-miss has told you nothing about the rest of it.
+
+The mirror of section E: the over-charge control guards the direction the fix did not intend, and **the
+A/B's removal column is where the fix's INTENDED direction goes too far.** Both are live at once — the
+measured rate here is 4 defects in 5 fabrication-fixes, two of them cardinal sins.
+
 ## F. Translate the QUESTION across engines — not the defect
 The reusable artefact is never the bug, it is the question that found it.
 - swift's peek scope-match sin → asked of the other three → **cardinal sin in ALL THREE**, by a simpler mechanism.

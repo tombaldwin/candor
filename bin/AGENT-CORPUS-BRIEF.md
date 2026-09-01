@@ -259,6 +259,31 @@ your diff, because the logic gets read and the assertion gets believed.
 
 If you cannot write a fixture that would fail were the claim false, **word it as the assumption it is**.
 
+### E3. A CONTROL THAT ASSERTS AN ABSENCE MUST COMPILE AND RUN FIRST
+**Prove the program exists before trusting what the engine says about it.** A control whose fixture cannot
+compile is not weak evidence, it is NO evidence: no correct engine could pass it differently, and no
+broken one would be caught.
+
+Measured 2026-09-01, candor-swift, three times in one vein:
+- `testAmbiguousCrossModuleGlobalNameResolvesNothing` asserts a caller stays absent when two modules
+  declare the same public global. That program is a **compile error** in both language modes. No reachable
+  input can reach the branch it pins.
+- `testNonPublicCrossModuleGlobalDoesNotResolve` asserts a caller stays absent for an `internal` global in
+  another module. Also **uncompilable** — a direct cross-module reference to an internal symbol is
+  definitionally invisible in Swift.
+- **The coordinator re-verified the second one independently, built the same uncompilable fixture, watched
+  the caller stay absent, and reported it as a passing control** — on the same day, in the same session,
+  as hardening four other instruments for exactly this property.
+
+Two of the four controls that row was accepted on could never have failed. The conclusions happened to be
+right; the evidence was empty.
+
+**This bites hardest on absence-shaped assertions, which is most of this project's controls** — "gains
+nothing", "stays pure", "does not resolve", "is not charged". The engine omits pure functions by design,
+so ABSENCE IS ALSO WHAT A BROKEN ENGINE PRODUCES, and an unreachable fixture makes the two identical.
+`swift build` / `javac` / `tsc` / `cargo build` the fixture and RUN it. If it cannot run, the control is
+asserting something about nothing — delete it or make it reachable, and say which.
+
 ## F. Translate the QUESTION across engines — not the defect
 The reusable artefact is never the bug, it is the question that found it.
 - swift's peek scope-match sin → asked of the other three → **cardinal sin in ALL THREE**, by a simpler mechanism.

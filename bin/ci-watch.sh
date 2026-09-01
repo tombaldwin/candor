@@ -275,6 +275,30 @@ path_for_id() {
   if [ -n "$hit" ]; then printf '%s' "$hit"; else printf '%s' "$id"; fi
 }
 
+# $1 = repo checkout dir, $2 = workflow FILE basename (from path_for_id) -> rc 0 only if that workflow
+# actually declares `cancel-in-progress: true`.
+#
+# WHY THIS EXISTS. The `cancelled` arm below reclassifies a cancelled newest run as PENDING and explains
+# it as "superseded by a new push". That explanation is only available to a workflow carrying a
+# concurrency group that cancels in-progress runs. Applied unscoped it is a FALSE DISCLOSURE — the tool
+# stating a cause that cannot occur — which is precisely the class this project refuses to let an ENGINE
+# emit, so it must not emit one itself. MEASURED 2026-09-01 across all seven repos: the PRIMARY `ci.yml`
+# in candor-rust, candor-java, candor-ts and candor-agents declares no such group, so a cancelled run
+# there cannot have been superseded by a push — something killed it, and that is a fact worth a red line,
+# not a shrug. (A run whose matrix legs are cancelled by `fail-fast` still concludes `failure`, not
+# `cancelled`, so this arm is not that case either.)
+#
+# FAILS CLOSED, deliberately, and in the direction that costs noise rather than silence: an unreadable
+# file, a deleted workflow (path_for_id then returns the bare id, which never resolves to a path), or a
+# `cancel-in-progress` set to an EXPRESSION we cannot evaluate all return nonzero, and the caller keeps
+# the pre-existing red. The reclassification is an exemption, and an exemption must be EARNED by evidence
+# in the file, never assumed from the absence of it.
+workflow_cancels_in_progress() {
+  local wf="$1/.github/workflows/$2"
+  [ -f "$wf" ] || return 1
+  grep -Eq '^[[:space:]]*cancel-in-progress:[[:space:]]*(true|yes)[[:space:]]*(#.*)?$' "$wf"
+}
+
 # Given one repo's deduped rows (US-separated: id, name, ...), the SET of display names shared by more
 # than one distinct workflow id — the exact shape the fifth false green exploited. A name in this set
 # cannot be printed alone without implying there is only one row behind it.
@@ -471,6 +495,31 @@ if [ "$SELFTEST" -eq 1 ]; then
     echo "  ✔ wf_path_map surfaces a \`gh workflow list\` failure rather than silently answering an empty map"
   fi
   unset -f gh
+
+  # workflow_cancels_in_progress(): the guard on the `cancelled` -> PENDING reclassification. BOTH
+  # directions, because the failure this closes was a one-directional check — the arm answered "yes,
+  # superseded" for every workflow and was never asked to say no. The three nonzero cases below are the
+  # fail-closed ones: no group at all, a group whose value is an EXPRESSION we cannot evaluate, and a
+  # workflow file that is not there (which is also what path_for_id's bare-id fallback produces).
+  echo
+  _wfd="$(mktemp -d)"
+  mkdir -p "$_wfd/.github/workflows"
+  printf 'on: push\nconcurrency:\n  group: x\n  cancel-in-progress: true\njobs: {}\n' > "$_wfd/.github/workflows/cancels.yml"
+  printf 'on: push\njobs: {}\n'                                                      > "$_wfd/.github/workflows/plain.yml"
+  printf 'on: push\nconcurrency:\n  cancel-in-progress: ${{ github.ref != %s }}\n'  "'refs/heads/main'" \
+                                                                                     > "$_wfd/.github/workflows/expr.yml"
+  _cip_yes=0; _cip_no=0; _cip_expr=0; _cip_missing=0
+  workflow_cancels_in_progress "$_wfd" cancels.yml   && _cip_yes=1
+  workflow_cancels_in_progress "$_wfd" plain.yml     && _cip_no=1
+  workflow_cancels_in_progress "$_wfd" expr.yml      && _cip_expr=1
+  workflow_cancels_in_progress "$_wfd" 12345         && _cip_missing=1
+  if [ "$_cip_yes" -eq 1 ] && [ "$_cip_no" -eq 0 ] && [ "$_cip_expr" -eq 0 ] && [ "$_cip_missing" -eq 0 ]; then
+    echo "  ✔ workflow_cancels_in_progress grants the exemption ONLY to a literal cancel-in-progress: true, and fails closed on a plain workflow, an unevaluable expression, and an absent file"
+  else
+    echo "  ✘ workflow_cancels_in_progress mis-scoped the cancelled->PENDING exemption (cancels=$_cip_yes want 1, plain=$_cip_no want 0, expr=$_cip_expr want 0, missing=$_cip_missing want 0)"
+    fails=$((fails+1))
+  fi
+  rm -rf "$_wfd"
 
   # THE EIGHTH FALSE GREEN: fetch_earlier_commit_rows() itself, over a stubbed `gh` shaped exactly like the
   # live reproduction — a chatty cron-b.yml (999) and a quiet ci-a.yml (111) whose newest run is a real
@@ -869,11 +918,26 @@ $(path_for_id "$wfid")"
     # project's own rule is that a red that is always wrong is a red nobody reads.
     # So: PENDING, the state this tool already models for a run that has not concluded. It is not
     # green either — a cancelled run tells you nothing, and silence must not read as success.
+    #
+    # BUT ONLY WHERE THAT MECHANISM EXISTS. As first written this arm was unscoped, so it printed
+    # "superseded by a new push" over every cancelled run in every repo — including the four whose
+    # primary ci.yml has no concurrency group at all, where a push CANNOT supersede a run. That is the
+    # tool asserting a cause it has no basis for, and downgrading a red on the strength of it. See
+    # workflow_cancels_in_progress() above for the measurement and for why it fails closed.
     if [ "$lconcl" = "cancelled" ]; then
-      printf "  %-14s %-26s … cancelled at %s — superseded (its workflow cancels in-progress runs on a\n" \
-             "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)"
-      printf "  %-14s %-26s   new push). No verdict either way; the run for HEAD is what settles it.\n" "" ""
-      pending=$((pending+1))
+      _lfn="$(path_for_id "$lwfid")"
+      if workflow_cancels_in_progress "$d" "$_lfn"; then
+        printf "  %-14s %-26s … cancelled at %s — superseded (%s declares cancel-in-progress, so a new\n" \
+               "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
+        printf "  %-14s %-26s   push cancels the running one). No verdict; the run for HEAD settles it.\n" "" ""
+        pending=$((pending+1))
+        continue
+      fi
+      printf "  %-14s %-26s ✘ cancelled at %s — its NEWEST run, on an earlier commit, and %s declares NO\n" \
+             "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
+      printf "  %-14s %-26s   cancel-in-progress group, so a push did not supersede it — something KILLED\n" "" ""
+      printf "  %-14s %-26s   this run. Re-run it; a cancellation is not a pass.\n" "" ""
+      rc=1
       continue
     fi
     llabel="$(label_for "$lwfid" "$lwf" "$dupe_latest")"

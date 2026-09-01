@@ -240,6 +240,25 @@ The mirror of section E: the over-charge control guards the direction the fix di
 A/B's removal column is where the fix's INTENDED direction goes too far.** Both are live at once — the
 measured rate here is 4 defects in 5 fabrication-fixes, two of them cardinal sins.
 
+### E2. RUN `assert-audit.sh` ON YOUR OWN DIFF BEFORE YOU REPORT
+    bash bin/assert-audit.sh <repo> <range>
+
+Measured 2026-09-01: four engines shipped ⟨0.35⟩ fixes, **every one carried a comment asserting a
+property, and every one of those assertions was false** — ts's "PROVEN — not guessed" (guessed; a
+cardinal sin), java's "inert, not wrong" (wrong), rust's "already works" (on one syntax), swift's stated
+limit (narrower than the hole). A documented *limitation* at least names a gap; a documented *guarantee*
+closes the question AND licenses narrowing a sound over-approximation, so it converts straight into a
+silent under-report. In every case the assertion was written by the commit that needed it to be true.
+
+The tool does not judge whether your claim is correct — no grep can. It asks the cheaper question that
+would have caught the real one: **you asserted safety; did you add a test in the same change?** It fails
+when assertions land with no test file touched anywhere in the range (candor-ts `7ecda11` asserted
+"PROVEN" and changed only `scan.mjs` and `CHANGELOG.md` — a changelog is not coverage), and otherwise
+prints the assertions as a checklist. **Read that checklist**: those lines are the highest-value ones in
+your diff, because the logic gets read and the assertion gets believed.
+
+If you cannot write a fixture that would fail were the claim false, **word it as the assumption it is**.
+
 ## F. Translate the QUESTION across engines — not the defect
 The reusable artefact is never the bug, it is the question that found it.
 - swift's peek scope-match sin → asked of the other three → **cardinal sin in ALL THREE**, by a simpler mechanism.

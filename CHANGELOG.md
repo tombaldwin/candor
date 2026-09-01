@@ -8,6 +8,55 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-01 — ADVISORY for the published 0.34.0 engines (unreleased)
+
+**If you pin candor 0.34.0, read this. If you use blanket `deny <Effect>` gates, you are not
+affected.**
+
+Four defects are live in the published 0.34.0 artifacts. **None was introduced by that cut** — all
+predate it, so downgrading to 0.33.1 does not help; it has them too. Three are silent under-reports
+and one is a fabrication. Fixes for three are on `main` and unreleased.
+
+### What is NOT affected
+
+**An unscoped `deny <Effect>` still fires in every engine.** Measured in each: the effectful unit is
+itself still present in the report, so a blanket gate exits 1 as it should. If that is how you gate,
+nothing here changes your results.
+
+### What IS affected: the reachability surface
+
+Scoped and layered policies, and `path` / `callers` / `impact` / `gains` / `tour` / `fix-gate`. A
+function that *causes* an effect can be missing from the report, so a rule scoped to it passes.
+
+| | engine | shape to look for |
+|---|---|---|
+| CHA completeness | java, ts | a lambda/closure stored and invoked later, where the interface has **one or more** declared implementors. With zero it is honestly `Unknown`; adding one unrelated implementor silences the real caller |
+| R73 | swift | a method call whose receiver is a **module-scope `let`/`var`** — no protocol or closure needed |
+| R71 | rust | a closure invoked through an **`if let` binding** (`if let Some(f) = &self.cb { f() }`); the direct-field form was always honest |
+| R74 | swift | scanning a tree with **multiple SwiftPM executable targets** merges every target's top-level code into one `<main>` entry, so a pure target can inherit another's effects — a FABRICATION, the opposite direction |
+
+Worked example, five lines, no protocol or closure involved:
+
+    final class Worker { func doWork() { /* writes a file */ } }
+    let worker = Worker()
+    func invoke() { worker.doWork() }
+
+`deny Fs invoke` → **exit 0, `policy ✓`**. `path invoke Fs` → "no function matching".
+
+### What to do now
+
+1. **Prefer an unscoped `deny` as a backstop** until the next release. It is unaffected by all three
+   silent defects.
+2. If you rely on scoped rules, **check the shapes above by hand** in the layers you gate.
+3. Re-run once the next rung ships. **It is deliberately held while R74 is open** — we are not
+   shipping a rung with known unfixed defects.
+
+### Status
+
+Fixed on `main`, unreleased: the CHA completeness vein (java, ts), R73 (swift), R71 (rust).
+Open: R74 (swift). Tracked in `candor-spec/SOUNDNESS.md` as R71–R74, each with its measurement.
+
+
 ## 2026-08-31 — UPGRADING FROM 0.33.1: re-baselining is not review (released 2026-08-31 as 0.34.0)
 
 - **Cross-repo pins → 0.34.0** (`bin/candor` `ENGINE_PIN`, `adopt/candor.yml`,

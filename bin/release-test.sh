@@ -4376,6 +4376,38 @@ PATH="$dg_shim:$PATH" bash "$UMBRELLA/bin/disk-guard.sh" --quiet || dg_nodf_rc=$
   || bad "an unreadable filesystem reported healthy (rc=$dg_nodf_rc)"
 rm -rf "$DG"
 
+say "17. assert-audit.sh — a safety ASSERTION added with no test beside it"
+SIBS="$(cd "$UMBRELLA/.." && pwd)"   # the SIBLING root; $ROOT above is the umbrella itself
+# THE FIRST FIXTURE IS THE RECORDED PAST FAILURE, not a fresh example — the standing rule, because a
+# tool built from a remembered failure that cannot see that failure reads as "handled" forever. So this
+# runs the real script against the REAL historical commit: candor-ts `7ecda11` asserted "PROVEN — not
+# guessed" in a comment, shipped only scan.mjs and CHANGELOG.md, and the assertion was false (a cardinal
+# sin, fixed in c53baa2). If assert-audit ever stops failing that range, it has stopped working.
+aa_hist_rc=0
+if [ -d "$SIBS/candor-ts/.git" ] && git -C "$SIBS/candor-ts" rev-parse -q --verify 7ecda11 >/dev/null 2>&1; then
+  bash "$UMBRELLA/bin/assert-audit.sh" candor-ts '7ecda11~1..7ecda11' >/dev/null 2>&1
+  aa_hist_rc=$?
+  [ "$aa_hist_rc" -eq 1 ] \
+    && ok "the REAL historical commit (candor-ts 7ecda11: \"PROVEN — not guessed\", zero tests) still FAILS" \
+    || bad "assert-audit no longer fails the commit it was built from (rc=$aa_hist_rc) — the tool has gone blind"
+  # THE OVER-CHARGE CONTROL, and it is the one that decides whether anyone keeps this tool: a fix that
+  # DOES ship tests beside its assertions must pass. c53baa2 is 7ecda11's own repair — 15 assertions and
+  # a changed test.mjs. A checker that fires on both is a red nobody reads, which has retired two checks
+  # in this project already.
+  bash "$UMBRELLA/bin/assert-audit.sh" candor-ts 'c53baa2~1..c53baa2' >/dev/null 2>&1
+  aa_ok_rc=$?
+  [ "$aa_ok_rc" -eq 0 ] \
+    && ok "…and its repair (c53baa2 — same assertions, but tests changed too) PASSES: the check is not one-directional" \
+    || bad "assert-audit failed a commit that shipped tests alongside its assertions (rc=$aa_ok_rc)"
+else
+  note_skip "assert-audit history fixtures — candor-ts checkout or commit 7ecda11 not present"
+fi
+bash "$UMBRELLA/bin/assert-audit.sh" --selftest >/dev/null 2>&1
+aa_self_rc=$?
+[ "$aa_self_rc" -eq 0 ] \
+  && ok "assert-audit --selftest passes (4 cases, both directions, and a CHANGELOG is not coverage)" \
+  || bad "assert-audit --selftest failed (rc=$aa_self_rc)"
+
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi
 printf '\033[32mrelease-test: OK — %d assertions\033[0m%s\n' "$pass" \

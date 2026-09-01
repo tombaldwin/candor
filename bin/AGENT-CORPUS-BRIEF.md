@@ -240,6 +240,13 @@ The mirror of section E: the over-charge control guards the direction the fix di
 A/B's removal column is where the fix's INTENDED direction goes too far.** Both are live at once — the
 measured rate here is 4 defects in 5 fabrication-fixes, two of them cardinal sins.
 
+**PUT THE NUMBERS IN THE COMMIT MESSAGE.** ADDED/REMOVED/CHANGED, the corpus, the pre-image and how it
+was proven pre-fix. An A/B reported only in a transcript is not re-checkable by anyone later, and the
+next reader cannot tell a measurement from a claim. Measured 2026-09-01: a later agent read `1abc71d`'s
+message, found no A/B in it, and concluded none had been run — the full isolated 325-jar A/B *had* been
+run, and it had turned up a real defect instance in `ignite-core`. Both halves of that are findings: the
+inference from a silent message was wrong, **and** the evidence really was unrecoverable from the repo.
+
 ### E2. RUN `assert-audit.sh` ON YOUR OWN DIFF BEFORE YOU REPORT
     bash bin/assert-audit.sh <repo> <range>
 

@@ -240,6 +240,24 @@ The mirror of section E: the over-charge control guards the direction the fix di
 A/B's removal column is where the fix's INTENDED direction goes too far.** Both are live at once — the
 measured rate here is 4 defects in 5 fabrication-fixes, two of them cardinal sins.
 
+**COUNT HITS ON THE CHANGED BRANCH, OR YOUR ZERO-DIFF MEANS NOTHING.** Before trusting a byte-identical
+A/B, prove the corpus can REACH the code you changed. Put a counter in the changed branch, run the A/B,
+and **report hits-per-corpus alongside the diff**. Zero hits ⇒ the A/B is SAFETY-ONLY and must be written
+down as such **in the row, at the time of writing** — not discovered later.
+
+Measured 2026-09-01, four times: R79, R85, R87 and R92 each ran a full A/B, returned byte-identical, and
+only afterwards was it found — by grep, post-hoc — that the corpus contained **zero instances of the
+shape**. Three of those were the same four Swift projects, which contain no top-level `public let`/`var`
+at all. R84 is the one that did it right: it instrumented the check, *"since an unchanged row is not
+evidence the new code ran"*, and that is how its two flagged clusters were settled rather than assumed.
+
+**A zero-diff over a corpus that cannot trigger the change is the most flattering number available and the
+least informative.** §E3 already demands a fixture that compiles and runs; this is the same rule one level
+out — **demand a corpus that reaches the branch.** When it cannot, the answer is not a bigger corpus, it
+is a RECALL HUNT: find real code with the shape, or vendor real declarations into a harness. That method
+produced the strongest evidence of the whole session — `deny Fs` exiting 0 over real file deletion in
+jamf/Replicator, and `deny Net` exiting 0 over Alamofire's own request path.
+
 **KEY THE DIFF ON EVERY FIELD, NOT JUST `inferred`.** A diff keyed on the effect set alone is blind to
 every disclosure channel — `incomplete`, `declared`, `invisible`, `unknownWhy`, `unresolved`, `netClass` —
 and those are exactly where fail-closed behaviour lives. Measured 2026-09-01, three times in one day:

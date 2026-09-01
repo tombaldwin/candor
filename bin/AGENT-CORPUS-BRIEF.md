@@ -275,6 +275,19 @@ and those are exactly where fail-closed behaviour lives. Measured 2026-09-01, th
 Run the narrow diff for the headline number if you like; **audit on the wide one.** And say which you
 used, because "0 rows changed" means two different things.
 
+**The measured scale of the blindness**, from the wide re-run of that same java corpus (325 jars,
+1,179,132 common rows):
+
+    inferred      400        unknownWhy   1,490        declared     95
+    unresolved    179        incomplete     148        netClass     36
+    invisible  16,461   ← forty times the narrow key's entire movement
+
+A `deny` gate reads `inferred`, so the narrow key is not wrong for gating — but **an AUDIT keyed that way
+saw 400 of ~20,000 changed rows and concluded the fix was quiet.** The `incomplete`-lost cluster it had
+missed (93 rows in one jar) turned out to be the same fabricated-CHA-edge class already ground-truthed
+elsewhere, visible only through `invisible`/`incomplete` — benign, but it was invisible for the wrong
+reason, and next time it will not be benign.
+
 **PUT THE NUMBERS IN THE COMMIT MESSAGE.** ADDED/REMOVED/CHANGED, the corpus, the pre-image and how it
 was proven pre-fix. An A/B reported only in a transcript is not re-checkable by anyone later, and the
 next reader cannot tell a measurement from a claim. Measured 2026-09-01: a later agent read `1abc71d`'s

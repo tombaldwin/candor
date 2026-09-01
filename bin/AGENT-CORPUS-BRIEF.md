@@ -240,6 +240,23 @@ The mirror of section E: the over-charge control guards the direction the fix di
 A/B's removal column is where the fix's INTENDED direction goes too far.** Both are live at once — the
 measured rate here is 4 defects in 5 fabrication-fixes, two of them cardinal sins.
 
+**KEY THE DIFF ON EVERY FIELD, NOT JUST `inferred`.** A diff keyed on the effect set alone is blind to
+every disclosure channel — `incomplete`, `declared`, `invisible`, `unknownWhy`, `unresolved`, `netClass` —
+and those are exactly where fail-closed behaviour lives. Measured 2026-09-01, three times in one day:
+
+- A java whole-day audit reported R86/R87 as contributing "~0 rows". True of `inferred`, and false in
+  substance: the real change was `incomplete: None -> ['Fs']` on the ignite-core row that fix was written
+  for. In the 41 jars it still had reports for, **110 further rows changed `incomplete` while `inferred`
+  stayed identical** — across the other 284 jars, unmeasured.
+- A rust audit's narrow diff showed 8 removals with no visible cause; re-reading the FULL record showed
+  every one carried `invisible: ["diesel_derives"]` in the pre-image, which is what identified them as a
+  precision gain rather than a loss.
+- A second rust pass found 0 lost effects on a narrow key and exactly 2 on a broad one — both benign, but
+  invisible to the narrow diff.
+
+Run the narrow diff for the headline number if you like; **audit on the wide one.** And say which you
+used, because "0 rows changed" means two different things.
+
 **PUT THE NUMBERS IN THE COMMIT MESSAGE.** ADDED/REMOVED/CHANGED, the corpus, the pre-image and how it
 was proven pre-fix. An A/B reported only in a transcript is not re-checkable by anyone later, and the
 next reader cannot tell a measurement from a claim. Measured 2026-09-01: a later agent read `1abc71d`'s

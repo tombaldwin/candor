@@ -861,6 +861,21 @@ $(path_for_id "$wfid")"
     [ "$lsha" = "$sha" ] && continue                    # already judged against HEAD above
     [ "$lstatus" != "completed" ] && continue           # an older run still going says nothing
     [ "$lconcl" = "success" ] && continue
+    # A `cancelled` NEWEST run is an ABSENCE OF VERDICT, not a failure — and on any workflow carrying
+    # `concurrency: cancel-in-progress: true` it is the NORMAL outcome of a push wave: the new push
+    # cancels the run still going for the previous commit. Measured 2026-09-01 — candor-spec's
+    # conformance.yml has exactly that group, and a seven-repo push produced a phantom red here while
+    # every engine was green. Counting it as a failure makes this arm fire on every wave, and this
+    # project's own rule is that a red that is always wrong is a red nobody reads.
+    # So: PENDING, the state this tool already models for a run that has not concluded. It is not
+    # green either — a cancelled run tells you nothing, and silence must not read as success.
+    if [ "$lconcl" = "cancelled" ]; then
+      printf "  %-14s %-26s … cancelled at %s — superseded (its workflow cancels in-progress runs on a\n" \
+             "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)"
+      printf "  %-14s %-26s   new push). No verdict either way; the run for HEAD is what settles it.\n" "" ""
+      pending=$((pending+1))
+      continue
+    fi
     llabel="$(label_for "$lwfid" "$lwf" "$dupe_latest")"
     printf "  %-14s %-26s ✘ %s at %s — its NEWEST run, on an earlier commit. HEAD needs no run,\n" \
            "$repo" "$llabel" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"

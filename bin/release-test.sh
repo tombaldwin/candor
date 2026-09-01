@@ -4254,11 +4254,20 @@ jobs:
         run: bash ci/f2.sh
       - name: genuine pass whose summary ENDS in a skip count
         run: bash ci/f3.sh
+      - name: semicolon-delimited second clause
+        run: bash ci/f4.sh
 YAML
 printf '#!/bin/sh\necho "SKIP: needs jq"\nexit 0\n' > "$DG/fl/candor-rust/ci/f1.sh"
 printf '#!/bin/sh\necho "soundness(kotlin): kotlinc not installed — SKIPPED"\nexit 0\n' > "$DG/fl/candor-rust/ci/f2.sh"
 printf '#!/bin/sh\necho "40 passed, 0 failed, 3 skipped"\nexit 0\n' > "$DG/fl/candor-rust/ci/f3.sh"
-chmod +x "$DG/fl/candor-rust/ci/f1.sh" "$DG/fl/candor-rust/ci/f2.sh" "$DG/fl/candor-rust/ci/f3.sh"
+# THE SEMICOLON SPELLING — copied VERBATIM from the two live exit points it was found at, not invented:
+# candor-rust/soundness/realworld/pf/run_pf.sh:22 and candor-swift/soundness/realworld/run.sh:27. The
+# skip word is the second clause of a two-clause sentence, so the `—` that opens the first clause is
+# nowhere near the end and arm 1's delimiter set (`—`/`-`/`:`) never reached it. Both gates reported a
+# clean OK on any box without python3. This fixture is the past failure itself, per the standing rule
+# that a check built from a recorded failure takes THAT failure as its first fixture.
+printf '#!/bin/sh\necho "pf-realcrate: python3 not found — cannot read candor'"'"'s report; skipping."\nexit 0\n' > "$DG/fl/candor-rust/ci/f4.sh"
+chmod +x "$DG/fl/candor-rust/ci/f1.sh" "$DG/fl/candor-rust/ci/f2.sh" "$DG/fl/candor-rust/ci/f3.sh" "$DG/fl/candor-rust/ci/f4.sh"
 fl_out="$(CANDOR_ROOT="$DG/fl" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"
 printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f1.sh' \
   && ok "a FRONT-LOADED \`SKIP: <reason>\` is caught (8 real instances missed by the suffix-only match)" \
@@ -4271,6 +4280,9 @@ printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f2.sh' \
 printf '%s' "$fl_out" | grep -qE '\bOK[^m]*m? *bash ci/f3.sh|1 ok' \
   && ok "…and a summary ENDING '3 skipped' is still a PASS — the match needs structure, not the word" \
   || bad "a genuine pass whose summary ends in a skip count was downgraded to SELFSKIP"
+printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f4.sh' \
+  && ok "a semicolon-delimited second clause (… — cannot read candor's report; skipping.) is caught — 2 live gates evaded arm 1's dash/colon set and reported OK" \
+  || bad "the semicolon-delimited skip spelling still reports as a passing gate — run_pf.sh and swift realworld/run.sh both self-skip this way"
 
 # `df` COLUMN-SHIFT. The Filesystem and Mounted-on fields can both contain SPACES (an SMB/AFP/NFS
 # share named `//server/Shared Drive x`), which shifts `$4` and made the guard report 930+ TB free on

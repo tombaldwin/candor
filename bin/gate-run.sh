@@ -171,6 +171,19 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   #   1. suffix after a delimiter   "… (got Darwin) — skipping"  ·  "… not installed — SKIPPED"
   #   2. front-loaded before one    "SKIP: needs jq"  ·  "SKIP: candor-query not built"
   #   3. the bare word on its own line
+  # `;` IS IN ARM 1'S DELIMITER SET, and was added 2026-09-01 for two MEASURED evasions, not on a hunch:
+  #   candor-rust/soundness/realworld/pf/run_pf.sh:22
+  #   candor-swift/soundness/realworld/run.sh:27
+  # both `{ echo "…: python3 not found — cannot read candor's report; skipping."; exit 0; }`. Arm 1 took
+  # only `—`/`-`/`:`, so the SECOND clause of a two-clause sentence slipped past all three arms and both
+  # gates reported a clean OK on every box without python3. Found by re-running the enumeration over
+  # EVERY .sh in all seven repos rather than the set that motivated the previous widening — that earlier
+  # calibration set was five rust scripts plus one java, drawn around its own trigger, and these two sat
+  # just outside it. The widening is to the one spelling that was measured; `,` is deliberately NOT
+  # added, because the ordinary summary "40 passed, 0 failed, 3 skipped" is the exact false positive
+  # that already cost a genuine full pass once, and no real gate uses it.
+  # STILL THE FALLBACK, NOT THE FIX: both scripts should exit 3. They live in repos owned by other
+  # agents right now, so this reader is widened and the source fix is filed rather than reached into.
   # A bare `\bSKIPPED$` arm was here and is DELETED: under `grep -i` it matched the ordinary summary
   # "40 passed, 0 failed, 3 skipped", downgrading a genuine full pass to SELFSKIP. My own fixture
   # caught it — the reviewer had flagged that direction as fragile-but-not-yet-real, and adding the
@@ -186,7 +199,7 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
     printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
     printf '         it exited 3 — the self-skip convention: it did not run%s\n' \
       "${_last:+, and said so: $_last}"
-  elif [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:)[[:space:]]*skipp?(ing|ed)\.?$|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*[:—-]|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*$'; then
+  elif [ "$rc" -eq 0 ] && printf '%s' "$_last" | grep -qiE '(—|-|:|;)[[:space:]]*skipp?(ing|ed)\.?$|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*[:—-]|^[[:space:]]*skipp?(ed|ing)?[[:space:]]*$'; then
     skip=$((skip+1)); run=$((run-1))
     printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
     printf '         it exited 0 but its own last line says it did not run: %s\n' "$_last"

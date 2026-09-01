@@ -84,6 +84,26 @@ to wait for it — stopping really is its only move.** So the instruction must a
 *with*: **the Monitor tool with an until-loop.** Give agents the waiting mechanism up front, not just
 the prohibition, or the prohibition is unenforceable the moment they disobey it once.
 
+**THIRTEEN TIMES on 2026-09-01, and the Monitor fix is ALSO incomplete — stop counting the phrasings.**
+Every brief that day carried both halves: the prohibition AND the mechanism, verbatim, with the failure
+count in it. Thirteen agents stalled anyway. The clincher was the last one, which **armed a Monitor and
+then ended its turn to say it would resume when the build landed** — it had the tool, it had the
+instruction, it used the tool, and it stopped regardless. So the model is not "the agent doesn't know how
+to wait". It is that **an outstanding long job makes reporting-and-stopping feel like a complete turn**,
+and no wording of the rule reaches that.
+
+Two things that actually work, both about the RESUME rather than the brief:
+
+- **Say what the next message must contain, not what the agent must not do:** *"Do not send me another
+  progress message. The next thing I should hear from you is findings."* Every agent resumed this way
+  came back with findings.
+- **Budget for it.** Thirteen resumes is roughly one per dispatched agent. Treat a stall as the expected
+  cost of a long job, not an anomaly to be designed out — the work still lands, and the resume is cheap
+  compared with re-running a corpus.
+
+Keep the prohibition and the mechanism in briefs: they are free, and they make the resume shorter. Just
+do not expect them to hold, and do not spend another day rewording them.
+
 **Before pushing a repo, run ITS gates — from a fixed list, not from whatever the agent's report mentioned.**
 Measured 2026-08-29: candor-swift's `main` sat RED for FOUR commits while every push was reported green.
 I ran `ci/self-gate.sh` for candor-rust every time and never for candor-swift, because I followed each

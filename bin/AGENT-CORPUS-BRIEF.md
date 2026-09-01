@@ -267,6 +267,45 @@ The reusable artefact is never the bug, it is the question that found it.
 
 When one engine yields, immediately ask the other three. Their mechanisms differ; the question does not.
 
+### F1. THE STANDING QUESTION LIST
+Measured 2026-09-01: four agents, one per engine, given these seven questions instead of a list of bugs.
+**Six findings in one pass, four of them cardinal sins, every one a NEW instance rather than a re-find** —
+and the questions came from defects that had just been fixed elsewhere. Ask all seven of any engine; they
+are cheap and they keep paying.
+
+1. **Adjacency where the question is control flow.** Does anything decide from a syntactically or
+   instruction-adjacent neighbour where the real question is a dataflow merge? *(java R83: a field write
+   judged by the preceding bytecode instruction. java R86: a ternary-selected literal captured from
+   whichever branch sat adjacent — and that one makes a POSITIVE claim about the wrong destination, which
+   is worse than silence.)* Triggers: ternary, if/else, switch, try/catch, loop-carried, `??=`.
+2. **A callable target with no body.** Is a named target treated as resolvable without checking it HAS an
+   implementation? *(java R84: an abstract method reference accepted as a clean lambda body. rust R89: a
+   trait requirement passed as a first-class value, matching no unit and evaporating.)*
+3. **Separate implementations of one question that drift.** *(rust R75/R77, then R88 — seven binders were
+   hardened for dispatch-typed values and the eighth, the plain unannotated `let`, was not. java R87: two
+   root-marker checks, one reading both annotation lists and one reading half.)* Section G is the rule;
+   this is how you find where it was broken.
+4. **A caller that vanishes when resolution crosses a boundary.** Module, package, crate, classpath,
+   re-export, alias, macro. *(swift R79, then R85 one binder shape over.)* **Absence is the sin's
+   signature** — an omitted pure function and an omitted effectful one are the same bytes.
+5. **A heuristic narrowing a sound over-approximation on an unprovable property.** *(ts R82: a
+   `wrap<T>(x: T): T` treated as the identity because the signature said so. The comment said "PROVEN".)*
+   `assert-audit.sh` finds the candidates; you still have to read them.
+6. **A consumer reading only one shape of a container.** *(ts R82: `.members` but never `.properties`.
+   The audit that cleared it asked "does it crash?" instead of "does it still find what it used to?")*
+   Enumerate EVERY consumer of an index and diff each against the general path. Print the enumeration.
+7. **A key two paths can spell differently.** *(java R80: written `Base#task`, read `Sub#task`. rust: a
+   leaf collision that turned reqwest silently pure, invisible to inspection, caught only by the A/B.)*
+
+**Two things that made that pass trustworthy, and both are requirements, not style.** Every finding was
+ground-truthed by EXECUTION and measured across **four policy forms** — blanket, `deny Unknown`,
+`deny <E> Unknown`, and scoped. They differ, and generalising from one is how a sin gets called a
+limitation: several of those six are caught by blanket `deny` only INCIDENTALLY, because the callee is
+independently reported, while the caller was never judged at all. And the agents reported what they could
+NOT establish — a latent accessor-kind gap nobody could build a compiling exploit for, filed as latent
+rather than upgraded to a finding. **An audit that hides its near-misses tells you nothing about the rest
+of it.**
+
 ## G. Ask the authority — never reimplement it
 **Every cardinal sin found on 2026-08-29 traced to code that hand-rolled something already defined
 elsewhere.** SwiftPM's manifest selection, cargo's member globs, TOML's grammar, GitHub's push semantics,

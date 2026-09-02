@@ -52,7 +52,14 @@ ASSERT_RE='proven|guaranteed|cannot happen|can not happen|can never|never happen
 # and `#[test]` in-file, ts `test.mjs`/`*.test.*`, swift `Tests/`, plus every repo's `ci/`, `smoke.sh`,
 # `soundness/`, `conformance/` and `fuzz` harnesses. A CHANGELOG entry is NOT a test and must not count
 # as one — that is precisely what `7ecda11` had instead of coverage.
-TEST_RE='(^|/)(test|tests|Tests|spec|specs)(/|$)|(^|/)(ci|soundness|conformance)/|test[^/]*\.(mjs|js|ts|py|sh|java|swift|rs)$|[^/]*[Tt]est[s]?\.(java|swift|rs|mjs|ts|py)$|smoke\.sh$|fuzz[^/]*\.(py|sh|rs)$|\.test\.[a-z]+$'
+#
+# `eval/` AND `verify*.sh` ADDED 2026-09-02, from a measured false FAIL. An agent's diff was five files,
+# all of it harness code, four of them wired into `candor-rust/.github/workflows/ci.yml` as gates — and
+# this tool demanded a test anyway, because **0 of the 9 tracked `eval/**/*.sh` matched.** So a change
+# that touched nothing BUT CI gates could never be credited, and the tool's own verdict was the thing that
+# was wrong. That is this session's recurring class pointed at the auditor: a check whose negative is
+# indistinguishable from the case it exists to catch.
+TEST_RE='(^|/)(test|tests|Tests|spec|specs)(/|$)|(^|/)(ci|soundness|conformance|eval)/|test[^/]*\.(mjs|js|ts|py|sh|java|swift|rs)$|[^/]*[Tt]est[s]?\.(java|swift|rs|mjs|ts|py)$|smoke\.sh$|fuzz[^/]*\.(py|sh|rs)$|verify[^/]*\.sh$|\.test\.[a-z]+$'
 
 selftest() {
   fails=0

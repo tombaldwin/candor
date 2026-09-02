@@ -42,6 +42,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # §17's assert-audit history fixtures replay two REAL candor-ts commits — `7ecda11`, which asserted
+      # "PROVEN — not guessed" and shipped zero tests, and `c53baa2`, its repair. Without a candor-ts
+      # sibling those two arms `note_skip`, and a skip is a FAILURE under CI by design (see `note_skip`),
+      # so this job went RED the moment §17 landed.
+      #
+      # The fix is the checkout, not a softer guard. Measured 2026-09-02, three arms with one variable:
+      # siblings present + CI unset -> pass; siblings present + CI=1 -> pass; NO sibling + CI=1 -> FAIL.
+      # The third is the runner's shape. Weakening `note_skip` would have made the job green while the
+      # arm stayed unrun — and §17's own comment calls that arm load-bearing, which is exactly the claim
+      # that must not be true only on one laptop. `fetch-depth: 0` because the fixtures name commits by
+      # SHA; a shallow clone cannot reach them.
+      # A plain clone, NOT `actions/checkout` with `path: ../candor-ts`: checkout refuses any path
+      # outside GITHUB_WORKSPACE, and the sibling root is the workspace's PARENT
+      # (`release-test.sh:4380` — `SIBS="$(cd "$UMBRELLA/.." && pwd)"`), so the action cannot put it
+      # where the script looks. Full clone, not `--depth 1`: the fixtures name `7ecda11` and `c53baa2`
+      # by SHA and a shallow clone cannot reach them.
+      - name: check out candor-ts as a sibling (§17's history fixtures replay real commits from it)
+        run: |
+          set -eu
+          sibs="$(cd "$GITHUB_WORKSPACE/.." && pwd)"
+          git clone --quiet https://github.com/tombaldwin/candor-ts.git "$sibs/candor-ts"
+          # Prove the SHAs the fixtures need are actually reachable, here, rather than letting §17
+          # discover it as a skip — a skip is a failure under CI and would name the wrong cause.
+          for sha in 7ecda11 c53baa2; do
+            git -C "$sibs/candor-ts" rev-parse -q --verify "$sha^{commit}" >/dev/null \
+              || { echo "release-scripts: candor-ts clone lacks $sha — §17 cannot run"; exit 1; }
+          done
+          echo "candor-ts sibling ready at $sibs/candor-ts"
+
       # The fixture is built in a mktemp dir and torn down on exit; nothing outside it is touched, and no
       # network call is made. That is what makes this runnable on every push rather than once per release.
       - name: release-test (fixture tree)

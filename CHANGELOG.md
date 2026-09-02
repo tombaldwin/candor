@@ -8,6 +8,53 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (unreleased)
+
+**Read the section below this one with one correction: its "What is NOT affected" claim — that blanket
+`deny <Effect>` gates are unaffected — is RETRACTED.** It was true of the four defects then in hand and was
+never a property of the engines; it is now falsified in all four (candor-spec SOUNDNESS R99, R122, R125,
+R130). The full correction, with per-engine measured bounds and no unpinned prevalence numbers, is drafted
+and awaits the owner's sign-off; until it replaces that section, treat the bound as withdrawn.
+
+Everything else here is `bin/` — the instruments the family trusts — and each entry is a measured failure
+of one of them, not a feature.
+
+- **`bin/assert-audit.sh` is new: a diff that ADDS a safety assertion and changes no test FAILS.**
+  Measured across all four engines in one round: every ⟨0.35⟩ fix carried a comment asserting a property
+  (*"PROVEN — not guessed"*, *"inert"*, *"already works"*) and every one was false, and three converted
+  directly into a silent under-report. The tool does not judge the assertion — no grep can — it asks the
+  cheaper question that would have caught the real case: did you add a test in the same change?
+  `candor-ts 7ecda11` asserted PROVEN and shipped zero tests; `assert-audit` fails that exact commit and
+  passes its repair, and `release-test.sh` §17 replays both as a standing fixture. Two corrections since:
+  it credited **0 of 9** tracked `eval/**/*.sh` (four of them CI gates), so a diff made entirely of gates
+  could never pass (`4e839da`); and its selftest captured output it never printed, which was a live
+  `shellcheck` red (`910978c`). **Known and open:** the widened test pattern is now OVER-wide — a review
+  measured it crediting `eval/RESULTS.md` and `ci/README.md` as test coverage — and it cannot see an
+  in-file `#[test]` its own header claims to count. Both tracked; neither fixed here.
+- **`bin/gate-run.sh`: two live gates self-skipped past all three SELFSKIP arms and read as OK**
+  (`47dc861`). The delimiter set the arms split on lacked `;`, so a gate whose own last line said it did
+  not run was counted green. A review later established a larger gap the tool cannot close by widening a
+  regex: gates inside `run: |` blocks — including candor-java's `ci/self-gate.sh`, the exact gate from the
+  four-red-commits story in CLAUDE.md — are reported as *"block lines not auto-run"* and must be run by
+  hand. The exit code already refuses to be green over them; the header comment calling them inert
+  fragments was wrong and is the thing to fix next.
+- **`bin/ci-watch.sh`: the cancelled→PENDING exemption asserted a cause four repos cannot have**
+  (`5f2b51a`). It now requires a literal `cancel-in-progress: true` in the workflow and fails closed on a
+  plain workflow, an unevaluable `${{ }}` expression, and an absent file — eight cases in the selftest.
+  Its "newest run is red on an EARLIER commit" line is what surfaced a `coverage-gate-refresh` job that has
+  never once been green (SOUNDNESS R157).
+- **`.github/workflows/release-scripts.yml` checks out candor-ts as a sibling** (`e7564a0`).
+  `release-test.sh` §17 replays two real candor-ts commits; without the sibling those arms `note_skip`, and a
+  skip is a failure under CI by design — so the job went red the moment §17 reached the runner. The fix is
+  the checkout, not a softer guard. **It forces a push order:** one of the two commits was unpublished
+  until this round, so candor-ts must be pushed before or with the umbrella, and the step fails naming
+  that cause rather than letting §17 blame a missing tool.
+- **CLAUDE.md gains two dispatching rules from measured failures:** name each agent's SOUNDNESS row ID
+  (three of three invented a colliding one), and never reclaim scratchpad disk mid-wave (it destroyed a
+  running agent's A/B evidence). A review then found the row-ID rule as worded — *"read the last row and
+  add one"* — itself produces a collision when rows are appended out of order; the correct rule is the
+  maximum ID, and that rewording is still owed.
+
 ## 2026-09-01 — ADVISORY for the published 0.34.0 engines (unreleased)
 
 **If you pin candor 0.34.0, read this. If you use blanket `deny <Effect>` gates, you are not

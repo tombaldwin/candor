@@ -811,6 +811,21 @@ for repo in "${REPOS[@]}"; do
       # that genuinely never ran is exactly what this check exists for, and staying quiet about that
       # would trade a false red for a false green.
       _age=$(( now - $(git -C "$d" log -1 --format=%ct HEAD 2>/dev/null || echo 0) ))
+      # ⟨2026-09-02⟩ …BUT A YOUNG HEAD THAT WAS NEVER PUSHED IS NOT "waiting for GitHub". This branch
+      # said `no run yet (HEAD is 88s old — GitHub has not created it)` for a commit an agent had made
+      # locally and NOT pushed — the coordinator read it as an unauthorised push and spent a turn on it.
+      # Age is a proxy for propagation delay only once the commit is on the remote; for an unpushed HEAD
+      # the true statement is the one preflight [10] already makes. Ask ancestry first, age second.
+      # The upstream ref is read from the repo, not named here — nothing in this script knows a branch
+      # name and a guessed one aborted the whole run under `set -u`. Compared against the LOCAL origin
+      # ref (no fetch): a commit pushed from another machine can read NOT PUSHED until the next fetch,
+      # which is the conservative direction — red, never a false green.
+      _up=$(git -C "$d" rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo origin/HEAD)
+      if ! git -C "$d" merge-base --is-ancestor HEAD "$_up" 2>/dev/null; then
+        printf "  %-14s %-26s ✘ NOT PUSHED — HEAD %s is not on %s, nothing could have run\n" \
+               "$repo" "(none)" "$(git -C "$d" rev-parse --short HEAD 2>/dev/null)" "$_up"
+        rc=1; continue
+      fi
       if [ "$_age" -lt 90 ]; then
         printf "  %-14s %-26s … no run yet (HEAD is %ss old — GitHub has not created it)\n" \
                "$repo" "(none)" "$_age"

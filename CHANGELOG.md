@@ -53,7 +53,7 @@ of one of them, not a feature.
   (three of three invented a colliding one), and never reclaim scratchpad disk mid-wave (it destroyed a
   running agent's A/B evidence). A review then found the row-ID rule as worded — *"read the last row and
   add one"* — itself produces a collision when rows are appended out of order; the correct rule is the
-  maximum ID, and that rewording is still owed.
+  maximum ID — reworded in the same push, with the command that computes it.
 
 ## 2026-09-01 — ADVISORY for the published 0.34.0 engines (unreleased)
 

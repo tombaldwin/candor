@@ -25,7 +25,11 @@ unrelated findings in every future `grep`.
 It is not the agents' error — **the next free number is not derivable from anything they were given**, and
 an agent that must invent an identifier will. So either name the row (*"file this as R124"*) or tell it to
 file no row and let the coordinator do it. `grep -c '^| R' candor-spec/SOUNDNESS.md` is not the answer
-either; read the last row and add one, because the IDs are not dense.
+either, because the IDs are not dense — **and neither is "read the last row and add one", which this
+paragraph said until 2026-09-02: rows get appended out of order, and a reviewer measured the last row as
+R131 while R132 was already taken.** The rule is the MAXIMUM:
+
+    grep -oE '^\| R[0-9]+' candor-spec/SOUNDNESS.md | grep -oE '[0-9]+' | sort -n | tail -1
 
 While renumbering, note that `sed -i '' 's/X/Y/g' $files` **silently does nothing in zsh** — an unquoted
 variable is not word-split, so the whole newline-joined list arrives as one filename. Use a `while read -r`

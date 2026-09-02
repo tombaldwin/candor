@@ -75,7 +75,7 @@ selftest() {
   printf '// this is PROVEN safe\nint f(){return 0;}\n' > "$tmp/a.c"
   git -C "$tmp" add -A; git -C "$tmp" commit -qm one
   out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
-  if [ "$rc" -ne 1 ]; then echo "  ✘ an assertion with NO test in the range did not FAIL (rc=$rc)"; fails=$((fails+1))
+  if [ "$rc" -ne 1 ]; then echo "  ✘ an assertion with NO test in the range did not FAIL (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ an assertion with no test change in the same range FAILS"; fi
 
   # (2) same assertion, test added alongside -> pass
@@ -83,14 +83,14 @@ selftest() {
   mkdir -p "$tmp/tests"; printf 'assert(1);\n' > "$tmp/tests/a_test.c"
   git -C "$tmp" add -A; git -C "$tmp" commit -qm two
   out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
-  if [ "$rc" -ne 0 ]; then echo "  ✘ an assertion WITH a test beside it was failed anyway (rc=$rc) — the tool would be a red nobody reads"; fails=$((fails+1))
+  if [ "$rc" -ne 0 ]; then echo "  ✘ an assertion WITH a test beside it was failed anyway (rc=$rc) — the tool would be a red nobody reads"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ …and the same assertion PASSES when a test lands in the same range — the check is not one-directional"; fi
 
   # (3) no assertion at all -> pass, and say nothing alarming
   printf 'int g(){return 1;}\n' > "$tmp/b.c"
   git -C "$tmp" add -A; git -C "$tmp" commit -qm three
   out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
-  if [ "$rc" -ne 0 ]; then echo "  ✘ an ordinary diff with no assertion was failed (rc=$rc)"; fails=$((fails+1))
+  if [ "$rc" -ne 0 ]; then echo "  ✘ an ordinary diff with no assertion was failed (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ an ordinary diff with no safety assertion passes quietly"; fi
 
   # (4) a CHANGELOG is NOT a test — the exact `7ecda11` shape.
@@ -105,7 +105,7 @@ selftest() {
     fails=$((fails+1))
   else
     out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
-    if [ "$rc" -ne 1 ]; then echo "  ✘ a CHANGELOG entry was accepted as coverage for an assertion (rc=$rc) — that is the 7ecda11 shape exactly"; fails=$((fails+1))
+    if [ "$rc" -ne 1 ]; then echo "  ✘ a CHANGELOG entry was accepted as coverage for an assertion (rc=$rc) — that is the 7ecda11 shape exactly"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
     else echo "  ✔ a CHANGELOG entry does NOT count as a test, and the fixture is PROVEN present in the range — the 7ecda11 shape still fails"; fi
   fi
 

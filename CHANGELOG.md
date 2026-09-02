@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (unreleased)
+## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (released 2026-09-03 as 0.35.0)
 
 **Read the section below this one with one correction: its "What is NOT affected" claim — that blanket
 `deny <Effect>` gates are unaffected — is RETRACTED.** It was true of the four defects then in hand and was
@@ -55,7 +55,7 @@ of one of them, not a feature.
   add one"* — itself produces a collision when rows are appended out of order; the correct rule is the
   maximum ID — reworded in the same push, with the command that computes it.
 
-## 2026-09-01 — ADVISORY for the published 0.34.0 engines (unreleased)
+## 2026-09-01 — ADVISORY for the published 0.34.0 engines (released 2026-09-03 as 0.35.0)
 
 **If you pin candor 0.34.0, read this. If you use blanket `deny <Effect>` gates, you are not
 affected.**

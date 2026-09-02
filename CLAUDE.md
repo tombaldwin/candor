@@ -15,6 +15,22 @@ And in the prompt, always:
 > **Stop and report if the premise you were given is wrong.** A hypothesis you did not try to break is
 > a guess. If your evidence rests on a comparison, state what was held constant.
 
+**TELL EACH AGENT ITS SOUNDNESS ROW ID. THREE OUT OF THREE INVENTED A COLLIDING ONE, 2026-09-02.** I
+dispatched three fix agents without naming the row IDs I had already filed (R117–R121). Every one picked
+its own number and every one collided with a live row: rust chose **R109** (taken — ts `localStorage`),
+swift chose **R99** (taken — rust second-spelling), ts chose **R116** (taken — ts `Object.assign`). That
+cost three history rewrites across 52 in-tree references, in repos where a wrong ID silently conflates two
+unrelated findings in every future `grep`.
+
+It is not the agents' error — **the next free number is not derivable from anything they were given**, and
+an agent that must invent an identifier will. So either name the row (*"file this as R124"*) or tell it to
+file no row and let the coordinator do it. `grep -c '^| R' candor-spec/SOUNDNESS.md` is not the answer
+either; read the last row and add one, because the IDs are not dense.
+
+While renumbering, note that `sed -i '' 's/X/Y/g' $files` **silently does nothing in zsh** — an unquoted
+variable is not word-split, so the whole newline-joined list arrives as one filename. Use a `while read -r`
+loop, and verify with *"every differing line contains the ID"*, not with a diffstat.
+
 **Why this line exists, measured 2026-08-26/27.** In one session roughly a third of the mechanisms the
 coordinator handed agents were wrong or backwards, while the findings themselves were all real. Every one
 was caught by an agent told to attack its brief — a "cardinal sin" that was ⟨0.32⟩ working as designed;

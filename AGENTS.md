@@ -1,7 +1,7 @@
 # candor — instructions for an AI coding agent (start here)
 
-candor reports, for every function in a codebase, which side effects it performs (`Net`, `Fs`, `Db`,
-`Exec`, `Env`, `Clock`, `Ipc`, `Log`, `Rand`, `Clipboard`) — **transitively** — and can enforce
+candor reports, for every function in a codebase, which side effects it performs (`Net`, `Llm`, `Fs`,
+`Db`, `Exec`, `Env`, `Clock`, `Ipc`, `Log`, `Rand`, `Clipboard`) — **transitively** — and can enforce
 declared effect/layering boundaries as a deterministic CI gate. This file routes you to the right
 per-language instructions.
 

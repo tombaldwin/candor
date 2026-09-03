@@ -124,6 +124,19 @@ gain looks suspicious, then **regenerate the baseline with the new build** — n
 builds silently, and never wave the whole wave through without looking (a real regression can hide
 inside an unmasking).
 
+**An upgrade can also REMOVE a charge, and that direction is the dangerous one because nothing alarms on
+it.** Two causes: a genuine fabrication fix (the old engine charged an effect that never happened), or a
+masked gap becoming visible only in hindsight (a narrowing fix closes one false positive and, as a side
+effect, uncovers a false negative it had been accidentally papering over). Measured: candor-java
+0.34.0→0.35.0, a stored socket `InputStream` read (`s.setSoTimeout(100); return in.read();`) goes from
+`['Net']` to absent — `deny Net` on that function flips exit 1 → 0 — because of SOUNDNESS R147, which is
+**open**, not fixed; it will charge `Net` again once R147 lands. Until then, a scoped `deny` gate that was
+red on 0.34.0 can go quietly green on 0.35.0 with no code change on either side of the gate. **The
+AS-EFF-005 regression guard only flags gains** — it cannot see this, by construction. So add the check it
+doesn't do: **diff the new baseline against the old in BOTH directions**, not just for effects that
+appeared. A rule that went from failing to passing after an upgrade, with no corresponding code change,
+needs the same eyes as a rule that started failing.
+
 **Copy-paste for a human to drop into their agent.** Check version:
 
 ```text

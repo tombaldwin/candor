@@ -13,11 +13,15 @@ keeps its own.
 - `bin/ci-watch.sh`: an UNPUSHED young HEAD read as "GitHub has not created the run yet" — the <90s
   age proxy fired before the is-it-on-origin question. It now checks `merge-base --is-ancestor HEAD @{u}`
   first and reports NOT PUSHED.
-**Read the section below this one with one correction: its "What is NOT affected" claim — that blanket
-`deny <Effect>` gates are unaffected — is RETRACTED.** It was true of the four defects then in hand and was
-never a property of the engines; it is now falsified in all four (candor-spec SOUNDNESS R99, R122, R125,
-R130). The full correction, with per-engine measured bounds and no unpinned prevalence numbers, is drafted
-and awaits the owner's sign-off; until it replaces that section, treat the bound as withdrawn.
+**Correction to the 2026-09-01 advisory
+([jump to it](CHANGELOG.md#2026-09-01--advisory-for-the-published-0340-engines-released-2026-09-03-as-0350)):
+its "What is NOT affected" section claimed that an unscoped `deny <Effect>` gate is unaffected by the four
+defects it lists — that claim is RETRACTED.** It was true of the four defects then in hand and was never a
+property of the engines; it is now falsified in all four (candor-spec SOUNDNESS R99, R122, R125, R130):
+each has a shape where a blanket `deny` also misses the effect. The full correction, with per-engine
+measured bounds and no unpinned prevalence numbers, is drafted and awaits the owner's sign-off; until it
+replaces that section, treat the "not affected" bound in the advisory below as withdrawn, wherever you are
+reading this from.
 
 Everything else here is `bin/` — the instruments the family trusts — and each entry is a measured failure
 of one of them, not a feature.

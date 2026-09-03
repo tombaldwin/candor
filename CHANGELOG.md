@@ -10,6 +10,9 @@ keeps its own.
 
 ## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (released 2026-09-03 as 0.35.0)
 
+- `bin/ci-watch.sh`: an UNPUSHED young HEAD read as "GitHub has not created the run yet" — the <90s
+  age proxy fired before the is-it-on-origin question. It now checks `merge-base --is-ancestor HEAD @{u}`
+  first and reports NOT PUSHED.
 **Read the section below this one with one correction: its "What is NOT affected" claim — that blanket
 `deny <Effect>` gates are unaffected — is RETRACTED.** It was true of the four defects then in hand and was
 never a property of the engines; it is now falsified in all four (candor-spec SOUNDNESS R99, R122, R125,

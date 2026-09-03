@@ -120,13 +120,18 @@ Worked example, five lines, no protocol or closure involved:
 1. **Prefer an unscoped `deny` as a backstop** until the next release. It is unaffected by all three
    silent defects.
 2. If you rely on scoped rules, **check the shapes above by hand** in the layers you gate.
-3. Re-run once the next rung ships. **It is deliberately held while R74 is open** — we are not
-   shipping a rung with known unfixed defects.
+3. Re-run now: 0.35.0 ships all four fixes below. The hold on R74 — "we are not shipping a rung with
+   known unfixed defects" — is why this release was not cut until it closed.
 
 ### Status
 
-Fixed on `main`, unreleased: the CHA completeness vein (java, ts), R73 (swift), R71 (rust).
-Open: R74 (swift). Tracked in `candor-spec/SOUNDNESS.md` as R71–R74, each with its measurement.
+**All four ship in 0.35.0**: the CHA completeness vein (java, ts — PART 87, commits `a294b86`,
+`5fa3417`, `8599ec0`), R73 (swift `3e14728`), R71 (rust `3cf055d`), R74 (swift `819fac6`). R74's fix did
+not split the merged entry: a tree with multiple SwiftPM executable targets still produces exactly one
+`<main>` row, but that row's *location* now resolves to the target actually causing the effects (the
+dirty one) instead of whichever target the scan happened to attribute it to — a pure target no longer
+inherits another target's effects under its own name. Tracked in `candor-spec/SOUNDNESS.md` as R71–R74,
+each with its measurement.
 
 
 ## 2026-08-31 — UPGRADING FROM 0.33.1: re-baselining is not review (released 2026-08-31 as 0.34.0)

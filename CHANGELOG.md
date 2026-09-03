@@ -10,6 +10,11 @@ keeps its own.
 
 ## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (released 2026-09-03 as 0.35.0)
 
+- **Cross-repo pins moved to 0.35.0 after publish** (`bin/candor` `ENGINE_PIN`, `adopt/candor.yml`
+  `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` candor-agents tag, the VS Code `candorTsVersion` and
+  extension version, the JetBrains `candorTsVersion`/`candorJavaVersion`). Until this lands, `candor
+  update`, brew, jbang and both IDE plugins keep serving the previous line however much is published.
+
 - `bin/ci-watch.sh`: an UNPUSHED young HEAD read as "GitHub has not created the run yet" — the <90s
   age proxy fired before the is-it-on-origin question. It now checks `merge-base --is-ancestor HEAD @{u}`
   first and reports NOT PUSHED.

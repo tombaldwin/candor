@@ -69,20 +69,43 @@ if not mine:
     print("NONE")
     raise SystemExit
 
-# FIRST OCCURRENCE PER WORKFLOW ID WINS. `mine` preserves gh's own newest-first order (filtering by
-# headSha above does not reorder), so the first row seen for a given workflowDatabaseId is that
-# workflow's latest run at this commit — no sort, no timestamp comparison, nothing for same-second ties
-# to break. Falls back to workflowName only if workflowDatabaseId is absent from the input entirely (a
+# THE THIRD BUG, found 2026-09-03 during the 0.35.0 cut: GitHub can create TWO runs of the SAME
+# workflow for the SAME commit in the SAME second — candor-rust's push of `75053f1` produced two
+# `realworld-oracle-deep` runs, one `success` and one `cancelled` (the workflow's own concurrency group
+# killed the duplicate trigger). "first occurrence wins" — the fix for the FIRST bug above — trusts gh's
+# listed order to mean "newest first", which this family's own header on THAT bug already documents as
+# unreliable at whole-second granularity: two rows tied on createdAt have no reliable order between them
+# at all. Here it picked the cancelled twin, and [10] failed a preflight whose repos were all actually
+# green; a re-run of the cancelled twin cleared it, which is the tell that nothing was actually broken.
+#
+# THE FIX extends "first occurrence per workflow ID wins" rather than replacing it: within a workflow's
+# group of runs at this commit, a `success` wins the group outright, wherever gh lists it. Only when NO
+# run in the group succeeded does the group fall back to the first-occurrence (gh's listed order) rule,
+# unchanged from the first fix — so a workflow with no successful run still fails, and a run still
+# in_progress/queued with no successful sibling still carries that status through to the caller's wait
+# loop. A `cancelled` run losing to a `success` sibling is exactly the case above; nothing here changes
+# what happens when NEITHER run of a group succeeded.
+#
+# FIRST OCCURRENCE PER WORKFLOW ID, grouped (not deduped eagerly): `mine` preserves gh's own newest-first
+# order (filtering by headSha above does not reorder), so within each group the first entry is that
+# workflow's nominal-latest run — used only as the fallback when the group has no success. Falls back to
+# workflowName as the grouping key only if workflowDatabaseId is absent from the input entirely (a
 # caller that has not been updated to request it) — degraded, not silently wrong: the fallback is the
 # OLD key, not a crash, but every current call site in release-preflight.sh requests the id.
-seen = set()
-latest = []
+order = []
+groups = {}
 for x in mine:
     key = x.get("workflowDatabaseId", x.get("workflowName"))
-    if key in seen:
-        continue
-    seen.add(key)
-    latest.append(x)
+    if key not in groups:
+        groups[key] = []
+        order.append(key)
+    groups[key].append(x)
+
+latest = []
+for key in order:
+    entries = groups[key]
+    success = next((e for e in entries if (e.get("conclusion") or e.get("status")) == "success"), None)
+    latest.append(success if success is not None else entries[0])
 
 bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]
 if bad:

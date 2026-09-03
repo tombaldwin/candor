@@ -71,6 +71,11 @@ of one of them, not a feature.
   add one"* — itself produces a collision when rows are appended out of order; the correct rule is the
   maximum ID — reworded in the same push, with the command that computes it.
 
+**A brief mixed-family window is designed into this release, not a defect.** Between the engines
+publishing (step 2) and the cross-repo pin bump landing (step 6), the umbrella's own pins still name
+0.34.0, so `candor doctor` reports SPEC DRIFT (0.34 vs 0.35) for jbang/adopt/IDE users who install in that
+gap — it closes the moment step 6's commit lands, and no path through `release.sh` leaves it open.
+
 ## 2026-09-01 — ADVISORY for the published 0.34.0 engines (released 2026-09-03 as 0.35.0)
 
 **If you pin candor 0.34.0, read this. If you use blanket `deny <Effect>` gates, you are not

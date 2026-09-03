@@ -22,6 +22,13 @@ and awaits the owner's sign-off; until it replaces that section, treat the bound
 Everything else here is `bin/` — the instruments the family trusts — and each entry is a measured failure
 of one of them, not a feature.
 
+- **`bin/_release_notes.sh`: `head -80` cut every engine's release body mid-sentence, before the
+  published-sin entries.** Measured against the ⟨0.35⟩ CHANGELOGs: rust's section is 269 lines, java's
+  304, ts's 758, swift's 360 — all four were truncated well short of their own R-numbered entries, with
+  nothing in the GitHub release body to say so. Replaced the line cap with a 120000-byte cap (under
+  GitHub's 125000-character release-body limit), which lets every one of those sections through whole,
+  and a "Full notes: CHANGELOG.md in the repository" trailer that is appended only when the cap actually
+  cuts something.
 - **`bin/assert-audit.sh` is new: a diff that ADDS a safety assertion and changes no test FAILS.**
   Measured across all four engines in one round: every ⟨0.35⟩ fix carried a comment asserting a property
   (*"PROVEN — not guessed"*, *"inert"*, *"already works"*) and every one was false, and three converted

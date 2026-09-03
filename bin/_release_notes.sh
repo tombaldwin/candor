@@ -3,7 +3,8 @@
 #
 #   bash bin/_release_notes.sh <repo> <spec> <version> <path/to/CHANGELOG.md>
 #
-#   stdout : the notes `release.sh` would publish (heading line first), capped at 80 lines
+#   stdout : the notes `release.sh` would publish (heading line first), capped at 120000 bytes (a
+#            trailer pointing at CHANGELOG.md is appended only when that cap actually cut something)
 #   exit 0 : a section belonging to THIS version was found
 #   exit 3 : REFUSED — the reason, with its remedy, is on stderr and NOTHING is on stdout
 #
@@ -56,9 +57,27 @@ refuse() { printf '%s\n' "$*" >&2; exit 3; }
 
 [ -f "$CL" ] || refuse "$REPO: no CHANGELOG.md at $CL — refusing to publish a release with no notes."
 
-# `head -80`: GitHub caps a release body at 125000 characters and candor-swift's CHANGELOG is 154KB, so
-# `-F CHANGELOG.md` 422'd mid-release on 0.25 and left that repo TAGGED WITH NO RELEASE — the state that
-# broke `candor update` at 0.24. Every changelog in the family is growing the same way.
+# GitHub caps a release body at 125000 characters and candor-swift's CHANGELOG is 154KB, so `-F
+# CHANGELOG.md` 422'd mid-release on 0.25 and left that repo TAGGED WITH NO RELEASE — the state that
+# broke `candor update` at 0.24. A LINE cap (`head -80`) was the first fix and was itself a defect:
+# every engine's ⟨0.35⟩ section ran past 80 lines (rust 269, java 304, ts 758, swift 360) and every one
+# got cut mid-sentence BEFORE its published-sin entries, silently. A BYTE cap under the real limit is
+# the actual constraint; `CAP` below leaves headroom under 125000 for the trailer `cap_body` appends,
+# and appends it ONLY when the cap actually cut something, so a section that fits (every one measured
+# for ⟨0.35⟩, including ts's ~64KB) is published byte-for-byte with no pointless trailer.
+CAP=120000
+cap_body() {
+  # Truncates $OUT in place to CAP bytes and marks it — but only if it was actually longer than that,
+  # so an untruncated section (the ordinary case) is untouched.
+  local size cap_tmp
+  size="$(wc -c < "$OUT")"
+  if [ "$size" -gt "$CAP" ]; then
+    cap_tmp="$(mktemp "${TMPDIR:-/tmp}/rel-notes-cap.XXXXXX")"
+    head -c "$CAP" "$OUT" > "$cap_tmp"
+    printf '\n\nFull notes: CHANGELOG.md in the repository\n' >> "$cap_tmp"
+    mv "$cap_tmp" "$OUT"
+  fi
+}
 sect_by_version() { awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' "$CL"; }
 # candor-spec's older headings are FLOOR-shaped (`## 0.27 — …`) rather than `## [0.27.0]`, which the
 # version anchor cannot see. No engine changelog writes that shape, so trying it everywhere is inert.
@@ -83,13 +102,14 @@ trap 'rm -f "$OUT"' EXIT
 # same wrong-notes defect this file exists for, arriving through the fallback that replaced it.
 has_body() { [ "$(sed -n '2,$p' "$OUT" | grep -c '[^[:space:]]')" -gt 0 ]; }
 
-sect_by_version | head -80 > "$OUT"
-[ -s "$OUT" ] || sect_by_floor | head -80 > "$OUT"
+sect_by_version > "$OUT"
+[ -s "$OUT" ] || sect_by_floor > "$OUT"
 if [ -s "$OUT" ]; then
   has_body || refuse "$REPO: \`$(head -1 "$OUT")\` is a heading with NO BODY — REFUSING to publish.
      GitHub would take it verbatim, so the release notes for v$VER would read, in full, as that one line.
      Remedy: write the entry. \`bash bin/release-stage.sh $VER --only $REPO\` generates a build-bump stub
      if this repo genuinely has nothing to say; otherwise say what changed."
+  cap_body
   cat "$OUT"
   exit 0
 fi
@@ -105,7 +125,7 @@ if [ "$REPO" != "candor" ]; then
 fi
 
 # ── THE UMBRELLA ARM: dated, so positional — but the stamp must say THIS version ────────────────────
-sect_newest | head -80 > "$OUT"
+sect_newest > "$OUT"
 [ -s "$OUT" ] || refuse "candor: CHANGELOG.md yields no section at all — refusing to publish an empty release."
 has_body || refuse "candor: the umbrella's newest section \`$(head -1 "$OUT")\` has NO BODY — refusing to publish
      a release whose notes would read as that one line."
@@ -119,5 +139,6 @@ case "$head_line" in
      Remedy: \`bash bin/release-stage.sh $VER\` — it stamps every \`(unreleased)\` dated heading, and opens
      a stubbed dated section when there is none. Commit, push, re-run release.sh." ;;
 esac
+cap_body
 cat "$OUT"
 exit 0

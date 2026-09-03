@@ -8,6 +8,21 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-03 — [10]'s dedupe stops letting a cancelled twin outvote its successful sibling (unreleased)
+
+- **`bin/_ci_verdict.py`: a `success` now wins its workflow group outright, instead of "whichever gh
+  lists first."** Measured during the 0.35.0 cut: candor-rust's push of `75053f1` produced TWO
+  `realworld-oracle-deep` runs created in the same second — one `success`, one `cancelled` (the
+  workflow's own concurrency group killing the duplicate trigger) — and release-preflight's [10] read
+  the cancelled twin, failing a preflight whose repos were all actually green. The prior fix (trust
+  gh's newest-first order, never re-sort) already documents that same-second ties have no reliable
+  order at all; this extends it rather than replacing it — within a workflow's group of runs at one
+  commit, a `success` wins wherever gh lists it, and only when NO run in the group succeeded does it
+  fall back to the first-occurrence rule, unchanged. A workflow with no successful run still fails, and
+  a run still `in_progress`/queued with no successful sibling still makes [10] wait. `bin/release-test.sh`
+  gained direct coverage of the measured pair (both listed orders) plus a control proving a same-second
+  tie with no successful run still fails.
+
 ## 2026-09-02 — the pre-release review round: five instruments corrected, and the 0.34.0 advisory's bound retracted (released 2026-09-03 as 0.35.0)
 
 - **Cross-repo pins moved to 0.35.0 after publish** (`bin/candor` `ENGINE_PIN`, `adopt/candor.yml`

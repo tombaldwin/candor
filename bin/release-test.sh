@@ -1716,26 +1716,41 @@ printf '%s' "$distinct" | grep -q "ci:failure" \
   && bad "[10] dedupe: the stale duplicate's failure leaked into the verdict" \
   || ok "[10] dedupe: …and the stale duplicate's failure did not leak through"
 
-# Same-second tie, order 1: the genuinely-newest run (a failure) is listed FIRST, as gh would list it.
-# This is the exact repro: both runs share one createdAt second. The failure must be reported — this is
-# the "genuinely-latest FAILURE hidden" shape from the defect report.
+# Same-second tie, order 1, failure listed FIRST. UPDATED 2026-09-03 (see THE THIRD BUG in
+# _ci_verdict.py): this used to assert the failure wins because it was listed first — "trust gh's
+# order" was the whole fix for the SECOND bug. But the THIRD bug (candor-rust 75053f1,
+# realworld-oracle-deep, a real success/cancelled pair tied on the same second) showed that trusting
+# listed order at a tie is not safe EITHER direction: gh's order between same-second rows is not
+# reliable, so "whichever is listed first" can just as easily be the loser of the pair as the winner.
+# The fix makes a `success` win its group regardless of order — so this fixture (a success present in
+# the tie) now reports green in BOTH listed orders; a case where NEITHER run succeeded is what still
+# needs order-independence proof, and that is the new "neither succeeded" control below.
 tie1="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$tie1" | grep -q "ci:failure" \
-  && ok "[10] dedupe: same-second tie, failure-first order — the failure is caught, not hidden" \
-  || bad "[10] dedupe: same-second tie hid a genuinely-latest failure (order: failure, success)"
 printf '%s' "$tie1" | grep -q "repos green on HEAD" \
-  && bad "[10] dedupe: same-second tie printed the all-green summary over a real failure" \
-  || ok "[10] dedupe: …and no all-green summary alongside it"
-# Same-second tie, order 2: the SAME two facts, objects swapped. The genuinely-newest run (now success,
-# listed first) must produce green — proving the verdict follows gh's listed order in BOTH directions
-# rather than a fixed "whichever is second" bug that reports the same wrong answer regardless of order.
+  && ok "[10] dedupe: same-second tie, failure-first order — a success sibling still wins the group" \
+  || bad "[10] dedupe: same-second tie, failure listed first — a success sibling did not win the group"
+printf '%s' "$tie1" | grep -q "ci:failure" \
+  && bad "[10] dedupe: same-second tie — the superseded failure leaked through beside its success sibling" \
+  || ok "[10] dedupe: …and the superseded failure does not leak through"
+# Same-second tie, order 2: the SAME two facts, objects swapped. Must still report green — proving the
+# success-wins rule is order-independent, not just luckily agreeing with gh's listed order above.
 tie2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
 printf '%s' "$tie2" | grep -q "repos green on HEAD" \
-  && ok "[10] dedupe: same-second tie, swapped order — success-first now reports green" \
-  || bad "[10] dedupe: swapping the tied objects did not flip the verdict with the facts"
+  && ok "[10] dedupe: same-second tie, swapped order — success-first still reports green" \
+  || bad "[10] dedupe: swapping the tied objects flipped a verdict that must not depend on order"
 printf '%s' "$tie2" | grep -q "ci:failure" \
   && bad "[10] dedupe: swapped order still reported the superseded failure" \
   || ok "[10] dedupe: …and the superseded failure does not leak through"
+# CONTROL: a same-second tie where NEITHER run succeeded must still fail — success-wins must not
+# become "any duplicate wins". Order-independence checked both ways, same as tie1/tie2 above.
+tie3a="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$tie3a" | grep -q "repos green on HEAD" \
+  && bad "[10] dedupe CONTROL: a tie with NO successful run reported green (failure-first order)" \
+  || ok "[10] dedupe CONTROL: a tie with no successful run still fails (failure-first order)"
+tie3b="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$tie3b" | grep -q "repos green on HEAD" \
+  && bad "[10] dedupe CONTROL: a tie with NO successful run reported green (cancelled-first order)" \
+  || ok "[10] dedupe CONTROL: a tie with no successful run still fails (cancelled-first order)"
 
 # CONTROL: distinct workflow NAMES (no duplicates at all) must not be merged or dropped by the dedupe.
 multi="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"nightly\"}]")"
@@ -1763,6 +1778,25 @@ idsame="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":
 printf '%s' "$idsame" | grep -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: same workflowDatabaseId (a genuine rerun) still collapses to its latest (listed-first) result" \
   || bad "[10] dedupe CONTROL: id-keyed dedupe stopped collapsing genuine reruns of the same workflow"
+
+# THE THIRD BUG, DIRECT REPRO (0.35.0 cut, 2026-09-03): candor-rust's push of `75053f1` produced TWO
+# `realworld-oracle-deep` runs, SAME workflowDatabaseId, created in the SAME second — one `success`, one
+# `cancelled` (killed by the workflow's own concurrency group). [10] read the cancelled twin and failed a
+# preflight whose repos were all actually green; a re-run of the cancelled twin cleared it. This is the
+# real shape, id-keyed (not the workflowName-keyed tie1/tie2 above) and named after the actual workflow.
+oracle="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"}]")"
+printf '%s' "$oracle" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe: the measured bug — success/cancelled twins, same id, same second — now reports green" \
+  || bad "[10] dedupe: the measured bug is back — a cancelled twin outvoted its successful sibling"
+printf '%s' "$oracle" | grep -q "realworld-oracle-deep:cancelled" \
+  && bad "[10] dedupe: the cancelled twin's status leaked into the verdict beside its success sibling" \
+  || ok "[10] dedupe: …and the cancelled twin does not leak through"
+# …and the SAME pair with the success listed first must report identically — the fix must not depend on
+# which of the tied twins gh happens to list first.
+oracle2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"}]")"
+printf '%s' "$oracle2" | grep -q "repos green on HEAD" \
+  && ok "[10] dedupe: the measured bug, success listed first — still green" \
+  || bad "[10] dedupe: the measured bug, success listed first — did not report green"
 rm -rf "$PF"
 
 # THE THIRD SIBLING (2026-08-26 code review): the NONE branch — a commit that triggered no workflow at

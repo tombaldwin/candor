@@ -7236,3 +7236,54 @@ verification tooling and a silent loss of enforcement in candor-agents' guard fr
 ## HIGHEST-VALUE NEXT QUESTION (attack F, not asked of anyone)
 candor-ts's refusal-marker locator shape `<prefix>.<crate>.scan.json` is exactly the RUST WORKSPACE
 shape. candor-rust is the likeliest sibling victim.
+
+## ⟨0.36⟩ RULED (Tom, 2026-09-03): candor-swift must CHARGE the raw-syscall route, not disclose it — SPEC clause → conformance PART → swift fix, in that order
+
+**MEASURED, not inferred, that the divergence exists and was already found — just never turned into a
+BACKLOG item.** SOUNDNESS.md R130 (rust/java/swift native-fs sweep, all four engine halves closed
+2026-09-02) found the raw-syscall route answered DIFFERENTLY per engine on the identical syscall
+(`symlink` in the fixture): swift discloses (`Unknown` + `native:symlink`, caught only by `deny
+Unknown`), while rust and java CHARGE the concrete effect (`Fs`, caught by `deny Fs`). R130's own text
+calls this "a SPEC question, not a bug" and states "Tom's call, not an engine's" — coordinator-measured
+at swift HEAD as of that row: `deny Fs doWork` exits 0 on the same fixture rust/java both charge `Fs`
+and exit 1 on. R130 is the only place this was written down; nothing in this file tracked it as open
+until now, and conformance has no row on it (see step 2 below for why).
+
+**THE RULING: candor-swift moves to CHARGE.** One program must get one verdict in every engine. The
+`native:` disclosure route stays legitimate for what the effect vocabulary genuinely cannot classify;
+the raw-syscall allowlist is not that case, because rust and java both already classify the identical
+syscalls to concrete effects — swift's classifier can too. **Only swift moves** — rust and java are not
+touched by this ruling, they are already the target state.
+
+**INFERRED — the three things this needs, none of them built yet, in the order they must happen (this
+repo's own standing rule: write the SPEC clause and the conformance PART before the port, or the
+behaviour ships unpinned — see the ⟨0.34⟩ ITEM 1 entry above, closed exactly the same way it was
+opened, twice):**
+
+1. **A SPEC clause.** Today SPEC.md §4 ⟨0.7⟩ *permits* exactly the disclosure this ruling now forbids.
+   The sentence (candor-spec HEAD `2cfd5da`, `SPEC.md` — currently around line 4353–4354, not the
+   4316–4321 this task was handed with: candor-spec moved under it between the ruling and this entry,
+   the text itself is unchanged): *"Swift's syntactic model produces `native:` (`@_silgen_name`/`@_extern`
+   C-symbol-linkage declarations, and an allowlisted set of raw C free-function calls — ⟨0.33⟩,
+   candor-swift `ec3e50f`) but no bare `reflect:`…"* — **this has to change with the ruling, or the spec
+   contradicts its own text**: as written it keeps licensing the disclosure the ruling just prohibited.
+   Whether the clause also pulls in swift's `@_silgen_name`/`@_extern` bodyless-linkage disclosure (the
+   OTHER half of that same sentence, R61's mechanism (2), sharing the identical
+   `NATIVE_DISCLOSURE_C_FREE_FNS` allowlist and `native:` reason per R61's own fix note in SOUNDNESS.md)
+   or only the plain raw-C-call half is NOT decided here — read R61 before scoping the clause, don't
+   assume the two are separable just because BACKLOG's PART 79 note names them as two fixture families
+   (`swift-defect-rawc` / `swift-defect-silgen`).
+2. **A conformance PART.** None exists today comparing analogous raw-syscall fixtures across engines —
+   that is WHY conformance never caught R130's divergence; it took a hand-run audit. Needs the R61/R130
+   fixture shape (a raw C free-function call reachable without going through a modelled facade —
+   `symlink`/`unlink`/`system` is the one already measured) ported to all four engines, asserting the
+   SAME gate verdict (the effect charged, not the `unknownWhy` string) — following PART 46's precedent
+   for where engines may legitimately differ (charge location) vs where they must agree (what a gate
+   reads).
+3. **The candor-swift change**, only after (1) and (2) exist: retarget the members of
+   `NATIVE_DISCLOSURE_C_FREE_FNS` this clause covers onto a concrete effect, the way rust's and java's
+   classifiers already do, instead of `Unknown`/`native:`.
+
+Not started: no SPEC.md edit, no conformance PART, no candor-swift commit. Owner TBD. This entry is
+umbrella-only bookkeeping — SPEC.md, candor-spec/conformance and candor-swift are each a different
+repo's work and none of them were touched writing this.

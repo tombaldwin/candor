@@ -29,6 +29,12 @@ of one of them, not a feature.
   GitHub's 125000-character release-body limit), which lets every one of those sections through whole,
   and a "Full notes: CHANGELOG.md in the repository" trailer that is appended only when the cap actually
   cuts something.
+- **`bin/release.sh` step 6's full-cut branch printed an incomplete pin remedy.** The scoped-cut branch
+  lists `integrations/vscode/package.json`'s and `integrations/jetbrains/gradle.properties`'s
+  `candorTsVersion`/`candorJavaVersion` pins; the full-cut branch (`rs_is_full`) omitted the same three
+  lines, and nothing downstream catches the gap — release-preflight [3] treats them as advisory
+  pre-publish (`PINS_ADVISORY=1`) and `release-verify.sh` excludes them by design. Now prints all three,
+  unconditionally, matching release-preflight [3]'s own `checkpin` calls.
 - **`bin/assert-audit.sh` is new: a diff that ADDS a safety assertion and changes no test FAILS.**
   Measured across all four engines in one round: every ⟨0.35⟩ fix carried a comment asserting a property
   (*"PROVEN — not guessed"*, *"inert"*, *"already works"*) and every one was false, and three converted

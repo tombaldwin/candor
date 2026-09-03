@@ -287,6 +287,15 @@ if rs_is_full; then
   echo "    · candor/bin/candor           ENGINE_PIN"
   echo "    · candor/adopt/               java + agents pins"
   echo "    · candor-java/jbang-catalog.json"
+  # THE SAME TWO IDE PINS THE SCOPED BRANCH BELOW PRINTS, unconditionally — a full cut always includes
+  # candor-ts and candor-java, so there is no `rs_in_set` to gate on. Missing these here left a full
+  # cut's printed remedy silently short of what release-preflight [3] actually checks (`checkpin "vscode
+  # ts"`, `"jetbrains ts"`, `"jetbrains jvm"`), which is advisory pre-publish (PINS_ADVISORY=1) and
+  # release-verify excludes these three by design — so nothing else catches an operator who follows only
+  # what this step printed.
+  echo "    · candor/integrations/vscode/package.json          candorTsVersion"
+  echo "    · candor/integrations/jetbrains/gradle.properties  candorTsVersion"
+  echo "    · candor/integrations/jetbrains/gradle.properties  candorJavaVersion"
 else
   # THE FRONT DOOR, PER ENGINE. `bin/candor` carries a family pin plus one optional pin per engine, so a
   # scoped cut that INCLUDES the umbrella moves exactly the pins of the engines it published and leaves

@@ -10,6 +10,22 @@ keeps its own.
 
 ## 2026-09-03 — [10]'s dedupe stops letting a cancelled twin outvote its successful sibling (unreleased)
 
+- **`bin/assert-audit.sh`: `TEST_RE`'s directory alternatives now require a real script/source
+  extension — SOUNDNESS R158.** The 2026-09-02 widening that added `(^|/)(ci|soundness|conformance|
+  eval)/` (to stop crediting 0 of 9 tracked `eval/**/*.sh`) matched ANY file under those trees, extension
+  or not — and the pre-existing `(test|tests|Tests|spec|specs)(/|$)` alternative had the identical flaw.
+  A reviewer's 14-file battery showed both crediting doc/results companions (`eval/RESULTS.md`,
+  `ci/README.md`, `conformance/.gitignore`, `soundness/TODO.md`, `spec/overview.md`, `test/README.md`,
+  `docs/tests/plan.md`, …) as test coverage for an added safety assertion — 12 of 14 wrongly credited.
+  Both alternatives now require the path to end in `.mjs`/`.js`/`.ts`/`.py`/`.sh`/`.java`/`.swift`/`.rs`/
+  `.kt` (the extensions this file already used elsewhere, plus `kt` for candor-java's
+  `soundness/KotlinProbe.kt`), checked against every repo's actually-tracked test/gate files so no real
+  case regresses. `--selftest` gained two cases (a doc file under `eval/` must FAIL; a real script under
+  `eval/` must still PASS) — now 6 cases, still both directions. Re-run against the candor-ts historical
+  anchor (`7ecda11` FAILS, `c53baa2` PASSES) and against the 0.35.0 round in all four engines: no
+  pass/fail flips; the only change is that rust's "test files also changed" listing stopped naming
+  `Cargo.lock`/`.tsv`/`.gitignore`/`.toml`/`.json` fixture files as if they were tests.
+
 - **`bin/_ci_verdict.py`: a `success` now wins its workflow group outright, instead of "whichever gh
   lists first."** Measured during the 0.35.0 cut: candor-rust's push of `75053f1` produced TWO
   `realworld-oracle-deep` runs created in the same second — one `success`, one `cancelled` (the

@@ -4439,7 +4439,7 @@ fi
 bash "$UMBRELLA/bin/assert-audit.sh" --selftest >/dev/null 2>&1
 aa_self_rc=$?
 [ "$aa_self_rc" -eq 0 ] \
-  && ok "assert-audit --selftest passes (4 cases, both directions, and a CHANGELOG is not coverage)" \
+  && ok "assert-audit --selftest passes (6 cases, both directions, a CHANGELOG is not coverage, and neither is a doc file under eval/ci/soundness/conformance — R158)" \
   || bad "assert-audit --selftest failed (rc=$aa_self_rc)"
 
 printf '\n'

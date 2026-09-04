@@ -59,7 +59,27 @@ ASSERT_RE='proven|guaranteed|cannot happen|can not happen|can never|never happen
 # that touched nothing BUT CI gates could never be credited, and the tool's own verdict was the thing that
 # was wrong. That is this session's recurring class pointed at the auditor: a check whose negative is
 # indistinguishable from the case it exists to catch.
-TEST_RE='(^|/)(test|tests|Tests|spec|specs)(/|$)|(^|/)(ci|soundness|conformance|eval)/|test[^/]*\.(mjs|js|ts|py|sh|java|swift|rs)$|[^/]*[Tt]est[s]?\.(java|swift|rs|mjs|ts|py)$|smoke\.sh$|fuzz[^/]*\.(py|sh|rs)$|verify[^/]*\.sh$|\.test\.[a-z]+$'
+#
+# THE `eval/` FIX WAS ITSELF TOO WIDE — R158, 2026-09-02. The alternative above was `(^|/)(ci|soundness|
+# conformance|eval)/` — a bare directory, matched anywhere in the path, with no extension check. That
+# credits `eval/RESULTS.md`, `ci/README.md`, a `.gitignore` under `conformance/`, ANY file dropped into
+# one of those trees. Measured battery (14 files, HEAD~1..HEAD, one real assertion + one companion file
+# each): 12 of 14 non-test companions were wrongly credited (rc 0) — `eval/RESULTS.md`, `eval/notes.txt`,
+# `ci/README.md`, `ci/CHANGELOG.md`, `conformance/SPEC-notes.md`, `conformance/.gitignore`,
+# `soundness/TODO.md`, and — same shape, pre-dating this widening — `spec/overview.md`, `test/README.md`,
+# `docs/tests/plan.md` via the bare `(test|tests|Tests|spec|specs)(/|$)` alternative below, which has the
+# identical defect: a directory match with no extension check. Only the two files with no directory match
+# at all (`.gitignore`, `CHANGELOG.md` at repo root) correctly failed.
+#
+# The fix is a denylist by construction, never a broader allowlist: every directory alternative below now
+# requires the path to END in one of the script/source extensions this file already enumerates elsewhere
+# (mjs/js/ts/py/sh/java/swift/rs, plus kt for candor-java's `soundness/KotlinProbe.kt`) — measured against
+# every repo's actually-tracked test/gate files (`git ls-files` under test/tests/Tests/spec/specs/ci/
+# soundness/conformance/eval across all six repos, 2026-09-02): every real test or gate script in the
+# family already carries one of these extensions, and no repo has an extensionless one. Fixture data
+# beside a real test file (`.candor/policy`, `.json`, `.toml`, `.tsv`) does not need to match on its own —
+# only ONE recognisable test/gate file need be present in the range for the audit to pass.
+TEST_RE='(^|/)(test|tests|Tests|spec|specs|ci|soundness|conformance|eval)/.*\.(mjs|js|ts|py|sh|java|swift|rs|kt)$|test[^/]*\.(mjs|js|ts|py|sh|java|swift|rs)$|[^/]*[Tt]est[s]?\.(java|swift|rs|mjs|ts|py)$|smoke\.sh$|fuzz[^/]*\.(py|sh|rs)$|verify[^/]*\.sh$|\.test\.[a-z]+$'
 
 selftest() {
   fails=0
@@ -79,8 +99,10 @@ selftest() {
   else echo "  ✔ an assertion with no test change in the same range FAILS"; fi
 
   # (2) same assertion, test added alongside -> pass
+  # NOTE: the test fixture below is `tests/a_test.rs`, not `.c` — R158's fix requires the directory
+  # alternative to end in a real script/source extension, and `.c` is not one this family uses anywhere.
   printf '// also PROVEN safe\n' >> "$tmp/a.c"
-  mkdir -p "$tmp/tests"; printf 'assert(1);\n' > "$tmp/tests/a_test.c"
+  mkdir -p "$tmp/tests"; printf 'assert(1);\n' > "$tmp/tests/a_test.rs"
   git -C "$tmp" add -A; git -C "$tmp" commit -qm two
   out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "  ✘ an assertion WITH a test beside it was failed anyway (rc=$rc) — the tool would be a red nobody reads"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
@@ -109,7 +131,33 @@ selftest() {
     else echo "  ✔ a CHANGELOG entry does NOT count as a test, and the fixture is PROVEN present in the range — the 7ecda11 shape still fails"; fi
   fi
 
-  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 4 cases, both directions, and a CHANGELOG is not coverage"; return 0
+  # (5) R158: a doc/results file dropped INSIDE eval/, ci/, conformance/ or soundness/ is NOT a test
+  # either — the exact defect this row is about. Before this file's fix, the bare directory alternative
+  # `(^|/)(ci|soundness|conformance|eval)/` credited any file under those trees regardless of extension;
+  # `eval/RESULTS.md` is a real tracked file in candor-rust, so this is not a hypothetical shape.
+  mkdir -p "$tmp/eval"; printf '// this is PROVEN correct too\nint h(){return 2;}\n' > "$tmp/d.c"
+  printf 'ran the corpus, all clean\n' > "$tmp/eval/RESULTS.md"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm five
+  if ! git -C "$tmp" diff --name-only HEAD~1..HEAD | grep -qx 'eval/RESULTS.md'; then
+    echo "  ✘ selftest case 5 is BROKEN — eval/RESULTS.md is not in the range, so this case proves nothing"
+    fails=$((fails+1))
+  else
+    out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+    if [ "$rc" -ne 1 ]; then echo "  ✘ eval/RESULTS.md (a doc, not a test) was accepted as coverage for an assertion (rc=$rc) — R158's exact shape"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+    else echo "  ✔ a doc/results file under eval/ does NOT count as a test — R158's shape now fails"; fi
+  fi
+
+  # (6) the OTHER direction of R158's fix: a REAL script under one of those same directories still
+  # counts. Narrowing TEST_RE to "must end in a script/source extension" must not turn eval/, ci/,
+  # soundness/, conformance/ into dead weight for the repos where a shell gate genuinely IS the test.
+  printf '// PROVEN correct, and tested\nint i(){return 3;}\n' > "$tmp/e.c"
+  printf '#!/usr/bin/env bash\nset -e\necho ok\n' > "$tmp/eval/run.sh"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm six
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "  ✘ eval/run.sh (a real gate script) was NOT credited as a test (rc=$rc) — the narrowing went too far"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and a real script under eval/ still counts — the narrowing didn't overshoot into the safe-but-noisy direction"; fi
+
+  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 6 cases, both directions, a CHANGELOG is not coverage, and neither is a doc file under eval/ci/soundness/conformance"; return 0
   else echo; echo "assert-audit selftest: FAILED — $fails case(s)"; return 1; fi
 }
 

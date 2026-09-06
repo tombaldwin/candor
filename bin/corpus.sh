@@ -131,7 +131,13 @@ fi
 # that reclaims a corpus mid-round is how a different day's results were destroyed. It names the path
 # and stops; removing it is a human's call.
 hollow_checkout() {   # 0 = hollow (the bad case), 1 = a real checkout
-  [ -d "$1/.git" ] || return 0
+  # NO `[ -d "$1/.git" ]` HERE. In a git WORKTREE `.git` is a FILE holding `gitdir: …`, not a directory,
+  # so that test calls every worktree hollow. bin/release-test.sh has a standing case against exactly
+  # this pattern and it caught this line before it was pushed — which is the second time today a check
+  # of mine was true for the tree in front of me and false one spelling over.
+  # `rev-parse --verify HEAD` is the spelling that answers for BOTH layouts, and it is also the one that
+  # catches the real gutting: the hollowed trees have a `.git` stripped to `hooks/`+`info/`, where the
+  # directory still exists and HEAD no longer resolves.
   git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 0
   # Capped so this stays cheap on a large tree. Every real checkout here has a manifest, a readme and
   # at least one source file; three is comfortably below the smallest (chalk) and above zero.

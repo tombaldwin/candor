@@ -108,8 +108,46 @@ fi
 # ── acquire ────────────────────────────────────────────────────────────────────────────────────────
 # TAG-PINNED so a re-run measures the same bytes; shallow; nothing is BUILT. rust/ts/swift scan source,
 # and java takes prebuilt jars from Maven Central — a jar target means the round needs no JVM build.
+# A DIRECTORY IS NOT A CHECKOUT, AND AN EXISTING FILE IS NOT A JAR — SOUNDNESS R242.
+#
+# Both acquisition helpers used to treat EXISTENCE as acquisition: `[ -d $SRC/$1 ] && return 0`. So a
+# checkout whose files had gone while its directories remained was "already got" forever, and nothing
+# ever said so. MEASURED 2026-09-06 on two independent corpora under the tmp default this script uses:
+# scratchpad/swift-escape/corpus (Alamofire 0 `.swift`, Kingfisher 0, `.git` stripped to `hooks/`+
+# `info/`), and this script's own `$CORPUS_HOME/src`, whose `src/` had ceased to exist entirely.
+#
+# THE FAILURE DIRECTION IS WHY THIS GUARD EXISTS RATHER THAN A NOTE. A hollow tree does not error:
+# candor refuses it at exit 2, it contributes ZERO rows, and an A/B over it prints
+#
+#     ADDED 0   REMOVED 0   CHANGED 0
+#
+# which is character-for-character what a correct, safely-inert change prints. There is no signal
+# separating "my fix touches nothing it shouldn't" from "I measured nothing at all" — and the second is
+# the answer you were hoping for, so nobody looks twice. It had already produced one write-up claiming
+# "six real TypeScript repos" over zero rows.
+#
+# So the roster asserts CONTENT before the round compares anything, and a hollow entry is fatal rather
+# than quietly absent. It does NOT delete and re-clone: the tree may be someone's evidence, and a script
+# that reclaims a corpus mid-round is how a different day's results were destroyed. It names the path
+# and stops; removing it is a human's call.
+hollow_checkout() {   # 0 = hollow (the bad case), 1 = a real checkout
+  [ -d "$1/.git" ] || return 0
+  git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 0
+  # Capped so this stays cheap on a large tree. Every real checkout here has a manifest, a readme and
+  # at least one source file; three is comfortably below the smallest (chalk) and above zero.
+  [ "$(find "$1" -type f -not -path '*/.git/*' 2>/dev/null | head -3 | wc -l | tr -d ' ')" -ge 3 ] || return 0
+  return 1
+}
+HOLLOW=""
 acquire() {
-  clone() { [ -d "$SRC/$1" ] && return 0
+  clone() {
+    if [ -d "$SRC/$1" ]; then
+      if hollow_checkout "$SRC/$1"; then
+        echo "  HOLLOW $1 — the directory is there and the checkout is not ($SRC/$1)"
+        HOLLOW="$HOLLOW $1"
+      fi
+      return 0
+    fi
     git clone -q --depth 1 --branch "$3" "$2" "$SRC/$1" 2>/dev/null && echo "  got $1@$3" || echo "  MISS $1@$3"; }
   clone ripgrep https://github.com/BurntSushi/ripgrep 14.1.1
   clone clap    https://github.com/clap-rs/clap       v4.5.4
@@ -155,7 +193,18 @@ acquire() {
   clone execa     https://github.com/sindresorhus/execa v9.3.0
   clone swift-nio https://github.com/apple/swift-nio 2.68.0
   local M=https://repo1.maven.org/maven2
-  jar() { [ -f "$JARS/$1" ] && return 0; curl -fsSL -o "$JARS/$1" "$2" && echo "  got $1" || echo "  MISS $1"; }
+  # Same rule one type down: a jar that is present but empty or truncated is not an acquired jar. `PK`
+  # is the zip local-file-header magic every jar begins with; a partial curl leaves a file that has it
+  # and is short, so the size floor is the half that catches that.
+  jar() {
+    if [ -f "$JARS/$1" ]; then
+      if [ "$(wc -c < "$JARS/$1" | tr -d ' ')" -lt 1024 ] || [ "$(head -c 2 "$JARS/$1")" != "PK" ]; then
+        echo "  HOLLOW $1 — present but not a readable jar ($JARS/$1)"
+        HOLLOW="$HOLLOW $1"
+      fi
+      return 0
+    fi
+    curl -fsSL -o "$JARS/$1" "$2" && echo "  got $1" || echo "  MISS $1"; }
   jar gson.jar          $M/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
   jar commons-lang3.jar $M/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar
   jar jackson-core.jar  $M/com/fasterxml/jackson/core/jackson-core/2.17.1/jackson-core-2.17.1.jar
@@ -505,6 +554,19 @@ if [ "${1:-}" = "--oracles-only" ]; then
 fi
 if [ "${1:-}" != "--oracles-only" ]; then
   echo "[acquire]"; acquire
+  # SOUNDNESS R242 — refuse BEFORE scanning. A hollow roster entry contributes zero rows, and zero rows
+  # is what a safely-inert change looks like, so this must stop the round rather than annotate it.
+  if [ -n "$HOLLOW" ]; then
+    echo
+    echo "corpus: REFUSING — roster entries exist as directories/files but hold nothing:$HOLLOW"
+    echo "  A hollow entry does not error. It scans to ZERO rows, and a differential over zero rows"
+    echo "  prints ADDED 0 / REMOVED 0 / CHANGED 0 — indistinguishable from a change that is correctly"
+    echo "  inert. That is the result you were hoping for, which is exactly why it must fail here."
+    echo "  Remedy: delete the named path(s) yourself and re-run, so the clone happens again. This"
+    echo "  script will not delete them — a corpus tree may be evidence, and reclaiming one mid-round"
+    echo "  has destroyed a measurement before."
+    exit 2
+  fi
   echo "[scan]";    scan
 fi
 echo "[oracles]"; oracles

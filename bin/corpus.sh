@@ -37,7 +37,33 @@
 # EXIT 0 iff every oracle passed. Findings print as `FINDING:` lines.
 set -uo pipefail
 
-HOME_DIR="${CORPUS_HOME:-${TMPDIR:-/tmp}/candor-corpus}"
+# THE CORPUS DOES NOT LIVE UNDER $TMPDIR — SOUNDNESS R242.
+#
+# It used to. Two corpora were found HOLLOWED there — directories intact, source files gone, `.git`
+# stripped to `hooks/`+`info/` — and the failure direction is what makes it worth a default change: a
+# hollow tree does not error. candor refuses it at exit 2, it contributes ZERO rows, and an A/B over it
+# prints ADDED 0 / REMOVED 0 / CHANGED 0, which is character-for-character what a correct, safely-inert
+# change prints. One write-up claimed "six real TypeScript repos" over zero rows before anyone noticed.
+#
+# CAUSE, identified 2026-09-07 and circumstantial rather than proven (running a cleaner to confirm is how
+# a day of evidence was destroyed here once already):
+#
+#   /System/Library/LaunchDaemons/com.apple.bsd.dirhelper.plist
+#     ProgramArguments      /usr/libexec/dirhelper
+#     EnvironmentVariables  CLEAN_FILES_OLDER_THAN_DAYS = 3
+#     StartCalendarInterval 03:35 daily, RunAtLoad true
+#
+# Its domain is the per-user `/var/folders/…/T` tree, which is exactly what `$TMPDIR` is. **The variable
+# is named CLEAN_FILES_, and files-gone-directories-remain is exactly the observed shape.** An earlier
+# check grepped `/etc/defaults/periodic.conf` and came back empty — the wrong instrument on macOS, which
+# is why this went unexplained for a day. Extracted (rather than cloned) trees are swept on the first
+# 03:35 after creation, because an archive's mtimes are already older than three days.
+#
+# The trade, both sides measured: a home-dir corpus is never auto-reclaimed, so `bin/disk-guard.sh` is
+# the only thing between it and a full disk — run it before dispatching a wave. Staying under $TMPDIR is
+# no longer DANGEROUS (R242's guard turns silent gutting into a named hard stop) but it converts every
+# corpus older than three days into a stop-and-re-clone, repeatedly. `CORPUS_HOME` still overrides.
+HOME_DIR="${CORPUS_HOME:-$HOME/.candor/corpus}"
 GIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RS="${CANDOR_RUST:-$GIT_ROOT/candor-rust}/target/debug"
 SW="${CANDOR_SWIFT:-$GIT_ROOT/candor-swift}/.build/debug/candor-swift"

@@ -32,7 +32,11 @@
 # USAGE
 #   bash bin/monotone.sh <ts-package-dir>...     # installs deps in each (--ignore-scripts), restores after
 set -uo pipefail
-S="${MONOTONE_WORK:-${TMPDIR:-/tmp}/candor-monotone}"; mkdir -p "$S/mono-out"
+# SOUNDNESS R242/R306 — evidence does not live under $TMPDIR. macOS sweeps the per-user
+# /var/folders tree and /tmp alike, and a HOLLOWED corpus (directories intact, files gone) makes
+# a differential print ADDED 0 / REMOVED 0 / CHANGED 0 — which is exactly what a correct,
+# safely-inert change prints. That is the result you were hoping for, so nobody looks twice.
+S="${MONOTONE_WORK:-$HOME/.candor/monotone}"; mkdir -p "$S/mono-out"
 TS="${CANDOR_TS:-/Users/tom/git/candor-ts}/scan.mjs"
 findings=0; checked=0
 finding() { echo "  FINDING: $*"; findings=$((findings+1)); }

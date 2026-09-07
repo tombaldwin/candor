@@ -788,6 +788,11 @@ def selftest():
     check("exit 0", rc == 0, out)
     check("multiset key reports CHANGED 5", bool(unit) and "CHANGED 5 " in unit[0], out)
     check("the old fn last-wins key reports CHANGED 1", bool(old) and "CHANGED 1 " in old[0], out)
+    # The table computes every key independently of the headline, so a row saying 5 does not prove the
+    # HEADLINE says 5.  Mutating the headline back to the merged key left this whole section green.
+    hl = [l for l in out.splitlines() if "HEADLINE" in l]
+    check("and the HEADLINE — the number a reader quotes — says 5 too",
+          bool(hl) and "CHANGED 5 " in hl[0], out)
     check("and they DIFFER, which is the whole finding",
           bool(unit) and bool(old) and unit[0].split("CHANGED")[1] != old[0].split("CHANGED")[1])
 

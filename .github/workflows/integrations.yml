@@ -77,6 +77,9 @@ jobs:
       # misses, and returns zero on identical inputs.  An instrument nobody has watched fail is not
       # an instrument, and this one's failure mode — an empty diff — is the answer everybody wants.
       # Hermetic: the arms are `cat` over fixture JSON, so no engine and no corpus are needed.
+      # It runs `corpus-ab.py --selftest` first, then the things an in-process selftest cannot reach:
+      # the EXIT CODES a caller reads (3 = no comparison, 4 = not evidence), and the contract with
+      # `bin/corpus.sh --hollow-check`, the R242 authority the A/B asks instead of copying.
       - name: corpus A/B differential calibration
-        run: python3 bin/corpus-ab.py --selftest
+        run: bash bin/corpus-ab.test.sh
 

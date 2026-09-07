@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0
+## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1)
 
 **If you scan JVM code that schedules work — `Timer`, `ScheduledExecutorService` — read this. Unlike the
 2026-09-01 advisory, a blanket `deny <Effect>` does NOT reliably save you here.**
@@ -64,8 +64,9 @@ over a method handing arbitrary caller-supplied code to a scheduler.
 
 ### What to do now
 
-1. **If you gate JVM code that schedules work, treat those verdicts as unverified** until you re-run on a
-   build carrying the fix.
+1. **Upgrade to 0.35.1 and re-scan.** It carries the fix; nothing else does. Until you re-scan on it,
+   treat every scheduling-related verdict on JVM code as unverified — including green ones, which is the
+   direction that matters here.
 2. **A blanket `deny` is not a backstop here.** Check by hand whether the scheduled task's effect is
    independently reported elsewhere in the same scan; if it is not, the gate was passing on nothing.
 3. The same applies to `skip`-based byte movers and to any virtual call with a wide primitive in its
@@ -73,8 +74,13 @@ over a method handing arbitrary caller-supplied code to a scheduler.
 
 ### Status
 
-Fixed on `main`, unreleased: candor-java `d1ad75f` — one authority counting values, nine call sites routed
-through it, six size-summing copies deleted. Tracked in `candor-spec/SOUNDNESS.md` as **R248**, **R258**
+**RESOLVED — released in candor-java 0.35.1 on 2026-09-07**, a patch on the unchanged spec 0.35 floor.
+The fix is `d1ad75f` — one authority counting values, nine call sites routed through it, six size-summing
+copies deleted. Verified live: the jar, `candor-linux-x64` and `candor-macos-arm64` all resolve at the
+`v0.35.1` tag. **Re-baseline rather than diff against a 0.34.0 or 0.35.0 report** — this fix both ADDS
+charges that were silently missing and REMOVES four that were fabricated (a `task-handoff` Unknown raised
+against a provably pure program), so rows move in both directions and a disappearing row is not
+automatically a regression. Tracked in `candor-spec/SOUNDNESS.md` as **R248**, **R258**
 and **R274**, each with its measurement, plus **R275** recording why the existing test suite passed over
 this for two releases: its one relevant assertion was green because the misread landed on a value that
 answered the same way.

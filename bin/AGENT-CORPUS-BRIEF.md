@@ -213,6 +213,27 @@ candor-swift against swift-collections' 4,965 units.
 fix's over-charge "zero"; a fourth corpus showed +22 rows, and seven showed the true range (0–9.6%).
 
 ### E1. WHEN THE EVIDENCE IS A BIG A/B, THE **REMOVALS** ARE THE CLAIM UNDER TEST
+
+**DO NOT WRITE AN `ab.py`. RUN `bin/corpus-ab.py`.** Everything in this section was, until 2026-09-07,
+something each round had to remember: there were FIFTEEN ad-hoc `ab.py`/`ab.mjs` scripts in one session
+scratchpad and no shared tool, every one inheriting the last one's key and so the last one's blind spots.
+That is §G — fifteen paths computing one fact — and it is why SOUNDNESS R288 went unnoticed long enough
+to make every ADDED/REMOVED/CHANGED figure in the register a lower bound.
+
+    bin/corpus-ab.py --pre-cmd 'BIN_PRE {entry} --json' --post-cmd 'BIN_POST {entry} --json' \
+                     --entries-dir <corpus> --mark <YOUR_PROBE> --out ab.json
+
+It keys on `(entry, package, fn, hash)` over a MULTISET of row values, so duplicate quals cannot merge;
+it compares every field by default and prints the narrow numbers beside the wide ones; it REFUSES an
+entry whose `analyzed.count` is 0 rather than counting it as zero-change; it reports REACH separately;
+and it exits **3** when it cannot produce a comparison and **4** when the comparison it produced is not
+evidence. It never prints an empty diff in place of a failure. Every run prints a calibration table
+pricing your key against the old one, so nobody has to remember any of the paragraphs below —
+`--selftest` is the proof, and CI runs it. **Measured on the R270 arms, 1,509 crates: the old `fn` key
+reports CHANGED 263, the multiset key reports 293** (= the census's 291 + 2, reconciled exactly), and an
+`inferred`-only key reports **0** for the same change. Read the rest of this section to know why those
+three numbers differ; run the tool so you do not have to.
+
 A fabrication-fix reports something like `ADDED 2  REMOVED 66  CHANGED 318` and explains the removals as
 fabrications correctly excluded. **That explanation is a hypothesis, and it is the one that hides a
 cardinal sin**, because a removed row means the engine now certifies that function PURE — absence is the

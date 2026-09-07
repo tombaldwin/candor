@@ -185,5 +185,14 @@ daemons are GB each. `bash bin/disk-guard.sh` before dispatching is a second's w
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway
 worktree at the **last commit**, so commit first), `bin/ci-watch.sh`, `bin/release-test.sh`,
-`conformance/run.sh` and `conformance/part.sh <id>` in `candor-spec`. Re-deriving `ci-watch.sh`'s logic
+`bin/corpus.sh`, **`bin/corpus-ab.py`**, `conformance/run.sh` and `conformance/part.sh <id>` in
+`candor-spec`.
+
+**AND THE A/B IS ONE OF THEM NOW — `bin/corpus-ab.py`, never a fresh `ab.py`.** Measured 2026-09-07:
+fifteen ad-hoc `ab.py`/`ab.mjs` scripts in one session scratchpad, no shared tool, every one keyed on
+bare `fn` because it was copied from the last one. That is R288, and it made every ADDED/REMOVED/CHANGED
+figure in `SOUNDNESS.md` a lower bound — on the R270 arms, 263 reported against 293 real changed rows.
+The point is not that the key was wrong; it is that **an instrument with fifteen copies has no owner, so
+a defect found in one of them is not fixed in the other fourteen.** Put the tool in the brief you hand
+the agent, and the numbers in the commit message. Re-deriving `ci-watch.sh`'s logic
 instead of reading it reintroduced, into a release gate, the exact bug its own comment warns about.

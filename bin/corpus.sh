@@ -28,7 +28,11 @@
 # USAGE
 #   bin/corpus.sh                 # acquire (once) + scan + oracles
 #   bin/corpus.sh --oracles-only  # re-run the oracles over existing artifacts
+#   bin/corpus.sh --hollow-check DIR…   # READ-ONLY: is this tree a real checkout? (R242; see below)
 #   CORPUS_HOME=<dir> bin/corpus.sh
+#
+# `bin/corpus-ab.py` is the differential half — the shared A/B every round should use instead of writing
+# its own `ab.py`. It calls `--hollow-check` here rather than copying the check.
 #
 # EXIT 0 iff every oracle passed. Findings print as `FINDING:` lines.
 set -uo pipefail
@@ -41,9 +45,88 @@ TS="${CANDOR_TS:-$GIT_ROOT/candor-ts}"
 JAR="${CANDOR_JAR:-$(ls -t "$GIT_ROOT"/candor-java/build/libs/*-all.jar 2>/dev/null | head -1)}"
 HONESTY="${CANDOR_SPEC:-$GIT_ROOT/candor-spec}/conformance/check_honesty.py"
 SRC="$HOME_DIR/src"; JARS="$HOME_DIR/jars"; OUT="$HOME_DIR/out"; LOG="$HOME_DIR/log"
-mkdir -p "$SRC" "$JARS" "$OUT" "$LOG"
+# NOT for `--hollow-check` (the read-only query mode defined below): running a WRITING line to answer a
+# READ-ONLY question is the habit that destroyed a day of fresh-draw evidence once already, and a query
+# that silently creates `$CORPUS_HOME` is that habit in miniature.
+[ "${1:-}" = "--hollow-check" ] || mkdir -p "$SRC" "$JARS" "$OUT" "$LOG"
 findings=0
 finding() { echo "  FINDING: $*"; findings=$((findings+1)); }
+
+# A DIRECTORY IS NOT A CHECKOUT, AND AN EXISTING FILE IS NOT A JAR — SOUNDNESS R242.
+#
+# Both acquisition helpers used to treat EXISTENCE as acquisition: `[ -d $SRC/$1 ] && return 0`. So a
+# checkout whose files had gone while its directories remained was "already got" forever, and nothing
+# ever said so. MEASURED 2026-09-06 on two independent corpora under the tmp default this script uses:
+# scratchpad/swift-escape/corpus (Alamofire 0 `.swift`, Kingfisher 0, `.git` stripped to `hooks/`+
+# `info/`), and this script's own `$CORPUS_HOME/src`, whose `src/` had ceased to exist entirely.
+#
+# THE FAILURE DIRECTION IS WHY THIS GUARD EXISTS RATHER THAN A NOTE. A hollow tree does not error:
+# candor refuses it at exit 2, it contributes ZERO rows, and an A/B over it prints
+#
+#     ADDED 0   REMOVED 0   CHANGED 0
+#
+# which is character-for-character what a correct, safely-inert change prints. There is no signal
+# separating "my fix touches nothing it shouldn't" from "I measured nothing at all" — and the second is
+# the answer you were hoping for, so nobody looks twice. It had already produced one write-up claiming
+# "six real TypeScript repos" over zero rows.
+#
+# So the roster asserts CONTENT before the round compares anything, and a hollow entry is fatal rather
+# than quietly absent. It does NOT delete and re-clone: the tree may be someone's evidence, and a script
+# that reclaims a corpus mid-round is how a different day's results were destroyed. It names the path
+# and stops; removing it is a human's call.
+hollow_checkout() {   # 0 = hollow (the bad case), 1 = a real checkout
+  # NO `[ -d "$1/.git" ]` HERE. In a git WORKTREE `.git` is a FILE holding `gitdir: …`, not a directory,
+  # so that test calls every worktree hollow. bin/release-test.sh has a standing case against exactly
+  # this pattern and it caught this line before it was pushed — which is the second time today a check
+  # of mine was true for the tree in front of me and false one spelling over.
+  # `rev-parse --verify HEAD` is the spelling that answers for BOTH layouts, and it is also the one that
+  # catches the real gutting: the hollowed trees have a `.git` stripped to `hooks/`+`info/`, where the
+  # directory still exists and HEAD no longer resolves.
+  git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 0
+  # Capped so this stays cheap on a large tree. Every real checkout here has a manifest, a readme and
+  # at least one source file; three is comfortably below the smallest (chalk) and above zero.
+  [ "$(find "$1" -type f -not -path '*/.git/*' 2>/dev/null | head -3 | wc -l | tr -d ' ')" -ge 3 ] || return 0
+  return 1
+}
+
+# ── QUERY MODE: the ask-the-authority entry point for bin/corpus-ab.py ─────────────────────────────
+# AGENT-CORPUS-BRIEF §G — where two paths compute one fact, they drift, and every cardinal sin found on
+# 2026-08-29 traced to code that hand-rolled something already defined elsewhere. So the A/B tool does
+# NOT carry its own copy of `hollow_checkout`; it shells out to here. Read-only: no acquisition, no
+# scan, no writes, exits before any of that.
+#
+#   bin/corpus.sh --hollow-check DIR…    exit 0 = nothing hollow, 2 = at least one is, 1 = usage
+#
+# THE VERDICT LINE IS TRI-STATE ON PURPOSE, because this check's DOMAIN is git checkouts and the
+# corpora it gets pointed at are not all git checkouts. A cargo registry crate under
+# `~/.cargo/registry/src/…` has no `.git` at all, so `rev-parse` fails and `hollow_checkout` says
+# "hollow" for a perfectly intact tree. Answering HOLLOW there would be a false positive in an
+# instrument whose whole job is to stop false negatives, so it answers NOTGIT and declines. The
+# explanation branches below only EXPLAIN the verdict — the verdict itself is `hollow_checkout`'s.
+if [ "${1:-}" = "--hollow-check" ]; then
+  shift
+  [ "$#" -gt 0 ] || { echo "corpus: --hollow-check needs at least one path" >&2; exit 1; }
+  hc_bad=0
+  for hc_d; do
+    # "MISSING" and "a jar, not a tree" are different answers and only one of them is a corpus fault.
+    # Saying MISSING about a file that is plainly there is the kind of wrong-but-confident line a
+    # reader acts on, and `bin/corpus-ab.py` prints these verbatim beside its own refusals.
+    if [ -e "$hc_d" ] && [ ! -d "$hc_d" ]; then     echo "NOTDIR  $hc_d — a file, not a tree; this check has no verdict for it"
+    elif [ ! -e "$hc_d" ]; then                     echo "MISSING $hc_d"; hc_bad=1
+    elif ! hollow_checkout "$hc_d"; then            echo "ok      $hc_d"
+    elif git -C "$hc_d" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+                                                    echo "HOLLOW  $hc_d — a checkout holding fewer than 3 files"; hc_bad=1
+    elif [ -e "$hc_d/.git" ]; then
+                                                    echo "HOLLOW  $hc_d — .git is present but HEAD does not resolve (the measured gutting shape)"; hc_bad=1
+    # Not a checkout, so `hollow_checkout` has no verdict. One assertion it does not make is still
+    # worth making here, because it is unambiguous in any layout: a directory with no files in it.
+    elif [ -z "$(find "$hc_d" -type f 2>/dev/null | head -1)" ]; then
+                                                    echo "EMPTY   $hc_d — a directory containing no files at all"; hc_bad=1
+    else                                            echo "NOTGIT  $hc_d — not a git checkout; this check has no verdict for it"
+    fi
+  done
+  exit $((hc_bad * 2))
+fi
 
 # ── WHICH ENGINES ARE ACTUALLY HERE ────────────────────────────────────────────────────────────────
 # Every engine step below is guarded by a `[ -x … ]`, so a missing engine SKIPS — and the summary said
@@ -108,42 +191,10 @@ fi
 # ── acquire ────────────────────────────────────────────────────────────────────────────────────────
 # TAG-PINNED so a re-run measures the same bytes; shallow; nothing is BUILT. rust/ts/swift scan source,
 # and java takes prebuilt jars from Maven Central — a jar target means the round needs no JVM build.
-# A DIRECTORY IS NOT A CHECKOUT, AND AN EXISTING FILE IS NOT A JAR — SOUNDNESS R242.
-#
-# Both acquisition helpers used to treat EXISTENCE as acquisition: `[ -d $SRC/$1 ] && return 0`. So a
-# checkout whose files had gone while its directories remained was "already got" forever, and nothing
-# ever said so. MEASURED 2026-09-06 on two independent corpora under the tmp default this script uses:
-# scratchpad/swift-escape/corpus (Alamofire 0 `.swift`, Kingfisher 0, `.git` stripped to `hooks/`+
-# `info/`), and this script's own `$CORPUS_HOME/src`, whose `src/` had ceased to exist entirely.
-#
-# THE FAILURE DIRECTION IS WHY THIS GUARD EXISTS RATHER THAN A NOTE. A hollow tree does not error:
-# candor refuses it at exit 2, it contributes ZERO rows, and an A/B over it prints
-#
-#     ADDED 0   REMOVED 0   CHANGED 0
-#
-# which is character-for-character what a correct, safely-inert change prints. There is no signal
-# separating "my fix touches nothing it shouldn't" from "I measured nothing at all" — and the second is
-# the answer you were hoping for, so nobody looks twice. It had already produced one write-up claiming
-# "six real TypeScript repos" over zero rows.
-#
-# So the roster asserts CONTENT before the round compares anything, and a hollow entry is fatal rather
-# than quietly absent. It does NOT delete and re-clone: the tree may be someone's evidence, and a script
-# that reclaims a corpus mid-round is how a different day's results were destroyed. It names the path
-# and stops; removing it is a human's call.
-hollow_checkout() {   # 0 = hollow (the bad case), 1 = a real checkout
-  # NO `[ -d "$1/.git" ]` HERE. In a git WORKTREE `.git` is a FILE holding `gitdir: …`, not a directory,
-  # so that test calls every worktree hollow. bin/release-test.sh has a standing case against exactly
-  # this pattern and it caught this line before it was pushed — which is the second time today a check
-  # of mine was true for the tree in front of me and false one spelling over.
-  # `rev-parse --verify HEAD` is the spelling that answers for BOTH layouts, and it is also the one that
-  # catches the real gutting: the hollowed trees have a `.git` stripped to `hooks/`+`info/`, where the
-  # directory still exists and HEAD no longer resolves.
-  git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 0
-  # Capped so this stays cheap on a large tree. Every real checkout here has a manifest, a readme and
-  # at least one source file; three is comfortably below the smallest (chalk) and above zero.
-  [ "$(find "$1" -type f -not -path '*/.git/*' 2>/dev/null | head -3 | wc -l | tr -d ' ')" -ge 3 ] || return 0
-  return 1
-}
+# The R242 content assertion these helpers depend on — `hollow_checkout` and why a hollow entry must be
+# FATAL rather than annotated — is at the top of this file, above the engine roster, because
+# `--hollow-check` answers before either exists.
+
 HOLLOW=""
 acquire() {
   clone() {

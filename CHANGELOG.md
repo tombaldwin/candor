@@ -8,6 +8,78 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0
+
+**If you scan JVM code that schedules work — `Timer`, `ScheduledExecutorService` — read this. Unlike the
+2026-09-01 advisory, a blanket `deny <Effect>` does NOT reliably save you here.**
+
+One defect, live in both published artifacts. It is candor-java only; the other three engines are
+unaffected. It predates 0.34.0, so downgrading does not help. The fix is on `main` and unreleased.
+
+### The defect
+
+candor-java located a value on the JVM operand stack by summing argument *sizes*. ASM's frame holds one
+entry per **value**, and a `long` or `double` counts as two sizes. So a read landed one or two positions
+off, and the helper that identifies "which argument is the task you are handing to this scheduler" read
+the receiver instead — or ran off the end and identified nothing at all, disclosing nothing.
+
+**The rule that predicts it:** argument *k* is misread iff a `long`/`double` sits at position ≥ *k*, and
+the receiver is misread iff the descriptor holds one anywhere. Every JDK scheduling verb puts a `long`
+immediately after the task.
+
+### What is NOT affected
+
+- **Every other engine.** rust, ts and swift do not share this code.
+- **`submit`, `execute`, `CompletableFuture.*Async`, `new Thread(r)`, `Timer.schedule(TimerTask, Date)`** —
+  their descriptors carry no wide primitive, so the arithmetic cancels. Verified: 183 of 199 methods
+  checked across the hand-off, stored-stream and dispatch tables are clean.
+- **A blanket `deny` still fires *if* something else in the same scan independently reports the effect** —
+  which is how this survived so long. It is not a guarantee.
+
+### What IS affected
+
+Over a class where the scheduled task is the only route to the effect, **all four policy forms exit 0** —
+blanket `deny Unknown`, blanket `deny <E>`, `deny <E> Unknown`, and `pure` scoped to the caller. Measured
+on the published 0.35.0 jar downloaded from the release.
+
+| surface | methods |
+|---|---|
+| `java.util.Timer` | `schedule(TimerTask,long)`, `(TimerTask,Date,long)`, `(TimerTask,long,long)`, `scheduleAtFixedRate(TimerTask,Date,long)`, `(TimerTask,long,long)` |
+| `ScheduledExecutorService` and `ScheduledThreadPoolExecutor` | `schedule(Runnable,long,TimeUnit)`, `schedule(Callable,long,TimeUnit)`, `scheduleAtFixedRate(...)`, `scheduleWithFixedDelay(...)` |
+| streams | `InputStream.skip(long)`, `InputStream.skipNBytes(long)`, `Reader.skip(long)` |
+
+**And one surface no table bounds.** The same arithmetic fed the receiver-type resolver, and a non-null
+result there switches *off* the class-hierarchy over-approximation entirely. So **any** virtual or
+interface call whose descriptor carries a `long`/`double`, with a `new` on the stack below the receiver,
+could lose its call edge — `new StringBuilder().append(h.work(1L))` is enough. This is not enumerable
+from a method list.
+
+Worked example, three lines:
+
+    static ScheduledExecutorService EXEC = Executors.newScheduledThreadPool(1);
+    void go(Runnable r) { EXEC.scheduleAtFixedRate(r, 0L, 100000L, TimeUnit.MILLISECONDS); }
+
+`deny Unknown` → **exit 0**. The caller is absent from `functions[]` entirely — a positive purity claim
+over a method handing arbitrary caller-supplied code to a scheduler.
+
+### What to do now
+
+1. **If you gate JVM code that schedules work, treat those verdicts as unverified** until you re-run on a
+   build carrying the fix.
+2. **A blanket `deny` is not a backstop here.** Check by hand whether the scheduled task's effect is
+   independently reported elsewhere in the same scan; if it is not, the gate was passing on nothing.
+3. The same applies to `skip`-based byte movers and to any virtual call with a wide primitive in its
+   descriptor.
+
+### Status
+
+Fixed on `main`, unreleased: candor-java `d1ad75f` — one authority counting values, nine call sites routed
+through it, six size-summing copies deleted. Tracked in `candor-spec/SOUNDNESS.md` as **R248**, **R258**
+and **R274**, each with its measurement, plus **R275** recording why the existing test suite passed over
+this for two releases: its one relevant assertion was green because the misread landed on a value that
+answered the same way.
+
+
 ## 2026-09-03 — [10]'s dedupe stops letting a cancelled twin outvote its successful sibling (unreleased)
 
 - **`bin/assert-audit.sh`: `TEST_RE`'s directory alternatives now require a real script/source

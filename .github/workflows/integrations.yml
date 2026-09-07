@@ -71,3 +71,12 @@ jobs:
       - name: candor dispatcher routing contract
         run: bash bin/candor.test.sh
 
+      # The shared corpus A/B (SOUNDNESS R288/R242/R289).  Its selftest is the CALIBRATION, not a
+      # smoke test: it proves the tool reports a LARGER changed count than the `fn`-keyed version it
+      # replaces, REFUSES an entry that judged nothing, catches a change an `inferred`-only key
+      # misses, and returns zero on identical inputs.  An instrument nobody has watched fail is not
+      # an instrument, and this one's failure mode — an empty diff — is the answer everybody wants.
+      # Hermetic: the arms are `cat` over fixture JSON, so no engine and no corpus are needed.
+      - name: corpus A/B differential calibration
+        run: python3 bin/corpus-ab.py --selftest
+

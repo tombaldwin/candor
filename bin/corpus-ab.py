@@ -623,9 +623,18 @@ def run(args):
         emit("  %d entr%s judged units and reported NO rows (the legitimate all-pure kind, SPEC ⟨0.24⟩)"
              % (len(allpure), "y" if len(allpure) == 1 else "ies"))
     if unjudged and args.allow_unjudged:
-        emit("  %d entr%s judged NOTHING and %s NOT compared — --allow-unjudged, acknowledged:"
+        # SOUNDNESS R307 — this used to say the entries were "NOT compared", which is the OPPOSITE of
+        # what --allow-unjudged does: `excluded` drops them from the exclusion list, so they stay in
+        # `good` and their rows JOIN the diff. The behaviour is the safe one (a 0 -> N transition
+        # surfaces as ADDED), but a reader who believed the sentence computed a corpus 91 entries
+        # smaller than the one that was actually measured. A tool that misdescribes its own scope is
+        # the same class of defect as the silences it exists to find.
+        emit("  %d entr%s judged NOTHING in one arm and %s COMPARED ANYWAY — --allow-unjudged,"
              % (len(unjudged), "y" if len(unjudged) == 1 else "ies",
                 "was" if len(unjudged) == 1 else "were"))
+        emit("  acknowledged. They remain in the %d compared above, and a 0 -> N transition in either"
+             % len(good))
+        emit("  direction WILL surface as ADDED/REMOVED. Listed so the population is auditable:")
         for e, _ in unjudged[:8]:
             emit("      %s" % e)
         if len(unjudged) > 8:
@@ -671,16 +680,27 @@ def run(args):
     emit()
     reach = collections.Counter()
     reach_entries = collections.Counter()
+    # SOUNDNESS R307 — keep the SET, not only the tally. A count cannot be cross-checked against
+    # anything: it could not answer "did the branch fire only in entries the run also skipped?", and
+    # when a reach of 7 produced 819 row deltas there was no way to say which 7 without re-deriving
+    # them by hand from lockfiles. The set is the difference between a number and evidence.
+    reach_where = collections.defaultdict(list)
     for r in good:
         for m, n in (r.get("reach") or {}).items():
             if n:
                 reach[m] += n
                 reach_entries[m] += 1
+                reach_where[m].append((r.get("entry"), n))
     zero_reach = False
     if args.mark:
         emit("  REACH (%s arm, counted on stderr) — an unchanged row is not evidence the code ran:" % args.mark_arm)
         for m in args.mark:
             emit("    %-40s %8d hits across %d entries" % (m, reach[m], reach_entries[m]))
+            for ent, n in sorted(reach_where.get(m, []), key=lambda t: -t[1])[:5]:
+                emit("        %6d  %s" % (n, ent))
+            if len(reach_where.get(m, [])) > 5:
+                emit("        … and %d more entries (full set in the --out JSON)"
+                     % (len(reach_where[m]) - 5))
         zero_reach = not any(reach[m] for m in args.mark)
     else:
         emit("  REACH: NOT MEASURED.  This run cannot tell \"0 changed because the change is inert\"")
@@ -693,6 +713,7 @@ def run(args):
                        "entries_compared": len(good), "entries_given": len(results),
                        "excluded": bad, "unjudged": unjudged, "all_pure": allpure, "pre_rows": len(pre_rows), "post_rows": len(post_rows),
                        "reach": dict(reach), "reach_entries": dict(reach_entries),
+                       "reach_where": {k: v for k, v in reach_where.items()},
                        "detail": detail}, fh)
         emit()
         emit("  detail → %s" % args.out)

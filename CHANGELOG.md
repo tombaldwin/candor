@@ -47,6 +47,7 @@ on the published 0.35.0 jar downloaded from the release.
 | `java.util.Timer` | `schedule(TimerTask,long)`, `(TimerTask,Date,long)`, `(TimerTask,long,long)`, `scheduleAtFixedRate(TimerTask,Date,long)`, `(TimerTask,long,long)` |
 | `ScheduledExecutorService` and `ScheduledThreadPoolExecutor` | `schedule(Runnable,long,TimeUnit)`, `schedule(Callable,long,TimeUnit)`, `scheduleAtFixedRate(...)`, `scheduleWithFixedDelay(...)` |
 | streams | `InputStream.skip(long)`, `InputStream.skipNBytes(long)`, `Reader.skip(long)` |
+| commons-io and Guava stream utilities (`Rules.STREAM_CONSUMING_UTILITIES`, reached via `callArg`) | `IOUtils.skip`, `IOUtils.skipFully`, `IOUtils.copyLarge`, `IOUtils.toByteArray(in, long)` — each in both `InputStream` and `Reader` spellings — and `ByteStreams.skipFully` |
 
 **And one surface no table bounds.** The same arithmetic fed the receiver-type resolver, and a non-null
 result there switches *off* the class-hierarchy over-approximation entirely. So **any** virtual or
@@ -61,6 +62,31 @@ Worked example, three lines:
 
 `deny Unknown` → **exit 0**. The caller is absent from `functions[]` entirely — a positive purity claim
 over a method handing arbitrary caller-supplied code to a scheduler.
+
+**CORRECTED 2026-09-07, after review — the table above was bounded by three tables and there is a FOURTH.**
+The first version of this advisory listed 16 methods across the hand-off, stored-stream and dispatch
+tables. It missed `Rules.STREAM_CONSUMING_UTILITIES`, reached through the same helper (`callArg`) with the
+same defect — whose own javadoc in the fix already said it "was absent from R248's own list of affected
+helpers". So the published text inherited an audit boundary drawn around its own trigger. Eight more
+methods were silent on 0.34.0 and 0.35.0, measured on the published jars, and **`IOUtils.copyLarge` and
+`IOUtils.skipFully` are far more common in real Java than `InputStream.skipNBytes`, which the original
+table did list.** If you use commons-io or Guava streams, you were affected and the first version of this
+advisory told you otherwise.
+
+**How to re-verify after upgrading, because the exit code may NOT move.** `deny <E>` and `pure` scoped to
+the caller exit 0 on 0.35.1 too, by design: the scheduled task is opaque, so there is no concrete effect to
+deny, and `pure` denies everything except `Unknown`. What changes is a DISCLOSURE, not a verdict — 0.35.0
+omits the method from `functions[]` entirely, while 0.35.1 reports it with `unknownWhy: ["task-handoff:…"]`
+and prints `note — N method(s) PASS the policy but are Unknown (purity NOT verified)`. **So do not
+conclude from an unchanged exit code that you were never affected.** Gate with `deny Unknown` or
+`deny <E> Unknown`, or run `candor unverified`, and read the note. Where the effect is known concretely
+through a dependency report, `deny <E>` and `pure` do flip 0 → 1.
+
+**If you install through `candor update` or Homebrew, check what you actually have.** The umbrella's java
+engine pin was left on the family line when 0.35.1 was cut, so the front door kept serving 0.35.0. That is
+fixed on `main`, but Homebrew users take the umbrella tarball and will keep receiving 0.35.0 until the
+umbrella is re-cut. Verify with `candor --version`; if it reports candor-java 0.35.0, take the jar or the
+native binary directly from the v0.35.1 release.
 
 ### What to do now
 

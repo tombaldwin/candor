@@ -37,7 +37,7 @@ ENGINE_PIN="0.35.0"                          # the engine release line `candor u
 # first time candor-ts or candor-rust needed the same thing. Four symmetric pins also let the release
 # guard be ONE rule over four engines rather than a special case. (candor-agents and candor-spec carry no
 # pin here: the umbrella never installs them.)
-ENGINE_PIN_JAVA=""
+ENGINE_PIN_JAVA="0.35.1"
 ENGINE_PIN_TS=""
 ENGINE_PIN_RUST=""
 ENGINE_PIN_SWIFT=""

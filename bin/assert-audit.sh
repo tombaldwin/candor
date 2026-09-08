@@ -46,7 +46,13 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # prose about what code does, and a vocabulary that fires on every third comment is a red nobody reads —
 # this project has retired two such checks already. Narrow on measured spellings; widen only when a
 # missed instance is measured, never on a hunch.
-ASSERT_RE='proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
+# SOUNDNESS R332 — the vocabulary was missing this project's OWN most-used safety words. On
+# candor-rust bbd7615 the audit said "no safety assertions added — nothing to defend" while the
+# diff asserted, in comments, "is deterministic recomputation — correctly PURE" and "The
+# explicit-salt family … stays PURE". One of those was FALSE at password-hash 0.5.x (R330), and
+# it is exactly the line the tool exists to demand a fixture for. A detector blind to the
+# house dialect reports the reassuring answer on the commit where it matters most.
+ASSERT_RE='correctly pure|stays pure|remains pure|is pure|verified still|deterministic recomputation|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
 
 # What counts as a test. Per-repo conventions across the family: java/gradle `src/test`, rust `tests/`
 # and `#[test]` in-file, ts `test.mjs`/`*.test.*`, swift `Tests/`, plus every repo's `ci/`, `smoke.sh`,

@@ -68,6 +68,28 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # this one fails safe by being wide.
 ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume)(es|s)? (no|nothing)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
 
+# SOUNDNESS R339 — THE STRUCTURAL ARM, because the VOCABULARY ARM HAS NOW MISSED THREE TIMES and the
+# third miss retired the approach rather than the wording. R332 added this project's dialect after the
+# list missed a FALSE purity assertion; R336 rewrote the alternatives as shapes after it missed
+# `stay pure`; and the very next commit, `8c063eb`, asserted "COMPILED IN, no disk read" and "no caller
+# is over-charged" and matched nothing again. The space of ways to assert safety in prose is open-ended,
+# so a prose detector's negative will never mean "nothing was claimed" — and its negative is exactly the
+# answer that gets believed.
+#
+# So the primary check no longer depends on prose at all. In THIS family the thing being asserted is
+# almost always the same: an effect-classification RULE changed. That is structural, and it is the
+# question the tool actually wants answered — "you changed what candor believes about an effect; where is
+# the fixture that fails if you got it wrong?" Measured against real history: `eb31dcc` added 24
+# calibration-ceiling rows with no test and no assertion prose, and the vocabulary arm returned "nothing
+# to defend". A neighbouring commit later REWROTE that same table and silently dropped nine entries
+# (R328) — the structural arm flags the whole family of commits in which that happened.
+#
+# Deliberately NARROW, one file per engine, because breadth here is not free: this arm fails a commit,
+# so a path that is merely rule-ADJACENT (candor-scan's `scan.rs`, which dispatches rather than decides)
+# would make the tool noisy and then ignored. Comment-only and blank additions do not count — a diff that
+# only documents a rule asserts nothing new about it.
+RULE_RE='crates/candor-classify/src/lib\.rs$|(^|/)Classifier\.java$|(^|/)Classifier\.swift$|(^|/)scan\.mjs$'
+
 # What counts as a test. Per-repo conventions across the family: java/gradle `src/test`, rust `tests/`
 # and `#[test]` in-file, ts `test.mjs`/`*.test.*`, swift `Tests/`, plus every repo's `ci/`, `smoke.sh`,
 # `soundness/`, `conformance/` and `fuzz` harnesses. A CHANGELOG entry is NOT a test and must not count
@@ -177,12 +199,41 @@ selftest() {
   if [ "$rc" -ne 0 ]; then echo "  ✘ eval/run.sh (a real gate script) was NOT credited as a test (rc=$rc) — the narrowing went too far"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ …and a real script under eval/ still counts — the narrowing didn't overshoot into the safe-but-noisy direction"; fi
 
-  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 6 cases, both directions, a CHANGELOG is not coverage, and neither is a doc file under eval/ci/soundness/conformance"; return 0
+  # (7) R339, the STRUCTURAL arm: a changed effect RULE with NO prose and NO test must FAIL. This is
+  # `eb31dcc`'s real shape — 24 calibration-ceiling rows, no assertion in words, no fixture — which the
+  # vocabulary arm passed as "nothing to defend" for as long as it was the only arm.
+  mkdir -p "$tmp/crates/candor-classify/src"
+  printf 'pub fn classify(c: &str) -> Option<&str> {\n    if c == "reqwest" { return Some("Net"); }\n    None\n}\n' \
+    > "$tmp/crates/candor-classify/src/lib.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm seven
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ]; then echo "  ✘ a changed classifier RULE with no prose and no test was accepted (rc=$rc) — eb31dcc's exact shape"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ a changed effect RULE with no assertion prose and no test FAILS — the vocabulary arm passed this"; fi
+
+  # (8) both other directions of the structural arm in one commit, because a check that only ever fails
+  # is a check nobody keeps: a rule change WITH a test is accepted, and a COMMENT-ONLY edit to the same
+  # rule file asserts nothing new and must not fail on its own.
+  printf 'pub fn classify(c: &str) -> Option<&str> {\n    // a comment-only edit claims nothing new\n    if c == "reqwest" { return Some("Net"); }\n    if c == "curl" { return Some("Net"); }\n    None\n}\n' \
+    > "$tmp/crates/candor-classify/src/lib.rs"
+  printf '#[test]\nfn classify_curl_is_net() { assert_eq!(classify("curl"), Some("Net")); }\n' > "$tmp/tests/rules.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm eight
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "  ✘ a rule change WITH a test beside it was rejected (rc=$rc) — the structural arm is one-directional"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and the same rule change PASSES when a test lands with it"; fi
+
+  printf 'pub fn classify(c: &str) -> Option<&str> {\n    // a comment-only edit claims nothing new\n    // and must not fail the structural arm on its own\n    if c == "reqwest" { return Some("Net"); }\n    if c == "curl" { return Some("Net"); }\n    None\n}\n' \
+    > "$tmp/crates/candor-classify/src/lib.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm nine
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "  ✘ a COMMENT-ONLY edit to a rule file failed (rc=$rc) — the arm counts documentation as a rule change"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and a comment-only edit to the same file does NOT fail — documenting a rule asserts nothing new"; fi
+
+  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 9 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
   else echo; echo "assert-audit selftest: FAILED — $fails case(s)"; return 1; fi
 }
 
 scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any assertion lacks test cover
-  local d="$1" range="$2" diff hits testfiles n
+  local d="$1" range="$2" diff hits testfiles rulelines n
   diff="$(git -C "$d" diff -U0 "$range" 2>/dev/null)" || { echo "assert-audit: cannot diff $range in $d"; return 2; }
   [ -z "$diff" ] && { echo "assert-audit: empty range $range — nothing to audit (that is not a pass, there is no diff)"; return 0; }
 
@@ -190,7 +241,39 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   hits="$(printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' | grep -iE "$ASSERT_RE" || true)"
   testfiles="$(git -C "$d" diff --name-only "$range" 2>/dev/null | grep -E "$TEST_RE" || true)"
 
+  # The STRUCTURAL arm (R339). A changed effect RULE is an assertion whether or not the diff says so.
+  # Non-comment, non-blank ADDED lines only, inside a rule file: documenting a rule claims nothing new.
+  rulelines="$(printf '%s\n' "$diff" \
+    | awk -v re="$RULE_RE" '
+        /^\+\+\+ b\// { f=substr($0,7); infile=(f ~ re); next }
+        /^\+\+\+ / { infile=0; next }
+        infile && /^\+/ && !/^\+\+\+/ {
+          l=substr($0,2); sub(/^[ \t]+/,"",l);
+          if (l=="" ) next;
+          if (l ~ /^(\/\/|\/\*|\*|#)/) next;
+          print l
+        }' || true)"
+
+  if [ -z "$hits" ] && [ -n "$rulelines" ] && [ -z "$testfiles" ]; then
+    n="$(printf '%s\n' "$rulelines" | grep -c .)"
+    echo "assert-audit: $n added line(s) change an effect-classification RULE, and NO test file changed"
+    echo "  anywhere in this range. A changed rule IS an assertion about what candor believes an effect"
+    echo "  to be — the diff does not have to say so in words, and three times now it did not:"
+    printf '%s\n' "$rulelines" | sed 's/^/    /' | cut -c1-160 | head -20
+    echo
+    echo "assert-audit: FAILED — a rule moved with nothing beside it that would fail if the new rule"
+    echo "  were wrong. Measured: candor-rust \`eb31dcc\` added 24 calibration-ceiling rows this way, and"
+    echo "  a neighbouring commit then rewrote that table and silently dropped nine of them (R328)."
+    return 1
+  fi
+
   if [ -z "$hits" ]; then
+    if [ -n "$rulelines" ]; then
+      echo "assert-audit: no safety-assertion PROSE in $range, but an effect RULE changed and this range"
+      echo "  changes tests — accepted. (The prose arm has missed three times; the rule arm is the one"
+      echo "  that decided this.)"
+      return 0
+    fi
     echo "assert-audit: no safety assertions added in $range — nothing to defend"
     return 0
   fi

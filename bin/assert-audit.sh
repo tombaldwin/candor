@@ -52,7 +52,21 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # explicit-salt family … stays PURE". One of those was FALSE at password-hash 0.5.x (R330), and
 # it is exactly the line the tool exists to demand a fixture for. A detector blind to the
 # house dialect reports the reassuring answer on the commit where it matters most.
-ASSERT_RE='correctly pure|stays pure|remains pure|is pure|verified still|deterministic recomputation|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
+# SOUNDNESS R336 — WIDENED A SECOND TIME, and the second miss is the argument for the shape of the
+# fix rather than for another word. R332 widened this list with the house dialect after it reported
+# "nothing to defend" on the commit that carried a FALSE purity assertion. Eight days' worth of one
+# session later it did it again, on `202386b`: that diff asserts "must stay pure", "open no socket"
+# and "assembles a config struct" about redis's sentinel builders, and the list matched none of them —
+# because it had `stays pure` and not `stay pure`. A near-miss of its own vocabulary reads exactly like
+# an absence of assertions.
+#
+# So the alternatives below are now written as SHAPES, not as remembered sentences: any inflection of
+# "<subject> is/are/be/stay/stays/remain(s)/reads pure", and the whole family of absence claims
+# ("touches no", "opens no", "performs no", "draws no", "consumes nothing", "no round-trip", "no I/O").
+# An absence-of-effect claim IS a safety assertion by definition, which is why the wide form is right
+# here and would not be right in the test-file allowlist below — that one fails safe by being narrow,
+# this one fails safe by being wide.
+ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume)(es|s)? (no|nothing)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
 
 # What counts as a test. Per-repo conventions across the family: java/gradle `src/test`, rust `tests/`
 # and `#[test]` in-file, ts `test.mjs`/`*.test.*`, swift `Tests/`, plus every repo's `ci/`, `smoke.sh`,

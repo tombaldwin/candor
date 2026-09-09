@@ -56,6 +56,38 @@ info() { echo "  • $*"; }   # a pass that is worth explaining rather than just
 oos()  { echo "  ⊘ $*"; }
 rs_banner note
 
+# SOUNDNESS R368 — KEEP ONLY LINES WHOSE FILE IS TRACKED IN ITS REPO. Both spec-leftover scans below
+# read the working tree, so on the 0.36 cut they reported 56 "leftovers", every one a
+# `candor-rust/soundness/realworld/**/r.*.json` written by a local oracle run and ignored at that
+# repo's .gitignore:10 — while ZERO tracked files anywhere still said `spec 0.35`. The checks' own
+# message is "in shipped source/docs/packaging", and an untracked artifact is none of those.
+#
+# Two costs, and the second is the one that matters: it reds every release for a person to wave
+# through, and a real leftover would then be one line among dozens of known-benign ones — exactly the
+# burying the scan's own comment says it splits fixtures out to avoid. A check that cries wolf is a
+# check nobody reads.
+#
+# Input and output are `repo/path:line:text`. One `git ls-files` per repo, cached, so a seven-repo
+# scan makes seven calls.
+_drop_gitignored() {
+  awk -v root="$ROOT" '
+    BEGIN { FS=":" }
+    {
+      path = $1
+      slash = index(path, "/")
+      if (slash == 0) { print; next }
+      repo = substr(path, 1, slash - 1)
+      rel  = substr(path, slash + 1)
+      if (!(repo in loaded)) {
+        loaded[repo] = 1
+        cmd = "git -C \"" root "/" repo "\" ls-files 2>/dev/null"
+        while ((cmd | getline f) > 0) tracked[repo "/" f] = 1
+        close(cmd)
+      }
+      if ((repo "/" rel) in tracked) print
+    }'
+}
+
 # --- 1. every engine DECLARES the same spec (the contract floor) ----------------------------------------
 echo "[1] declared spec is uniform across engines"
 declare -a specs=()
@@ -204,7 +236,7 @@ for PRIOR in $PRIORS; do
       --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
   else
     # A leftover in a FIXTURE is usually deliberate (a 0.24 engine reading a 0.23 report is real
@@ -249,7 +281,7 @@ for PRIOR in $PRIORS; do
         _c="${_l#*:}"; _c="${_c#*:}"
         printf '%s' "$_c" | grep -qiw spec && printf '%s\n' "$_l"
       done \
-    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' )"
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
   else
     # Same loud/advisory split as [2] — [2b] was the half that still dumped every fixture, which is the

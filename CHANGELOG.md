@@ -10,6 +10,18 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**AND A FOURTH PASS FOUND TWO FALSE SENTENCES IN THIS FILE'S OWN TOOLING — SOUNDNESS R365/R366.**
+`_ci_verdict.py` still carried the pre-R352 rule — "a `success` wins the group outright, wherever gh
+lists it" — presented as THE FIX, forty lines above the paragraph that calls it the defect. It arrived
+with the commit R352 later diagnosed, and R352, R356 AND R360 each edited that file without removing
+it, so a reader going top-down learned the defect as the current design. It is replaced with the rule
+as it actually stands. A second comment there claimed R360's change was "only about which entry
+represents the group"; measured, it moves the VERDICT in three arrangements of four, always in the
+false-RED direction. And `find_version_heading` claimed to be "kept BYTE-IDENTICAL" to the question the
+publisher asks — the same sentence R361 retracted a few lines above, left standing in the function that
+runs on all six engine repos rather than on the umbrella alone. Seven of twelve probe headings
+disagreed, in both directions; it is now a prefix test in the publisher's order, and all eight agree.
+
 **AND A THIRD PASS FOUND THE SAME CLASS AGAIN — SOUNDNESS R360/R361.** R356 closed the same-second
 TIE door in release gate [10] and left the RECENCY door open: a `skipped` run newer than a failure at
 the same sha won its group and answered OK, where a `cancelled` in the same position correctly answered

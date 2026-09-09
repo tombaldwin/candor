@@ -10,6 +10,17 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (unreleased)
 
+**AND MY FIXES FOR TWO OF THEM HAD THE SAME DEFECTS — SOUNDNESS R356/R357.** A review dispatched
+because two of the day's cardinal sins came from the previous day's fixes found that the pattern held
+here too. R352's tie rule asked `!= "success"` while the verdict treats both `success` and `skipped`
+as acceptable, so a `skipped` twinned with a failure at the same second answered OK — a masked failure
+in release gate [10], the class R352 was written to close, in the same gate, and order-dependent
+besides. A null `workflowDatabaseId` also merged every workflow into one group, because
+`.get(k, default)` does not fall back on a present-but-null value. And R354's postcondition lived only
+in one branch: the sibling `SAME` route searched the whole file for a stamp, so a re-run found the
+stamp run 1 had written on an OLDER section, announced the newest was already stamped — false — and
+let staging proceed into the [9b] refusal R354 exists to prevent.
+
 **A failing CI run read as OK in RELEASE GATE [10] — SOUNDNESS R352.** `_ci_verdict.py` let any `success` win its workflow group, so a newer FAILURE at the same sha was masked. Measured on identical
 stdin and argv: the published v0.35.0 answered `BAD ci:failure`; this answered `OK`. Gate [10] is the
 check that authorises publishing a commit. The trigger is documented rather than hypothetical —

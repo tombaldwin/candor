@@ -101,11 +101,50 @@ for x in mine:
         order.append(key)
     groups[key].append(x)
 
+# SOUNDNESS R352 — "ANY SUCCESS IN THE GROUP WINS" MASKS A NEWER FAILURE, AND THIS IS RELEASE GATE
+# [10], the check that authorises publishing a commit. The line was
+#     success = next((e for e in entries if ... == "success"), None)
+#     latest.append(success if success is not None else entries[0])
+# which answers OK for [failure(newest), success(older)] at one sha. Measured against the published
+# v0.35.0 on identical stdin and argv: v0.35.0 -> `BAD ci:failure`, this file before the fix -> `OK`.
+#
+# The real trigger is not hypothetical: `native.yml` and candor-swift's `release.yml` both document
+# `workflow_dispatch` RECOVERY paths that create a second run at an unmoved sha, and the cron
+# workflows (`realworld-oracle-deep`, `disclosure-recall`) re-run at a sha that has not moved. A
+# recovery dispatch that FAILS after an earlier success read green.
+#
+# WHY THE OVERSHOOT HAPPENED: the defect this replaced was a `cancelled` twin — a supersede — and the
+# repair generalised from "a cancelled run is not a verdict" to "a success outranks anything", which
+# also swallows `failure`. The narrow rule keeps the first half and drops the second.
+#
+# AND "WORST WINS" IS NOT THE FIX EITHER — it was the first wording tried and it is wrong: it would
+# fail `idsame` (a success at 10:05 legitimately superseding a failure at 10:00) and would block every
+# re-run at an unmoved sha until the sha changed, which is precisely what a recovery dispatch is for.
+# Recency must still decide; the tie is the only place order cannot.
+#
+# THE RULE, in three steps:
+#   1. drop `cancelled` entries that have a non-cancelled sibling in the group — a cancelled run is an
+#      ABSENCE of verdict, and the sibling's completed run IS a verdict on that sha. No cause is
+#      asserted about WHY it cancelled, so nothing has to be earned from a workflow file (ci-watch.sh's
+#      `workflow_cancels_in_progress` guard answers a DIFFERENT question — an older commit's newest run
+#      — and importing it here would need a `gh workflow list` call per repo against a shared API quota).
+#   2. take the FIRST remaining entry; `gh run list` returns newest-first, which is the assumption this
+#      file already documents and shares with ci-watch.sh.
+#   3. if any other remaining entry shares the winner's whole-second `createdAt` and is not itself a
+#      success, the group is BAD. Second-granularity is exactly where "newest" stops being decidable —
+#      the defect this file was written for — so at a tie the safe answer is the failing one.
 latest = []
 for key in order:
     entries = groups[key]
-    success = next((e for e in entries if (e.get("conclusion") or e.get("status")) == "success"), None)
-    latest.append(success if success is not None else entries[0])
+    def _concl(e):
+        return e.get("conclusion") or e.get("status")
+    non_cancelled = [e for e in entries if _concl(e) != "cancelled"]
+    live = non_cancelled if non_cancelled else entries
+    winner = live[0]
+    tied = [e for e in live[1:]
+            if (e.get("createdAt") or "") == (winner.get("createdAt") or "")
+            and _concl(e) != "success"]
+    latest.append(tied[0] if tied else winner)
 
 bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]
 if bad:

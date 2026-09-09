@@ -153,6 +153,18 @@ rs_engine_pin() { # $1 = engine ; $2 = path to bin/candor
 #     published for that engine and a pin naming a release that does not exist 404s on a user's machine.
 # Family-wide this reduces to "all four resolve $VER" — the check that was always here, plus one it could
 # not express: a LEFTOVER per-engine pin holding one engine behind while the family moves past it.
+# SOUNDNESS R353 — does `<repo>` have a published release tagged `v<version>`? Answers the question
+# `rs_pin_violations`'s message actually asks. `gh release view` is authoritative and cheap (one call,
+# and only for a pin that collides with the version being cut, so the common path makes none).
+# FAIL-CLOSED BY CONSTRUCTION: any failure to establish existence — no `gh`, no network, a rate-limited
+# read, an auth error — answers "does not exist", so the violation is still reported. A check that
+# went quiet when it could not reach GitHub would turn an unpublished pin into a green light at exactly
+# the moment the quota is exhausted, which is when release verification is under the most pressure.
+rs_release_exists() { # $1 = repo (e.g. candor-java) ; $2 = version without the leading v
+  command -v gh >/dev/null 2>&1 || return 1
+  gh release view "v$2" --repo "tombaldwin/$1" --json tagName >/dev/null 2>&1
+}
+
 # Prints one line per violation; empty output means clean.
 rs_pin_violations() { # $1 = path to bin/candor ; $2 = the version being cut
   local e repo p
@@ -161,7 +173,22 @@ rs_pin_violations() { # $1 = path to bin/candor ; $2 = the version being cut
     if rs_in_set "$repo"; then
       [ "$p" = "$2" ] || echo "$e is pinned to ${p:-unset}, not $2 — this cut publishes $repo@$2, and \`candor update\` would keep installing ${p:-nothing}"
     else
-      [ "$p" != "$2" ] || echo "$e is pinned to $2, but $repo is NOT in this cut — that names a release nobody published"
+      # SOUNDNESS R353 — A VERSION-STRING COMPARISON STANDING IN FOR "DOES THIS RELEASE EXIST".
+      # The message says "that names a release nobody published", and the test cannot know that: it
+      # only knows the pin equals the version being cut. Those come apart whenever a per-engine build
+      # id legitimately equals another engine's — which is expressible BY DESIGN (this file's own
+      # header and preflight [4] both say a build id is per-engine), and it happened: candor-java was
+      # published at 0.35.1, so a 0.35.1 cut with java out of the set flagged java's TRUTHFUL pin as a
+      # violation, while the only value that passed was 0.35.0 — the release carrying three published
+      # cardinal sins. A check whose sole clean answer serves the defective engine is worse than no
+      # check. Ask the question the message asks: does a release with that tag exist for that repo?
+      if [ "$p" = "$2" ]; then
+        if rs_release_exists "$repo" "$p"; then
+          : # the pin names a real, published release that this cut is not touching — nothing to say
+        else
+          echo "$e is pinned to $2, but $repo is NOT in this cut and no $repo release is tagged v$2 — that names a release nobody published"
+        fi
+      fi
     fi
   done
 }

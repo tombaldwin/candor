@@ -1722,25 +1722,39 @@ printf '%s' "$distinct" | grep -q "ci:failure" \
 # realworld-oracle-deep, a real success/cancelled pair tied on the same second) showed that trusting
 # listed order at a tie is not safe EITHER direction: gh's order between same-second rows is not
 # reliable, so "whichever is listed first" can just as easily be the loser of the pair as the winner.
-# The fix makes a `success` win its group regardless of order — so this fixture (a success present in
-# the tie) now reports green in BOTH listed orders; a case where NEITHER run succeeded is what still
-# needs order-independence proof, and that is the new "neither succeeded" control below.
+# SOUNDNESS R352 — THESE TWO ASSERTIONS WERE INVERTED BY THE SAME COMMIT THAT INTRODUCED THE DEFECT
+# THEY PIN, which is why release-test.sh stayed green over a release gate that masked failures. The
+# paragraph here used to say "the fix makes a `success` win its group regardless of order — so this
+# fixture now reports green in BOTH listed orders", and tie1's message was changed from "the failure
+# must be reported — this is the 'genuinely-latest FAILURE hidden' shape from the defect report" to
+# "the superseded failure does not leak through". Nothing in the fixture distinguishes "superseded"
+# from "genuinely latest": both entries carry THE SAME WHOLE SECOND. The expectation moved with the
+# code, so the gate could not fail.
+#
+# A same-second tie is exactly where recency stops being decidable — it is the defect this file's
+# dedupe was written for — so at a tie the failing verdict wins and BOTH orders must report it. The
+# order-independence property is preserved and strengthened: tie1 and tie2 are the same two facts with
+# the objects swapped, and both must now be RED. `idsame` below (a success a full five minutes newer
+# than the failure) is the control that keeps a genuine supersede green — without it, "tie loses" would
+# be indistinguishable from "worst wins", which would block every legitimate re-run at an unmoved sha.
 tie1="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
 printf '%s' "$tie1" | grep -q "repos green on HEAD" \
-  && ok "[10] dedupe: same-second tie, failure-first order — a success sibling still wins the group" \
-  || bad "[10] dedupe: same-second tie, failure listed first — a success sibling did not win the group"
+  && bad "[10] dedupe: same-second tie reported GREEN — a failure sharing the winner's whole second was masked. This is R352, and it is release gate [10]: the check that authorises publishing." \
+  || ok "[10] dedupe: same-second tie, failure-first order — the tie is reported RED"
 printf '%s' "$tie1" | grep -q "ci:failure" \
-  && bad "[10] dedupe: same-second tie — the superseded failure leaked through beside its success sibling" \
-  || ok "[10] dedupe: …and the superseded failure does not leak through"
-# Same-second tie, order 2: the SAME two facts, objects swapped. Must still report green — proving the
-# success-wins rule is order-independent, not just luckily agreeing with gh's listed order above.
+  && ok "[10] dedupe: …and the failure is NAMED, not merely counted" \
+  || bad "[10] dedupe: the tie was red but the failure was not named — a verdict with no cause"
+# Same-second tie, order 2: the SAME two facts, objects swapped. Must report RED in this order too —
+# proving the tie rule is order-independent, not just luckily agreeing with gh's listed order above.
+# This is the assertion that makes tie1 worth having: a rule that only fires in one listed order is the
+# original 2026-08-26 defect wearing a different hat.
 tie2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
 printf '%s' "$tie2" | grep -q "repos green on HEAD" \
-  && ok "[10] dedupe: same-second tie, swapped order — success-first still reports green" \
-  || bad "[10] dedupe: swapping the tied objects flipped a verdict that must not depend on order"
+  && bad "[10] dedupe: swapped order reported GREEN while failure-first reported RED — the verdict depends on gh's incidental array order, which is the 2026-08-26 defect exactly" \
+  || ok "[10] dedupe: same-second tie, swapped order — still RED, so the rule is order-independent"
 printf '%s' "$tie2" | grep -q "ci:failure" \
-  && bad "[10] dedupe: swapped order still reported the superseded failure" \
-  || ok "[10] dedupe: …and the superseded failure does not leak through"
+  && ok "[10] dedupe: …and the failure is NAMED in this order too" \
+  || bad "[10] dedupe: swapped order was red but did not name the failure"
 # CONTROL: a same-second tie where NEITHER run succeeded must still fail — success-wins must not
 # become "any duplicate wins". Order-independence checked both ways, same as tie1/tie2 above.
 tie3a="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"

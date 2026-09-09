@@ -8,6 +8,27 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-09 — `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR`
+
+**`bin/assert-audit.sh` gained a STRUCTURAL arm — SOUNDNESS R339.** The tool exists to catch a safety
+assertion that ships with no test beside it, and it found them by matching words. That failed three
+times: it missed a FALSE purity claim (R332), then missed `stay pure` where its list held `stays pure`
+(R336), then missed *"COMPILED IN, no disk read"* and *"no caller is over-charged"* on the very next
+commit. The space of ways to assert safety in prose is open-ended, so the detector's negative could
+never mean "nothing was claimed" — and the negative is the answer that gets believed. It now also asks
+a question that needs no vocabulary: **did an effect-classification RULE change with no fixture beside
+it?** Measured against real history, that catches `eb31dcc`, which added 24 calibration-ceiling rows
+with no test — and a later commit rewrote that same table and silently dropped nine of them. Narrow by
+design (one rule file per engine, comment-only edits excluded) because this arm FAILS a commit.
+
+**Corpus evidence no longer lives under `$TMPDIR` — SOUNDNESS R306/R307.** macOS sweeps the per-user
+`/var/folders` tree, and a HOLLOWED corpus — directories intact, files gone — makes a differential
+print ADDED 0 / REMOVED 0 / CHANGED 0, which is exactly what a correct, safely-inert change prints.
+Four sibling harnesses across candor-java, candor-swift and the umbrella now default under `$HOME`, and
+acquisition is tested by CONTENT rather than by the presence of `.git` (a gutted checkout keeps
+`.git/hooks`, so the old test answered "already got it" forever about a tree with no source in it).
+`bin/corpus-ab.py` also stopped describing `--allow-unjudged` as NOT comparing entries it does compare.
+
 ## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1)
 
 **If you scan JVM code that schedules work — `Timer`, `ScheduledExecutorService` — read this. Unlike the

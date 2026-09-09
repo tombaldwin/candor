@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**AND THE FIRST REAL RUN OF `release-preflight.sh` FOUND A THIRD — SOUNDNESS R368.** Both spec-leftover
+scans read the working tree, so on this cut they reported 56 stray `spec 0.35` strings; every one is a
+`candor-rust/soundness/realworld/**/r.*.json` written by a local oracle run and gitignored, while ZERO
+tracked files anywhere still said it. The checks' own message is "in shipped source/docs/packaging", and
+an untracked artifact is none of those. Left alone it reds every release for a person to wave through,
+and a real leftover would then be one line among dozens of known-benign ones — the burying the scan's own
+comment says it splits fixtures out to avoid. Both scans now filter through `git ls-files`.
+(The code for this landed in the preceding commit, whose message describes only the changelog edit it was
+swept in with — recorded here so the change is not invisible.)
+
 **AND A FOURTH PASS FOUND TWO FALSE SENTENCES IN THIS FILE'S OWN TOOLING — SOUNDNESS R365/R366.**
 `_ci_verdict.py` still carried the pre-R352 rule — "a `success` wins the group outright, wherever gh
 lists it" — presented as THE FIX, forty lines above the paragraph that calls it the defect. It arrived

@@ -10,6 +10,14 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**The VS Code extension's own version tracks the server pin**, which is a coupling I did not know about
+until its CI failed on the pin commit: `test-vscode.sh` gate 4 requires `mm(package.json version) ==
+mm(candorTsVersion)`, so bumping the pin to 0.36.0 and leaving the extension at 0.35.0 is drift. I had
+seen that `"version": "0.35.0"` while bumping the pins and reasoned it was a separate axis published
+separately via `vsce`. It is a separate axis — and the gate couples their major.minor deliberately, so
+an installed extension cannot silently pair with a server line it was never tested against. JetBrains
+has no such coupling (`pluginVersion` is on its own scheme), which is why only this one failed.
+
 **Cross-repo pins moved to 0.36.0** — `bin/candor`'s `ENGINE_PIN` and `ENGINE_PIN_JAVA`, the `adopt/`
 java and agents pins, and the VS Code / JetBrains `candorTsVersion` and `candorJavaVersion`. These move
 AFTER the engines are published, which is why they are a second commit: the umbrella tarball carries the

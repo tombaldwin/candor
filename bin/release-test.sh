@@ -1772,6 +1772,41 @@ printf '%s' "$multi" | grep -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: two distinct workflows, both green, stays green" \
   || bad "[10] dedupe CONTROL: distinct (non-duplicate) workflow names broke the verdict"
 
+# SOUNDNESS R356/R360 — THE `skipped` ROWS, AND WHY THEY DID NOT EXIST UNTIL NOW. A review measured
+# that ZERO of the thirteen [10] fixtures changed their verdict between the pre-R356 and post-R356
+# `_ci_verdict.py` — the fix was unpinned, which is the same condition under which the defect it
+# closed (R352) shipped green. No fixture anywhere in [10] used `skipped`, and `skipped` is where
+# both holes were: the tie test asked `!= "success"` while the verdict treated `("success","skipped")`
+# as acceptable, so a tied `skipped` REPLACED the winner and masked a failure; and a `skipped` was
+# allowed to win its group by RECENCY over an older failure, which `cancelled` never was.
+#
+# Both directions, both listed orders, because order-dependence is the original 2026-08-26 defect.
+skipA="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$skipA" | grep -q "ci:failure" \
+  && ok "[10] a same-second \`skipped\` does not mask its failure twin (failure listed first)" \
+  || bad "[10] a tied \`skipped\` MASKED a failure in the publish gate — R356's defect"
+skipB="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
+printf '%s' "$skipB" | grep -q "ci:failure" \
+  && ok "[10] …and in the swapped order, so the tie rule is not order-dependent" \
+  || bad "[10] swapping the tied objects flipped the verdict — the 2026-08-26 defect returned"
+# RECENCY, not a tie: a NEWER `skipped` must not outrank an older failure. `cancelled` never could;
+# `skipped` could until R360, and both twins mean the same thing — no judgement was reached.
+skipR="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
+printf '%s' "$skipR" | grep -q "ci:failure" \
+  && ok "[10] a NEWER \`skipped\` does not supersede an older failure (R360)" \
+  || bad "[10] a newer \`skipped\` won its group by recency and masked a failure — R352's class, one door over"
+# CONTROL — a lone `skipped` is a legitimate green. Without this the two rows above are satisfied by
+# "skipped is always BAD", which would turn every conditionally-skipped workflow red.
+skipOK="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:35:00Z\"}]")"
+printf '%s' "$skipOK" | grep -q "repos green on HEAD" \
+  && ok "[10] CONTROL: a lone \`skipped\` run is still green" \
+  || bad "[10] a lone \`skipped\` was reported red — the fix over-reached into every conditional workflow"
+# CONTROL — a falsey workflowDatabaseId must still keep DISTINCT workflow names apart (R356(b)).
+nullid="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":null,\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"native\",\"workflowDatabaseId\":null,\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
+printf '%s' "$nullid" | grep -q "native:failure" \
+  && ok "[10] a null workflowDatabaseId does not merge two DIFFERENT workflows (R356)" \
+  || bad "[10] null ids merged unrelated workflows and dropped a failure — the 2026-08-29 defect"
+
 # THE FIFTH FALSE GREEN, the shape 97f7ef3 actually fixed (2026-08-30 revert sweep). Every dedupe row
 # above omits workflowDatabaseId entirely, so all of them travel _ci_verdict.py's FALLBACK branch (key =
 # workflowName, because the id is absent) and prove nothing about the id-keyed path the fix added. Two

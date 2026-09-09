@@ -92,6 +92,24 @@ if not mine:
 # workflowName as the grouping key only if workflowDatabaseId is absent from the input entirely (a
 # caller that has not been updated to request it) — degraded, not silently wrong: the fallback is the
 # OLD key, not a crash, but every current call site in release-preflight.sh requests the id.
+# SOUNDNESS R360 — ONE DEFINITION, read by both the tie test and the verdict. R356 said it "fixed
+# this by naming the OK set once" and did not: the constant sat INSIDE the per-group loop and the
+# verdict below kept its own literal `("success", "skipped")`. Two copies of the predicate that
+# decides whether a run is acceptable is precisely the drift that produced R356 — the tie test asked
+# about one set and the verdict about another, and a `skipped` slipped between them.
+OK_CONCLUSIONS = ("success", "skipped")
+
+# …AND A RUN THAT PRODUCED NO VERDICT MUST NOT OUTRANK ONE THAT DID. `cancelled` was already dropped
+# when a live sibling exists; `skipped` was not, so it won its group BY RECENCY and masked an older
+# failure at the same sha:
+#     [skipped@10:05, failure@10:00]   -> OK     (masked)
+#     [cancelled@10:05, failure@10:00] -> BAD    (correct)
+# Both twins mean the same thing — no judgement was reached — so both lose to a sibling that reached
+# one. R356 closed the TIE door and left the RECENCY door open, which is the R352 class one door over.
+# They stay distinct in the VERDICT (a lone `skipped` is fine, a lone `cancelled` is not); this is
+# only about which entry represents the group.
+NO_VERDICT = ("cancelled", "skipped")
+
 order = []
 groups = {}
 for x in mine:
@@ -143,8 +161,8 @@ for key in order:
     entries = groups[key]
     def _concl(e):
         return e.get("conclusion") or e.get("status")
-    non_cancelled = [e for e in entries if _concl(e) != "cancelled"]
-    live = non_cancelled if non_cancelled else entries
+    judged = [e for e in entries if _concl(e) not in NO_VERDICT]
+    live = judged if judged else entries
     winner = live[0]
     # SOUNDNESS R356 — AND THIS TEST MUST NAME THE OK SET, NOT JUST `success`. The verdict below
     # treats BOTH `success` and `skipped` as acceptable, and this line asked only about `success`, so a
@@ -156,13 +174,12 @@ for key in order:
     #     [failure, skipped, failure]   -> OK         which is the 2026-08-26 defect this file exists for)
     # `skipped` is reachable in this family — candor-swift's ci.yml, candor-spec's conformance.yml and
     # the umbrella's jetbrains.yml all carry job-level `if:`.
-    OK_CONCLUSIONS = ("success", "skipped")
     tied = [e for e in live[1:]
             if (e.get("createdAt") or "") == (winner.get("createdAt") or "")
             and _concl(e) not in OK_CONCLUSIONS]
     latest.append(tied[0] if tied else winner)
 
-bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]
+bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in OK_CONCLUSIONS]
 if bad:
     print("BAD " + ", ".join("%s:%s" % (x.get("workflowName"), x.get("conclusion") or x.get("status")) for x in bad))
 else:

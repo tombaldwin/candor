@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (unreleased)
+## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
 **AND MY FIXES FOR TWO OF THEM HAD THE SAME DEFECTS — SOUNDNESS R356/R357.** A review dispatched
 because two of the day's cardinal sins came from the previous day's fixes found that the pattern held
@@ -72,7 +72,7 @@ acquisition is tested by CONTENT rather than by the presence of `.git` (a gutted
 `.git/hooks`, so the old test answered "already got it" forever about a tree with no source in it).
 `bin/corpus-ab.py` also stopped describing `--allow-unjudged` as NOT comparing entries it does compare.
 
-## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1) (unreleased)
+## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1) (released 2026-09-09 as 0.36.0)
 
 **If you scan JVM code that schedules work — `Timer`, `ScheduledExecutorService` — read this. Unlike the
 2026-09-01 advisory, a blanket `deny <Effect>` does NOT reliably save you here.**
@@ -176,7 +176,7 @@ this for two releases: its one relevant assertion was green because the misread 
 answered the same way.
 
 
-## 2026-09-03 — [10]'s dedupe stops letting a cancelled twin outvote its successful sibling (unreleased)
+## 2026-09-03 — [10]'s dedupe stops letting a cancelled twin outvote its successful sibling (released 2026-09-09 as 0.36.0)
 
 - **`bin/assert-audit.sh`: `TEST_RE`'s directory alternatives now require a real script/source
   extension — SOUNDNESS R158.** The 2026-09-02 widening that added `(^|/)(ci|soundness|conformance|

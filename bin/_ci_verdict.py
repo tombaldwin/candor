@@ -78,17 +78,29 @@ if not mine:
 # at all. Here it picked the cancelled twin, and [10] failed a preflight whose repos were all actually
 # green; a re-run of the cancelled twin cleared it, which is the tell that nothing was actually broken.
 #
-# THE FIX extends "first occurrence per workflow ID wins" rather than replacing it: within a workflow's
-# group of runs at this commit, a `success` wins the group outright, wherever gh lists it. Only when NO
-# run in the group succeeded does the group fall back to the first-occurrence (gh's listed order) rule,
-# unchanged from the first fix — so a workflow with no successful run still fails, and a run still
-# in_progress/queued with no successful sibling still carries that status through to the caller's wait
-# loop. A `cancelled` run losing to a `success` sibling is exactly the case above; nothing here changes
-# what happens when NEITHER run of a group succeeded.
+# THAT PARAGRAPH USED TO CONTINUE: "THE FIX extends 'first occurrence per workflow ID wins' … a
+# `success` wins the group outright, wherever gh lists it." **THAT RULE IS THE DEFECT, NOT THE FIX, AND
+# HAS BEEN SINCE R352** — it masked a newer FAILURE at the same sha. It is removed here rather than
+# annotated, because a reader going top-down learned the pre-R352 rule as current: it arrived with the
+# commit R352 later identified as the defect, and R352, R356 AND R360 each edited this file without
+# noticing it, which is three chances missed. SOUNDNESS R365.
+#
+# THE RULE AS IT ACTUALLY STANDS, in one place, so the next reader does not have to reconstruct it:
+#   1. Entries whose conclusion reached no judgement — `cancelled` or `skipped` (`NO_VERDICT`) — are
+#      dropped when the group holds any entry that DID reach one. If none did, the whole group stands.
+#   2. The first REMAINING entry represents the group; `gh run list` is newest-first and this file
+#      never re-sorts. A run still `in_progress`/`queued` therefore carries its status to the caller's
+#      wait loop exactly as before.
+#   3. If another remaining entry shares the winner's whole-SECOND `createdAt` and is not acceptable,
+#      it replaces the winner — whole-second granularity is where "newest" stops being decidable, which
+#      is the 2026-08-26 defect this file was originally written for, so a tie resolves to the failure.
+#   4. Anything not in `OK_CONCLUSIONS` is BAD.
 #
 # FIRST OCCURRENCE PER WORKFLOW ID, grouped (not deduped eagerly): `mine` preserves gh's own newest-first
 # order (filtering by headSha above does not reorder), so within each group the first entry is that
-# workflow's nominal-latest run — used only as the fallback when the group has no success. Falls back to
+# workflow's nominal-latest run. (This sentence used to end "used only as the fallback when the group
+# has no success", which was the same stale rule: `live[0]` is the winner in the ORDINARY case, and the
+# fallback condition is now "no JUDGED entry", not "no success".) Falls back to
 # workflowName as the grouping key only if workflowDatabaseId is absent from the input entirely (a
 # caller that has not been updated to request it) — degraded, not silently wrong: the fallback is the
 # OLD key, not a crash, but every current call site in release-preflight.sh requests the id.
@@ -106,8 +118,21 @@ OK_CONCLUSIONS = ("success", "skipped")
 #     [cancelled@10:05, failure@10:00] -> BAD    (correct)
 # Both twins mean the same thing — no judgement was reached — so both lose to a sibling that reached
 # one. R356 closed the TIE door and left the RECENCY door open, which is the R352 class one door over.
-# They stay distinct in the VERDICT (a lone `skipped` is fine, a lone `cancelled` is not); this is
-# only about which entry represents the group.
+# They stay distinct in the VERDICT: a lone `skipped` is fine, a lone `cancelled` is not.
+#
+# **THIS COMMENT USED TO ADD "this is only about which entry represents the group", AND THAT WAS FALSE**
+# — R365. For a group in which NOTHING reached a verdict, dropping both from `live` leaves it empty, the
+# fallback restores the whole group, and `live[0]` is then whichever gh listed first. Measured, same two
+# runs, only their timestamps swapped:
+#     [skipped@10:05, cancelled@10:00] -> OK        (pre-R360: OK — unchanged)
+#     [cancelled@10:05, skipped@10:00] -> BAD       (pre-R360: OK — CHANGED)
+#     [skipped, cancelled] same second -> BAD       (pre-R360: OK — CHANGED)
+#     [cancelled, skipped] same second -> BAD       (pre-R360: OK — CHANGED)
+# So R360 did move the verdict, in three arrangements of four, and only in the FALSE-RED direction: an
+# exhaustive enumeration of every 1-to-3-entry group found no input where it turns a BAD into an OK.
+# The one surviving OK is a `cancelled` superseded by a NEWER `skipped`, which is the recency rule
+# applied to two entries that both mean "no judgement" — defensible, and stated here rather than left
+# for the next person to rediscover.
 NO_VERDICT = ("cancelled", "skipped")
 
 order = []

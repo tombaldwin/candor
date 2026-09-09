@@ -74,18 +74,32 @@ def newest_published_heading(text):
 
 
 def find_version_heading(s):
-    """The section belonging to VER, in either spelling this family writes.
+    """The section belonging to VER, matched the way `bin/_release_notes.sh` matches it.
 
-    `## [0.32.1] — …` is what the engines use. candor-spec's older headings are FLOOR-shaped
-    (`## 0.27 — …`), which is why the floor is tried second. Kept BYTE-IDENTICAL to the question
-    `bin/_release_notes.sh` asks at publish time — a gate and a publisher that ask different questions
-    are how the version heading could exist for one and not the other.
+    SOUNDNESS R366 — THIS DOCSTRING USED TO CLAIM IT WAS "kept BYTE-IDENTICAL to the question
+    `bin/_release_notes.sh` asks", AND IT WAS NOT. That is the same sentence R361 retracted for
+    `STAMPED_RE` a few lines above, left standing here — and this function is the worse of the two,
+    because it runs on ALL SIX ENGINE REPOS on every stage while `STAMPED_RE` runs on the umbrella
+    alone. The publisher's `sect_by_version`/`sect_by_floor` are PREFIX tests
+    (`index($0, "## [VER]") == 1`); this was an ANCHORED regex admitting only end-of-line or
+    ` — …`. Seven of twelve probe headings disagreed, in BOTH directions — `## [0.36.0] (hotfix)`,
+    `## [0.36.0] - 2026-09-09` and a trailing space matched the publisher and not the stager;
+    `## 0.36`, `## [0.36]` and `## 0.36.0 — date` matched the stager and not the publisher. **Both
+    divergent shapes already exist in candor-spec/CHANGELOG.md** (`## 0.26 (…)` and a bare `## 0.15`),
+    latent only because the heading being matched today happens to be canonical.
+
+    Reproduced end to end before this fix: with a bare `## 0.36` floor heading the stager FOLDED into
+    it and exited 0, and the publisher then refused at rc=3 — R354's sequence again — and the remedy
+    the refusal named was a PERMANENT NO-OP, because on re-run `## Unreleased` is empty and the stager
+    reports SAME forever. The umbrella branch R361 fixed at least exits 1 with something actionable.
+
+    Now a prefix test on the same two spellings the publisher tries, in the publisher's order.
     """
-    m = re.search(r"^## (\[%s\]|%s)([ \t]+—[^\n]*)?$" % (re.escape(VER), re.escape(VER)), s, re.M)
-    if m:
-        return m
-    floor = VER.rsplit(".", 1)[0]
-    return re.search(r"^## (\[%s\]|%s)([ \t]+—[^\n]*)?$" % (re.escape(floor), re.escape(floor)), s, re.M)
+    for prefix in ("## [%s]" % VER, "## %s " % VER.rsplit(".", 1)[0]):
+        for m in re.finditer(r"^## [^\n]*$", s, re.M):
+            if m.group(0).startswith(prefix):
+                return m
+    return None
 
 # THE CUT SET (bin/_release_set.sh). A scoped patch stages only the changelogs of the repos it
 # publishes: renaming another repo's `## Unreleased` to this version would label pending work as

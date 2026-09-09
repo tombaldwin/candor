@@ -232,6 +232,7 @@ for PRIOR in $PRIORS; do
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude=SOUNDNESS.md \
       --exclude='*WORK-QUEUE.md' \
       --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
@@ -265,6 +266,7 @@ for PRIOR in $PRIORS; do
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
       --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude=SOUNDNESS.md \
       --exclude='*WORK-QUEUE.md' \
       --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \

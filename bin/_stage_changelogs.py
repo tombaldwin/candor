@@ -42,6 +42,37 @@ STUB_BODY = (
 )
 
 
+# SOUNDNESS R361 — ASK THE PUBLISHER'S QUESTION, ONCE. R357 put a rule on both branches and then
+# spelled it TWO WAYS: the `SAME` guard required an em dash (`^## \d{4}-\d{2}-\d{2} —`), the `else`
+# postcondition did not, and NEITHER matches what `_release_notes.sh` actually selects. Its
+# `sect_newest` is "the first `## ` heading that is not `## Unreleased`" — ANY shape, dated or not.
+#
+# Measured on a heading with no em dash (`## 2026-09-10 new work`): the stager answered
+# `SAME … already (released … as 0.36.0)` and exited 0, and the publisher then refused at rc=3 naming
+# that very heading. That is R354's sequence verbatim, surviving the fix written to close it, because
+# the guard was anchored on a heading the publisher does not necessarily pick.
+#
+# So both branches now call THIS, and this mirrors `sect_newest`. One definition, one question.
+# The publisher's acceptance test is the glob `"## "*"(released "*" as $VER)"*`, which allows ANYTHING
+# between `(released ` and ` as VER)`. R357 demanded `[0-9-]+` there, which is STRICTLY STRICTER — a
+# heading reading `(released on 2026-09-09 as 0.36.0)` is published happily and was refused here,
+# stopping a legitimate cut with the file already half-edited. The comment claimed byte-identical; it
+# was not. Matched permissively, like the publisher.
+STAMPED_RE = re.compile(r"\(released .* as %s\)" % re.escape(VER))
+
+
+def newest_published_heading(text):
+    """The heading `_release_notes.sh: sect_newest` will publish: the first `## ` that is not
+    `## Unreleased`. Returns the whole heading line, or None when the file has no sections."""
+    for line in text.splitlines():
+        if not line.startswith("## "):
+            continue
+        if re.match(r"^## \[?[Uu]nreleased\]?", line):
+            continue
+        return line
+    return None
+
+
 def find_version_heading(s):
     """The section belonging to VER, in either spelling this family writes.
 
@@ -161,9 +192,8 @@ elif os.path.exists(u):
     # prevent. R354's postcondition lived only in the `else` branch, so this sibling route had no guard
     # at all. "A rule on one route and not its sibling is this family's oldest defect", as
     # `_ci_verdict.py`'s header puts it — and R354 walked into it while fixing the same class.
-    _newest = re.search(r"^## \d{4}-\d{2}-\d{2} —[^\n]*$", t, re.M)
-    _newest_stamped = bool(_newest and re.search(
-        r"\(released [0-9-]+ as %s\)" % re.escape(VER), _newest.group(0)))
+    _nh = newest_published_heading(t)
+    _newest_stamped = bool(_nh and STAMPED_RE.search(_nh))
     if not n and _newest_stamped:
         # Already stamped for THIS version by an earlier run. Re-running is a no-op, as the header promises.
         print("SAME candor: newest dated heading is already `(released … as %s)`" % VER)
@@ -224,13 +254,13 @@ elif os.path.exists(u):
         # weaker: a section stamped for the PREVIOUS version passes here and the publisher then
         # refuses at rc=3. `find_version_heading`'s own comment requires this be kept byte-identical
         # to the question the publisher asks.
-        newest = re.search(r"^## (\d{4}-\d{2}-\d{2})[^\n]*$", t, re.M)
-        if newest and not re.search(r"\(released [0-9-]+ as %s\)" % re.escape(VER), newest.group(0)):
+        newest = newest_published_heading(t)
+        if newest and not STAMPED_RE.search(newest):
             print("BAD candor: the NEWEST dated section is `%s` and this run did not stamp it. "
                   "`_release_notes.sh` publishes that section and will REFUSE (rc=3) because it "
                   "carries no `(released … as %s)` marker, so preflight [9b] fails and the cut stops. "
                   "Add ` (unreleased)` to the END of that heading (`## DATE — title (unreleased)`) and "
                   "re-run. %d heading(s) were stamped, none of them the newest."
-                  % (newest.group(0).strip(), VER, n))
+                  % (newest.strip(), VER, n))
             sys.exit(1)
         print("OK candor: %d dated heading(s) marked released (%s as %s)" % (n, DATE, VER))

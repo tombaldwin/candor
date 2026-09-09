@@ -10,6 +10,21 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**AND A THIRD PASS FOUND THE SAME CLASS AGAIN — SOUNDNESS R360/R361.** R356 closed the same-second
+TIE door in release gate [10] and left the RECENCY door open: a `skipped` run newer than a failure at
+the same sha won its group and answered OK, where a `cancelled` in the same position correctly answered
+BAD. Both twins mean no judgement was reached, so both now lose to a sibling that reached one. The
+acceptable-conclusion set is defined once and read by both the tie test and the verdict — R356 said it
+had done that and had not, leaving two copies of the predicate, which is the drift that produced R356.
+And R357's two branches spelled their rule two different ways, neither of them the question
+`_release_notes.sh` actually asks (`sect_newest`: the first `## ` heading that is not `## Unreleased`,
+any shape), so a heading without an em dash still produced the false-OK-then-rc=3 sequence R354 was
+written to close. Both branches now call one helper mirroring the publisher.
+
+**Neither R356 nor R354 was pinned by any test** — a mutation showed 0 of 13 gate-[10] fixtures and 0
+of 3 stager fixtures changed verdict across those commits, the same condition under which the original
+defects shipped green. Five fixtures added and mutation-verified.
+
 **AND MY FIXES FOR TWO OF THEM HAD THE SAME DEFECTS — SOUNDNESS R356/R357.** A review dispatched
 because two of the day's cardinal sins came from the previous day's fixes found that the pattern held
 here too. R352's tie rule asked `!= "success"` while the verdict treats both `success` and `skipped`

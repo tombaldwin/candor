@@ -8,7 +8,39 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-09 — `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR`
+## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (unreleased)
+
+**A failing CI run read as OK in RELEASE GATE [10] — SOUNDNESS R352.** `_ci_verdict.py` let any `success` win its workflow group, so a newer FAILURE at the same sha was masked. Measured on identical
+stdin and argv: the published v0.35.0 answered `BAD ci:failure`; this answered `OK`. Gate [10] is the
+check that authorises publishing a commit. The trigger is documented rather than hypothetical —
+`native.yml` and candor-swift's `release.yml` both carry `workflow_dispatch` RECOVERY paths that create
+a second run at an unmoved sha, and the cron oracles re-run at a sha that has not moved. The rule is now:
+a `cancelled` entry loses to a non-cancelled sibling; the newest wins; and a same-SECOND tie goes to the
+FAILURE, because whole-second granularity is exactly where "newest" stops being decidable — which is the
+defect this file was originally written for. "Worst wins" was tried first and is wrong: it blocks every
+legitimate re-run at an unmoved sha. **`release-test.sh` was green over this because the same commit
+that introduced it INVERTED the assertion that pinned it** — tie1's message went from "the failure must
+be reported" to "the superseded failure does not leak through", and nothing in that fixture
+distinguishes superseded from genuinely-latest: both entries carry the same whole second. Both tie
+assertions are now RED in both listed orders, with `idsame` as the control that keeps a genuine
+supersede green.
+
+**`rs_pin_violations` asked a string comparison and reported an existence claim — SOUNDNESS R353.** Its
+not-in-cut arm flags a pin equal to the version being cut, and prints "that names a release nobody
+published" — which the test cannot know. The two come apart whenever a per-engine build id legitimately
+equals another's, which this file's own header and preflight [4] both say is BY DESIGN. It happened:
+with candor-java published at 0.35.1, a 0.35.1 cut with java out of the set flagged java's TRUTHFUL pin,
+and the only value that passed was `0.35.0` — the release carrying three published cardinal sins. It now
+asks `gh release view`, and FAILS CLOSED: no `gh`, no network, a rate-limited or auth-failed read all
+answer "does not exist", so the violation is still reported.
+
+**`release-stage.sh` reported OK over a release that could not be cut — SOUNDNESS R354.** The
+completeness guard counted headings CARRYING `(unreleased)` against those the pattern took, so it
+detected a MISPLACED marker and was blind to an ABSENT one. On this very file the two newest sections
+carried no marker, `loose == n == 1`, no warning fired — and `_release_notes.sh` then refused at rc=3,
+so preflight [9b] failed with a remedy naming the command that had just reported OK. Replaced with a
+POSTCONDITION on the text the run produced: is the NEWEST dated section stamped for this release, since
+that is the section published.
 
 **`bin/assert-audit.sh` gained a STRUCTURAL arm — SOUNDNESS R339.** The tool exists to catch a safety
 assertion that ships with no test beside it, and it found them by matching words. That failed three
@@ -29,7 +61,7 @@ acquisition is tested by CONTENT rather than by the presence of `.git` (a gutted
 `.git/hooks`, so the old test answered "already got it" forever about a tree with no source in it).
 `bin/corpus-ab.py` also stopped describing `--allow-unjudged` as NOT comparing entries it does compare.
 
-## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1)
+## 2026-09-07 — ADVISORY for the published candor-java 0.34.0 and 0.35.0 (FIXED IN 0.35.1) (unreleased)
 
 **If you scan JVM code that schedules work — `Timer`, `ScheduledExecutorService` — read this. Unlike the
 2026-09-01 advisory, a blanket `deny <Effect>` does NOT reliably save you here.**

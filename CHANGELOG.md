@@ -20,6 +20,13 @@ comment says it splits fixtures out to avoid. Both scans now filter through `git
 (The code for this landed in the preceding commit, whose message describes only the changelog edit it was
 swept in with — recorded here so the change is not invisible.)
 
+With that filter in place ONE leftover survived — and it was the one the 56 artifacts had been burying,
+which is the argument for the filter in a single line. It is `SOUNDNESS.md:590`, a row quoting measured
+evidence (`candor-scan 0.35.0 (spec 0.35)`): a permanent historical fact in a register, not a stale
+declaration in shipped source. The scan already excludes `CHANGELOG*`, `BACKLOG.md` and `*-LOG.md` for
+that reason, and `*-LOG.md` catches `SOUNDNESS-LOG.md` while missing `SOUNDNESS.md` — the same kind of
+document, and much the largest. Now excluded from both scans.
+
 **AND A FOURTH PASS FOUND TWO FALSE SENTENCES IN THIS FILE'S OWN TOOLING — SOUNDNESS R365/R366.**
 `_ci_verdict.py` still carried the pre-R352 rule — "a `success` wins the group outright, wherever gh
 lists it" — presented as THE FIX, forty lines above the paragraph that calls it the defect. It arrived

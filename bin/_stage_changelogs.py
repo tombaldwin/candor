@@ -195,4 +195,27 @@ elif os.path.exists(u):
                   "belongs at the END of the heading (`## DATE — title (unreleased)`), not after the date. "
                   "The unmatched %d will ship inside the tag STILL LABELLED unreleased."
                   % (loose, n, loose - n))
+        # SOUNDNESS R354 — AND THE GUARD ABOVE IS BLIND TO THE CASE THAT ACTUALLY BLOCKS THE CUT.
+        # `loose > n` counts headings that CARRY the marker and compares against those the pattern
+        # took: it detects a MISPLACED marker and cannot see an ABSENT one. Measured 2026-09-09 on the
+        # umbrella: the 2026-09-09 and 2026-09-07 sections carried no marker at all, so loose == n == 1,
+        # no warning fired, this line printed OK — and `_release_notes.sh` then selected the NEWEST
+        # section, found no `(released … as VER)` stamp on it, and refused at rc=3. Preflight [9b]
+        # failed with a remedy naming the command that had just reported OK, which is the same shape
+        # the paragraph above was written for, one direction over.
+        #
+        # The completeness question is not "did every marker I found get taken". It is "is the NEWEST
+        # dated section stamped for this release once this run is done" — because that is the section
+        # `_release_notes.sh` will publish, so it is the only one whose state can stop the cut. Asked
+        # as a POSTCONDITION on the text this run produced, which is the one form that cannot be
+        # satisfied by a marker sitting somewhere else in the file.
+        newest = re.search(r"^## (\d{4}-\d{2}-\d{2})[^\n]*$", t, re.M)
+        if newest and ("(released" not in newest.group(0)):
+            print("BAD candor: the NEWEST dated section is `%s` and this run did not stamp it. "
+                  "`_release_notes.sh` publishes that section and will REFUSE (rc=3) because it "
+                  "carries no `(released … as %s)` marker, so preflight [9b] fails and the cut stops. "
+                  "Add ` (unreleased)` to the END of that heading (`## DATE — title (unreleased)`) and "
+                  "re-run. %d heading(s) were stamped, none of them the newest."
+                  % (newest.group(0).strip(), VER, n))
+            sys.exit(1)
         print("OK candor: %d dated heading(s) marked released (%s as %s)" % (n, DATE, VER))

@@ -95,7 +95,12 @@ if not mine:
 order = []
 groups = {}
 for x in mine:
-    key = x.get("workflowDatabaseId", x.get("workflowName"))
+    # SOUNDNESS R356 — `or`, not a default. `.get(k, default)` returns a PRESENT-but-null value, so a
+    # null `workflowDatabaseId` keyed every workflow under `None` and merged them into one group; the
+    # newest then won across UNRELATED workflows and a failing one was dropped. Measured:
+    # [ci success@10:05, native failure@10:00] with both ids null answered OK. That is the 2026-08-29
+    # same-name-merge defect through a different door.
+    key = x.get("workflowDatabaseId") or x.get("workflowName")
     if key not in groups:
         groups[key] = []
         order.append(key)
@@ -141,9 +146,20 @@ for key in order:
     non_cancelled = [e for e in entries if _concl(e) != "cancelled"]
     live = non_cancelled if non_cancelled else entries
     winner = live[0]
+    # SOUNDNESS R356 — AND THIS TEST MUST NAME THE OK SET, NOT JUST `success`. The verdict below
+    # treats BOTH `success` and `skipped` as acceptable, and this line asked only about `success`, so a
+    # `skipped` twinned with a failure at the same second REPLACED the winner with the skip and the
+    # group answered OK. Measured on the fix that closed R352, i.e. this rule reintroduced the class it
+    # was written to close, in the same gate:
+    #     [failure, skipped]            -> OK        (the failure masked)
+    #     [skipped, failure]            -> BAD       (…and the verdict depends on gh's array order,
+    #     [failure, skipped, failure]   -> OK         which is the 2026-08-26 defect this file exists for)
+    # `skipped` is reachable in this family — candor-swift's ci.yml, candor-spec's conformance.yml and
+    # the umbrella's jetbrains.yml all carry job-level `if:`.
+    OK_CONCLUSIONS = ("success", "skipped")
     tied = [e for e in live[1:]
             if (e.get("createdAt") or "") == (winner.get("createdAt") or "")
-            and _concl(e) != "success"]
+            and _concl(e) not in OK_CONCLUSIONS]
     latest.append(tied[0] if tied else winner)
 
 bad = [x for x in latest if (x.get("conclusion") or x.get("status")) not in ("success", "skipped")]

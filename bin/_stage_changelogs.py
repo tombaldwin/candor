@@ -153,7 +153,18 @@ elif os.path.exists(u):
     # that added this — a staging script that quietly reformats what it touches is one nobody will trust.
     pat = re.compile(r"^(## \d{4}-\d{2}-\d{2} —[^\n]*?) \(unreleased\)[ \t]*$", re.M)
     n = len(pat.findall(t))
-    if not n and re.search(r"^## \d{4}-\d{2}-\d{2} —[^\n]*\(released [0-9-]+ as %s\)" % re.escape(VER), t, re.M):
+    # SOUNDNESS R357 — ASK ABOUT THE NEWEST SECTION, NOT ABOUT ANYWHERE IN THE FILE. This search was
+    # unanchored, so a stamp written by an EARLIER RUN on a DIFFERENT (older) section satisfied it, and
+    # the sequence R354 was written for survived a re-run: run 1 stamps an older heading and exits 1;
+    # run 2 finds that stamp anywhere in the file, prints "newest dated heading is already stamped" —
+    # which is FALSE — exits 0, and staging proceeds into the very [9b] rc=3 state R354 exists to
+    # prevent. R354's postcondition lived only in the `else` branch, so this sibling route had no guard
+    # at all. "A rule on one route and not its sibling is this family's oldest defect", as
+    # `_ci_verdict.py`'s header puts it — and R354 walked into it while fixing the same class.
+    _newest = re.search(r"^## \d{4}-\d{2}-\d{2} —[^\n]*$", t, re.M)
+    _newest_stamped = bool(_newest and re.search(
+        r"\(released [0-9-]+ as %s\)" % re.escape(VER), _newest.group(0)))
+    if not n and _newest_stamped:
         # Already stamped for THIS version by an earlier run. Re-running is a no-op, as the header promises.
         print("SAME candor: newest dated heading is already `(released … as %s)`" % VER)
     elif not n:
@@ -209,8 +220,12 @@ elif os.path.exists(u):
         # `_release_notes.sh` will publish, so it is the only one whose state can stop the cut. Asked
         # as a POSTCONDITION on the text this run produced, which is the one form that cannot be
         # satisfied by a marker sitting somewhere else in the file.
+        # R357 — and it must ask `_release_notes.sh`'s EXACT question. `"(released" in heading` is
+        # weaker: a section stamped for the PREVIOUS version passes here and the publisher then
+        # refuses at rc=3. `find_version_heading`'s own comment requires this be kept byte-identical
+        # to the question the publisher asks.
         newest = re.search(r"^## (\d{4}-\d{2}-\d{2})[^\n]*$", t, re.M)
-        if newest and ("(released" not in newest.group(0)):
+        if newest and not re.search(r"\(released [0-9-]+ as %s\)" % re.escape(VER), newest.group(0)):
             print("BAD candor: the NEWEST dated section is `%s` and this run did not stamp it. "
                   "`_release_notes.sh` publishes that section and will REFUSE (rc=3) because it "
                   "carries no `(released … as %s)` marker, so preflight [9b] fails and the cut stops. "

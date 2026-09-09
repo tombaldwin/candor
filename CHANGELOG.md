@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**Cross-repo pins moved to 0.36.0** — `bin/candor`'s `ENGINE_PIN` and `ENGINE_PIN_JAVA`, the `adopt/`
+java and agents pins, and the VS Code / JetBrains `candorTsVersion` and `candorJavaVersion`. These move
+AFTER the engines are published, which is why they are a second commit: the umbrella tarball carries the
+front door's pins and Homebrew hashes that tarball, so cutting the umbrella first would ship a 0.36.0
+front door that installs 0.35 engines — the failure `release.sh` step 7 refuses to let happen.
+`ENGINE_PIN_JAVA` moves to 0.36.0 rather than staying at 0.35.1 because candor-java is IN this cut: as
+the reference engine it must declare the new floor first, even though its only source change is the
+`SPEC_VERSION` constant.
+
 **AND THE FIRST REAL RUN OF `release-preflight.sh` FOUND A THIRD — SOUNDNESS R368.** Both spec-leftover
 scans read the working tree, so on this cut they reported 56 stray `spec 0.35` strings; every one is a
 `candor-rust/soundness/realworld/**/r.*.json` written by a local oracle run and gitignored, while ZERO

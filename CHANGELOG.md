@@ -10,6 +10,14 @@ keeps its own.
 
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
+**Two vacuous controls in `release-test.sh` — SOUNDNESS R364.** `grep -qv PATTERN` is not "the output
+lacks PATTERN": it succeeds whenever any LINE lacks it, so a control asserting the stager "stays quiet"
+passed over an output whose first line was the warning. Both sites now use `grep -q` negated in the
+shell. The `WARN candor` control has been falsified — forcing the stager to warn now fails it, which it
+never could before. Worth knowing for anyone re-checking: this machine's `grep` is a ugrep shim that
+returns 1 for the same `-qv` input and makes the old form look sound; the defect is only visible through
+`/usr/bin/grep`.
+
 **The VS Code extension's own version tracks the server pin**, which is a coupling I did not know about
 until its CI failed on the pin commit: `test-vscode.sh` gate 4 requires `mm(package.json version) ==
 mm(candorTsVersion)`, so bumping the pin to 0.36.0 and leaving the extension at 0.35.0 is drift. I had

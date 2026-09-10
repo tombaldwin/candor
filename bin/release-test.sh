@@ -4191,9 +4191,17 @@ printf '%s' "$dg_mid" | grep -q 'NOT findings until re-measured' \
 printf '%s' "$dg_mid" | grep -q 'first seen at: bash ci/a.sh' \
   && ok "…and names the gate it first crossed at, so the trustworthy prefix is identifiable" \
   || bad "the crossing point was not named; the table cannot be split into before and after"
-printf '%s' "$dg_mid" | grep -qv 'NOT GREEN' \
-  && ok "…and does NOT print NOT GREEN, which would attribute the failure to the repo" \
-  || bad "a disk failure was attributed to the repo under test"
+# SOUNDNESS R364 — `grep -qv PATTERN` IS NOT "the output lacks PATTERN". It succeeds whenever ANY
+# LINE lacks it, so on a two-line output where one line IS `NOT GREEN` it still exits 0 and this
+# control passes over the very string it forbids. Both `grep -qv` controls in this file were vacuous;
+# the other is the `WARN candor` one below. Negate the whole-output match in the SHELL instead.
+# A trap for anyone re-checking: on this machine `grep` is a ugrep shim that returns 1 for the same
+# `-qv` input and makes the control look sound — the defect is only visible through /usr/bin/grep.
+if printf '%s' "$dg_mid" | grep -q 'NOT GREEN'; then
+  bad "a disk failure was attributed to the repo under test"
+else
+  ok "…and does NOT print NOT GREEN, which would attribute the failure to the repo"
+fi
 
 # THE INJECTION POINT MUST ITSELF WORK. The first version advanced its cursor in a variable inside a
 # `$(...)` subshell, so the sequence never moved, every call returned the FIRST value, and the
@@ -4445,9 +4453,15 @@ printf '%s' "$sg_out" | grep -q 'STILL LABELLED unreleased' \
 sg2="$DG/stage2"; mkdir -p "$sg2/candor"
 printf '# Changelog\n## 2026-08-31 — all good (unreleased)\nbody\n' > "$sg2/candor/CHANGELOG.md"
 sg2_out="$(ROOT="$sg2" VER=0.99.0 DATE=2026-08-31 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
-printf '%s' "$sg2_out" | grep -qv 'WARN candor' \
-  && ok "…and stays quiet when every marker is well formed — the control" \
-  || bad "the warning fires on a correct changelog"
+# SOUNDNESS R364 — the second vacuous `grep -qv`; see the note at the `NOT GREEN` control above.
+# This one mattered more: on a changelog that DOES warn, the stager emits `WARN candor: …` followed by
+# `OK candor: …`, so the second line lacks the string, `-qv` exits 0, and the control asserting the
+# warning "stays quiet" passed over a warning.
+if printf '%s' "$sg2_out" | grep -q 'WARN candor'; then
+  bad "the warning fires on a correct changelog"
+else
+  ok "…and stays quiet when every marker is well formed — the control"
+fi
 
 # Fail closed when the measurement itself is unavailable: an unreadable df is not a healthy disk.
 dg_shim="$DG/shim"; mkdir -p "$dg_shim"

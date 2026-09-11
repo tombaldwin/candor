@@ -8,6 +8,26 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-11 — the release-authorising instrument stops lying (unreleased)
+
+- **`ci-watch` reported REQUIRED BUT ABSENT over a workflow that ran and succeeded — SOUNDNESS R382.**
+  A run whose workflow id the map could not resolve fell back to the bare numeric id, which is not a
+  file, so the file comparison missed and manufactured a false alarm — while the same run printed
+  `✔ success` two lines above. A false ABSENT is indistinguishable from a real one, which is how the
+  arm that catches a genuinely unrun gate gets discounted by whoever reads it. An unresolvable id is
+  now a named red row and the required-workflow check is skipped for that repo, exactly as it already
+  is when the whole map fails. `CI_WATCH_FAULT=drop-map-entry` makes the arm reachable on demand.
+
+- **`ci-watch --wait` called a healthy push NO RUN AT HEAD — SOUNDNESS R384.** Its "GitHub has not
+  created the run yet" window measured COMMIT age, and this project's own rule is commit → run that
+  repo's gate list → push. `gate-run.sh` takes minutes, so the commit was always past the window by
+  the time the push landed: 421s commit age against an 81s-old push. It now uses the upstream ref's
+  mtime, which the push itself writes, and falls back to commit age when the ref is packed.
+
+- **`release-test.sh`'s two `grep -qv` controls were vacuous — SOUNDNESS R364.** They passed over the
+  very output they existed to forbid. (Entry added late: this landed after the 0.36.0 tag, so the
+  published v0.36.0 notes do not carry it.)
+
 ## 2026-09-09 — three defects in the RELEASE MACHINERY, `assert-audit.sh` stopped relying on prose, and the corpus harnesses moved off `$TMPDIR` (released 2026-09-09 as 0.36.0)
 
 **Two vacuous controls in `release-test.sh` — SOUNDNESS R364.** `grep -qv PATTERN` is not "the output

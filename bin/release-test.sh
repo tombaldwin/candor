@@ -4473,6 +4473,50 @@ PATH="$dg_shim:$PATH" bash "$UMBRELLA/bin/disk-guard.sh" --quiet || dg_nodf_rc=$
   || bad "an unreadable filesystem reported healthy (rc=$dg_nodf_rc)"
 rm -rf "$DG"
 
+# SOUNDNESS R389 — CI's `working-directory:` NAMES THE REPO ITSELF, and gate-run.sh had already cd'd
+# there. Measured during the 0.36.1 cut: candor-spec reported 0 ok / 4 FAILED, every one
+# `cd: candor-spec: No such file or directory`, while all three runnable gates pass when invoked the way
+# they actually execute. A gate list that can only ever return zero is worse than a broken one — the
+# per-repo gate rule exists because candor-swift's main sat red for four commits, and for that repo the
+# rule was answering with a number it could not have earned. Both directions are asserted here: the
+# self-named segment must go, and a REAL subdirectory must survive, because dropping `working-directory:`
+# wholesale is what gates.sh:135 warns against and would run gradle steps from the wrong place.
+mkdir -p "$DG/wd/candor-spec/.github/workflows" "$DG/wd/candor-spec/scripts" "$DG/wd/candor-spec/sub"
+cat > "$DG/wd/candor-spec/.github/workflows/ci.yml" <<'YAML'
+name: ci
+on: [push]
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candor-spec
+      - name: a gate under the repo's own checkout path
+        working-directory: candor-spec
+        run: bash scripts/selfdir.sh
+      - name: a gate under a REAL subdirectory
+        working-directory: candor-spec/sub
+        run: bash real.sh
+YAML
+printf '#!/bin/sh\necho SELFDIR-RAN\nexit 0\n' > "$DG/wd/candor-spec/scripts/selfdir.sh"
+printf '#!/bin/sh\necho SUBDIR-RAN\nexit 0\n' > "$DG/wd/candor-spec/sub/real.sh"
+chmod +x "$DG/wd/candor-spec/scripts/selfdir.sh" "$DG/wd/candor-spec/sub/real.sh"
+wd_out="$(CANDOR_ROOT="$DG/wd" bash "$UMBRELLA/bin/gate-run.sh" candor-spec 2>&1)"
+# Asserted on the ECHOED COMMAND, not on 'No such file or directory': that text goes to the gate's own
+# LOG FILE, never to this output, so the obvious spelling of this check passes with or without the fix.
+# Measured at 0 occurrences in $wd_out on a deliberately un-fixed tool — a vacuous control, caught the
+# same way R374 and R377 were, by running the assertion against a tool that ought to fail it.
+printf '%s' "$wd_out" | grep -qF 'cd candor-spec && ' \
+  && bad "a gate under the repo's OWN checkout path still double-cd's — R389 regressed" \
+  || ok "a working-directory: naming the repo itself does not become <repo>/<repo>"
+printf '%s' "$wd_out" | grep -qE 'OK .*scripts/selfdir\.sh' \
+  && ok "…and that gate actually RAN (OK), rather than being skipped into silence" \
+  || bad "the self-named gate did not run — stripping the prefix must leave a runnable command"
+printf '%s' "$wd_out" | grep -qE 'OK .*cd sub && bash real\.sh' \
+  && ok "CONTROL: a REAL subdirectory cd survives untouched and still runs there" \
+  || bad "the subdirectory prefix was stripped too — gates would run from the wrong directory"
+
 say "17. assert-audit.sh — a safety ASSERTION added with no test beside it"
 SIBS="$(cd "$UMBRELLA/.." && pwd)"   # the SIBLING root; $ROOT above is the umbrella itself
 # THE FIRST FIXTURE IS THE RECORDED PAST FAILURE, not a fresh example — the standing rule, because a

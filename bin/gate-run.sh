@@ -90,6 +90,31 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   # this file's own header claimed "the count you see is the count that exists". Silently narrowing
   # the gate set is the exact failure this tool was built to prevent.
   why=""
+  # CI CHECKS THIS REPO OUT AT $GITHUB_WORKSPACE/<repo>, so a step's `working-directory:` names THE
+  # REPO ITSELF and gates.sh renders it — correctly, for CI — as `cd <repo> &&`. But this loop has
+  # ALREADY cd'd to $d, so replaying it looks for <repo>/<repo> and the gate dies with
+  # `cd: <repo>: No such file or directory`. Measured 2026-09-11 during the 0.36.1 cut: candor-spec's
+  # entire list read 0 ok / 4 FAILED on this box, and all three runnable gates pass when invoked the
+  # way they actually execute. That is worse than a gate that is merely broken — the per-repo gate
+  # rule exists because candor-swift's main sat red for four commits, and for candor-spec that rule
+  # was answering with a number that could never be anything but zero.
+  #
+  # Strip EXACTLY the one leading segment naming this repo. A deeper `cd` is a real subdirectory
+  # (`cd lean && bash check.sh`) and must survive untouched — dropping working-directory wholesale is
+  # what gates.sh:135 already warns against, and would run candor-java's gradle steps from the wrong
+  # place. Done BEFORE the skip pre-pass below, not just before the eval: with the prefix attached
+  # `_lead` is `cd`, which that pre-pass exempts, so the "interpreter is not installed here" arm
+  # never got to look at the real command word either.
+  _self="${d##*/}"
+  case "$cmd" in
+    # exactly the repo's own checkout path — the whole prefix goes
+    "cd $_self && "*) cmd="${cmd#cd "$_self" && }" ;;
+    # `working-directory: <repo>/<subdir>` — strip only the repo segment and KEEP the rest, or the
+    # gate runs from the repo root instead of the directory the step named. My first cut matched only
+    # the exact-root form and this nested one still double-cd'd; the fixture in release-test.sh caught
+    # it, which is the whole reason both shapes are asserted there rather than the one in hand.
+    "cd $_self/"*)    cmd="cd ${cmd#cd "$_self"/}" ;;
+  esac
   case "$cmd" in
     ''|'#'*|'echo '*|'got='*|'case '*|'*'*|'esac'*|'exit '*)
       why="not a runnable gate line" ;;

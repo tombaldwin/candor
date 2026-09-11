@@ -743,6 +743,8 @@ for repo in "${REPOS[@]}"; do
     rc=1
   fi
   have_fn=""   # accumulated below as each row is judged — the FILES this repo actually has a run for
+  unresolved_ids=0   # R382 — set when a run's workflow id resolves to no FILE; the REQUIRED arm below
+                     # cannot be trusted in either direction once `have_fn` has a non-file in it.
 
   # ONE ROW PER WORKFLOW: THE NEWEST. `gh run list --commit` returns EVERY run at that sha, and a
   # workflow with a concurrency group leaves superseded ones behind — a re-run, or a `workflow_dispatch`
@@ -798,6 +800,26 @@ for repo in "${REPOS[@]}"; do
   # twice. Forcing the empty-rows branch makes the window reachable on demand, so the difference between
   # "no run yet" (pending, exit 2) and "NO RUN AT HEAD" (red, exit 1) can be SEEN rather than reasoned
   # about. Same shape as `drop-row` above: a fault this script can inject into itself.
+  # SOUNDNESS R382 — the third fault hook, and the one this arm was missing. `path_for_id` falls back to
+  # the bare numeric id when the map has no entry for a run's workflow. That fallback is DELIBERATE and
+  # correct for the cancel-in-progress arm (a deleted workflow then resolves to no path and fails closed)
+  # — but in `have_fn` it fails the OTHER way: the row still prints by NAME while its FILE silently
+  # becomes a number, the file comparison misses, and a REQUIRED BUT ABSENT is manufactured over a
+  # workflow that ran and succeeded. Measured: `integrations ✔ success` printed beside
+  # `integrations.yml ✘ REQUIRED BUT ABSENT` for the same workflow, with `gh run list` showing the run at
+  # HEAD and `gh api rate_limit` reading 5000/5000.
+  #
+  # Dropping one map entry on demand makes that reachable, so the difference between "a file I could not
+  # resolve" and "a workflow that never ran" can be SEEN. Without it this arm is only exercised by
+  # whatever transient made `gh workflow list` come back short, which is not a test.
+  # EMPTIES the map rather than dropping one line: the first entry belongs to whichever workflow `gh`
+  # listed first, which frequently has no run at HEAD, so nothing referenced it and the arm did not fire
+  # — the hook looked installed and proved nothing, which is the failure this hook exists to prevent one
+  # level down. Emptying it makes EVERY row's id unresolved, which is the condition under test.
+  if [ "${CI_WATCH_FAULT:-}" = "drop-map-entry" ]; then
+    echo "  (fault injected: ${repo}'s workflow map emptied — every row must be UNRESOLVED and the REQUIRED check skipped)"
+    WF_PATH_MAP=""
+  fi
   if [ "${CI_WATCH_FAULT:-}" = "no-rows" ]; then
     echo "  (fault injected: ${repo} has no rows — the age arm below decides pending vs red)"
     rows=""
@@ -875,8 +897,20 @@ for repo in "${REPOS[@]}"; do
     # same name — see label_for() above. have_fn accumulates the FILE behind every row judged here so the
     # REQUIRED BUT ABSENT check below can compare files, never names, against wf-expected.py's verdict.
     label="$(label_for "$wfid" "$wf" "$dupe_names")"
+    # R382 — an id the map could not resolve must be a NAMED row, never a silent fallback into
+    # `have_fn`. `path_for_id` returns the bare id in that case, which is not a file and can never match
+    # wf-expected.py's verdict, so leaving it here manufactures a REQUIRED BUT ABSENT over a workflow
+    # that ran. Same discipline the rest of this script applies: `wf-expected.py` failure, `gh` failure
+    # and the stall arm are all named red lines rather than quiet degradations.
+    _fn="$(path_for_id "$wfid")"
+    if [ "$_fn" = "$wfid" ]; then
+      printf "  %-14s %-26s ✘ cannot map run to a workflow FILE (id %s) — the REQUIRED check is skipped\n" \
+             "$repo" "$label" "$wfid"
+      unresolved_ids=1
+      rc=1
+    fi
     have_fn="$have_fn
-$(path_for_id "$wfid")"
+$_fn"
     case "$status/$concl" in
       completed/success)
         printf "  %-14s %-26s ✔ success\n" "$repo" "$label" ;;
@@ -1000,7 +1034,11 @@ $(path_for_id "$wfid")"
   # repo's .github/workflows/ directory — the whole point of this fix is that req_wf here can no longer be
   # trusted to identify a single workflow. Skipped when WF_PATH_FAILED, rather than asserting an answer
   # this repo's failed `gh workflow list` call cannot back up.
-  if [ "$WF_PATH_FAILED" -eq 0 ]; then
+  # R382 — skipped when ANY id was unresolved, exactly as it already is when the whole map failed. A
+  # comparison against an incomplete `have_fn` cannot be trusted in either direction: it manufactures a
+  # false ABSENT, and a false ABSENT is indistinguishable from a real one, which is how an arm that
+  # catches a genuinely unrun gate gets discounted by the reader.
+  if [ "$WF_PATH_FAILED" -eq 0 ] && [ "$unresolved_ids" -eq 0 ]; then
     while IFS=$'\t' read -r req_wf _ req_why; do
       [ -z "$req_wf" ] && continue
       if ! printf '%s\n' "$have_fn" | grep -qxF "$req_wf"; then

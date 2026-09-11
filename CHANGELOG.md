@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-09-11 — the release-authorising instrument stops lying (released 2026-09-11 as 0.36.1)
 
+- **The front door's pins move to 0.36.1 — `ENGINE_PIN`, `ENGINE_PIN_JAVA`, the two `adopt/` workflow
+  pins, candor-java's jbang catalog, and the VS Code / JetBrains client versions.** The pins are bumped
+  in a SECOND commit, after the engine releases exist, because each one names a published artifact and
+  0.24 shipped a jbang pin to a release that was never cut. `ENGINE_PIN_JAVA` is called out by name here
+  because it is the one a previous cut left behind: it defaults to `ENGINE_PIN` only when empty, so a
+  non-empty stale value silently outranks the family line and `candor update` keeps installing the old
+  engine. The VS Code extension's own version moves with them, per the convention its own commit
+  ("the VS Code extension version tracks the server pin") set.
+
 - **`ci-watch` reported REQUIRED BUT ABSENT over a workflow that ran and succeeded — SOUNDNESS R382.**
   A run whose workflow id the map could not resolve fell back to the bare numeric id, which is not a
   file, so the file comparison missed and manufactured a false alarm — while the same run printed

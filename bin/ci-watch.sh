@@ -792,6 +792,16 @@ for repo in "${REPOS[@]}"; do
     echo "  (fault injected: dropping ${repo}'s first row — a REQUIRED BUT ABSENT line must follow)"
     rows="$(printf "%s\n" "$rows" | tail -n +2)"
   fi
+  # SOUNDNESS R384 — the sibling hook, and the row asked for it by name. The "no run yet" arm can
+  # otherwise only be exercised by pushing and racing GitHub, which is how its COMMIT-AGE proxy survived
+  # being wrong for weeks: the arm fires seconds after a push, and nobody watching a healthy push looks
+  # twice. Forcing the empty-rows branch makes the window reachable on demand, so the difference between
+  # "no run yet" (pending, exit 2) and "NO RUN AT HEAD" (red, exit 1) can be SEEN rather than reasoned
+  # about. Same shape as `drop-row` above: a fault this script can inject into itself.
+  if [ "${CI_WATCH_FAULT:-}" = "no-rows" ]; then
+    echo "  (fault injected: ${repo} has no rows — the age arm below decides pending vs red)"
+    rows=""
+  fi
 
   if [ -z "$rows" ]; then
     if [ "$wf_failed" -eq 1 ]; then
@@ -810,7 +820,6 @@ for repo in "${REPOS[@]}"; do
       # the case that produces this. Outside the window the old verdict stands unchanged — a workflow
       # that genuinely never ran is exactly what this check exists for, and staying quiet about that
       # would trade a false red for a false green.
-      _age=$(( now - $(git -C "$d" log -1 --format=%ct HEAD 2>/dev/null || echo 0) ))
       # ⟨2026-09-02⟩ …BUT A YOUNG HEAD THAT WAS NEVER PUSHED IS NOT "waiting for GitHub". This branch
       # said `no run yet (HEAD is 88s old — GitHub has not created it)` for a commit an agent had made
       # locally and NOT pushed — the coordinator read it as an unauthorised push and spent a turn on it.
@@ -826,8 +835,29 @@ for repo in "${REPOS[@]}"; do
                "$repo" "(none)" "$(git -C "$d" rev-parse --short HEAD 2>/dev/null)" "$_up"
         rc=1; continue
       fi
+      # SOUNDNESS R384 — THE PROXY IS THE PUSH, AND THE PUSH IS OBSERVABLE. The line below used to be
+      # `now - <commit time>`, and the comment above says "push time is not observable from here". It is:
+      # `.git/refs/remotes/<upstream>` is rewritten BY the push, so its mtime is when this machine pushed.
+      #
+      # Commit age is wrong for the exact sequence CLAUDE.md mandates — commit, run THAT REPO'S gate list,
+      # push — because `gate-run.sh` takes minutes and the commit is long past the window by the time the
+      # push happens. MEASURED on the wave that produced this row: commit age 421s (silent), upstream ref
+      # mtime 81s (the truth), and the summary said NO RUN AT HEAD while `gh run list` showed ci,
+      # realworld-oracle and realworld-oracle-deep all in_progress at that very SHA. Twice in one night.
+      #
+      # Falls back to commit age when the ref is PACKED (no loose file), which is exactly today's
+      # behaviour — a fallback that can only restore the old answer, never invent a newer one. The
+      # ancestry check above still runs FIRST, so an unpushed HEAD says NOT PUSHED and this mtime can
+      # never make one look freshly pushed (the 2026-09-02 note).
+      _upref="$d/.git/refs/remotes/${_up#refs/remotes/}"
+      _pushed=$(stat -f %m "$_upref" 2>/dev/null || stat -c %Y "$_upref" 2>/dev/null || echo "")
+      if [ -n "$_pushed" ]; then
+        _age=$(( now - _pushed ))
+      else
+        _age=$(( now - $(git -C "$d" log -1 --format=%ct HEAD 2>/dev/null || echo 0) ))
+      fi
       if [ "$_age" -lt 90 ]; then
-        printf "  %-14s %-26s … no run yet (HEAD is %ss old — GitHub has not created it)\n" \
+        printf "  %-14s %-26s … no run yet (pushed %ss ago — GitHub has not created it)\n" \
                "$repo" "(none)" "$_age"
         pending=$((pending+1))
       else

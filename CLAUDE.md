@@ -58,6 +58,24 @@ that will run four-way conformance, make sure every OTHER engine tree is clean a
 when one is running, do not measure or edit any engine. A four-way result taken over someone else's
 work-in-progress is not a measurement of anything that exists.
 
+**`gate-run.sh` IS A SHARED INSTRUMENT TOO — DO NOT RUN FIVE REPOS' GATE LISTS AT ONCE.** Measured
+2026-09-11 during the 0.36.1 cut. I dispatched `gate-run.sh` for five repos concurrently and got three
+FAILs: two in candor-java's `smoke.sh` (`"spec": "0.36"` absent from the envelope; a lambda body effect
+not reaching its enclosing fn) and one in the umbrella's `release-test.sh`. **All three were false.** Run
+serially and alone, the same trees gave `smoke: 547 passed` and `release-test: OK — 471 assertions`.
+
+The mechanism is the conformance rule above, one level down: the umbrella's gate list BUILDS ENGINES, and
+`smoke.sh` starts with `./gradlew installDist` and then executes `build/install/candor-java/bin/candor-java`.
+A concurrent build rewriting that launcher mid-run produces scattered, non-reproducible failures — not a
+crash, just two assertions out of 547 reading wrong. **A FAIL caused by the harness is indistinguishable
+from a real one**, which is why R382 was worth fixing in `ci-watch`; the difference is that here the false
+verdict lands mid-ladder, where believing it costs a reverted cut.
+
+Note the near-miss in the OTHER direction: the instinct on seeing 2/547 fail is to disbelieve them and
+push. What made this safe was reproducing each failure INDIVIDUALLY first — both passed on the same
+commit — before anything was attributed to concurrency. **Do not explain a FAIL by concurrency until you
+have failed to reproduce it serially.** "Probably a flake" is a guess; the serial re-run costs four minutes.
+
 **One owner per repo, and per shared file.** Three agents sharing `candor-spec` cost a silently-dropped
 commit and a killed conformance run. An agent that notices a problem in a repo it does not own should
 **report it, not fix it** — that is what makes single-ownership workable rather than a way to drop things.

@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-11 — candor-spec's gate list could only ever answer zero (unreleased)
+
+- **`gate-run.sh` replayed CI's `working-directory:` as a `cd <repo> &&` prefix from INSIDE that repo —
+  SOUNDNESS R389.** CI checks each repo out at `$GITHUB_WORKSPACE/<repo>`, so a step's working directory
+  names the repo itself; `gates.sh` renders that faithfully and `gate-run.sh` had already `cd`'d to the
+  repo root, so every such gate died on `cd: candor-spec: No such file or directory`. Found during the
+  0.36.1 cut: that repo reported **0 ok / 4 FAILED** while all three runnable gates pass when invoked the
+  way they actually execute. A list that cannot return anything but zero is worse than a broken gate — the
+  per-repo rule exists because candor-swift's `main` sat red for four commits unnoticed. The strip takes
+  the repo segment and keeps any remainder (`cd <repo>/sub` → `cd sub`); a real subdirectory (`cd lean &&
+  bash check.sh`) survives untouched, which is the control.
+
+- **`candor-spec/lean/check.sh` exited 2 when the lean toolchain is absent**, so an unrunnable gate read as
+  a failing one — the third spelling of the class the `${{ }}` and python/python3 arms already handle. It
+  now exits 3, the self-skip convention `gate-run.sh` states and candor-rust's strace gates adopted, so
+  the verdict is INCOMPLETE rather than green or red.
+
+- **Two defects in this fix were caught by its own fixture, not by re-reading it.** The first cut handled
+  only the exact-root shape and left `working-directory: <repo>/<subdir>` still double-cd'ing. Then
+  calibrating the fixture against a deliberately un-fixed tool condemned one of its own three assertions
+  as vacuous: it grepped for `No such file or directory`, which occurs 0 times in the captured output
+  either way, because the gate's stderr goes to a per-gate log file.
+
 ## 2026-09-11 — the release-authorising instrument stops lying (released 2026-09-11 as 0.36.1)
 
 - **The front door's pins move to 0.36.1 — `ENGINE_PIN`, `ENGINE_PIN_JAVA`, the two `adopt/` workflow

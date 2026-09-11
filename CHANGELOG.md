@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-11 — the release-authorising instrument stops lying (unreleased)
+## 2026-09-11 — the release-authorising instrument stops lying (released 2026-09-11 as 0.36.1)
 
 - **`ci-watch` reported REQUIRED BUT ABSENT over a workflow that ran and succeeded — SOUNDNESS R382.**
   A run whose workflow id the map could not resolve fell back to the bare numeric id, which is not a

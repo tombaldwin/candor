@@ -76,6 +76,15 @@ jobs:
       - name: release-test (fixture tree)
         run: bash bin/release-test.sh
 
+      # SOUNDNESS R403 — `ci-watch.sh` is the instrument that decides whether a push wave is green, and
+      # it had NO automated coverage of ANY kind: its own `--selftest` was run by nothing (no workflow,
+      # no verify-local.sh, no gate line), and both R382 and R384 landed in that file with no gate beside
+      # them. One line, deliberately not a `run: |` block, so `bin/gates.sh` lists it as a RUNNABLE gate
+      # rather than an un-run `~` line — that is R406, learned from candor-java's self-gate.
+      # The selftest needs no network: it stubs `gh` as a shell function and drives the real predicates.
+      - name: ci-watch selftest (the release-authorising instrument gates itself)
+        run: bash bin/ci-watch.sh --selftest
+
       # Cheap, and it has already paid: a heredoc nested inside `$(...)` was one of the 0.25 defects, and
       # `bash -n` catches exactly that shape before anyone runs the script for real.
       #

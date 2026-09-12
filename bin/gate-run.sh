@@ -285,7 +285,20 @@ if [ "$total" -eq 0 ] && [ "$manual" -eq 0 ]; then
   echo "  \`bash bin/gates.sh $repo\` by hand." >&2
   exit 2
 fi
-[ "$dry" = "--dry-run" ] && exit 0
+# SOUNDNESS R407 — this used to be a bare `exit 0` sitting ABOVE the verdict block, so a preview
+# answered 0 and printed no verdict sentence at all, while the same repo's real run answered 2. A reader
+# previewing a repo got a green exit code and nothing telling them it meant nothing. A dry run cannot
+# know whether a gate would PASS, so it makes no claim about that — but it knows exactly what it could
+# not RUN, and that is the half worth reporting, on the same INCOMPLETE terms as a real run.
+if [ "$dry" = "--dry-run" ]; then
+  echo "gate-run: DRY RUN — nothing was executed, so this is NOT a verdict about $repo."
+  if [ "$skip" -gt 0 ] || [ "$manual" -gt 0 ]; then
+    echo "gate-run: INCOMPLETE — $skip would be skipped, $manual block line(s) cannot be auto-run."
+    exit 2
+  fi
+  echo "gate-run: every listed gate is RUNNABLE here ($run would run) — run without --dry-run for a verdict."
+  exit 0
+fi
 if [ "$bad" -gt 0 ]; then echo "gate-run: NOT GREEN — see the FAIL rows above."; exit 1; fi
 if [ "$skip" -gt 0 ] || [ "$manual" -gt 0 ]; then
   echo "gate-run: INCOMPLETE — $skip skipped, $manual block line(s) not auto-run. Green over an unrun gate is what this exists to stop."

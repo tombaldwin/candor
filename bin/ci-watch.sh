@@ -758,7 +758,17 @@ for repo in "${REPOS[@]}"; do
   # A superseded run is not evidence about anything — the newest run of a workflow at a commit is the
   # only one whose answer is about that commit. `gh` returns newest-first, so the first row per workflow
   # name wins; `awk` keeps insertion order rather than re-sorting.
-  if gh_call run list -R "$OWNER/$repo" --commit "$sha" \
+  #
+  # `--limit 100` — SOUNDNESS R402. Without it `gh run list` pages at **20**, and this ONE page is shared
+  # by every workflow in the repo. Both directions are then reachable from a crowded commit: a REQUIRED
+  # workflow squeezed off the page reports `REQUIRED BUT ABSENT` over a workflow that RAN (the false
+  # absent R382 exists to stop), and a non-required one squeezed off produces NO ROW AT ALL — the
+  # earlier-commit safety net cannot rescue that, because it skips this sha as "already judged above"
+  # when it was never judged. The remedy was written in candor/BACKLOG.md and applied to
+  # release-preflight.sh's two call sites in the SAME change, and missed here; this file's other two
+  # call sites are already scoped (`--limit 1`, `--limit 12`). Headroom today is 6 rows on the busiest
+  # sha against 20, so this was latent — which is why nothing caught it.
+  if gh_call run list -R "$OWNER/$repo" --commit "$sha" --limit 100 \
              --json workflowDatabaseId,workflowName,status,conclusion,createdAt; then
     rows="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" "$JQ_ROW" | awk -F"$US" '!seen[$1]++')"
     dupe_names="$(dup_names_of "$rows")"
@@ -790,9 +800,21 @@ for repo in "${REPOS[@]}"; do
   # is only ever exercised by the reader's selftest, which classifies triggers and never touches the
   # comparison — and an arm whose alarm has not been seen to fire is the defect this script was written
   # about, twice in one evening.
-  if [ "${CI_WATCH_FAULT:-}" = "drop-row" ] && [ -n "$rows" ]; then
-    echo "  (fault injected: dropping ${repo}'s first row — a REQUIRED BUT ABSENT line must follow)"
-    rows="$(printf "%s\n" "$rows" | tail -n +2)"
+  # SOUNDNESS R404 — the postcondition below is only TRUE where at least two rows exist. On a
+  # single-workflow repo (candor-agents) dropping the first row EMPTIES `rows`, so control falls into the
+  # `[ -z "$rows" ]` branch further down and prints `NO RUN AT HEAD` — a different arm, different text,
+  # and the promised REQUIRED BUT ABSENT line never appears. Nothing asserted the postcondition, so the
+  # hook looked installed and proved nothing on exactly the repo a reader is most likely to try it on.
+  # That is the failure the ADJACENT drop-map-entry hook's comment says IT was rewritten to avoid, one
+  # hook over. So: refuse loudly rather than exercise a different arm under this arm's name.
+  if [ "${CI_WATCH_FAULT:-}" = "drop-row" ]; then
+    if [ "$(printf "%s\n" "$rows" | grep -c .)" -lt 2 ]; then
+      echo "  (fault drop-row CANNOT be exercised on ${repo}: it has fewer than 2 rows at this commit —"
+      echo "   dropping one would empty the set and take the NO-RUN-AT-HEAD arm instead. Use a repo with 2+.)"
+    else
+      echo "  (fault injected: dropping ${repo}'s first row — a REQUIRED BUT ABSENT line must follow)"
+      rows="$(printf "%s\n" "$rows" | tail -n +2)"
+    fi
   fi
   # SOUNDNESS R384 — the sibling hook, and the row asked for it by name. The "no run yet" arm can
   # otherwise only be exercised by pushing and racing GitHub, which is how its COMMIT-AGE proxy survived

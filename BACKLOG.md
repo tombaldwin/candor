@@ -82,6 +82,28 @@ fixes land — otherwise four engines ship prose citing a clause that does not e
   each non-additive rung flips verdicts on trees that passed. The mechanism half-exists (the ladder
   already separates spec floor from build version); what is missing is a supported-floor policy.
 
+### 5b. THE INSTRUMENTS THAT AUTHORISE A RELEASE — R402–R408, from the tooling review.
+Method was MUTATION, not reading: a 474/474 baseline in a scratch copy, one mutated file per run.
+**It found no vacuous assertion in `release-test.sh`** — the three recent fixes all falsify correctly,
+including R389's, whose strip was deleted and produced `✘ a gate under the repo's OWN checkout path
+still double-cd's`. Coarse neutralisation shows where the suite has teeth: killing `gate-run.sh` reddens
+44 rows, `gates.sh` 40, `disk-guard.sh` 37, `release-verify.sh` 33.
+
+- **R406 FIRST, because it changes what "I ran the repo's gates" means.** `bash ci/self-gate.sh` is a
+  BLOCK-SCALAR line in candor-java's `ci.yml` and appears ZERO times in the runnable gate list — that is
+  the precise gate CLAUDE.md's cautionary tale is about, and the 0.36.1 cut did not run it.
+  `conformance/run.sh` is in candor-spec's list three times, all block lines, zero runnable. Fix by
+  making both one-line `run:` steps, or teach `gate-run` to execute a block. Unrun share by STEP:
+  candor-spec 44%, candor-java 28%, candor-swift 22%, candor 21%, candor-ts 20%, candor-rust 9%.
+- **R402** one word — `--limit 100` at `ci-watch.sh:761`; the remedy is already written in this file at
+  :95-137 and was applied to `release-preflight.sh` in the same change and not here.
+- **R403/R404** give `ci-watch.sh` a `release-test.sh` section driving all four `CI_WATCH_FAULT` hooks,
+  and assert `drop-row`'s postcondition so it cannot look installed on a one-workflow repo.
+- **R405** `release-test.sh` is intermittently red on `main` (~1 in 3) and its §15b diagnostic prints
+  nothing on the only path it fires. Make it dump `$gnu` whole. **This retires the coordinator's
+  2026-09-11 attribution of a different release-test failure to concurrent gate runs.**
+- **R407** move `--dry-run`'s `exit 0` below the verdict block. **R408** narrow-key `head -1` pin reads.
+
 ### 6. NEEDS TOM — these block or cannot be done from here.
 - **The union-vs-hedge ruling** (SOUNDNESS.md §"OWED TO TOM"). *"Blocking the ⟨0.37⟩ conformance PART"*
   and *"the engines should not be changed further until it is made."* Note the scope: it governs the

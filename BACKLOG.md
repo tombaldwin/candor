@@ -134,6 +134,20 @@ CHANGELOG-only failures first; some look like tool imprecision worth tightening 
   standing theory-vs-spec hazard. The Fs guard is the only one of the three that SPLITS free-form from
   method-form, and that split is where R417 lived — which is the shape to look for in the other engines.
 
+- **`spec-bump.sh` HAS NEEDED THE SAME HAND RE-ANCHOR AT THREE CONSECUTIVE BUMPS (⟨0.35⟩, ⟨0.36⟩,
+  ⟨0.37⟩), and a printed NOTE is the only guard.** The Contents version banner carries the version in its
+  own text, so its sha moves at every floor bump and `must-ledger.json`'s entry orphans. The
+  leftover-mentions scan CANNOT see it: that scan's grammar matches `spec 0.36` / `"0.36"` while the
+  ledger records a BACKTICKED excerpt, so the two never meet. Each time, the thing that caught it was a
+  NOTE the tool prints for a human to act on — which is the weakest guard the family has, and it has now
+  held three times by luck of someone reading it.
+  **Two candidate fixes, both small:** teach the leftover scan the ledger's excerpt grammar, or have
+  `spec-bump.sh` re-anchor the banner entry itself and PRINT what it moved (so the step is still visible,
+  just not manual). The second is better — it removes the option rather than restating the rule, which is
+  the pattern this file already records as the only one that works.
+  **Do it BETWEEN rungs, not during one.** It was deliberately not done at the ⟨0.37⟩ cut: changing the
+  bump tool while using it is how you get a bump you cannot trust.
+
 - **Five conformance `Engine` copies** (`gen_completeness`, `gen_fs_kind`, `gen_masking`, `gen_netclass`,
   `gen_policy_match`) should `import gen_differential`, as seven other generators already do.
   **MEASURED 2026-09-12, and the entry understates it in one way and overstates it in another.**

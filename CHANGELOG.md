@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-12 — preflight [9] could only be satisfied by a lie (unreleased)
+## 2026-09-12 — preflight [9] could only be satisfied by a lie (released 2026-09-12 as 0.36.2)
 
 - **Checks [5b] and [9] contradicted each other once a repo was tagged mid-cut — SOUNDNESS R413.** The
   family cuts in two stages: engines first, then the umbrella once the pins move. On 0.36.2 candor-ts was

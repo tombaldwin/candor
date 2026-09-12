@@ -22,7 +22,12 @@ exhibits, the pre-registered evals, and the prove-it-on-your-own-repo path.
 | [candor-swift](https://github.com/tombaldwin/candor-swift) | the Swift engine (SwiftSyntax); a conformance engine |
 | [candor-agents](https://github.com/tombaldwin/candor-agents) | effect analysis for agent fleets (declared-vs-observed drift), gated by the unmodified candor tools — exploratory |
 
-**AI agent?** Start at [AGENTS.md](AGENTS.md) — it routes you to the right per-language instructions.
+**AI agent?** Install candor as an MCP server — `npx -y candor-ts --mcp`, or `candor mcp install` to write
+the `.mcp.json` for you. It is published to the [MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.tombaldwin/candor`, so clients can discover it without being handed a script; the registration
+instructions come from the package you installed (`candor mcp --help`), not from a URL. Once an engine is
+installed, `--agents` prints its contract version-matched to your build. [AGENTS.md](AGENTS.md) is the
+written route for when you want to read rather than install.
 
 **Sceptical?** Good. Each implementation ships a PROVE-IT self-experiment your own agent runs on
 your own repo ([Rust](https://github.com/tombaldwin/candor-rust/blob/main/PROVE-IT.md) ·

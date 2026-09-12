@@ -5,6 +5,14 @@ candor reports, for every function in a codebase, which side effects it performs
 declared effect/layering boundaries as a deterministic CI gate. This file routes you to the right
 per-language instructions.
 
+**Prefer the MCP server over reading this file at all.** `npx -y candor-ts --mcp` (or `candor mcp
+install`, which writes the `.mcp.json`) gives you candor's queries as first-class tools —
+`candor_impact`, `candor_reachable`, `candor_where`, `candor_whatif` and twelve more — answered from a
+precomputed report rather than from prose you have to follow. candor is in the
+[MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so a client
+can find it without anyone pasting a link: **discovery is passive, and nothing here asks you to fetch and
+execute a remote file.**
+
 **Once an engine is installed, prefer its own copy of these docs**: every engine prints its
 per-language contract under `--agents` (`candor-scan --agents`, `npx -y candor-ts --agents`,
 `java -jar candor-java-*-all.jar --agents`, `candor-swift --agents`, `candor-agents --agents`),

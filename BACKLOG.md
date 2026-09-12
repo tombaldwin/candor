@@ -124,6 +124,16 @@ CHANGELOG-only failures first; some look like tool imprecision worth tightening 
   suspected call beside a benign sibling literal, the free-fn spelling as the calibration control, and a
   provably path-free method on the same receiver as the over-mask control.
 
+  **RUST'S OTHER TWO EFFECTS ARE ALREADY SWEPT — MEASURED 2026-09-12, so start elsewhere.** `Db` is
+  clean: `sqlx::query(caller)`, `conn.execute(caller, [])` and `conn.prepare_cached(caller)` each beside
+  a benign literal query all report `incomplete:['Db']` and refuse. `Exec` is clean AND its one
+  suspicious shape is CONFORMANT, not a defect: `Command::new("sh").arg("-c").arg(caller)` reports
+  `cmds:['sh'] incomplete:NONE`, and SPEC:1481 defines `cmds` as "the LITERAL subprocess commands
+  statically visible" — the subprocess IS `sh`, it IS literal, so the report is right and
+  `allow Exec ls` still refuses it. Checking which side the contract sits on BEFORE filing, per the
+  standing theory-vs-spec hazard. The Fs guard is the only one of the three that SPLITS free-form from
+  method-form, and that split is where R417 lived — which is the shape to look for in the other engines.
+
 - **Five conformance `Engine` copies** (`gen_completeness`, `gen_fs_kind`, `gen_masking`, `gen_netclass`,
   `gen_policy_match`) should `import gen_differential`, as seven other generators already do.
   **MEASURED 2026-09-12, and the entry understates it in one way and overstates it in another.**

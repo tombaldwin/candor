@@ -1,158 +1,104 @@
 # candor (umbrella) backlog
 
-## ⇢ THE PLAN, set 2026-09-12 evening — REWRITTEN after a Fable review overturned its premise
+## ⇢ THE PLAN — third revision, 2026-09-12 20:20. Two reviews changed it; the numbers are in the rows.
 
-**The first draft of this plan was wrong and the correction is the useful part.** It claimed
-`gen_masking.py` missed five bypasses because it holds the LOCATOR-ARRIVAL axis constant, and proposed
-~112 cells. Checked row by row, the arrival axis reaches **one** of the five: R409. R410 and R393 are
-VERB choices (you cannot misposition a literal in `createFile(atPath:)` — the author must choose
-`fopen`); R394 is a verb plus a second authored literal; **R395 is not a masked program at all** — a
-*visible* literal dropped by a shape filter, which is `gen_policy_match.py`'s property, not this one's.
+**Both of my framings were wrong and were killed by measurement, not argument.** (1) "The masking
+generator holds the locator-ARRIVAL axis constant" — it reaches ONE of five rows; the rest are verb
+choices and one value-shape. (2) "The god files cause this" — Spearman(LOC, rows/KLOC) over 20 core
+files is **−0.06**. `decls.rs` (2,487 lines) carries **7.24 rows/KLOC**; `scan.mjs` (10,927) carries
+**1.46**. `Candor.java` is the LEAST defect-dense semantic core in the family. The real largest
+hand-written files are instruments — `test.mjs` 19,392, `tests.rs` 19,071, **`conformance/run.sh` 17,092**
+— and nobody has proposed splitting those.
 
-**And the through-line was wrong.** "Generators find things, hand fixtures miss them" does not
-distinguish `gen_masking.py` — it IS a generator. What it generates over is a **hand-written vocabulary**
-(its own line 66), authored from the same mental verb list as the engines' `is_fs_path_arg` /
-`NET_ESTABLISHING` / `isNetEstablishingFree`. **A generator over a hand vocabulary is a hand list with a
-for-loop**, and it agrees with the engine for exactly the reason §3 calls cross-engine agreement the
-weakest signal. Provenance of the masking rows: source-reading 7, inverse probe 1, **generated instrument
-0**. `gen_masking.py` has one commit (`62d8b78`, 2026-06-18) and has never gone red.
+**What IS causal, measured across this week's 15 engine rows:** seven are *a finite hand-maintained list
+standing in for an open-ended question, in a scope where nothing can cross-check it*; three more are its
+positional cousin. **The variable is SCOPE, not SIZE.** `NET_ESTABLISHING` (`scan.mjs:7183`) sits 740
+lines inside `visitCalls` (6444–8374), so it is unimportable: no test can identity-check it and it cannot
+be diffed against `NET_USE_VERBS` 4,290 lines away. `scan-core.mjs` exports 12 tables that ARE
+identity-checked — the idiom that caught R109/R110 drifting apart.
 
-### 1. R409 + its arm — FIRST, because it is live and its instrument is already written
-java Fs, the last live bypass of the class, in the REFERENCE engine. Priced: 235 direct performers
-(2.8%). Answer the design question first — does `Files.exists(p)`, the ARGUMENT form of a path stat,
-carry a gated locator? rust ruled on the RECEIVER form and that ruling does not reach java's spelling.
-`conformance/gate/R411-DEFECT-ARM.md` holds the arm, four-way measured 3-sound-to-1-broken; it lands in
-the same change. **Four cells, not 112.**
+**And the cheapest win is not building anything new.** The family already owns four instruments for this
+exact class and applies each in exactly one place: java's `SourceHygieneTest`, `bin/assert-audit.sh`,
+rust's `db_crates_are_calibrated` both-directions check, and PART 4b's vector battery.
 
-### 2. API-SURFACE HARVEST → generated masking cells — THE BUILD, and it replaces the old item 2
-**The old item 2 (per-engine "table-consistency tests") claimed a property it does not have**, and the
-second Fable review proved it: *"it reads the classify list, so it disagrees with the masking list by
-construction"* assumes a classify LIST exists. In rust there is none — `classify()`
-(`candor-classify/src/lib.rs:484`) is predicate code: **110 `Some("Fs")` return sites and 328
-`ends_with(` tests, zero data-table arms** (verified). In ts the rule that makes `dns.resolve` Net is a
-module regex, and the member set lives in **Node**, not in `scan.mjs`. Only swift (`kappaFree`, a switch)
-and java (owner/method `Map.entry` pairs) have a finite classify side. So to ask "every verb classify maps
-to Fs" you must FEED IT INPUTS — and if we author the inputs, it is the hand vocabulary with an extra
-loop. (ts already carries **two** Net use-verb lists 4,300 lines apart, `scan.mjs:2893` and `:7183–7210`
-— found while building R412.)
+### 0. MONDAY MORNING — the STAT RULING, before either engine is touched
+Write it as a SPEC clause with a **two-spelling conformance PART**: argument form (`Files.exists(p)`,
+`fs::metadata(p)`) and **receiver form** (`p.exists()`), each beside a benign sibling, expected AS-EFF-008
+four-way. This is "write the row before the port", and it is now load-bearing for three things at once:
+it decides R409's population (235 functions, or a fraction), it fixes rust's split, and it is the
+expected-verdict table the harvest cannot run without.
 
-**The version that has the property is one whose INPUT side is harvested from the world.** Enumerate the
-language's real surface and emit one `gen_masking.py` cell per export:
-- **node** — `Object.keys(require('node:fs'|'dns'|'net'|'child_process'))`, with `@types/node` for
-  parameter positions
-- **JDK** — reflection or ASM over `jrt:/` for every `Files`/`File`/`ProcessBuilder` method taking a
-  `Path`/`String`/`File` (candor-java already reads bytecode)
-- **rust** — `rustdoc --output-format json` over std and the `CALIBRATED_CRATES`
-- **swift** — the SDK module interfaces
+### 1. R414 + R409 under that ruling — ONE ruling, TWO engines
+**R414 is new and live in the shipped 0.36.2**: `p.exists()` beside a benign literal exits **0** with zero
+violations, while `fs::metadata(p)` and `fs::write(p)` are both caught — because `is_fs_path_arg`
+(`lib.rs:3473`) carries the argument forms and the `!is_method` gate drops the receiver form. R409's row
+had cited that exclusion as a *ruling*; it never was, and that sentence is struck. `p.exists()` /
+`p.is_file()` are among the commonest Fs spellings in Rust, so this is a large share of the 9,811 UNMASKED
+lines a count-ratchet would have dismissed as safe. The R411 defect arm lands in the same change.
 
-Per harvested `(owner, method, locator-param-position)`: render the benign-literal sibling plus a
-parameter in that position, and assert the gate FAILS. **Would have caught six of this week's nine
-masking rows** — R409 (`Files.write(Path,…)` bypasses `Path.of`), R410 (every `dns` export), R399's
-`chown`/`lchown`/`chroot`, R393 (`fopen`'s two-param signature), R394, R386. Not R395, which is a
-value-SHAPE axis and belongs to item 5. Start where the locator type is mechanical (`Path`,
-`AsRef<Path>`, `URL`); `String`-typed params are the ambiguous residue and where noise would live.
+### 2. Hoist the four trapped Sets to module scope — ~6 lines, near-zero risk
+`CONNECTING_CTORS` (7156), `NET_ESTABLISHING` (7183), `FS_USE_VERBS` (7206), `EXEC_USE_VERBS` (7210) are
+pure literal Sets closing over nothing, rebuilt on every call, and unimportable. Hoisting them **makes the
+R410 test writable** — which matters, because `assert-audit` FAILS on the R410 fix as shipped
+(`587e70d`: a rule moved with nothing beside it that would fail if the rule were wrong).
 
-**PRECEDENT, in-tree and thrown away:** `candor-ts/CHANGELOG.md` records 144 cases generated from node's
-`fs` exports finding **two defects in one run** — and the harvester was not kept (`grep Object.keys(fs)`
-in `test.mjs`: **0**, verified). Rebuilding it as a standing instrument is most of this item.
+### 3. Port `SourceHygieneTest` to rust, ts and swift
+`candor-java/src/test/java/io/poly/candor/SourceHygieneTest.java:119` is the best artifact in the tree for
+this class: it reads its own source, asserts the copy count of a literal is ONE, asserts the single rule
+is actually CONSULTED ≥3 times, and carries a vacuity floor. It exists in java only — the engine with the
+fewest rows per KLOC. Target the three ungated duplications first (§2 of the audit).
 
-**IT MUST BE BORN WITH A CAN-IT-FAIL ARM** — revert R410's commit in a scratch tree and confirm the
-harvest goes red — or it is `gen_masking.py` with more rows. Harvesting alone does not buy falsifiability:
-`gen_sink_surface.py` and `gen_key_shapes.py` already harvest from the world and BOTH sit in
-`probe_check.py`'s UNCOVERED list.
+### 4. `assert-audit.sh` as a CI step in the four engine repos
+It runs in **no** engine repo's CI; only its selftest is gated. Last week it fails **22 of 168** commits —
+rust 13/72, ts 3/35, swift 3/39, java 0/22. That is a backlog, not a false-positive rate. Triage the
+CHANGELOG-only failures first; some look like tool imprecision worth tightening before turning it on.
 
-### 3. The inverse probe as a SET ratchet, four-way — and the RATCHET QUANTITY WAS WRONG
-The old item said "ratchet the UNMASKED count". That cannot work: `scan.rs:2688–2727` fires its `else`
-for every Fs/Net/Exec/Db call with no literal and no guard hit — i.e. **every legitimate fd use-verb**
-(`f.read()`, `w.write_all()`, `stream.flush()`). The population is dominated by the safe case, so a newly
-missing establishing verb moves the count by single digits. **We already know the number: the probe WAS
-run over the registry on 2026-09-12 — 1,547 crates, 9,811 UNMASKED lines (R399).** Fable believed it had
-never been run; it had, and the figure proves the point.
+### 5. Collapse the duplications that have no cross-checker
+- **`is_fs_path_arg_method` (2 names, `lib.rs:3673`) should consult `is_fs_path_arg` (30 names, `:3473`).**
+  R399's open half — cap-std `Dir::open/write/read/…` — is already in the 30-name list. A/B before
+  believing it; widening is a typing change and two earlier ones over-reached.
+- **Five conformance `Engine` copies** (`gen_completeness`, `gen_fs_kind`, `gen_masking`, `gen_netclass`,
+  `gen_policy_match`) should `import gen_differential`, as seven other generators already do.
+- **13 spellings of "which trailing segment is a SIDECAR"** across the family — including
+  `bin/corpus-ab.py:456`, the tool CLAUDE.md mandates. SPEC.md:1834 fixes the set and says it exists
+  *"because the engines were already drifting on it"*. Swift's 2-name version is LATENT, not live
+  (measured: a foreign sidecar parses as an empty report; the dangerous `.callgraph.json` IS in its list).
+- **`RS_FAMILY`** should be the only family list in `bin/` bar the two preflight [8] deliberately
+  cross-checks. `ci-watch.sh:46` restates it in a DIFFERENT ORDER, and push order is load-bearing.
 
-So: ratchet the **distinct `(crate, leaf, method, argc)` SET** against a reviewed allowlist, seeded from
-`FS_USE_VERBS`/`EXEC_USE_VERBS`/`NET_USE_VERBS` so only the remainder is ever triaged. Key it on **"this
-call's LOCATOR was not captured"**, not `str_arg.is_none()` — the rust version keys on the latter, so a
-rust R393-shape never reaches it. java, the engine with the live bug, has no probe at all.
+### 6. Four green-on-failure swift tests — 4 lines
+`PathProcessTests.swift:30` and `TourProcessTests.swift:34` do `XCTSkipUnless(r.code == 0)` inside the
+shared `scanned()` helper, turning **14 process tests into skips** if the scan crashes;
+`UnreadExclusionAdvisorySiblingTests.swift:73` and `UnreadExclusionRouteEqualityProcessTests.swift:92`
+`throw XCTSkip("not JSON")`. Detection works and aggregation discards it.
 
-### 4. One shared VOCABULARY MODULE for the gate-verdict generators
-`gen_policy_match.py` re-declares its own `Engine` classes and its docstring says it "deliberately mirrors
-gen_masking.py exactly" — **zero imports between them** (verified). That is R288 (the fifteen `ab.py`
-copies) reappearing inside the conformance suite: a verb added to one is not added to the others. Extract
-one module they import; it is also the only place a harvested vocabulary can be added once. *(Name the
-exact set of generators this covers before starting — "four" is asserted, not measured.)*
+### 7. API-surface harvest — DEMOTED, still worth building
+Under its own mechanical first phase ("start where the locator type is mechanical; `String`-typed is the
+residue") it reaches **two** of nine, not six: R410's `hostname: string`, R393's `UnsafePointer<CChar>`,
+R386's `*const c_char` and R394 (a third-party package, not an SDK interface) are all residue. Items 2–5
+are cheaper and reach more. Build it after them, **born with a can-it-fail arm** — revert R410 in a
+scratch tree and confirm red — because `gen_sink_surface.py` and `gen_key_shapes.py` already harvest from
+the world and BOTH sit in `probe_check.py`'s UNCOVERED list.
 
-### 5. R395's real home: a literal-SHAPE arm in `gen_policy_match.py`
-Property: *a visible unallowed literal must FAIL*. Values: bare filename, dotfile, relative path,
-`host:port`, command-with-path. Its only Fs NOMATCH today is an absolute `/etc/apppwned/x` (line 124).
-~12 cells.
+### 8. Then the queue
+R399's open half (subsumed by item 5) · R412 (filed, NOT built — see DO-NOT below) · R403's residual ·
+R406's spec half · the union SPEC amendment (deferred past 0.36.2 by the ruling itself, now unblocked).
 
-### 6. THE CLAIM THIS WEEK EARNED, and it belongs in the spec
-**A standing instrument's green is not evidence until it has a red in its history.** SOUNDNESS already
-says this of rows ("not evidence until falsified against a pre-fix binary") and of checkers (the 13/13
-`sys.exit(0)` survey) — but **not of generators, which survived that survey by exemption**
-(`probe_check.py:135` exempts `gen_masking.py` "as gen_differential.py"). Four in-tree facts, all
-verified:
-- `SPEC.md:4597` cites this instrument as the proof — *"the conformance masking differential pins it
-  engine-by-engine"* — while the class was live-broken in all four engines.
-- `gen_masking.py:28` claims *"the masked locator is derived from a FUNCTION PARAMETER (genuinely
-  un-extractable)"*. The java fixture writes `String p = "/etc/" + m; Files.write(Path.of(p), …)` — which
-  passes through `Path.of`, **precisely the branch java handles**. The docstring describes the case it
-  does not test: the asserted-safety-comment shape, inside the instrument.
-- Exempt from the can-it-fail ratchet, and read as coverage.
-- 86 days green, zero reds.
+### DO NOT
+- **Do not split `scan.mjs`, `CallCollector.swift`, `Candor.java`, `collector.rs` or `lang.rs`.** Size is
+  flat against defect density; a single-pass walker needs locality; and this project's own history prices
+  a large mechanical refactor above the defect it would prevent (over half of one round's findings were
+  previous fixes reintroducing their own class).
+- **Do not invert `NET_ESTABLISHING` into a denylist.** Already priced twice: R412 here, and rust measured
+  the same experiment over 1,545 crates — **544 rows gained `incomplete` and it masked `bind`**.
+- **Do not four-way the inverse probe yet, and do not ratchet its COUNT.** 9,811 UNMASKED lines over 1,547
+  crates, dominated by legitimate fd use-verbs. Ratchet the distinct `(crate, leaf, method, argc)` SET
+  against a seeded allowlist, in rust first.
 
-Actions: reword `SPEC.md:4597` from "pins it" to what is true — *pins it for the spellings the
-differential enumerates; the enumeration is hand-written and its boundary is the measured UNMASKED
-population* — and make every `gen_*.py` cite the row it once went red on, or be listed as **unfalsified**.
-
-### Then the queue
-7. **R399's open half** — mysql `query_*` is fixture-evidence only; cap-std's `Dir::write` deliberately
-   excluded (the guard matches on path SUFFIX).
-8. **R412** — the ts Net rule should be RECEIVER-BASED: a call on a MODULE is establishing, a member call
-   on a handle VALUE is a use-verb by construction. ts has the checker's receiver type.
-9. **R403's residual** — `ci-watch`'s COMPARISON arm is still uncovered.
-10. **R406's spec half** — the conformance wrapper (NOT a formatting change).
-11. **The SPEC amendment for the union ruling** — unblocked, and ⟨0.37⟩'s conformance PART with it.
-
-### Metrics — and the first draft was wrong here too
-Re-reading §6's metric 1 (% of §4 cells green) measures **the instruments' self-report**: it would have
-read 100% on the masking class all summer. Build BACKLOG §5's **fifth metric first** — over real trees
-under the template we ship, the fraction of functions in a denied scope whose reach of the denied effect
-is hidden behind `Unknown` or an uncaptured locator. That is the number that would have moved.
-
-### THE CRITERION FOR ANY NEW TOOL, from the second review — and it attacks the premise of "use the box"
-**Agent-hours do not track discovery; they track the measure→fix→fixture→row LOOP.** R409 and R410 were
-both *predicted from source in minutes*; the hours went into what came after. R412 is the exhibit: built,
-2708 tests green, A/B 16 rows, ADDED 0 — the aggregate said SHIP and only tracing the rows to a body said
-otherwise. Compute cannot do that tracing.
-
-So the test for a new instrument is **not** "cheap per run" — this box already does 1,552 crates in four
-minutes. It is: **does the output arrive as a VERDICT or as a LIST?** A list is agent-hours by another
-route, relabelled. And more compute on an instrument that cannot go red yields exactly nothing —
-`gen_masking.py` at 86 days green is the proof.
-
-**The value of a dedicated machine is not cycles, it is STALENESS RESISTANCE:** a harvested vocabulary
-re-derives itself when Node, the JDK or std change. A hand list does not, and nobody notices.
-
-**The traps, named so we do not build them:**
-- a COUNT ratchet over `UNMASKED` (9,811 lines, dominated by the safe case)
-- first-run triage of that probe unseeded — thousands of judgement calls, which is the reading work this
-  was meant to remove
-- **continuous `corpus-ab.py`** is the mild version: a real cost-saver, but it manufactures the aggregate
-  R412 showed to be misleading, and it is structurally blind to absences — which every masking row is
-- mutation over the classifier tables: high value against the "my fix reintroduced the class" vein, and
-  **zero against this one** — mutation tests code that is PRESENT; masking bugs are entries that are MISSING
-- the syscall oracle as-is: it asserts observed ⊆ predicted ∪ Unknown, and a masking bypass is a
-  *predicted* effect with a missing `incomplete`, so it reports OK. The version worth building later
-  harvests `openat` paths from the trace and asserts each is in `paths` or covered by `incomplete` — a
-  kernel-sourced masking oracle, blocked on drivers unless item 2's harvest generates them
-
-### Cut from the first draft, and why
-- **The ~112-cell arrival axis as the headline** — it catches one row, and that row's cell is already
-  written. Keep arrival as a small axis; do not lead with it.
-- **The half-day generator audit** — it is a grep, answered above in a paragraph.
-- **"The weekly released-floor run becomes early warning"** — it re-runs KNOWN shapes against old
-  artifacts. "How long was R395 live" is a one-off bisect, not a cadence.
+### Metrics
+§6's four are two months stale, but re-reading metric 1 measures **the instruments' self-report** — it
+would have read 100% on the masking class all summer. BACKLOG §5's fifth metric prices a **fix** (up to
+235 java functions gain `incomplete`), so it is a pricing script, not a detector. Neither is first.
 
 ## ⇢ STATE 2026-09-12 13:00 — THE MASKING CLASS, FOUR ENGINES, FIVE CLOSED
 

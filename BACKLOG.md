@@ -24,31 +24,62 @@ carry a gated locator? rust ruled on the RECEIVER form and that ruling does not 
 `conformance/gate/R411-DEFECT-ARM.md` holds the arm, four-way measured 3-sound-to-1-broken; it lands in
 the same change. **Four cells, not 112.**
 
-### 2. TABLE-CONSISTENCY tests, per engine — the highest-yield build
-For every verb the **classifier** maps to an effect in {Net, Exec, Fs, Db}, assert it is either in
-`establishing(E)` or in a **declared** use-verb set; anything undeclared FAILS. It reads the *classify*
-list, so it disagrees with the masking list **by construction** — which is the property no hand
-vocabulary can have. Closes the largest sub-vein: R410, R399, R379, R381, R386 — five of ~nine masking
-rows. Needs no rendering and runs in each engine's own suite. Sites: ts `scan.mjs:7183/7206/7210`; rust
-`candor-classify/src/lib.rs`; swift `Classifier.swift:1356/1439`. One level down, the same shape gives
-R393/R394: every name in an establishing set must have a `locatorLabelsForFree` entry or be asserted
-single-string-arg — i.e. **the table must be total**.
+### 2. API-SURFACE HARVEST → generated masking cells — THE BUILD, and it replaces the old item 2
+**The old item 2 (per-engine "table-consistency tests") claimed a property it does not have**, and the
+second Fable review proved it: *"it reads the classify list, so it disagrees with the masking list by
+construction"* assumes a classify LIST exists. In rust there is none — `classify()`
+(`candor-classify/src/lib.rs:484`) is predicate code: **110 `Some("Fs")` return sites and 328
+`ends_with(` tests, zero data-table arms** (verified). In ts the rule that makes `dns.resolve` Net is a
+module regex, and the member set lives in **Node**, not in `scan.mjs`. Only swift (`kappaFree`, a switch)
+and java (owner/method `Map.entry` pairs) have a finite classify side. So to ask "every verb classify maps
+to Fs" you must FEED IT INPUTS — and if we author the inputs, it is the hand vocabulary with an extra
+loop. (ts already carries **two** Net use-verb lists 4,300 lines apart, `scan.mjs:2893` and `:7183–7210`
+— found while building R412.)
 
-### 3. Port the INVERSE PROBE four-way and ratchet the UNMASKED count
-The only instrument whose vocabulary comes from the world rather than from us, and therefore the only one
-that can warn about a shape nobody has named. It exists in rust alone (`scan.rs:2727`), is
-diagnostic-only, and **java — the engine with the live bug — has none**. Port it, run it over the corpus,
-ratchet the count. **Key it on "this call's LOCATOR was not captured", not on `str_arg.is_none()`** — the
-rust version keys on the latter, so a rust R393-shape (a literal in a non-locator position) never reaches
-it either.
+**The version that has the property is one whose INPUT side is harvested from the world.** Enumerate the
+language's real surface and emit one `gen_masking.py` cell per export:
+- **node** — `Object.keys(require('node:fs'|'dns'|'net'|'child_process'))`, with `@types/node` for
+  parameter positions
+- **JDK** — reflection or ASM over `jrt:/` for every `Files`/`File`/`ProcessBuilder` method taking a
+  `Path`/`String`/`File` (candor-java already reads bytecode)
+- **rust** — `rustdoc --output-format json` over std and the `CALIBRATED_CRATES`
+- **swift** — the SDK module interfaces
 
-### 4. One shared VOCABULARY MODULE for the four gate-verdict generators
-Not the half-day audit the first draft proposed — that question is a grep, and here is its answer: the
-four gate-verdict generators share one vocabulary **by copy** (`gen_policy_match.py`'s docstring says it
-"deliberately mirrors gen_masking.py exactly"), with **zero imports between them**. That is R288 — the
-fifteen `ab.py` copies — reappearing inside the conformance suite: a verb added to one is not added to
-the other three. The other twelve generators are document-property differentials and cannot host this
-class. Extract one module the four import; it is also the only place a verb axis could be added once.
+Per harvested `(owner, method, locator-param-position)`: render the benign-literal sibling plus a
+parameter in that position, and assert the gate FAILS. **Would have caught six of this week's nine
+masking rows** — R409 (`Files.write(Path,…)` bypasses `Path.of`), R410 (every `dns` export), R399's
+`chown`/`lchown`/`chroot`, R393 (`fopen`'s two-param signature), R394, R386. Not R395, which is a
+value-SHAPE axis and belongs to item 5. Start where the locator type is mechanical (`Path`,
+`AsRef<Path>`, `URL`); `String`-typed params are the ambiguous residue and where noise would live.
+
+**PRECEDENT, in-tree and thrown away:** `candor-ts/CHANGELOG.md` records 144 cases generated from node's
+`fs` exports finding **two defects in one run** — and the harvester was not kept (`grep Object.keys(fs)`
+in `test.mjs`: **0**, verified). Rebuilding it as a standing instrument is most of this item.
+
+**IT MUST BE BORN WITH A CAN-IT-FAIL ARM** — revert R410's commit in a scratch tree and confirm the
+harvest goes red — or it is `gen_masking.py` with more rows. Harvesting alone does not buy falsifiability:
+`gen_sink_surface.py` and `gen_key_shapes.py` already harvest from the world and BOTH sit in
+`probe_check.py`'s UNCOVERED list.
+
+### 3. The inverse probe as a SET ratchet, four-way — and the RATCHET QUANTITY WAS WRONG
+The old item said "ratchet the UNMASKED count". That cannot work: `scan.rs:2688–2727` fires its `else`
+for every Fs/Net/Exec/Db call with no literal and no guard hit — i.e. **every legitimate fd use-verb**
+(`f.read()`, `w.write_all()`, `stream.flush()`). The population is dominated by the safe case, so a newly
+missing establishing verb moves the count by single digits. **We already know the number: the probe WAS
+run over the registry on 2026-09-12 — 1,547 crates, 9,811 UNMASKED lines (R399).** Fable believed it had
+never been run; it had, and the figure proves the point.
+
+So: ratchet the **distinct `(crate, leaf, method, argc)` SET** against a reviewed allowlist, seeded from
+`FS_USE_VERBS`/`EXEC_USE_VERBS`/`NET_USE_VERBS` so only the remainder is ever triaged. Key it on **"this
+call's LOCATOR was not captured"**, not `str_arg.is_none()` — the rust version keys on the latter, so a
+rust R393-shape never reaches it. java, the engine with the live bug, has no probe at all.
+
+### 4. One shared VOCABULARY MODULE for the gate-verdict generators
+`gen_policy_match.py` re-declares its own `Engine` classes and its docstring says it "deliberately mirrors
+gen_masking.py exactly" — **zero imports between them** (verified). That is R288 (the fifteen `ab.py`
+copies) reappearing inside the conformance suite: a verb added to one is not added to the others. Extract
+one module they import; it is also the only place a harvested vocabulary can be added once. *(Name the
+exact set of generators this covers before starting — "four" is asserted, not measured.)*
 
 ### 5. R395's real home: a literal-SHAPE arm in `gen_policy_match.py`
 Property: *a visible unallowed literal must FAIL*. Values: bare filename, dotfile, relative path,
@@ -88,6 +119,33 @@ Re-reading §6's metric 1 (% of §4 cells green) measures **the instruments' sel
 read 100% on the masking class all summer. Build BACKLOG §5's **fifth metric first** — over real trees
 under the template we ship, the fraction of functions in a denied scope whose reach of the denied effect
 is hidden behind `Unknown` or an uncaptured locator. That is the number that would have moved.
+
+### THE CRITERION FOR ANY NEW TOOL, from the second review — and it attacks the premise of "use the box"
+**Agent-hours do not track discovery; they track the measure→fix→fixture→row LOOP.** R409 and R410 were
+both *predicted from source in minutes*; the hours went into what came after. R412 is the exhibit: built,
+2708 tests green, A/B 16 rows, ADDED 0 — the aggregate said SHIP and only tracing the rows to a body said
+otherwise. Compute cannot do that tracing.
+
+So the test for a new instrument is **not** "cheap per run" — this box already does 1,552 crates in four
+minutes. It is: **does the output arrive as a VERDICT or as a LIST?** A list is agent-hours by another
+route, relabelled. And more compute on an instrument that cannot go red yields exactly nothing —
+`gen_masking.py` at 86 days green is the proof.
+
+**The value of a dedicated machine is not cycles, it is STALENESS RESISTANCE:** a harvested vocabulary
+re-derives itself when Node, the JDK or std change. A hand list does not, and nobody notices.
+
+**The traps, named so we do not build them:**
+- a COUNT ratchet over `UNMASKED` (9,811 lines, dominated by the safe case)
+- first-run triage of that probe unseeded — thousands of judgement calls, which is the reading work this
+  was meant to remove
+- **continuous `corpus-ab.py`** is the mild version: a real cost-saver, but it manufactures the aggregate
+  R412 showed to be misleading, and it is structurally blind to absences — which every masking row is
+- mutation over the classifier tables: high value against the "my fix reintroduced the class" vein, and
+  **zero against this one** — mutation tests code that is PRESENT; masking bugs are entries that are MISSING
+- the syscall oracle as-is: it asserts observed ⊆ predicted ∪ Unknown, and a masking bypass is a
+  *predicted* effect with a missing `incomplete`, so it reports OK. The version worth building later
+  harvests `openat` paths from the trace and asserts each is in `paths` or covered by `incomplete` — a
+  kernel-sourced masking oracle, blocked on drivers unless item 2's harvest generates them
 
 ### Cut from the first draft, and why
 - **The ~112-cell arrival axis as the headline** — it catches one row, and that row's cell is already

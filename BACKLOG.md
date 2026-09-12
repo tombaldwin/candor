@@ -57,6 +57,25 @@ available: it has been priced and refused twice** (rust's Net inversion gained 5
 masked `bind`; ts's gained 16 in `got`, R412), because the general rule needs the member-level
 classification java's κ table pays for.
 
+### 0b. MONDAY MORNING — the stat ruling, as a clause plus a FOUR-ARM PART
+*"Is a stat's path a locator?"* is the model's first question, and the answer propagates to both engines
+and the PART. Write it as a SPEC clause with **four arms, not one** — a defect arm alone is exactly the
+shape R411 was just filed against:
+
+1. **argument form** — `Files.exists(p)` / `fs::metadata(p)` beside a benign sibling → expect AS-EFF-008.
+2. **receiver form** — `p.exists()` beside a benign sibling → expect AS-EFF-008. **THREE-WAY AT MOST: ts
+   has no receiver-form stat.** java's is `new File(p).exists()` or a `File` parameter (`fsKind` already
+   calls `exists` an Fs read); swift's is `URL.checkResourceIsReachable()`. Declare ts's arm inexpressible
+   with a stated reason under `part_declarations.py`.
+3. **OVER-CHARGE CONTROL — a handle use-verb beside a literal must NOT mark.** The arm that stops a fix
+   reintroducing rust's 544-row inversion.
+4. **OVER-CHARGE CONTROL — `Path p = Path.of("/lit"); write(p)` must exit 0.** "Captured" has to be a
+   VALUE fact, not a syntactic one; an engine whose window is syntactic over-masks here, which is exactly
+   what R409's naive-fix warning is about.
+
+Run it against all four UNMODIFIED engines in the foreground first — expect rust red on arm 2, java red on
+a `Path`/`File` parameter; ts and swift unmeasured.
+
 ### 1. R414 + R409 under that ruling — ONE ruling, TWO engines
 **R414 is new and live in the shipped 0.36.2**: `p.exists()` beside a benign literal exits **0** with zero
 violations, while `fs::metadata(p)` and `fs::write(p)` are both caught — because `is_fs_path_arg`

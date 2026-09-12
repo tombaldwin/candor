@@ -21,62 +21,41 @@ identity-checked — the idiom that caught R109/R110 drifting apart.
 exact class and applies each in exactly one place: java's `SourceHygieneTest`, `bin/assert-audit.sh`,
 rust's `db_crates_are_calibrated` both-directions check, and PART 4b's vector battery.
 
-### 0. THE MODEL — and this is the spine, not a preamble
+### 0. THE MODEL — DEMOTED from "the spine" to ONE CLAUSE, after a fourth review killed its evidence
 
-**The framing this plan had until now was wrong in a way a defect count cannot see.** Density measures
-where bugs HAPPENED. A correct model prevents a bug being *expressible*, and a defect that was never
-possible never appears in a count — so "size is flat against density (ρ = −0.06)" argues against MOVING
-CODE, and says nothing about the concepts. Those are different operations and this plan ran them together.
+**The 12:1 measurement I led with was an ARTIFACT and is withdrawn.** My awk matched the English word
+"establish" in row prose and matched engine names as substrings, so it counted Env/Clock rows and rust and
+java rows under "ts". Counted properly by the masking signature (a row containing *benign* and
+*certifies / exit 0*): **rust 6/160, ts 4/135, swift 3/53, java 1/29** — java (3.4%) is INDISTINGUISHABLE
+from rust (3.8%) and ts (3.0%), and **swift (5.7%) is the only outlier**.
 
-**The measurement that settles it.** Rows in the establishing-verb class, by engine:
+**"Java has no list" was also false.** Java's MARKING rule is general (`Candor.java:5350-5352`), but it is
+affordable only because `classify` charges at MEMBER precision through a 2,880-line κ table plus
+`isPureHandleAccessor` (`:8232`) and `fsKind` (`:8025-8045`, ~60 verbs) — both hand lists with their own
+rows (R131, R258). **Every engine has the list; java keeps it on the CLASSIFY side and the others on the
+MARK side.** ts and rust classify at module/crate granularity, so their marking rule has to be precise
+instead. The real controlled comparison is R409's own sweep INSIDE java — same engine, same input, same
+hunting: Net/Exec/Db caught the sibling shape, Fs did not, and Fs is java's one constructor-list effect.
 
-| engine | how it decides | rows |
-|---|---|---|
-| ts | a list | **5** |
-| rust | a list | **4** |
-| swift | a list | **3** |
-| **java** | **a general rule** — *any call contributing no visible locator leaves the surface incomplete* | **1** |
+**And three of the four concepts are already in SPEC**: the declared locator POSITION (`SPEC.md:1640`
+⟨0.29⟩, pinned four-way by PART 51), Captured/Uncaptured (`SPEC.md:918`, `incomplete`), and surface
+completeness (`SPEC.md:4593`). **Only own-locator-vs-inherited is new — and it is the undecidable one**,
+because `Path::metadata(&self)` and `File::metadata(&self)` share a leaf and only the RECEIVER TYPE
+separates them, which the syntactic engines do not have. So "the lists become derivations" is not
+available to two of four engines, and "these six rows become unsayable" is wrong: R414 survives the model
+outright, R395 is two variables computing one fact (a `SourceHygieneTest` problem, not a concept one), and
+R393/R394 are relocated rather than killed — **see R415: `locatorLabelsForFree` narrowed the picker by
+three names and the call site still falls back to the whole-argument scan, which is a live ⟨0.29⟩
+non-conformance.** The claim that it "retired R393's residual" was mine and it was false.
 
-Twelve to one. Java is not better tested here; it has no list, so the defect has nowhere to live.
-
-**The model is already trying to emerge on its own.** R394's fix names a concept the code had only
-assumed — `locatorLabelsForFree(name)`, *which argument holds the locator*. It was built for `shellOut`
-and it retired R393's stated residual as a side effect. Closing something you were not aiming at is the
-signature of a correct concept rather than a patch.
-
-**The concepts the domain wants, which no engine states:**
-- A **Locator** is what a call names as its destination — host, path, command, table.
-- A call either **has its own locator** (at a *declared* position) or **inherits one fixed earlier** (a
-  handle use-verb).
-- A locator is **Captured** or **Uncaptured**.
-- **Surface completeness** = every effect-carrying call in the unit has a Captured locator.
-
-Under that model this week's class stops being sayable: "establishing" is `hasOwnLocator(call)` rather
-than a list, so R410's missing resolvers cannot happen; the position is declared, so R393/R394 cannot; a
-Captured locator cannot be silently dropped by a shape filter, so R395 cannot; and R409/R414 become ONE
-question asked once instead of a java decision plus a rust accident. It also supplies the language —
-*"does this call have its own locator, and did we capture it?"* replaces five string sets per engine
-across four engines.
-
-**Sequencing, and the honest caveat.** This belongs in SPEC first, then each engine expresses it, and the
-lists become DERIVATIONS rather than sources of truth — the family's own "write the row before the port".
-The blast radius is the cost: a model change touches four engines where a list edit touches one, so it
-takes the discipline of a rung (clause → conformance PART → ports), not of a patch.
-
-### 0b. MONDAY MORNING — the STAT RULING, which is the model's FIRST QUESTION
-*"Is a stat's path a locator?"* is not a rust-vs-java adjudication; it is a question put to the model,
-whose answer then propagates to both engines and the conformance PART. That is why everything else kept
-waiting on it. Write it as a SPEC clause with a **two-spelling conformance PART**: argument form
-(`Files.exists(p)`, `fs::metadata(p)`) and **receiver form** (`p.exists()`), each beside a benign sibling,
-expected AS-EFF-008 four-way. It decides R409's population (235 functions, or a fraction), fixes rust's
-split, and is the expected-verdict table the harvest cannot run without.
-
-
-Write it as a SPEC clause with a **two-spelling conformance PART**: argument form (`Files.exists(p)`,
-`fs::metadata(p)`) and **receiver form** (`p.exists()`), each beside a benign sibling, expected AS-EFF-008
-four-way. This is "write the row before the port", and it is now load-bearing for three things at once:
-it decides R409's population (235 functions, or a fraction), it fixes rust's split, and it is the
-expected-verdict table the harvest cannot run without.
+**What the model is actually worth, and it is worth doing:** ONE clause naming a TOTAL schema —
+(receiver kind, member) to either a locator POSITION, or INHERITED, or OPAQUE — with a stated default
+direction, plus one PART that asks the same question of all four engines. That is a day, not a rung with
+four ports; the "ports" are R414 and R409, which are happening anyway. It does not delete the lists — it
+lets them be diffed against something. **The cheap alternative, porting java's general rule, is NOT
+available: it has been priced and refused twice** (rust's Net inversion gained 544 `incomplete` rows and
+masked `bind`; ts's gained 16 in `got`, R412), because the general rule needs the member-level
+classification java's κ table pays for.
 
 ### 1. R414 + R409 under that ruling — ONE ruling, TWO engines
 **R414 is new and live in the shipped 0.36.2**: `p.exists()` beside a benign literal exits **0** with zero

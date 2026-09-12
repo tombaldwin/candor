@@ -8,6 +8,15 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-12 — the front door moves to 0.36.2 (released 2026-09-12 as 0.36.2)
+
+- **Cross-repo pins → 0.36.2**: `ENGINE_PIN`, `ENGINE_PIN_JAVA`, both `adopt/` workflow pins,
+  candor-java's jbang catalog, and the VS Code / JetBrains client versions. Bumped in a SECOND commit
+  after the engine releases exist, because each names a published artifact and 0.24 shipped a jbang pin
+  to a tag that was never cut. `ENGINE_PIN_JAVA` is named explicitly because it defaults to `ENGINE_PIN`
+  only when EMPTY — a stale non-empty value silently outranks the family line and `candor update` keeps
+  installing the old engine.
+
 ## 2026-09-12 — the release instruments gate themselves (released 2026-09-12 as 0.36.2)
 
 - **`ci-watch.sh`'s HEAD-scoped `gh run list` had no `--limit` — SOUNDNESS R402.** It pages at 20, and

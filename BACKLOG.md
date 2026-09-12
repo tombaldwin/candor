@@ -102,9 +102,28 @@ rust 13/72, ts 3/35, swift 3/39, java 0/22. That is a backlog, not a false-posit
 CHANGELOG-only failures first; some look like tool imprecision worth tightening before turning it on.
 
 ### 5. Collapse the duplications that have no cross-checker
-- **`is_fs_path_arg_method` (2 names, `lib.rs:3673`) should consult `is_fs_path_arg` (30 names, `:3473`).**
+- ~~**`is_fs_path_arg_method` (2 names, `lib.rs:3673`) should consult `is_fs_path_arg` (30 names, `:3473`).**
   R399's open half — cap-std `Dir::open/write/read/…` — is already in the 30-name list. A/B before
-  believing it; widening is a typing change and two earlier ones over-reached.
+  believing it; widening is a typing change and two earlier ones over-reached.~~ **DONE 2026-09-12,
+  SOUNDNESS R417 — and it was a LIVE GATE BYPASS, not a tidy-up.** `d.write(caller, …)` on a
+  `cap_std::fs::Dir` beside a benign literal took `allow Fs /tmp/benign` to exit **0**; the free-fn
+  spelling of the same hazard exits 1. This entry was right about the vein and right to flag the
+  over-reach, and wrong about the mechanism: consulting `is_fs_path_arg` literally collides on 8 leaves
+  and masks all 267 `File` handle use-verbs. The fix is the same idea SCOPED BY RECEIVER TYPE —
+  mask-by-default on a `Dir` receiver with a signature-checked denylist of the path-free methods.
+- **ASK R417's QUESTION OF THE OTHER THREE ENGINES: is there a path-taking METHOD on a HANDLE receiver
+  that each engine's masking guard does not see?** R417 was rust + `cap_std::fs::Dir`, and the guard's
+  method half is the half nobody probes — every masking row so far (R383, R386, R393-R395, R399, R409,
+  R410) came in through a free function or a receiver-form stat. The rust analogue was a whole second
+  filesystem API hiding behind an allowlist two names long. **State the boundary before searching:** the
+  question is not "does cap-std have a twin" (it does not), it is "enumerate every type on which this
+  engine resolves a method to `Fs`/`Db`/`Exec`, and for each, does a path/query/command ARGUMENT exist" —
+  java's `FileSystem`/`Path` provider methods, ts's `fs.promises.FileHandle` and the `Dir` object from
+  `opendir()`, swift's `FileManager` (whose methods take paths as arguments and whose receiver is a
+  handle — the single most likely hit in the family). Probe shape is R417's three-arm fixture: the
+  suspected call beside a benign sibling literal, the free-fn spelling as the calibration control, and a
+  provably path-free method on the same receiver as the over-mask control.
+
 - **Five conformance `Engine` copies** (`gen_completeness`, `gen_fs_kind`, `gen_masking`, `gen_netclass`,
   `gen_policy_match`) should `import gen_differential`, as seven other generators already do.
 - **13 spellings of "which trailing segment is a SIDECAR"** across the family — including

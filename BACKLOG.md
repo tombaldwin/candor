@@ -21,7 +21,57 @@ identity-checked — the idiom that caught R109/R110 drifting apart.
 exact class and applies each in exactly one place: java's `SourceHygieneTest`, `bin/assert-audit.sh`,
 rust's `db_crates_are_calibrated` both-directions check, and PART 4b's vector battery.
 
-### 0. MONDAY MORNING — the STAT RULING, before either engine is touched
+### 0. THE MODEL — and this is the spine, not a preamble
+
+**The framing this plan had until now was wrong in a way a defect count cannot see.** Density measures
+where bugs HAPPENED. A correct model prevents a bug being *expressible*, and a defect that was never
+possible never appears in a count — so "size is flat against density (ρ = −0.06)" argues against MOVING
+CODE, and says nothing about the concepts. Those are different operations and this plan ran them together.
+
+**The measurement that settles it.** Rows in the establishing-verb class, by engine:
+
+| engine | how it decides | rows |
+|---|---|---|
+| ts | a list | **5** |
+| rust | a list | **4** |
+| swift | a list | **3** |
+| **java** | **a general rule** — *any call contributing no visible locator leaves the surface incomplete* | **1** |
+
+Twelve to one. Java is not better tested here; it has no list, so the defect has nowhere to live.
+
+**The model is already trying to emerge on its own.** R394's fix names a concept the code had only
+assumed — `locatorLabelsForFree(name)`, *which argument holds the locator*. It was built for `shellOut`
+and it retired R393's stated residual as a side effect. Closing something you were not aiming at is the
+signature of a correct concept rather than a patch.
+
+**The concepts the domain wants, which no engine states:**
+- A **Locator** is what a call names as its destination — host, path, command, table.
+- A call either **has its own locator** (at a *declared* position) or **inherits one fixed earlier** (a
+  handle use-verb).
+- A locator is **Captured** or **Uncaptured**.
+- **Surface completeness** = every effect-carrying call in the unit has a Captured locator.
+
+Under that model this week's class stops being sayable: "establishing" is `hasOwnLocator(call)` rather
+than a list, so R410's missing resolvers cannot happen; the position is declared, so R393/R394 cannot; a
+Captured locator cannot be silently dropped by a shape filter, so R395 cannot; and R409/R414 become ONE
+question asked once instead of a java decision plus a rust accident. It also supplies the language —
+*"does this call have its own locator, and did we capture it?"* replaces five string sets per engine
+across four engines.
+
+**Sequencing, and the honest caveat.** This belongs in SPEC first, then each engine expresses it, and the
+lists become DERIVATIONS rather than sources of truth — the family's own "write the row before the port".
+The blast radius is the cost: a model change touches four engines where a list edit touches one, so it
+takes the discipline of a rung (clause → conformance PART → ports), not of a patch.
+
+### 0b. MONDAY MORNING — the STAT RULING, which is the model's FIRST QUESTION
+*"Is a stat's path a locator?"* is not a rust-vs-java adjudication; it is a question put to the model,
+whose answer then propagates to both engines and the conformance PART. That is why everything else kept
+waiting on it. Write it as a SPEC clause with a **two-spelling conformance PART**: argument form
+(`Files.exists(p)`, `fs::metadata(p)`) and **receiver form** (`p.exists()`), each beside a benign sibling,
+expected AS-EFF-008 four-way. It decides R409's population (235 functions, or a fraction), fixes rust's
+split, and is the expected-verdict table the harvest cannot run without.
+
+
 Write it as a SPEC clause with a **two-spelling conformance PART**: argument form (`Files.exists(p)`,
 `fs::metadata(p)`) and **receiver form** (`p.exists()`), each beside a benign sibling, expected AS-EFF-008
 four-way. This is "write the row before the port", and it is now load-bearing for three things at once:
@@ -88,7 +138,19 @@ R406's spec half · the union SPEC amendment (deferred past 0.36.2 by the ruling
 - **Do not split `scan.mjs`, `CallCollector.swift`, `Candor.java`, `collector.rs` or `lang.rs`.** Size is
   flat against defect density; a single-pass walker needs locality; and this project's own history prices
   a large mechanical refactor above the defect it would prevent (over half of one round's findings were
-  previous fixes reintroducing their own class).
+  previous fixes reintroducing their own class). **This is NOT an argument against refactoring — it is an
+  argument against moving code without changing concepts.** §0's model work IS a refactor, and it is the
+  one that pays: restructure the CONCEPTS, leave the file boundaries alone. Where scope blocks a
+  cross-check (item 2's four trapped Sets) the restructure is also justified — not because the file is
+  big, but because the structure makes a test impossible to write.
+- **candor-java is the counter-example to "we never refactor", and it should be read before planning
+  another.** Its `REFACTOR_PLAN.md` (2026-06-20) recommended Level A and marked Level B optional; **Level
+  B shipped** — `AnalysisContext` is a 138-field INSTANCE reached through a `ThreadLocal`
+  (`AnalysisState`, LB-1b) so concurrent scans cannot clobber each other. `analyze()` is **66 lines**, not
+  the 790 the plan feared; the largest method is `virtualDispatch` at 230; of 25 statics, 13 are `final`
+  and the rest are CLI-level config. It is the best-designed engine in the family AND the least
+  defect-dense (0.97 rows/KLOC vs rust's 3.6). **The design shows up in the defect rate — which is §0's
+  argument, already demonstrated once, in-tree.**
 - **Do not invert `NET_ESTABLISHING` into a denylist.** Already priced twice: R412 here, and rust measured
   the same experiment over 1,545 crates — **544 rows gained `incomplete` and it masked `bind`**.
 - **Do not four-way the inverse probe yet, and do not ratchet its COUNT.** 9,811 UNMASKED lines over 1,547

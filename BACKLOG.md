@@ -1,5 +1,73 @@
 # candor (umbrella) backlog
 
+## ⇢ THE PLAN, set 2026-09-12 evening — BUILD THE INSTRUMENT, THEN CLEAR THE QUEUE
+
+**Why this order.** 0.36.2 shipped five gate-bypass fixes. Every one of them lived in a class that had a
+PURPOSE-BUILT instrument — `conformance/gen_masking.py`, the cross-engine masked-literal differential —
+which was GREEN throughout, across all 16 (effect × engine) cells, while the class was live-broken in all
+four engines. It was green because it enumerates EFFECT × ENGINE and holds constant the one axis that
+actually varied. We do not need more instruments; we have sixteen generators. We need them to enumerate
+the axis the defects live on.
+
+### 1. Give `gen_masking.py` a LOCATOR-ARRIVAL axis (and a verb-family axis)
+Today every cell renders one shape: `Files.write(Path.of(p), …)` — an inline construction. The values
+that matter are already enumerated by this week's rows:
+
+| arrival shape | the row that proves it matters |
+|---|---|
+| inline literal | (the compliant control) |
+| inline construction | the ONLY one tested today |
+| **a parameter** | **R409** — java, live, the reference engine |
+| a field / a return of another call | untested |
+| **literal in the WRONG ARGUMENT POSITION** | **R393** (`fopen(p,"r")`), **R394** (`shellOut(to:at:)`) |
+| **literal captured then DISCARDED by a shape filter** | **R395** — published since 2026-07-09 |
+
+4 effects × 4 engines × ~7 arrivals = ~112 cells instead of 16, and it would have caught four of the five
+in one run. The second axis is the ESTABLISHING-VERB FAMILY: **R410** was a verb list that omitted the
+DNS resolvers, which no arrival shape reaches. `conformance/gate/R411-DEFECT-ARM.md` already holds the
+written, four-way-measured arm for the parameter case — that is the first cell of this work, not a
+separate task.
+
+### 2. Audit all sixteen generators for WHAT THEY HOLD CONSTANT
+One question per file: *which axis does this vary, and which does it fix?* `gen_masking.py` was blind for
+a reason that is not unique to it, and this is the cheapest way to learn where else it is true. Half a
+day, sixteen files, and it is the highest-leverage item here: it decides whether item 1 is a one-off
+repair or the first of several.
+
+### 3. Then the weekly released-floor run becomes an EARLY-WARNING system
+`conformance.yml` already runs the current suite against RELEASED artifacts (Mondays 05:17 UTC). It
+inherited the same blindness, which is why R395 was shippable from July to September and nothing said so.
+Once item 1 lands, that job answers "how long has this been live" without anyone asking.
+
+**The through-line, and it is this project's own recorded lesson:** the instruments that found things this
+week GENERATE cases (the corpus A/B, the `CANDOR_MASK_DEBUG` inverse probe, eslint's unused-symbol check
+catching a dead list for free). The ones that missed them ASSERT HAND-WRITTEN FIXTURES. Generated argv
+pairs once found a cardinal sin that a twelve-cause hand list missed; this is the same finding, one
+instrument over.
+
+### Then the queue, in this order
+4. **R409** — java Fs, the last live bypass of the class, in the REFERENCE engine. Priced: 235 direct
+   performers (2.8%). The design question is named and must be answered first — does `Files.exists(p)`,
+   the ARGUMENT form of a path stat, carry a gated locator? rust has already ruled on the RECEIVER form
+   (`p.exists()` excluded, `is_fs_path_arg`'s own doc) and that ruling does not reach java's spelling.
+5. **R411's defect arm** lands with R409 (the suite has no xfail, so it reds `main` until then).
+6. **R399's open half** — mysql `query_*` is fixture-evidence only (not exercised in the registry
+   snapshot); cap-std's `Dir::write` deliberately excluded because the guard matches on path SUFFIX.
+7. **R412** — the ts Net rule should be RECEIVER-BASED, not list-based: a call on a MODULE is
+   establishing, a member call on a handle VALUE is a use-verb by construction. Needs the checker's
+   receiver type, which ts has.
+8. **R403's residual** — `ci-watch`'s COMPARISON arm is still uncovered; the selftest's own comment says
+   it "classifies triggers and never touches the comparison".
+9. **R406's spec half** — the conformance wrapper; NOT a formatting change (the job checks candor-rust
+   out at path `candor`).
+10. **The SPEC amendment for the union ruling** — now unblocked, and ⟨0.37⟩'s conformance PART with it.
+
+### And the thing nobody is measuring
+**§6's four metrics were last measured in June and July.** Cardinal-surface coverage, oracle coverage,
+open silent residuals, find-rate. Nineteen rows were filed this week and not one of those numbers moved,
+or was even re-read. A number two months old is a memory, not a metric. Re-measuring them is how we learn
+whether any of the above is working.
+
 ## ⇢ STATE 2026-09-12 13:00 — THE MASKING CLASS, FOUR ENGINES, FIVE CLOSED
 
 Worked through the queue below. **The class is four-way and each engine failed at a DIFFERENT spelling**,

@@ -1,5 +1,51 @@
 # candor (umbrella) backlog
 
+## ⇢ STATE 2026-09-12 13:00 — THE MASKING CLASS, FOUR ENGINES, FIVE CLOSED
+
+Worked through the queue below. **The class is four-way and each engine failed at a DIFFERENT spelling**,
+so the per-engine lists were never the fix; the invariant is:
+
+> **`incompleteSurfaces` must be driven by *did we capture the LOCATOR*, not by *was there a string*.**
+
+**CLOSED and pushed, each with a fixture:** R410 (ts — the DNS resolver family, a bypass);
+R395 (swift — a bare relative filename seen, discarded, then declared complete; PUBLISHED since July);
+R393 (swift — `fopen`'s mode string, closed incidentally by R395 and pinned anyway);
+R394 (swift — `shellOut` published its WORKING DIRECTORY as the command; fixed with a declared
+`locatorLabelsForFree` table rather than another special case);
+R399 **half** (rust — nine verbs, and the sentence R379 withdrew as false was still shipping on BOTH
+sibling guards, which is what licensed leaving the lists short).
+
+**Priced, not guessed.** rust: A/B over **1,552 crates, 286,892 rows per arm — ADDED 0 / REMOVED 0 /
+CHANGED 5**, all five gaining `incomplete`, each a library wrapper whose own parameter is the locator.
+ts: reach measured at **zero** and recorded as such via `--allow-zero-reach` rather than reported as
+safety. Four-way conformance **OK** after three classifier changes; CI green on all 12 workflows.
+
+### What is left, and why — read the rows, they carry the measurements
+1. **R409 (java, the REFERENCE engine) — the last live bypass, and now PRICED.** `surfaceIncomplete…
+   add("Fs")` fires at ONE allowlist-shaped site. Measured: of **457 DIRECT Fs performers**, 83 carry a
+   path, 210 are already `incomplete`, **235 have neither** — 2.8% of all functions, so the "unusable
+   over-mask" fear I wrote into the row myself did NOT survive measurement. The remaining work is to
+   separate a path-CONSUMING call from a HANDLE use-verb, which is a DESCRIPTOR distinction java has.
+   In-file precedent: `Literals.literalArgsInWindow` already does per-call attribution for Net and Db.
+2. **R411 — and it is TWO instruments, not one.** Conformance PART 12 *and* a cross-engine GATE-MASKING
+   differential (16 effect×engine cells) are BOTH green on java Fs while it is live-broken, because both
+   write `Files.write(Path.of(p), …)` and `Path.of(p)` enters the branch java handles. Neither can see a
+   path that arrived as a PARAMETER. The defect arm is written and measured 3-sound-to-1-broken in
+   `candor-spec/conformance/gate/R411-DEFECT-ARM.md`; it lands with R409 (the suite has no xfail).
+3. **R399's open half** — mysql's `query_*` is fixture-evidence only (not exercised in this registry
+   snapshot), and cap-std's `Dir::write` is deliberately excluded: the guard matches on path SUFFIX so
+   `ends_with("Dir::write")` fires on any type named `Dir`.
+4. **R405 partial / R403 residual / R406 spec half** — instrument work, boundaries stated in each row.
+   R406's spec half is NOT a formatting change: the conformance job checks candor-rust out at path
+   `candor`, so a bare one-line `run:` would break the four-way gate.
+
+### Two process traps worth carrying forward
+- **Calibration leaves a broken artifact.** After proving a swift test could fail, I measured three times
+  against the binary the falsification built. It read exactly like a finding. Caught only by comparing
+  binary mtime to source mtime — now asserted, not printed.
+- **An assertion count only compares on a quiet machine.** `release-test.sh` is 474 idle and **448 (3
+  SKIPPED)** while any build runs, because `probe.sh`'s quiet-tree guard greps the whole machine.
+
 ## ⇢ PRIORITY QUEUE, set 2026-09-12 after the 0.36.1 post-release review
 
 Three code reviews (candor-rust diff, candor-swift diff, release tooling) plus a Fable plan/state review.

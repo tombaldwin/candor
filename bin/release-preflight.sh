@@ -683,6 +683,21 @@ for r in $RS_SET; do
   [ -n "$WANT_VER" ] || continue
   f="$ROOT/$r/CHANGELOG.md"
   [ -f "$f" ] || continue
+  # ALREADY TAGGED AT THIS VERSION → its `## Unreleased` belongs to the NEXT one, and cannot ship
+  # unlabelled in THIS cut. Measured on 0.36.2: candor-ts was tagged and published, then took two more
+  # commits while the UMBRELLA half of the same cut was still in flight. That left the repo unable to
+  # satisfy [5b] and [9] together — [5b] demands the changelog describe what the repo ships, [9] demanded
+  # the section be empty, and [9]'s own suggested remedy ("rename it to `## [0.36.2]`") would have filed
+  # post-tag commits under a RELEASED version's heading: a false claim in a published changelog, which is
+  # the one outcome neither gate should be able to force.
+  #
+  # `release.sh` already treats an existing tag as "this repo is done" (its `rel()` skip branch), so this
+  # asks the same question that authority asks. A repo NOT yet tagged is unaffected, which is the case
+  # this check was written for.
+  if git -C "$ROOT/$r" rev-parse -q --verify "refs/tags/v$WANT_VER" >/dev/null 2>&1; then
+    note "— $r: already tagged v$WANT_VER; its \`## Unreleased\` is next-version staging, not stranded"
+    continue
+  fi
   # the line number of a BARE Unreleased heading, and of the next `## ` heading after it
   ln="$(grep -nE '^## \[?Unreleased\]?[[:space:]]*(—.*)?$' "$f" | head -1 | cut -d: -f1)"
   [ -n "$ln" ] || continue

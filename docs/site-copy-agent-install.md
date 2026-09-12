@@ -47,8 +47,12 @@ exist in the published package yet. What follows is what actually works today.
    `printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"p","version":"0"}}}\n' | npx -y candor-ts --mcp`
    — a JSON result means it has shipped.
 
-2. **The registry paragraph.** Only after the `mcp_registry` CI job has run (it fires on the next
-   `candor-ts` tag, gated on the npm publish):
+2. **The registry paragraph.** **NOT YET — and now with a measured reason.** The 0.36.2 publish RAN and
+   the registry REFUSED it: `NPM package 'candor-ts' is missing required 'mcpName' field`. npm verifies
+   namespace ownership from a `mcpName` field in `package.json`; the `mcp-name:` README marker is the
+   *crates.io* convention and was copied across without checking it transfers. The field is added now,
+   but 0.36.2 is already on npm without it and npm does not allow republishing a version — so the
+   listing lands with the NEXT release. Only after that job goes green:
 
    > Your client may already know about candor: it is published to the
    > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP

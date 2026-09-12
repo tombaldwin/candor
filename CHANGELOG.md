@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-12 — preflight [9] could only be satisfied by a lie (unreleased)
+
+- **Checks [5b] and [9] contradicted each other once a repo was tagged mid-cut — SOUNDNESS R413.** The
+  family cuts in two stages: engines first, then the umbrella once the pins move. On 0.36.2 candor-ts was
+  tagged and published, then took two more commits while the umbrella half was still in flight — and
+  could then satisfy neither gate. [5b] demands the changelog describe what the repo ships; [9] demands
+  `## Unreleased` be empty when cutting. Populating the section breaks [9]; emptying it breaks [5b].
+
+  **[9]'s printed remedy was the dangerous half:** *"rename it to `## [0.36.2]`"* would have filed
+  post-tag commits under a released version's heading — a false claim in a published changelog, which is
+  the one outcome neither gate should be able to force.
+
+  [9] now skips a repo whose `v<version>` tag already exists: such a repo has shipped, so its
+  `## Unreleased` is next-version staging rather than content stranded by this cut. It asks the same
+  question `release.sh`'s own skip branch asks. A repo not yet tagged is unaffected. Note [9] had already
+  scoped itself to *"THE CUT SET, not the family"* and was still one distinction short — being **in** the
+  cut set and having **already been cut** are different states, and a two-stage release reaches it.
+
 ## 2026-09-12 — the front door moves to 0.36.2 (released 2026-09-12 as 0.36.2)
 
 - **Cross-repo pins → 0.36.2**: `ENGINE_PIN`, `ENGINE_PIN_JAVA`, both `adopt/` workflow pins,

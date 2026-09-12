@@ -8,6 +8,31 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-12 — the release instruments gate themselves (unreleased)
+
+- **`ci-watch.sh`'s HEAD-scoped `gh run list` had no `--limit` — SOUNDNESS R402.** It pages at 20, and
+  that one page is shared by every workflow in the repo, so a crowded commit could push a REQUIRED
+  workflow off it (a false `REQUIRED BUT ABSENT` over a workflow that ran) or a non-required one (no row
+  at all, which the earlier-commit net cannot rescue because it skips the sha as "already judged"). The
+  remedy was written down in `BACKLOG.md` and applied to `release-preflight.sh`'s two call sites in the
+  same change, and missed here. Latent — the busiest sha carries 6 rows against 20.
+
+- **`ci-watch.sh --selftest` was run by NOTHING — SOUNDNESS R403.** No workflow, no `verify-local.sh`, no
+  gate line, while R382 and R384 both landed in that file. It is now a one-line step in
+  `release-scripts.yml` (one line deliberately, so `gates.sh` lists it as runnable rather than as an
+  un-run block line — R406's lesson). It needs no network: it stubs `gh` as a shell function.
+
+- **The `drop-row` fault hook promised an arm it could not always reach — SOUNDNESS R404.** On a
+  single-workflow repo, dropping the first row emptied the set and took the NO-RUN-AT-HEAD arm instead,
+  so the hook looked installed and proved nothing. It now refuses loudly when fewer than two rows exist.
+  Measured both ways: candor-agents refuses and stays OK; candor-rust fires `REQUIRED BUT ABSENT` and
+  goes red.
+
+- **`gate-run.sh --dry-run` always exited 0 and printed no verdict — SOUNDNESS R407.** The `exit 0` sat
+  above the verdict block, so a preview answered green where the real run answered 2. A dry run cannot
+  know whether a gate would PASS and makes no claim about it, but it knows exactly what it could not RUN.
+  candor-spec's preview now answers 2 and says "nothing was executed, so this is NOT a verdict".
+
 ## 2026-09-11 — candor-spec's gate list could only ever answer zero (unreleased)
 
 - **`gate-run.sh` replayed CI's `working-directory:` as a `cd <repo> &&` prefix from INSIDE that repo —

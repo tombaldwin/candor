@@ -56,6 +56,31 @@ skipped=0
 note_skip(){ printf '  \033[33m•\033[0m SKIPPED: %s\n' "$*"; skipped=$((skipped+1))
              [ -n "${CI:-}" ] && bad "…and a SKIP is a FAILURE under CI — the runner is missing a tool this gate needs"; }
 
+# SOUNDNESS R405 — A REFUSAL IS NOT A FAILURE, and `probe.sh` refuses for reasons outside this suite.
+# `quiet_tree_check` greps the WHOLE MACHINE for `conformance/run.sh`, `swift build`, `gradlew`,
+# `cargo build` and `cargo test`, and dies if any is running — anywhere, in any repo, started by anyone.
+# So an arm that expects a probe to SUCCEED goes red whenever a build happens to be in flight, which is
+# most of the time during a gate-run wave. That is how §15b became intermittently red on `main` (~1 run
+# in 3) while its own diagnostic printed NOTHING: it tailed `grep built`, and a refusal has no `built`
+# line, so the failure message came out empty on exactly the path that produced it.
+# Returns 0 when the captured output is a refusal rather than a result.
+#
+# WHAT THIS DOES **NOT** DO, measured 2026-09-12 rather than assumed. Sections 13, 13b and 15b ALREADY
+# wait 10s and skip themselves wholesale when the machine is not quiet — that pre-existing guard is
+# the common case and it works (forced with a build-shaped process alive, all three skipped with a
+# reason and the suite reported `448 assertions (3 SKIPPED — NOT a pass)`). The residual this helper
+# covers is the RACE: the section-level check passes while the machine is quiet, a build STARTS during
+# the section, and probe.sh then refuses mid-arm. That is the window the observed ~1-in-3 red came
+# through, and it is why the failure looked flaky and resisted 40 isolated iterations.
+# **VERIFICATION BOUNDARY, stated because it matters: this predicate is verified in ISOLATION (it
+# fires on both refusal texts and not on a real provenance line); the INTEGRATED path has not been
+# observed firing, because forcing that race reliably is the very thing nobody could do.**
+#
+# AND A READING RULE THAT FALLS OUT OF IT: a run on a busy machine silently yields FEWER assertions
+# (448 vs 474). Assertion counts are comparable across runs only when the machine is quiet — the
+# count itself is the tell that a run was partial.
+probe_refused(){ printf '%s' "$1" | grep -qE 'a conformance run is IN FLIGHT|a build is running \('; }
+
 # ---------------------------------------------------------------------------------------------------
 # The fixture: six stub repos carrying exactly the sites the stager edits, at 0.25.0.
 # Real git repos, because release-stage.sh refuses on a dirty tree and that refusal is itself behaviour
@@ -4119,9 +4144,15 @@ esac
 SHIM
 chmod +x "$PB/shim/date"
 gnu="$(PATH="$PB/shim:$PATH" CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
-printf '%s' "$gnu" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
-  && ok "…and on a GNU-shaped date(1), where \`date -r EPOCH\` is a file lookup that fails" \
-  || bad "provenance timestamps went blank under a GNU-shaped date: $(printf '%s' "$gnu" | grep built)"
+if probe_refused "$gnu"; then
+  # R405: probe.sh refused for a machine-wide reason (a build in flight somewhere). The thing under test
+  # never ran, so this is UNRUN, not FAILED — and the reason is quoted rather than left to be guessed.
+  note_skip "probe.sh refused before rendering provenance — $(printf '%s' "$gnu" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-120)"
+else
+  printf '%s' "$gnu" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+    && ok "…and on a GNU-shaped date(1), where \`date -r EPOCH\` is a file lookup that fails" \
+    || { bad "provenance timestamps went blank under a GNU-shaped date"; printf '%s\n' "$gnu" | sed 's/^/        /'; }
+fi
 # CONTROL for the shim itself: it must actually be reached, or the row above proves nothing.
 PATH="$PB/shim:$PATH" date -r 1000000000 '+%s' >/dev/null 2>&1 \
   && bad "the date shim was not on PATH (it still rendered an epoch via -r) — the row above is vacuous" \

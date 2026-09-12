@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-12 — the release instruments gate themselves (unreleased)
+## 2026-09-12 — the release instruments gate themselves (released 2026-09-12 as 0.36.2)
 
 - **`ci-watch.sh`'s HEAD-scoped `gh run list` had no `--limit` — SOUNDNESS R402.** It pages at 20, and
   that one page is shared by every workflow in the repo, so a crowded commit could push a REQUIRED
@@ -33,7 +33,7 @@ keeps its own.
   know whether a gate would PASS and makes no claim about it, but it knows exactly what it could not RUN.
   candor-spec's preview now answers 2 and says "nothing was executed, so this is NOT a verdict".
 
-## 2026-09-11 — candor-spec's gate list could only ever answer zero (unreleased)
+## 2026-09-11 — candor-spec's gate list could only ever answer zero (released 2026-09-12 as 0.36.2)
 
 - **`gate-run.sh` replayed CI's `working-directory:` as a `cd <repo> &&` prefix from INSIDE that repo —
   SOUNDNESS R389.** CI checks each repo out at `$GITHUB_WORKSPACE/<repo>`, so a step's working directory

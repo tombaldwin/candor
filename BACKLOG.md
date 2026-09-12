@@ -1,72 +1,100 @@
 # candor (umbrella) backlog
 
-## ⇢ THE PLAN, set 2026-09-12 evening — BUILD THE INSTRUMENT, THEN CLEAR THE QUEUE
+## ⇢ THE PLAN, set 2026-09-12 evening — REWRITTEN after a Fable review overturned its premise
 
-**Why this order.** 0.36.2 shipped five gate-bypass fixes. Every one of them lived in a class that had a
-PURPOSE-BUILT instrument — `conformance/gen_masking.py`, the cross-engine masked-literal differential —
-which was GREEN throughout, across all 16 (effect × engine) cells, while the class was live-broken in all
-four engines. It was green because it enumerates EFFECT × ENGINE and holds constant the one axis that
-actually varied. We do not need more instruments; we have sixteen generators. We need them to enumerate
-the axis the defects live on.
+**The first draft of this plan was wrong and the correction is the useful part.** It claimed
+`gen_masking.py` missed five bypasses because it holds the LOCATOR-ARRIVAL axis constant, and proposed
+~112 cells. Checked row by row, the arrival axis reaches **one** of the five: R409. R410 and R393 are
+VERB choices (you cannot misposition a literal in `createFile(atPath:)` — the author must choose
+`fopen`); R394 is a verb plus a second authored literal; **R395 is not a masked program at all** — a
+*visible* literal dropped by a shape filter, which is `gen_policy_match.py`'s property, not this one's.
 
-### 1. Give `gen_masking.py` a LOCATOR-ARRIVAL axis (and a verb-family axis)
-Today every cell renders one shape: `Files.write(Path.of(p), …)` — an inline construction. The values
-that matter are already enumerated by this week's rows:
+**And the through-line was wrong.** "Generators find things, hand fixtures miss them" does not
+distinguish `gen_masking.py` — it IS a generator. What it generates over is a **hand-written vocabulary**
+(its own line 66), authored from the same mental verb list as the engines' `is_fs_path_arg` /
+`NET_ESTABLISHING` / `isNetEstablishingFree`. **A generator over a hand vocabulary is a hand list with a
+for-loop**, and it agrees with the engine for exactly the reason §3 calls cross-engine agreement the
+weakest signal. Provenance of the masking rows: source-reading 7, inverse probe 1, **generated instrument
+0**. `gen_masking.py` has one commit (`62d8b78`, 2026-06-18) and has never gone red.
 
-| arrival shape | the row that proves it matters |
-|---|---|
-| inline literal | (the compliant control) |
-| inline construction | the ONLY one tested today |
-| **a parameter** | **R409** — java, live, the reference engine |
-| a field / a return of another call | untested |
-| **literal in the WRONG ARGUMENT POSITION** | **R393** (`fopen(p,"r")`), **R394** (`shellOut(to:at:)`) |
-| **literal captured then DISCARDED by a shape filter** | **R395** — published since 2026-07-09 |
+### 1. R409 + its arm — FIRST, because it is live and its instrument is already written
+java Fs, the last live bypass of the class, in the REFERENCE engine. Priced: 235 direct performers
+(2.8%). Answer the design question first — does `Files.exists(p)`, the ARGUMENT form of a path stat,
+carry a gated locator? rust ruled on the RECEIVER form and that ruling does not reach java's spelling.
+`conformance/gate/R411-DEFECT-ARM.md` holds the arm, four-way measured 3-sound-to-1-broken; it lands in
+the same change. **Four cells, not 112.**
 
-4 effects × 4 engines × ~7 arrivals = ~112 cells instead of 16, and it would have caught four of the five
-in one run. The second axis is the ESTABLISHING-VERB FAMILY: **R410** was a verb list that omitted the
-DNS resolvers, which no arrival shape reaches. `conformance/gate/R411-DEFECT-ARM.md` already holds the
-written, four-way-measured arm for the parameter case — that is the first cell of this work, not a
-separate task.
+### 2. TABLE-CONSISTENCY tests, per engine — the highest-yield build
+For every verb the **classifier** maps to an effect in {Net, Exec, Fs, Db}, assert it is either in
+`establishing(E)` or in a **declared** use-verb set; anything undeclared FAILS. It reads the *classify*
+list, so it disagrees with the masking list **by construction** — which is the property no hand
+vocabulary can have. Closes the largest sub-vein: R410, R399, R379, R381, R386 — five of ~nine masking
+rows. Needs no rendering and runs in each engine's own suite. Sites: ts `scan.mjs:7183/7206/7210`; rust
+`candor-classify/src/lib.rs`; swift `Classifier.swift:1356/1439`. One level down, the same shape gives
+R393/R394: every name in an establishing set must have a `locatorLabelsForFree` entry or be asserted
+single-string-arg — i.e. **the table must be total**.
 
-### 2. Audit all sixteen generators for WHAT THEY HOLD CONSTANT
-One question per file: *which axis does this vary, and which does it fix?* `gen_masking.py` was blind for
-a reason that is not unique to it, and this is the cheapest way to learn where else it is true. Half a
-day, sixteen files, and it is the highest-leverage item here: it decides whether item 1 is a one-off
-repair or the first of several.
+### 3. Port the INVERSE PROBE four-way and ratchet the UNMASKED count
+The only instrument whose vocabulary comes from the world rather than from us, and therefore the only one
+that can warn about a shape nobody has named. It exists in rust alone (`scan.rs:2727`), is
+diagnostic-only, and **java — the engine with the live bug — has none**. Port it, run it over the corpus,
+ratchet the count. **Key it on "this call's LOCATOR was not captured", not on `str_arg.is_none()`** — the
+rust version keys on the latter, so a rust R393-shape (a literal in a non-locator position) never reaches
+it either.
 
-### 3. Then the weekly released-floor run becomes an EARLY-WARNING system
-`conformance.yml` already runs the current suite against RELEASED artifacts (Mondays 05:17 UTC). It
-inherited the same blindness, which is why R395 was shippable from July to September and nothing said so.
-Once item 1 lands, that job answers "how long has this been live" without anyone asking.
+### 4. One shared VOCABULARY MODULE for the four gate-verdict generators
+Not the half-day audit the first draft proposed — that question is a grep, and here is its answer: the
+four gate-verdict generators share one vocabulary **by copy** (`gen_policy_match.py`'s docstring says it
+"deliberately mirrors gen_masking.py exactly"), with **zero imports between them**. That is R288 — the
+fifteen `ab.py` copies — reappearing inside the conformance suite: a verb added to one is not added to
+the other three. The other twelve generators are document-property differentials and cannot host this
+class. Extract one module the four import; it is also the only place a verb axis could be added once.
 
-**The through-line, and it is this project's own recorded lesson:** the instruments that found things this
-week GENERATE cases (the corpus A/B, the `CANDOR_MASK_DEBUG` inverse probe, eslint's unused-symbol check
-catching a dead list for free). The ones that missed them ASSERT HAND-WRITTEN FIXTURES. Generated argv
-pairs once found a cardinal sin that a twelve-cause hand list missed; this is the same finding, one
-instrument over.
+### 5. R395's real home: a literal-SHAPE arm in `gen_policy_match.py`
+Property: *a visible unallowed literal must FAIL*. Values: bare filename, dotfile, relative path,
+`host:port`, command-with-path. Its only Fs NOMATCH today is an absolute `/etc/apppwned/x` (line 124).
+~12 cells.
 
-### Then the queue, in this order
-4. **R409** — java Fs, the last live bypass of the class, in the REFERENCE engine. Priced: 235 direct
-   performers (2.8%). The design question is named and must be answered first — does `Files.exists(p)`,
-   the ARGUMENT form of a path stat, carry a gated locator? rust has already ruled on the RECEIVER form
-   (`p.exists()` excluded, `is_fs_path_arg`'s own doc) and that ruling does not reach java's spelling.
-5. **R411's defect arm** lands with R409 (the suite has no xfail, so it reds `main` until then).
-6. **R399's open half** — mysql `query_*` is fixture-evidence only (not exercised in the registry
-   snapshot); cap-std's `Dir::write` deliberately excluded because the guard matches on path SUFFIX.
-7. **R412** — the ts Net rule should be RECEIVER-BASED, not list-based: a call on a MODULE is
-   establishing, a member call on a handle VALUE is a use-verb by construction. Needs the checker's
-   receiver type, which ts has.
-8. **R403's residual** — `ci-watch`'s COMPARISON arm is still uncovered; the selftest's own comment says
-   it "classifies triggers and never touches the comparison".
-9. **R406's spec half** — the conformance wrapper; NOT a formatting change (the job checks candor-rust
-   out at path `candor`).
-10. **The SPEC amendment for the union ruling** — now unblocked, and ⟨0.37⟩'s conformance PART with it.
+### 6. THE CLAIM THIS WEEK EARNED, and it belongs in the spec
+**A standing instrument's green is not evidence until it has a red in its history.** SOUNDNESS already
+says this of rows ("not evidence until falsified against a pre-fix binary") and of checkers (the 13/13
+`sys.exit(0)` survey) — but **not of generators, which survived that survey by exemption**
+(`probe_check.py:135` exempts `gen_masking.py` "as gen_differential.py"). Four in-tree facts, all
+verified:
+- `SPEC.md:4597` cites this instrument as the proof — *"the conformance masking differential pins it
+  engine-by-engine"* — while the class was live-broken in all four engines.
+- `gen_masking.py:28` claims *"the masked locator is derived from a FUNCTION PARAMETER (genuinely
+  un-extractable)"*. The java fixture writes `String p = "/etc/" + m; Files.write(Path.of(p), …)` — which
+  passes through `Path.of`, **precisely the branch java handles**. The docstring describes the case it
+  does not test: the asserted-safety-comment shape, inside the instrument.
+- Exempt from the can-it-fail ratchet, and read as coverage.
+- 86 days green, zero reds.
 
-### And the thing nobody is measuring
-**§6's four metrics were last measured in June and July.** Cardinal-surface coverage, oracle coverage,
-open silent residuals, find-rate. Nineteen rows were filed this week and not one of those numbers moved,
-or was even re-read. A number two months old is a memory, not a metric. Re-measuring them is how we learn
-whether any of the above is working.
+Actions: reword `SPEC.md:4597` from "pins it" to what is true — *pins it for the spellings the
+differential enumerates; the enumeration is hand-written and its boundary is the measured UNMASKED
+population* — and make every `gen_*.py` cite the row it once went red on, or be listed as **unfalsified**.
+
+### Then the queue
+7. **R399's open half** — mysql `query_*` is fixture-evidence only; cap-std's `Dir::write` deliberately
+   excluded (the guard matches on path SUFFIX).
+8. **R412** — the ts Net rule should be RECEIVER-BASED: a call on a MODULE is establishing, a member call
+   on a handle VALUE is a use-verb by construction. ts has the checker's receiver type.
+9. **R403's residual** — `ci-watch`'s COMPARISON arm is still uncovered.
+10. **R406's spec half** — the conformance wrapper (NOT a formatting change).
+11. **The SPEC amendment for the union ruling** — unblocked, and ⟨0.37⟩'s conformance PART with it.
+
+### Metrics — and the first draft was wrong here too
+Re-reading §6's metric 1 (% of §4 cells green) measures **the instruments' self-report**: it would have
+read 100% on the masking class all summer. Build BACKLOG §5's **fifth metric first** — over real trees
+under the template we ship, the fraction of functions in a denied scope whose reach of the denied effect
+is hidden behind `Unknown` or an uncaptured locator. That is the number that would have moved.
+
+### Cut from the first draft, and why
+- **The ~112-cell arrival axis as the headline** — it catches one row, and that row's cell is already
+  written. Keep arrival as a small axis; do not lead with it.
+- **The half-day generator audit** — it is a grep, answered above in a paragraph.
+- **"The weekly released-floor run becomes early warning"** — it re-runs KNOWN shapes against old
+  artifacts. "How long was R395 live" is a one-off bisect, not a cadence.
 
 ## ⇢ STATE 2026-09-12 13:00 — THE MASKING CLASS, FOUR ENGINES, FIVE CLOSED
 

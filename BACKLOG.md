@@ -1,5 +1,108 @@
 # candor (umbrella) backlog
 
+## ⇢ PRIORITY QUEUE, set 2026-09-12 after the 0.36.1 post-release review
+
+Three code reviews (candor-rust diff, candor-swift diff, release tooling) plus a Fable plan/state review.
+Rows **R390–R401** filed. Each item below names the row; the row holds the repro.
+
+**MEASURED FIRST, so the queue is not read as alarm:** the 0.36.1 engine diff is a NET WIN with live
+reach — full-registry A/B over 1,547 crates, `bin/corpus-ab.py`, **ADDED 80 / REMOVED 0 / CHANGED 464**,
+`incomplete` +125 / −0, no disclosure loss, all 44 `inferred` gains ground-truthed from the crates' own
+source. Nothing shipped in 0.36.1 made the cardinal sin worse. The three regressions it DID introduce
+(R396/R397/R398) are fabrications with **zero corpus reach**; every live gate bypass below is
+PRE-EXISTING.
+
+### 1. 0.36.2 — the live gate bypasses. Cheap, severe, and all fail in the certifying direction.
+- **R399** rust — widen `is_fs_path_arg` / `is_db_query_arg` (mysql `query_drop`/`query_iter`/
+  `query_first`/`query_fold`, postgres `copy_in`/`copy_out`, `chown`/`lchown`/`chroot`, cap-std
+  `Dir::open/write/read/remove_file/create_dir`) **and STRIKE the false comment on both guards** — the
+  sentence R379 already withdrew as untrue still ships there and licenses not widening the list.
+  DENYLIST-over-allowlist does NOT apply blindly here (a whole-crate-Db crate would mask everything);
+  say which direction each change fails in before making it.
+- **R393/R394** swift — the locator-POSITION bug one spelling over from R381: `fopen(path, mode)` and
+  `shellOut(to:at:)`. Fix the invariant, not the two names (see §3 below).
+- **R395** swift — PUBLISHED since 2026-07-09: a bare relative filename (`id_rsa`, `credentials.json`)
+  is seen, discarded by the slash filter, and the surface is then declared complete.
+- **R390** swift — `NetService`/`NetServiceBrowser` never charge `LocalNetwork`, so
+  `privacy-manifest --verify` clears a Bonjour app that needs `NSLocalNetworkUsageDescription`.
+- **R387** swift — key the marker on `searchPathArg(args) == nil` (the genuinely runtime case), which
+  costs zero over-mask on the readable spelling. The corpus holds 2 call sites: safety-only, §E1 reach
+  zero — do NOT report a flattering zero from it.
+
+### 2. Ship with the above; no user-visible behaviour change.
+- **R391** delete the three dead `isOpaqueLocatorFree` bonjour entries AND make `ClassifierTests` assert
+  the BEHAVIOUR rather than the list — the list-membership test stayed green over dead entries.
+- **R392** write the module-qualified fixture the comment already claims, or strike the claim.
+- **R396/R397/R398** the three latent fabrications this diff introduced. R397/R398 are the hand-list vein
+  ([[candor-handlist-vein]]); price any widening with a corpus A/B, tracing every ADDED row to a body.
+- Stale comments: `charge_format_args`' doc still says two format traits (R388 made it nine);
+  `collector.rs:1263` is contradicted 20 lines below and by measurement.
+
+### 3. THE INVARIANT BOTH ENGINES ARE MISSING — write this before the ports.
+The swift review rejected the brief's framing and it was right: R387/R393/R394/R395 are **not** opaque
+locators. They are cases where the engine HAS a literal, picks the wrong one or discards it, and then
+treats `lit != nil` as proof of completeness. The clause to write is:
+
+> `incompleteSurfaces` must be driven by *"did we capture the LOCATOR"*, not by *"was there a string"*.
+
+Per "write the row before the port", this wants a SPEC clause and a conformance PART before the engine
+fixes land — otherwise four engines ship prose citing a clause that does not exist.
+
+### 4. Fable's revised plan (it killed one item and reframed two).
+- **Two fixtures with STATED PREDICTIONS, not a "vein sweep"** — the vein framing was inflating one
+  finding into a pattern, and R387's own row says so. Preconditions COORDINATOR-VERIFIED in source:
+  - **java**: `surfaceIncomplete…add("Fs")` fires at ONE site (`Candor.java:5221`), inside an allowlist
+    branch — `Path.of` / `Paths.get` / `PATH_CTOR_OWNERS.<init>` with a single-String arg. A `Path`
+    PARAMETER passed to `Files.write(p,b)` never enters it. Predicted: `allow Fs in app /tmp/benign`
+    exit 0. **This is R383's shape in the REFERENCE ENGINE.**
+  - **ts**: `NET_ESTABLISHING` (`scan.mjs:7146`) is 11 names with no `lookup`/`resolve`, while
+    `dns.resolve` classifies Net. Predicted: `dns.lookup(host)` beside a literal `fetch` →
+    `allow Net api.stripe.com` exit 0. **R379 verbatim, third engine.**
+- **R376 — KILLED.** Its row already holds the recovered arm and the whole-registry figures; re-running
+  measures nothing new. The durable part (the instrument refusing a headline over `REACH: NOT MEASURED`)
+  already exists.
+- **R141** (`CommandExt::exec` — `CommandExt` appears ZERO times in candor-classify) and **R145**
+  (`include!`, which is a DISCLOSURE-POSTURE item, not a reading one). File together.
+- **R131** java receiver-type mechanism — decide denylist-vs-allowlist UP FRONT and demand the 395-jar
+  every-field A/B; 4 defects in 5 past fabrication-direction fixes.
+
+### 5. Project-level, from the Fable state review.
+- **Point the flashlight at java.** Row density is rust 146 / ts 42 / swift 42 / **java 27** — a map of
+  where we looked, not of defect density, and java is both the reference engine and the sales engine.
+  Highest value-per-hour on this list; §4's java prediction is the evidence.
+- **The FIFTH METRIC**: over real trees under the template we actually ship (`adopt/arch.policy`), the
+  fraction of functions in a denied scope whose reach of the denied effect is hidden behind `Unknown`.
+  A script over reports we already generate. **Build this BEFORE ruling on the objective function** —
+  under the shipped template a DISCLOSED under-report and a SILENT one both exit 0, so the cardinal sin
+  is right for the engine and incomplete for the product. `deny Unknown` is not the answer (libraries run
+  18–83% Unknown); the size of that term should decide, not the framing.
+- **One review arm on a DIFFERENT MODEL.** §3 warns cross-engine agreement is the weakest signal for
+  shared blindness; cross-agent agreement has the same property and every panellist today is one family.
+- **A release cadence a gate consumer can follow.** A pinned consumer receives none of ~300 fixes and
+  each non-additive rung flips verdicts on trees that passed. The mechanism half-exists (the ladder
+  already separates spec floor from build version); what is missing is a supported-floor policy.
+
+### 6. NEEDS TOM — these block or cannot be done from here.
+- **The union-vs-hedge ruling** (SOUNDNESS.md §"OWED TO TOM"). *"Blocking the ⟨0.37⟩ conformance PART"*
+  and *"the engines should not be changed further until it is made."* Note the scope: it governs the
+  `#[cfg]`-arm semantics and the `use`/type route, NOT the classify-guard widenings in §1 — those are a
+  different surface and can proceed. UNION reverts nothing and has the R222 precedent; the owed fixture
+  (whether a union surface can CERTIFY where a hedge failed closed) is still argument, not result, and
+  two attempts never reached the shape.
+- **uflexi access.** `git ls-remote` on that repo is `Permission denied (publickey)` from this machine,
+  so the local clone is a stale 2025-07-28 snapshot and **we cannot tell whether our one field
+  deployment still runs candor.** A Fable claim that it does not was withdrawn on this evidence — the
+  honest state is UNKNOWN, and one SSH key makes it a fact.
+
+### Corrected while reviewing the review
+Fable's *"the corpus A/B caught none of six cardinal-sin regressions"* is **R216, whose own status cell
+reads LANDED** — two property gates now catch that class, wired into `ci.yml`, verified able to fail.
+Its supporting ratio (0 rows crediting the corpus vs 18 crediting hand sweeps) measures **11 vs 9**.
+The true and sharper statement: **the corpus A/B is strong at catching FABRICATIONS and structurally
+blind to SILENT UNDER-REPORTS**, because absence produces no diff — which is why R216's property gates
+and the syscall oracle exist.
+
+
 _Last reviewed 2026-08-26 (**floor 0.33 PUBLISHED** — ⟨0.33⟩ CROSS-POLICY shipped four-way,
 `release-verify: OK`; tags run v0.29…v0.33.0). This review closed 9 stale entries against the repos
 (6 flagged for verification, 3 found while sweeping — see the PRIORITY ORDER section immediately below

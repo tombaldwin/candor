@@ -90,16 +90,60 @@ pure literal Sets closing over nothing, rebuilt on every call, and unimportable.
 R410 test writable** — which matters, because `assert-audit` FAILS on the R410 fix as shipped
 (`587e70d`: a rule moved with nothing beside it that would fail if the rule were wrong).
 
-### 3. Port `SourceHygieneTest` to rust, ts and swift
+### 3. ~~Port `SourceHygieneTest` to rust, ts and swift~~ **DONE 2026-09-13 — and the port had to DEPART from the original**
 `candor-java/src/test/java/io/poly/candor/SourceHygieneTest.java:119` is the best artifact in the tree for
 this class: it reads its own source, asserts the copy count of a literal is ONE, asserts the single rule
 is actually CONSULTED ≥3 times, and carries a vacuity floor. It exists in java only — the engine with the
 fewest rows per KLOC. Target the three ungated duplications first (§2 of the audit).
 
-### 4. `assert-audit.sh` as a CI step in the four engine repos
-It runs in **no** engine repo's CI; only its selftest is gated. Last week it fails **22 of 168** commits —
+**PORTED — rust `6cdad95`, ts `6daa46f`, swift `8c4354c` — AND THE ASSERTION HAD TO CHANGE.** java asserts
+the reserved segments are listed exactly ONCE. **Porting that verbatim would have demanded a
+file-deletion bug in two of the three engines.** rust's sweep and swift's armer are DELIBERATE SUBSETS on
+DESTRUCTIVE paths, where a miss is cheap and an over-reach destroys `<stem>.gate.json` (a verdict sink) or
+inverts the ⟨0.32⟩ `refused` marker's fail-closed guarantee. So the ports pin the DIFFERENCE — derive from
+the one canonical set, NAME each exclusion — which fails in both directions where "appears once" would
+have demanded the bug. See [[candor-denylist-over-allowlist]] for the general form.
+
+**ts was the one genuine drift, and it was LIVE.** `isReport` — the predicate deciding what counts as a
+report — was seven chained `endsWith` calls MISSING `layerreach`, which candor-rust really writes. A
+`map --json` over a good rust report flipped from `{"(root)": …}` to the INCOMPLETE shape with two
+"malformed report" diagnostics. Fails closed and disclosed, so not a cardinal sin, but it breaks the
+cross-engine premise `query-core.mjs` states in its own comment.
+
+**THE SWIFT CENSUS SHIPPED VACUOUS ON ITS FIRST CUT** — it passed twice and COULD NOT FAIL, because
+`contains("\"refused\"")` also matched a JSON `reasonKey` elsewhere in the same file. Vacuous for exactly
+the segment ⟨0.32⟩ added. Only a falsification found it. Rule now on file: **probe on a token that appears
+ONCE, or parse the structure — never `contains` over a whole file**; convenience is what produces a
+vacuous guard.
+
+### 4. ~~`assert-audit.sh` as a CI step in the four engine repos~~ **DONE 2026-09-13**
+~~It runs in **no** engine repo's CI; only its selftest is gated. Last week it fails **22 of 168** commits —
 rust 13/72, ts 3/35, swift 3/39, java 0/22. That is a backlog, not a false-positive rate. Triage the
-CHANGELOG-only failures first; some look like tool imprecision worth tightening before turning it on.
+CHANGELOG-only failures first; some look like tool imprecision worth tightening before turning it on.~~
+
+**TRIAGED, TIGHTENED, WIRED.** 120 commits re-measured (30/engine): rust 6, ts 4, swift 3, java **0** —
+the same ~11% as the entry's 22/168, and the entry was right that it is not a false-positive rate. The
+split is what matters:
+
+- **4 DOCS-ONLY** — pure `CHANGELOG:` commits whose tests landed in an EARLIER commit. Real imprecision:
+  failing them asks this range for a test belonging to another, and the remedy a developer reaches for is
+  to WEAKEN the assertion language in a changelog, which is backwards. Now a SELF-SKIP (exit 3 — visibly
+  unjudged, never a pass), candor `a788914`. The CHANGELOG+source shape is untouched and still FAILS.
+- **9 SOURCE-TOUCHING** — the tool working, and the strongest argument for it. Four are the masking-guard
+  commits **R379, R383, R386**, whose comments carried *"under-catching is a missed mask, never a broken
+  gate"* — the sentence **R399 later proved FALSE** and which was struck 2026-09-12. This gate flagged
+  them as they landed. On this repo's own history it pre-identified commits that later needed rows.
+
+Wired as a job in all four engines' `ci.yml` (rust `5f4736c`, ts `245460b`, swift `5b01008`, java
+`6ed4901`). **Green on arrival — all four pass at HEAD**, which is what made blocking defensible; a gate
+that arrives red gets disabled, not fixed.
+
+**Two harness bugs, found only by simulating the step under `bash -e` (how GitHub runs `run:`):** exit 3
+aborted before `rc` was read, so every docs-only commit would have FAILED CI — the triaged imprecision
+reintroduced by the harness rather than the tool; and `[ "$rc" = 3 ] && exit 0` returns 1 when rc isn't 3,
+so the SUCCESS path failed too. Both fixed, all three paths simulated (0→0, 1→1, 3→0).
+**And the clone lives INSIDE the `${{ }}` block on purpose:** `gates.sh` extracts every `run:` step for
+local replay, so a standalone clone step would put a network fetch in every local gate run of four repos.
 
 ### 5. Collapse the duplications that have no cross-checker
 - ~~**`is_fs_path_arg_method` (2 names, `lib.rs:3673`) should consult `is_fs_path_arg` (30 names, `:3473`).**

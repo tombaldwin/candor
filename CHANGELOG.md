@@ -14,6 +14,10 @@ keeps its own.
   JetBrains `candorTsVersion` / `candorJavaVersion`. Moved AFTER the engines published, because a pin
   naming a tag that does not exist yet points at a 404 — the 0.24 failure where preflight passed green on
   a `jbang-catalog.json` that said the right version while the download returned 404.
+- **The VS Code extension's own version tracks the server pin**, 0.36.2 → 0.37.0. Its gate 4 requires
+  `version` to track `candorTsVersion` at major.minor, and I had moved the pin while leaving the version —
+  caught by the extension's OWN CI, not by preflight, which does not know that rule. JetBrains'
+  `pluginVersion` is a genuinely independent axis and is untouched.
 - **`ENGINE_PIN_JAVA` cleared.** It still read `"0.36.2"` from the java-only patch line, and a NON-EMPTY
   per-engine override silently WINS over `ENGINE_PIN` — the fallback fires only when it is empty. Left
   set, `candor update` would have installed candor-java 0.36.2 against a 0.37.0 front door while every

@@ -374,9 +374,26 @@ remaining_mentions() {
   # statement and its `must-ledger.json` hash moves with it. The run then reports one unclassified statement
   # plus one orphaned entry — a correct catch, not a defect. Re-anchor by replacing the orphan's entry with
   # the JSON line the checker prints (keeping its `status`), then re-run `conformance/must_ledger.py`.
-  echo "  NOTE: the floor bump rewords SPEC.md's Contents version line, so conformance's MUST LEDGER will"
-  echo "  report it unclassified + the old entry orphaned. Re-anchor must-ledger.json with the line the"
-  echo "  checker prints — expected on every bump, not a defect."
+  # …AND NOW IT IS DONE RATHER THAN ANNOUNCED. This NOTE was the only guard at ⟨0.35⟩, ⟨0.36⟩ and
+  # ⟨0.37⟩ — three consecutive bumps held by an operator remembering to read a printed line, while the
+  # leftover-mentions scan above was structurally blind to it (that scan greps `spec.\{0,3\}$OLD` and
+  # `"$OLD"`; the ledger records a BACKTICKED excerpt, so the two never meet). CLAUDE.md's own finding:
+  # a rule the operator must remember to APPLY is weaker than one that removes the option.
+  #
+  # `reanchor_banner.py` moves the sha and keeps the entry's classification, and REFUSES unless the
+  # situation is exactly one orphan + exactly one unclassified statement that is recognisably the
+  # banner. Anything else is a real classification question, and it says so and exits non-zero rather
+  # than laundering an unclassified MUST into a classified one.
+  _ra="$ROOT/candor-spec/conformance/reanchor_banner.py"
+  if [ -f "$_ra" ]; then
+    if python3 "$_ra"; then :; else
+      echo "  ^ re-anchor REFUSED — classify by hand with \`python3 conformance/must_ledger.py\`, then re-run."
+    fi
+  else
+    echo "  NOTE: the floor bump rewords SPEC.md's Contents version line, so conformance's MUST LEDGER will"
+    echo "  report it unclassified + the old entry orphaned. Re-anchor must-ledger.json with the line the"
+    echo "  checker prints — expected on every bump, not a defect."
+  fi
   # ONE definition, so the liveness probe below can run the IDENTICAL pipeline rather than a lookalike.
   scan_for_old() {
     grep -rn "spec.\{0,3\}$OLD\|\"$OLD\"" "$1" \

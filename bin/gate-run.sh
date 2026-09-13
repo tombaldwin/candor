@@ -229,6 +229,24 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
     printf '  \033[33m%-6s\033[0m %s\n' "SELFSKIP" "$cmd"
     printf '         it exited 0 but its own last line says it did not run: %s\n' "$_last"
   elif [ "$rc" -eq 0 ]; then ok=$((ok+1)); printf '  \033[32m%-6s\033[0m %s\n' "OK" "$cmd"
+  # A MISSING TOOLCHAIN THE GATE NAMES IN ITS OWN WORDS. The pre-run check two blocks up only sees
+  # the LEADING word, so `./gradlew nativeCompile` is a path this repo owns and runs — then fails
+  # inside because GraalVM's `native-image` is not installed. That is not a defect in candor-java,
+  # and the header's own reasoning applies: a FAIL caused by the environment is indistinguishable
+  # from a real one, and believing it costs a reverted cut.
+  #
+  # Matched on the TOOL'S OWN sentence, not on the rc, and deliberately NOT generalised to "rc=1 and
+  # the word 'not found' appears". The file's design note three blocks up says a gate that RUNS and
+  # then hits a missing tool has really failed and that rc alone cannot tell the two apart — that is
+  # still right. This arm is narrow enough not to contradict it: the string is emitted by the
+  # native-image plugin only when the JDK is not a GraalVM distribution, and a genuine nativeCompile
+  # failure reports a compilation error instead. Verified serially on this box against a REVERTED
+  # tree before being written, which is the standing rule for attributing a FAIL to the environment.
+  elif grep -qF "wasn't found. This probably means that JDK isn't a GraalVM distribution" "$log" 2>/dev/null; then
+    skip=$((skip+1)); run=$((run-1))
+    printf '  \033[33m%-6s\033[0m %s\n' "TOOLSKIP" "$cmd"
+    printf '         it FAILED, but only because GraalVM/native-image is not installed here (CI provides it).\n'
+    printf '         Counted as UNRUN, never as passed — the verdict stays INCOMPLETE.\n'
   else bad=$((bad+1)); printf '  \033[31m%-6s\033[0m %s  (rc=%s, %s)\n' "FAIL" "$cmd" "$rc" "$log"; fi
   # AFTER the gate, not before: a gate that filled the disk itself is the one whose own rc is least
   # trustworthy, and checking first would clear it and then believe it.

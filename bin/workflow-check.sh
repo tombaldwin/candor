@@ -18,7 +18,11 @@
 # someone else's parser, and it would rot. It asks the small number of questions whose answers are
 # unambiguous and whose failure mode is total (the workflow does not run AT ALL):
 #   1. every `${{ … }}` has a non-empty body;
-#   2. braces balance, so `${{ foo }` and `${{ foo }}}` are caught;
+#   2. an opener with no closer anywhere in the file (`${{ foo }` at EOF). A STRAY CLOSER
+#      (`${{ foo }}}`) is NOT flagged and must not be: GitHub interpolates and leaves the extra
+#      brace as text, so it is valid. The first cut of this header claimed both were caught —
+#      a false claim about coverage, in a file whose subject is checks that assert more than
+#      they do. Caught by review, measured: rc 0.
 #   3. the file parses as YAML and has `on:` and `jobs:` with at least one job;
 #   4. every job has `runs-on` and `steps`.
 # A workflow that passes all four can still be rejected for something else. This is a floor, not a
@@ -28,55 +32,71 @@ set -uo pipefail
 ROOT="${CANDOR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 check_file() {  # $1 = path -> prints problems; rc 1 if any
-  local f="$1" problems=0 line n body
-  # 1 + 2 — expression bodies and brace balance, per line so the message can name one.
-  n=0
-  while IFS= read -r line; do
-    n=$((n + 1))
-    case "$line" in
-      *'${{'*)
-        # every opener must have a closer with a NON-BLANK body between them
-        body="$(printf '%s\n' "$line" | grep -oE '\$\{\{[^}]*\}\}' || true)"
-        if [ -z "$body" ]; then
-          echo "  $f:$n: \${{ opened and not closed on this line — GitHub rejects the whole workflow"
-          problems=1
-        elif printf '%s\n' "$body" | grep -qE '\$\{\{[[:space:]]*\}\}'; then
-          echo "  $f:$n: EMPTY \${{ }} expression — valid YAML, invalid Actions. GitHub interpolates"
-          echo "        before the shell sees the file, so this is parsed even inside a # comment."
-          problems=1
-        fi
-        ;;
-    esac
-  done < "$f"
-  # 3 + 4 — structure, asked of the parsed document so a typo in `jobs:` is not read as "no jobs".
-  python3 - "$f" <<'PY' || problems=1
+  python3 - "$1" <<'CHECK_PY'
 import sys, yaml
+
 p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+bad = 0
+
+# ---- expressions -------------------------------------------------------------------------------
+# SCANNED ACROSS THE WHOLE TEXT, opener to the next closer — NOT line-by-line with `[^}]*`.
+# The first cut did the latter and reported two FALSE POSITIVES on workflows GitHub accepts, in a
+# BLOCKING gate:
+#     matrix: ${{ fromJSON('{"os":["ubuntu-latest"]}') }}     a brace INSIDE the expression
+#     if: >-                                                   a folded scalar, which YAML joins
+#       ${{ github.event_name == 'push' &&                     into ONE line before GitHub sees it
+#       github.ref == 'refs/heads/main' }}
+# Neither shape exists in this family today, so it was latent — but a gate that reds valid YAML gets
+# disabled, which is the failure this file's own header argues against.
+i = 0
+while True:
+    o = text.find("${{", i)
+    if o < 0:
+        break
+    c = text.find("}}", o + 3)
+    line = text.count("\n", 0, o) + 1
+    if c < 0:
+        print(f"  {p}:{line}: `${{{{` is never closed — GitHub rejects the whole workflow")
+        bad = 1
+        break
+    if not text[o + 3:c].strip():
+        print(f"  {p}:{line}: EMPTY expression — valid YAML, invalid Actions. GitHub interpolates")
+        print(f"        BEFORE the shell sees the file, so this is parsed even inside a # comment.")
+        bad = 1
+    i = c + 2
+
+# ---- structure ---------------------------------------------------------------------------------
 try:
-    d = yaml.safe_load(open(p))
+    d = yaml.safe_load(text)
 except Exception as e:
-    print(f"  {p}: not valid YAML — {e}"); sys.exit(1)
+    print(f"  {p}: not valid YAML — {e}")
+    sys.exit(1)
 if not isinstance(d, dict):
-    print(f"  {p}: top level is not a mapping"); sys.exit(1)
-# PyYAML parses the unquoted key `on:` as the BOOLEAN True (the Norway problem's cousin), so accept both
-# spellings rather than reporting a trigger that is plainly there.
+    print(f"  {p}: top level is not a mapping")
+    sys.exit(1)
+# PyYAML parses the unquoted key `on:` as the BOOLEAN True (the Norway problem's cousin), so accept
+# both spellings rather than reporting a trigger that is plainly there.
 if "on" not in d and True not in d:
-    print(f"  {p}: no `on:` trigger — the workflow can never run"); sys.exit(1)
+    print(f"  {p}: no `on:` trigger — the workflow can never run")
+    bad = 1
 jobs = d.get("jobs")
 if not isinstance(jobs, dict) or not jobs:
-    print(f"  {p}: no `jobs:` mapping"); sys.exit(1)
-bad = 0
+    print(f"  {p}: no `jobs:` mapping")
+    sys.exit(1)
 for name, j in jobs.items():
     if not isinstance(j, dict):
-        print(f"  {p}: job `{name}` is not a mapping"); bad = 1; continue
+        print(f"  {p}: job `{name}` is not a mapping")
+        bad = 1
+        continue
     if "uses" in j:          # a reusable-workflow call has neither runs-on nor steps
         continue
     for key in ("runs-on", "steps"):
         if key not in j:
-            print(f"  {p}: job `{name}` has no `{key}`"); bad = 1
+            print(f"  {p}: job `{name}` has no `{key}`")
+            bad = 1
 sys.exit(bad)
-PY
-  return "$problems"
+CHECK_PY
 }
 
 if [ "${1:-}" = "--selftest" ]; then
@@ -131,6 +151,16 @@ for repo in "${repos[@]}"; do
     check_file "$f" || rc=1
   done
 done
+# ZERO FILES IS NOT A PASS. `[ -d ... ] || continue` silently skips an unknown repo name, and zero
+# findings over zero files aggregated to OK — the exact defect `gate-run.sh` already carries a guard
+# for ("an unknown repo name produced an empty list, the loop ran zero times, zero failures aggregated
+# to OK"). A new instrument repeating a defect its sibling already fixed is the R288 shape.
+if [ "$n" = 0 ]; then
+  echo "workflow-check: INCOMPLETE — examined ZERO workflow files. Named: ${repos[*]}. That is not a"
+  echo "  pass; it means no repo in that list had a .github/workflows directory (a typo, or a repo that"
+  echo "  is not checked out here)."
+  exit 2
+fi
 [ "$rc" = 0 ] && echo "workflow-check: OK — $n workflow file(s), every expression non-empty and balanced, every job runnable"
 [ "$rc" = 0 ] || echo "workflow-check: FAILED — see above. A workflow GitHub cannot parse runs NO jobs and reports against the file PATH."
 exit "$rc"

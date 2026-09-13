@@ -29,6 +29,13 @@
 # So: assertions with test changes beside them PRINT (a review checklist — read them, they are the
 # highest-value lines in the diff). Assertions with NO test changes anywhere in the range FAIL.
 #
+# A KNOWN CHARACTERISTIC, STATED SO NOBODY FIGHTS IT: this greps ADDED LINES for assertion language, so
+# a comment that QUOTES a false assertion as a cautionary example trips it. Measured 2026-09-13 — the
+# first cut of the CI block that turns this gate ON cited one verbatim and FAILED ITS OWN GATE in all
+# four engines. That is the tool being right in letter and awkward in spirit, and the remedy is its own
+# advice: describe the claim, do not reproduce it. Not worth a carve-out — an exemption for "quoted"
+# assertions is an exemption a real one can be written into, and the paraphrase is better prose anyway.
+#
 # DELIBERATELY NOT A CONTENT JUDGEMENT AND DELIBERATELY NOT SILENT. A tool that tried to decide which
 # assertions are load-bearing would be another unverified assertion. This one states what it found and
 # what it cannot know.

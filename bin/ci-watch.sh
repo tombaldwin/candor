@@ -43,7 +43,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-DEFAULT_REPOS=("candor-spec" "candor-rust" "candor-ts" "candor-java" "candor-swift" "candor-agents" "candor")
+# ONE OWNER FOR THE FAMILY LIST. `_release_set.sh` defines RS_FAMILY, and the release ladder's push
+# ORDER is derived from it. This file used to restate the seven names with **java and ts SWAPPED** —
+# harmless here, where the order is only a display order, and precisely the kind of second copy that
+# gets read as authoritative by the next person who needs the family order and greps for it. A second
+# copy of an ORDERED list is worse than a second copy of a set: it is wrong only in the order things
+# happen, which is the hardest kind of wrong to see.
+#
+# REFUSE rather than fall back to a hardcoded list. A fallback would silently reintroduce the copy this
+# removes, and be indistinguishable from working — the same reason `part_declarations.py` refuses to
+# invent slice boundaries when `part.sh` is not beside it.
+_rs_src="$(dirname "${BASH_SOURCE[0]}")/_release_set.sh"
+[ -f "$_rs_src" ] || { echo "ci-watch: no _release_set.sh beside me — refusing to invent the family list" >&2; exit 2; }
+# shellcheck source=/dev/null
+. "$_rs_src"
+[ -n "${RS_FAMILY:-}" ] || { echo "ci-watch: _release_set.sh defined no RS_FAMILY — refusing to guess" >&2; exit 2; }
+read -r -a DEFAULT_REPOS <<< "$RS_FAMILY"
 REPOS=("${DEFAULT_REPOS[@]}")
 if [ $# -gt 0 ]; then
   # An argument that is not a known repo is a USAGE ERROR, never a silently-enumerated "repo" that then

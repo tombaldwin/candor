@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-13 — the tooling a code review found wanting (unreleased)
+## 2026-09-13 — the tooling a code review found wanting (released 2026-09-13 as 0.37.0)
 
 - **`workflow-check.sh`** — NEW. Catches workflow files that are valid YAML and invalid GitHub Actions.
   Written because an empty GitHub expression inside a shell COMMENT made four engines' `ci.yml`

@@ -124,6 +124,21 @@ CHANGELOG-only failures first; some look like tool imprecision worth tightening 
   suspected call beside a benign sibling literal, the free-fn spelling as the calibration control, and a
   provably path-free method on the same receiver as the over-mask control.
 
+  **SWIFT'S `FileManager` IS CLEAN — MEASURED AND CALIBRATED 2026-09-13, so cross it off and start
+  elsewhere.** It was the entry's own named most-likely hit. Eight path-taking verbs probed, each with a
+  benign allowed literal beside a caller-controlled path: `fileExists`, `removeItem`,
+  `contentsOfDirectory`, `attributesOfItem`, `createFile`, `copyItem`, `subpathsOfDirectory`,
+  `isReadableFile`. **All eight report `incomplete: ["Fs"]` and fail closed.** The reason is structural
+  rather than lucky: `isEstablishingMember`'s Fs arm keys on `root == "FileManager"`, so the whole
+  receiver is argument-form by construction and there is no per-verb list to fall out of date.
+  **CALIBRATED, because "8/8 clean" is not evidence until the probe is shown able to report a gap**
+  (the standing oracle-recall rule): a determined-path control through the SAME verb publishes both
+  literals with `incomplete: None`, and a pure function is absent from the Fs surface entirely. The
+  instrument can show both states, so the negative is real.
+  **STILL OPEN on swift:** the `Files` package (`File`/`Folder`/`Storage`), which candor-swift `ab2c260`
+  reported-and-did-not-fix on purpose — no swift corpus here carries that dependency, so a fix would
+  ship unpriced. That is a corpus problem before it is a code problem.
+
   **RUST'S OTHER TWO EFFECTS ARE ALREADY SWEPT — MEASURED 2026-09-12, so start elsewhere.** `Db` is
   clean: `sqlx::query(caller)`, `conn.execute(caller, [])` and `conn.prepare_cached(caller)` each beside
   a benign literal query all report `incomplete:['Db']` and refuse. `Exec` is clean AND its one

@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-13 — the tooling a code review found wanting (unreleased)
+
+- **`workflow-check.sh`** — NEW. Catches workflow files that are valid YAML and invalid GitHub Actions.
+  Written because an empty GitHub expression inside a shell COMMENT made four engines' `ci.yml`
+  unparseable: no jobs ran and the failure reported against the file PATH rather than the workflow name.
+  `yaml.safe_load` passes on such a file — two validators disagree and only one runs locally. A review
+  then found the first cut red two VALID workflows (a `fromJSON` matrix, a folded scalar) in a BLOCKING
+  gate, aggregated zero files to OK, claimed in its own header to catch a shape it does not, and — worst
+  — could not see any of the four engine workflows it was written for, because it ran umbrella-only and
+  `shell-lint`'s `paths:` filter excluded workflow edits. All four fixed.
+- **`assert-audit.sh`** — a docs-only range now SELF-SKIPS (exit 3, visibly unjudged) instead of failing,
+  after triaging 120 commits: 4 imprecision, 9 real, and four of the nine flagged the masking-guard
+  commits whose *"never a broken gate"* sentence R399 later disproved. Now a CI gate in all four engines.
+  Its header records that QUOTING a false assertion trips the detector — it failed its own introducing
+  commit in four repos.
+- **`ci-watch.sh`** consults `RS_FAMILY` instead of restating the seven repo names with java and ts
+  swapped, and refuses rather than falling back to a hardcoded list.
+- **`spec-bump.sh`** calls `reanchor_banner.py` instead of printing a note for a human to act on — the
+  Contents banner needed the same hand re-anchor at three consecutive floor bumps, guarded only by a
+  printed line someone had to read.
+- **BACKLOG** — items 3, 4 and 5 closed, each recording what was MEASURED rather than what was planned.
+  All three were right about the vein and wrong about the remedy.
+
 ## 2026-09-12 — preflight [9] could only be satisfied by a lie (released 2026-09-12 as 0.36.2)
 
 - **Checks [5b] and [9] contradicted each other once a repo was tagged mid-cut — SOUNDNESS R413.** The

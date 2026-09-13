@@ -60,7 +60,7 @@ work-in-progress is not a measurement of anything that exists.
 
 **`gate-run.sh` IS A SHARED INSTRUMENT TOO — DO NOT RUN FIVE REPOS' GATE LISTS AT ONCE.** Measured
 2026-09-11 during the 0.36.1 cut. I dispatched `gate-run.sh` for five repos concurrently and got three
-FAILs: two in candor-java's `smoke.sh` (`"spec": "0.36"` absent from the envelope; a lambda body effect
+FAILs: two in candor-java's `smoke.sh` (the declared spec string absent from the envelope; a lambda body effect
 not reaching its enclosing fn) and one in the umbrella's `release-test.sh`. **All three were false.** Run
 serially and alone, the same trees gave `smoke: 547 passed` and `release-test: OK — 471 assertions`.
 

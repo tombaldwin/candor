@@ -233,7 +233,7 @@ shared `scanned()` helper, turning **14 process tests into skips** if the scan c
 `UnreadExclusionAdvisorySiblingTests.swift:73` and `UnreadExclusionRouteEqualityProcessTests.swift:92`
 `throw XCTSkip("not JSON")`. Detection works and aggregation discards it.
 
-### 6b. THE FOUR ROWS ⟨0.37⟩ SHIPPED WITH — this is the top of the queue now
+### ~~6b. THE FOUR ROWS ⟨0.37⟩ SHIPPED WITH~~ — ALL FOUR CLOSED 2026-09-13, and three more filed on the way
 
 Filed 2026-09-13 by the code review that ran after the rung was declared finished. Three PRE-DATE this
 session and sit in the published 0.36.2 floor; none is introduced by ⟨0.37⟩. Ordered by what a user can
@@ -258,6 +258,30 @@ lose.
   `new RandomAccessFile(userPath, "rw")`, `new FileReader(userPath, UTF_8)`. Pre-existing (identical on
   the 0.36.1 jar). It was recorded only as a code comment saying "no worse"; a live AS-EFF-008 evasion in
   append-mode file writing belongs in the register, which is where it now is.
+
+**CLOSED 2026-09-13** — R418 + R424 + R425 (candor-swift `0c8d912`), R419 + R426 (`2a14ce9`), R420
+(`ca4fce1`), R421 (candor-java `5a320e7`), R427 (candor `5e6ae08`). Family CI green.
+
+Each fix was priced against real code rather than argued about, and the prices are the useful part:
+
+| row | what it was | priced against | result |
+|---|---|---|---|
+| R418 | `allow Fs` exit 0 over a caller-supplied DELETE | Publish, 95 swift files | 0 real paths lost, 1 fabricated removed, 5 destinations newly named, 34 newly incomplete (all verified genuine) |
+| R419 | `allow Exec /bin` certified `/bin/<caller>` | 14 swift projects, 17,944 units | CHANGED 0 — **and a reach probe showed CONSULT 0, so that A/B was evidence of nothing** |
+| R420 | `deny FolderDesktop` silent on the `file://` spelling | 3 fixtures + the escaped form | two spellings of one destination now AGREE |
+| R421 | `allow Fs` exit 0 over an append to a caller-chosen file | 119 real jars, 515,029 rows | 71 changed, 3 added, **0 removed**; only 11 direct, each read by name |
+
+**THREE NEW ROWS CAME OUT OF THE FIXES, NOT OUT OF THE HUNT** — R424 (a two-locator masking hole a naive
+R418 fix would have *introduced*), R425 (a written file's CONTENTS published as a filesystem path, found
+by the corpus A/B), R426 (the fix-on-fix collision: R419 broke R418's own control, and one of my R419
+arms was vacuous because R418's rule reddened it first). That is the allowlist-chain shape three more
+times: **a fix's own fixture is the boundary of the next defect.**
+
+**AND THE SAME RULE WAS PAID FOR TWICE IN ONE DAY, ON TWO ENGINES.** R418's deferral and R421's boundary
+were both *written down* — a swift doc comment saying Files was "left out deliberately", a java javadoc
+saying the String tail was left "no worse, and named here so the boundary is stated rather than implied".
+Both were accurate. Both were still live gate bypasses. A limitation written as a comment reads as
+CONSIDERED, which is exactly what stops it being measured. R418's cost one `git clone` to disprove.
 
 **THE PATTERN ACROSS ALL FOUR, worth more than any one fix:** every one is a LOCATOR the engine can see
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —

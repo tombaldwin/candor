@@ -43,3 +43,9 @@ jobs:
         # places (word-splitting a built command array, for one), so `info`-level noise would train the
         # next person to ignore the run. Warnings and errors only, and they must be zero.
         run: shellcheck -S warning bin/*.sh
+      # A workflow file can be valid YAML and invalid GitHub Actions, and only the second validator
+      # runs on github.com. Measured 2026-09-13: an EMPTY ${ } expression inside a shell COMMENT made
+      # four engines' ci.yml unparseable — no jobs ran, and the failure reported against the file PATH
+      # rather than the workflow name. Every local check was blind to it.
+      - name: Workflow files GitHub can actually parse
+        run: bash bin/workflow-check.sh candor

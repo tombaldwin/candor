@@ -731,6 +731,99 @@ median_secs() {
   fi
 }
 
+# SOUNDNESS R428 — EXTRACTED SO THE EMPTY-ROWS PATH CAN CALL IT TOO. This block used to sit inline at
+# the end of the per-repo body, which meant the `[ -z "$rows" ]` branch above `continue`d straight past
+# it — and that branch is where "no run expected" is printed, the EXACT case this check exists for. Its
+# own comment says so ("candor's row read 'no run expected' right after a push that did change bin/").
+# Caught by the tool's own `CI_WATCH_FAULT=stale-red`, which recolours every completed non-HEAD run as a
+# failure and still produced a GREEN summary for the umbrella. A guard that cannot be made to fire is
+# not a guard.
+#
+# HOW TO RE-VERIFY, because this cannot live in `--selftest` (it needs the live API):
+#
+#     CI_WATCH_FAULT=stale-red bash bin/ci-watch.sh candor    # must print ✘ rows and NOT GREEN
+#     bash bin/ci-watch.sh candor                             # must still print ✔ / OK
+#
+# Both directions, every time this area is touched. Before the fix the first command printed OK, which
+# is the whole finding — the guard was unreachable, not wrong.
+report_earlier_reds() {
+    # ── A FAILURE ON AN EARLIER COMMIT IS NOT ERASED BY A QUIET ONE ON TOP ────────────────────────────
+    # Everything above asks only about HEAD. So a workflow that FAILED on commit N goes invisible the
+    # moment a commit N+1 lands that its path filter ignores: HEAD legitimately needs no run, the repo
+    # prints "no run expected ✔", and the red is gone from the summary while still being the newest thing
+    # that workflow has to say.
+    #
+    # NOTICED ON A GREEN RUN, not a red one — candor's row read "no run expected" right after a push that
+    # did change `bin/`, because HEAD was a CHANGELOG-only commit on top of it. That run happened to have
+    # passed. Nothing would have said so if it had not.
+    #
+    # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
+    # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
+    #
+    # PER WORKFLOW, NOT ONE SHARED PAGE — see fetch_earlier_commit_rows()'s own header above for the eighth
+    # false green this replaces (a noisy sibling filling a `--limit 40` page and aging a quiet workflow's
+    # real failure off it entirely). Skipped when WF_PATH_FAILED: with no workflow ids for this repo there
+    # is nothing to iterate per-workflow over, and that failure already forced a red line and rc=1 above.
+    if [ "$WF_PATH_FAILED" -eq 0 ]; then
+      fetch_earlier_commit_rows "$repo"
+    else
+      latest=""
+      dupe_latest=""
+    fi
+    # FAULT HOOK, same idea as `drop-row` above: this arm reports only when something upstream is broken,
+    # so on a healthy repo it is indistinguishable from a check that does nothing. `stale-red` recolours
+    # every completed non-HEAD run as a failure, which is exactly the state this exists to catch.
+    if [ "${CI_WATCH_FAULT:-}" = "stale-red" ] && [ -n "$latest" ]; then
+      latest="$(printf '%s\n' "$latest" | awk -v US="$US" -F"$US" \
+                'NF>=5 {print $1 US $2 US "completed" US "failure" US $5}')"
+      dupe_latest="$(dup_names_of "$latest")"
+    fi
+    seen_wf=""
+    while IFS="$US" read -r lwfid lwf lstatus lconcl lsha; do
+      [ -z "$lwfid" ] && continue
+      case " $seen_wf " in *" $lwfid "*) continue ;; esac   # the list is newest-first: first id wins
+      seen_wf="$seen_wf $lwfid"
+      [ "$lsha" = "$sha" ] && continue                    # already judged against HEAD above
+      [ "$lstatus" != "completed" ] && continue           # an older run still going says nothing
+      [ "$lconcl" = "success" ] && continue
+      # A `cancelled` NEWEST run is an ABSENCE OF VERDICT, not a failure — and on any workflow carrying
+      # `concurrency: cancel-in-progress: true` it is the NORMAL outcome of a push wave: the new push
+      # cancels the run still going for the previous commit. Measured 2026-09-01 — candor-spec's
+      # conformance.yml has exactly that group, and a seven-repo push produced a phantom red here while
+      # every engine was green. Counting it as a failure makes this arm fire on every wave, and this
+      # project's own rule is that a red that is always wrong is a red nobody reads.
+      # So: PENDING, the state this tool already models for a run that has not concluded. It is not
+      # green either — a cancelled run tells you nothing, and silence must not read as success.
+      #
+      # BUT ONLY WHERE THAT MECHANISM EXISTS. As first written this arm was unscoped, so it printed
+      # "superseded by a new push" over every cancelled run in every repo — including the four whose
+      # primary ci.yml has no concurrency group at all, where a push CANNOT supersede a run. That is the
+      # tool asserting a cause it has no basis for, and downgrading a red on the strength of it. See
+      # workflow_cancels_in_progress() above for the measurement and for why it fails closed.
+      if [ "$lconcl" = "cancelled" ]; then
+        _lfn="$(path_for_id "$lwfid")"
+        if workflow_cancels_in_progress "$d" "$_lfn"; then
+          printf "  %-14s %-26s … cancelled at %s — superseded (%s declares cancel-in-progress, so a new\n" \
+                 "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
+          printf "  %-14s %-26s   push cancels the running one). No verdict; the run for HEAD settles it.\n" "" ""
+          pending=$((pending+1))
+          continue
+        fi
+        printf "  %-14s %-26s ✘ cancelled at %s — its NEWEST run, on an earlier commit, and %s declares NO\n" \
+               "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
+        printf "  %-14s %-26s   cancel-in-progress group, so a push did not supersede it — something KILLED\n" "" ""
+        printf "  %-14s %-26s   this run. Re-run it; a cancellation is not a pass.\n" "" ""
+        rc=1
+        continue
+      fi
+      llabel="$(label_for "$lwfid" "$lwf" "$dupe_latest")"
+      printf "  %-14s %-26s ✘ %s at %s — its NEWEST run, on an earlier commit. HEAD needs no run,\n" \
+             "$repo" "$llabel" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"
+      printf "  %-14s %-26s   so this red would otherwise vanish from the summary.\n" "" ""
+      rc=1
+    done <<< "$latest"
+}
+
 for repo in "${REPOS[@]}"; do
   d="$ROOT/$repo"
   [ -d "$d" ] || { printf "  %-14s SKIP  (not checked out)\n" "$repo"; continue; }
@@ -925,6 +1018,11 @@ for repo in "${REPOS[@]}"; do
         rc=1
       fi
     fi
+    # R428 — BEFORE the continue, not after it. Everything above judged HEAD, and HEAD having nothing
+    # to run is the commonest way a red goes quiet: the earlier commit's failure is still the NEWEST
+    # thing that workflow has to say. This `continue` skipped the check written for precisely that,
+    # so the summary printed "no run expected ✔" over it.
+    report_earlier_reds
     continue
   fi
 
@@ -987,81 +1085,7 @@ $_fn"
     esac
   done <<< "$rows"
 
-  # ── A FAILURE ON AN EARLIER COMMIT IS NOT ERASED BY A QUIET ONE ON TOP ────────────────────────────
-  # Everything above asks only about HEAD. So a workflow that FAILED on commit N goes invisible the
-  # moment a commit N+1 lands that its path filter ignores: HEAD legitimately needs no run, the repo
-  # prints "no run expected ✔", and the red is gone from the summary while still being the newest thing
-  # that workflow has to say.
-  #
-  # NOTICED ON A GREEN RUN, not a red one — candor's row read "no run expected" right after a push that
-  # did change `bin/`, because HEAD was a CHANGELOG-only commit on top of it. That run happened to have
-  # passed. Nothing would have said so if it had not.
-  #
-  # Only runs the newest run of each workflow is reported, and only when it is NOT at HEAD — anything at
-  # HEAD was already judged above, and repeating it would put two verdicts for one run in the summary.
-  #
-  # PER WORKFLOW, NOT ONE SHARED PAGE — see fetch_earlier_commit_rows()'s own header above for the eighth
-  # false green this replaces (a noisy sibling filling a `--limit 40` page and aging a quiet workflow's
-  # real failure off it entirely). Skipped when WF_PATH_FAILED: with no workflow ids for this repo there
-  # is nothing to iterate per-workflow over, and that failure already forced a red line and rc=1 above.
-  if [ "$WF_PATH_FAILED" -eq 0 ]; then
-    fetch_earlier_commit_rows "$repo"
-  else
-    latest=""
-    dupe_latest=""
-  fi
-  # FAULT HOOK, same idea as `drop-row` above: this arm reports only when something upstream is broken,
-  # so on a healthy repo it is indistinguishable from a check that does nothing. `stale-red` recolours
-  # every completed non-HEAD run as a failure, which is exactly the state this exists to catch.
-  if [ "${CI_WATCH_FAULT:-}" = "stale-red" ] && [ -n "$latest" ]; then
-    latest="$(printf '%s\n' "$latest" | awk -v US="$US" -F"$US" \
-              'NF>=5 {print $1 US $2 US "completed" US "failure" US $5}')"
-    dupe_latest="$(dup_names_of "$latest")"
-  fi
-  seen_wf=""
-  while IFS="$US" read -r lwfid lwf lstatus lconcl lsha; do
-    [ -z "$lwfid" ] && continue
-    case " $seen_wf " in *" $lwfid "*) continue ;; esac   # the list is newest-first: first id wins
-    seen_wf="$seen_wf $lwfid"
-    [ "$lsha" = "$sha" ] && continue                    # already judged against HEAD above
-    [ "$lstatus" != "completed" ] && continue           # an older run still going says nothing
-    [ "$lconcl" = "success" ] && continue
-    # A `cancelled` NEWEST run is an ABSENCE OF VERDICT, not a failure — and on any workflow carrying
-    # `concurrency: cancel-in-progress: true` it is the NORMAL outcome of a push wave: the new push
-    # cancels the run still going for the previous commit. Measured 2026-09-01 — candor-spec's
-    # conformance.yml has exactly that group, and a seven-repo push produced a phantom red here while
-    # every engine was green. Counting it as a failure makes this arm fire on every wave, and this
-    # project's own rule is that a red that is always wrong is a red nobody reads.
-    # So: PENDING, the state this tool already models for a run that has not concluded. It is not
-    # green either — a cancelled run tells you nothing, and silence must not read as success.
-    #
-    # BUT ONLY WHERE THAT MECHANISM EXISTS. As first written this arm was unscoped, so it printed
-    # "superseded by a new push" over every cancelled run in every repo — including the four whose
-    # primary ci.yml has no concurrency group at all, where a push CANNOT supersede a run. That is the
-    # tool asserting a cause it has no basis for, and downgrading a red on the strength of it. See
-    # workflow_cancels_in_progress() above for the measurement and for why it fails closed.
-    if [ "$lconcl" = "cancelled" ]; then
-      _lfn="$(path_for_id "$lwfid")"
-      if workflow_cancels_in_progress "$d" "$_lfn"; then
-        printf "  %-14s %-26s … cancelled at %s — superseded (%s declares cancel-in-progress, so a new\n" \
-               "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
-        printf "  %-14s %-26s   push cancels the running one). No verdict; the run for HEAD settles it.\n" "" ""
-        pending=$((pending+1))
-        continue
-      fi
-      printf "  %-14s %-26s ✘ cancelled at %s — its NEWEST run, on an earlier commit, and %s declares NO\n" \
-             "$repo" "$(label_for "$lwfid" "$lwf" "$dupe_latest")" "$(printf '%s' "$lsha" | cut -c1-7)" "$_lfn"
-      printf "  %-14s %-26s   cancel-in-progress group, so a push did not supersede it — something KILLED\n" "" ""
-      printf "  %-14s %-26s   this run. Re-run it; a cancellation is not a pass.\n" "" ""
-      rc=1
-      continue
-    fi
-    llabel="$(label_for "$lwfid" "$lwf" "$dupe_latest")"
-    printf "  %-14s %-26s ✘ %s at %s — its NEWEST run, on an earlier commit. HEAD needs no run,\n" \
-           "$repo" "$llabel" "$lconcl" "$(printf '%s' "$lsha" | cut -c1-7)"
-    printf "  %-14s %-26s   so this red would otherwise vanish from the summary.\n" "" ""
-    rc=1
-  done <<< "$latest"
+  report_earlier_reds
 
   # And the subtler half: rows exist, but not for every workflow that had to produce one. This is the
   # shape that let a green `realworld-oracle` stand in for a red `ci` — one row present is not the set.

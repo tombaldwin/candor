@@ -9,10 +9,14 @@
 # guards the one instance.
 name: shell-lint
 on:
+  # `.github/workflows/**`, not just this file. The workflow-check step below exists because an empty
+  # expression in ANOTHER workflow made it unparseable — and with the old filter, editing that other
+  # workflow did not fire this gate at all. It fired when the CHECKER changed, which is the one time it
+  # is least needed. Found by review, and it is the difference between a guard and a decoration.
   push:
-    paths: ['bin/**', '.github/workflows/shell-lint.yml', 'justfile']
+    paths: ['bin/**', '.github/workflows/**', 'justfile']
   pull_request:
-    paths: ['bin/**', '.github/workflows/shell-lint.yml', 'justfile']
+    paths: ['bin/**', '.github/workflows/**', 'justfile']
 
 jobs:
   shellcheck:
@@ -48,4 +52,8 @@ jobs:
       # four engines' ci.yml unparseable — no jobs ran, and the failure reported against the file PATH
       # rather than the workflow name. Every local check was blind to it.
       - name: Workflow files GitHub can actually parse
+        # `candor` only: this job checks out the UMBRELLA, and the engines' workflows are not here. The
+        # defect this catches happened in four ENGINE ci.yml files, so umbrella-only coverage would be a
+        # decoration — each engine runs the same check against its own tree in its own ci.yml, which is
+        # the only place that file exists at push time.
         run: bash bin/workflow-check.sh candor

@@ -237,6 +237,28 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   diff="$(git -C "$d" diff -U0 "$range" 2>/dev/null)" || { echo "assert-audit: cannot diff $range in $d"; return 2; }
   [ -z "$diff" ] && { echo "assert-audit: empty range $range — nothing to audit (that is not a pass, there is no diff)"; return 0; }
 
+  # A RANGE THAT CHANGES NO SOURCE ASSERTS NOTHING ABOUT CODE — self-skip (exit 3), never fail.
+  #
+  # TRIAGED 2026-09-13 over 120 commits (30 per engine): 13 failed, and FOUR of them were pure
+  # `CHANGELOG:` commits — prose DESCRIBING a fix whose tests landed in an earlier commit. Failing those
+  # asks this range for a test that belongs to a different one, and the remedy a developer reaches for is
+  # to weaken the assertion language in a CHANGELOG, which is the opposite of what this tool wants.
+  #
+  # The other NINE all touched source and were the tool working: four are the masking-guard commits
+  # (R379, R383, R386) whose comments carried "under-catching is a missed mask, never a broken gate" —
+  # a sentence SOUNDNESS R399 later proved FALSE. This gate flagged them when they landed.
+  #
+  # NOT A PASS. Exit 3 is the family's self-skip convention (`gate-run.sh` prints SELFSKIP and does not
+  # count it green), so a docs-only range is visibly unjudged rather than silently approved. The
+  # distinction matters because the CHANGELOG+source shape — candor-ts `7ecda11`, "PROVEN" with only
+  # CHANGELOG.md and scan.mjs changed — is this tool's ORIGINAL target case and still FAILS.
+  if [ -z "$(git -C "$d" diff --name-only "$range" 2>/dev/null | grep -vE '\.md$' || true)" ]; then
+    echo "assert-audit: SELF-SKIP — $range changes no source file (documentation only), so it adds no"
+    echo "  assertion ABOUT CODE and there is nothing here a test could back. Not a pass: the range is"
+    echo "  unjudged. A commit that touches source AND a CHANGELOG is judged normally."
+    return 3
+  fi
+
   # ADDED lines only, and never the diff's own +++ header.
   hits="$(printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' | grep -iE "$ASSERT_RE" || true)"
   testfiles="$(git -C "$d" diff --name-only "$range" 2>/dev/null | grep -E "$TEST_RE" || true)"

@@ -57,7 +57,7 @@ available: it has been priced and refused twice** (rust's Net inversion gained 5
 masked `bind`; ts's gained 16 in `got`, R412), because the general rule needs the member-level
 classification java's κ table pays for.
 
-### 0b. MONDAY MORNING — the stat ruling, as a clause plus a FOUR-ARM PART
+### 0b. ~~MONDAY MORNING — the stat ruling, as a clause plus a FOUR-ARM PART~~ **DONE 2026-09-13 — SHIPPED as ⟨0.37⟩ / v0.37.0, live on crates.io + npm + GitHub**
 *"Is a stat's path a locator?"* is the model's first question, and the answer propagates to both engines
 and the PART. Write it as a SPEC clause with **four arms, not one** — a defect arm alone is exactly the
 shape R411 was just filed against:
@@ -76,7 +76,7 @@ shape R411 was just filed against:
 Run it against all four UNMODIFIED engines in the foreground first — expect rust red on arm 2, java red on
 a `Path`/`File` parameter; ts and swift unmeasured.
 
-### 1. R414 + R409 under that ruling — ONE ruling, TWO engines
+### 1. ~~R414 + R409 under that ruling — ONE ruling, TWO engines~~ **DONE 2026-09-13 — and it was FOUR engines, not two: rust and swift owed the same receiver form. R414 is now PARTIALLY CLOSED, not closed — swift's `Files` shape is open as R418.**
 **R414 is new and live in the shipped 0.36.2**: `p.exists()` beside a benign literal exits **0** with zero
 violations, while `fs::metadata(p)` and `fs::write(p)` are both caught — because `is_fs_path_arg`
 (`lib.rs:3473`) carries the argument forms and the `!is_method` gate drops the receiver form. R409's row
@@ -84,7 +84,7 @@ had cited that exclusion as a *ruling*; it never was, and that sentence is struc
 `p.is_file()` are among the commonest Fs spellings in Rust, so this is a large share of the 9,811 UNMASKED
 lines a count-ratchet would have dismissed as safe. The R411 defect arm lands in the same change.
 
-### 2. Hoist the four trapped Sets to module scope — ~6 lines, near-zero risk
+### 2. ~~Hoist the four trapped Sets to module scope — ~6 lines, near-zero risk~~ **DONE 2026-09-13 — and the hoist's new assertion, derived from `node:dns`, immediately caught `resolveTlsa` missing from `NET_ESTABLISHING`. A later review found it derived from the RUNTIME rather than `@types/node`, the authority the engine reads; that is fixed too.**
 `CONNECTING_CTORS` (7156), `NET_ESTABLISHING` (7183), `FS_USE_VERBS` (7206), `EXEC_USE_VERBS` (7210) are
 pure literal Sets closing over nothing, rebuilt on every call, and unimportable. Hoisting them **makes the
 R410 test writable** — which matters, because `assert-audit` FAILS on the R410 fix as shipped
@@ -145,7 +145,7 @@ so the SUCCESS path failed too. Both fixed, all three paths simulated (0→0, 1�
 **And the clone lives INSIDE the `${{ }}` block on purpose:** `gates.sh` extracts every `run:` step for
 local replay, so a standalone clone step would put a network fetch in every local gate run of four repos.
 
-### 5. Collapse the duplications that have no cross-checker
+### 5. ~~Collapse the duplications that have no cross-checker~~ **DONE 2026-09-13 — and the instruction was WRONG for two of three engines: a shorter copy on a DESTRUCTIVE path is a deliberate narrowing, and unifying it would have been a file-deletion bug. Pin the difference, do not collapse it.**
 - ~~**`is_fs_path_arg_method` (2 names, `lib.rs:3673`) should consult `is_fs_path_arg` (30 names, `:3473`).**
   R399's open half — cap-std `Dir::open/write/read/…` — is already in the 30-name list. A/B before
   believing it; widening is a typing change and two earlier ones over-reached.~~ **DONE 2026-09-12,
@@ -227,11 +227,41 @@ local replay, so a standalone clone step would put a network fetch in every loca
 - **`RS_FAMILY`** should be the only family list in `bin/` bar the two preflight [8] deliberately
   cross-checks. `ci-watch.sh:46` restates it in a DIFFERENT ORDER, and push order is load-bearing.
 
-### 6. Four green-on-failure swift tests — 4 lines
+### 6. ~~Four green-on-failure swift tests — 4 lines~~ **DONE 2026-09-13 (candor-swift `ab2c260`) — the ~14 legitimate skip sites were enumerated first and left untouched.**
 `PathProcessTests.swift:30` and `TourProcessTests.swift:34` do `XCTSkipUnless(r.code == 0)` inside the
 shared `scanned()` helper, turning **14 process tests into skips** if the scan crashes;
 `UnreadExclusionAdvisorySiblingTests.swift:73` and `UnreadExclusionRouteEqualityProcessTests.swift:92`
 `throw XCTSkip("not JSON")`. Detection works and aggregation discards it.
+
+### 6b. THE FOUR ROWS ⟨0.37⟩ SHIPPED WITH — this is the top of the queue now
+
+Filed 2026-09-13 by the code review that ran after the rung was declared finished. Three PRE-DATE this
+session and sit in the published 0.36.2 floor; none is introduced by ⟨0.37⟩. Ordered by what a user can
+lose.
+
+- **R418 swift `Files` — `allow Fs /tmp/benign` exits 0 over a caller-supplied file DELETION**, printing
+  *"nothing hidden"*. 11 of 12 receiver verbs silent; the one that is caught is caught by spelling luck
+  (`"z"` is not path-shaped, so R395's fail-closed arm fires). **The deferral that left this open priced
+  the FIX and never priced the HOLE** — pricing the hole took one vendored dependency and ten minutes.
+  Fix direction: `isReceiverLocatorMember` already exists; this is one more receiver family in it.
+- **R419 swift `URL` mutating methods — `allow Exec /bin` certifies `/bin/<caller-supplied>` TODAY.**
+  `LocatorMoveScanner` records assignment, `&inout` and property writes but NOT mutating calls, so
+  `u.appendPathComponent(secret)` leaves the binder's original literal standing as the published locator.
+  Live on Exec before ⟨0.37⟩ and unchanged by it; the rung widened its blast radius to `paths`.
+  **Measured before shipping** — the ARGUMENT form already published the wrong path pre-⟨0.37⟩.
+  Fix direction: a mutating call on a tracked name is a MOVE, carved out by a DENYLIST of provably
+  non-moving members.
+- **R420 `URL(string:)` publishes a URL STRING as a filesystem path** and silently drops the
+  protected-folder class: `deny FolderDesktop` fires on the `fileURLWithPath` spelling and is SILENT on
+  the `file://` one, so an app missing `NSDesktopFolderUsageDescription` verifies green.
+- **R421 java's String-locator tail reaches NO masking guard** — `new FileOutputStream(userPath, true)`,
+  `new RandomAccessFile(userPath, "rw")`, `new FileReader(userPath, UTF_8)`. Pre-existing (identical on
+  the 0.36.1 jar). It was recorded only as a code comment saying "no worse"; a live AS-EFF-008 evasion in
+  append-mode file writing belongs in the register, which is where it now is.
+
+**THE PATTERN ACROSS ALL FOUR, worth more than any one fix:** every one is a LOCATOR the engine can see
+and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
+so the next rung is probably not a new idea, it is finishing this one.
 
 ### 7. API-surface harvest — DEMOTED, still worth building
 Under its own mechanical first phase ("start where the locator type is mechanical; `String`-typed is the

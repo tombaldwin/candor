@@ -10,6 +10,22 @@ keeps its own.
 
 ## 2026-09-14 — family build bump (released 2026-09-14 as 0.38.0)
 
+`release-preflight [2]` — the bump-miss check — now ignores a stale `spec` inside a **committed report
+document**, and only there. A report records a scan that happened; its `spec` is a record, not a
+declaration of what this build speaks, and editing it would replace a true record with a false one.
+The check already encoded that idea twice (it excludes `.candor/` wholesale, and exempts a line that
+BUILDS an envelope) and missed the case of a report committed outside `.candor/` —
+`candor-rust/sample/`, a sample output the README points readers at, which nothing in code reads and
+so nothing was ever going to update.
+
+**The first draft of the filter was wrong in the dangerous direction and a calibration case caught it.**
+It grepped the first three lines for `"candor":` and silenced `candor-java/jbang-catalog.json`, whose
+line 3 is an ALIAS named `candor` — a packaging pin, the exact class [2] exists to catch, and the exact
+file whose stale URL 404'd for every jbang user at 0.24. It now PARSES: a file qualifies only if its
+top-level `candor` key is an object carrying `spec`. Unparseable or unreadable JSON stays loud — a file
+the filter cannot classify is not one it may excuse. Five calibration cases, and the one that mattered
+was written to test the LOUD direction rather than the quiet one.
+
 No change to the umbrella's shipped surface — `adopt/`, `integrations/` and `fingerprint/` are as they
 were. `ENGINE_PIN` moves to 0.38.0 so `candor update` and the Homebrew formula fetch the engines this
 cut published, and `UMBRELLA_VERSION` moves with it.

@@ -69,6 +69,51 @@ rs_banner note
 #
 # Input and output are `repo/path:line:text`. One `git ls-files` per repo, cached, so a seven-repo
 # scan makes seven calls.
+# A REPORT IS A RECORD OF A SCAN THAT HAPPENED — its `"spec"` is not a declaration of what this build
+# speaks, and rewriting it to match today's floor would FORGE the record. This check already encodes that
+# idea twice: it excludes `.candor/` (untracked report dirs) wholesale, and `CONSTRUCT_RE` exempts a line
+# that BUILDS a report envelope rather than asserting on one. What neither covers is a report COMMITTED
+# outside `.candor/` — `candor-rust/sample/1.conformance_sample.Executable.json`, a sample output the
+# README points readers at. Nothing in code reads it, so nothing was ever going to update it, and at the
+# ⟨0.38⟩ bump it became a bump-miss signature that was not a bump miss.
+#
+# DERIVED, NOT GUESSED, and that matters because this NARROWS a check whose whole job is to be loud. The
+# test is that the file IS a candor report: its top-level `candor` key holds an OBJECT carrying `spec` —
+# the report envelope §2.1 defines. It is parsed, not grepped, and the first draft here proves why. That
+# draft grepped the first three lines for `"candor":` and silenced `candor-java/jbang-catalog.json`,
+# whose line 3 is an ALIAS named `candor` — a packaging file, the exact class this check exists to catch,
+# dropped by a predicate that could not tell an alias from an envelope. Caught by a calibration case
+# written to test the LOUD direction rather than the quiet one; had I only checked that the sample was
+# dropped, this would have shipped silencing the pin that 404'd for every jbang user at 0.24.
+#
+# THE FAIL DIRECTION, stated rather than left to be inferred: this can only SILENCE a stale `spec` inside
+# a committed report document. That is the one place a stale spec string is correct rather than
+# dangerous, because the alternative — editing it — replaces a true record of a past scan with a false
+# one. Bumping that sample's single `spec` field would also have left its `version` (a git sha) and
+# `toolchain` (a June nightly) untouched, publishing an artifact that READS current and is not.
+# Unparseable or unreadable JSON stays LOUD: a file this cannot classify is not one it may excuse.
+_drop_report_documents() {
+  python3 -c '
+import json, os, sys
+root = sys.argv[1]
+cache = {}
+def is_report(rel):
+    if rel not in cache:
+        cache[rel] = False
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8") as fh:
+                env = json.load(fh).get("candor")
+            cache[rel] = isinstance(env, dict) and "spec" in env
+        except Exception:
+            cache[rel] = False          # unparseable => not excused
+    return cache[rel]
+for line in sys.stdin:
+    path = line.split(":", 1)[0]
+    if path.endswith(".json") and is_report(path):
+        continue
+    sys.stdout.write(line)
+' "$ROOT"
+}
 _drop_gitignored() {
   awk -v root="$ROOT" '
     BEGIN { FS=":" }
@@ -237,7 +282,7 @@ for PRIOR in $PRIORS; do
       --exclude='NIGHT-*.md' \
       --exclude=release-preflight.sh --exclude=scan.py --exclude=Candor.java --exclude=main.swift \
       candor-spec candor-rust candor-ts candor-java candor-swift candor-agents candor 2>/dev/null \
-    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored )"
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored | _drop_report_documents )"
   if [ -z "$strays" ]; then ok "no leftover 'spec $PRIOR' strings"
   else
     # A leftover in a FIXTURE is usually deliberate (a 0.24 engine reading a 0.23 report is real
@@ -283,7 +328,7 @@ for PRIOR in $PRIORS; do
         _c="${_l#*:}"; _c="${_c#*:}"
         printf '%s' "$_c" | grep -qiw spec && printf '%s\n' "$_l"
       done \
-    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored )"
+    | grep -vE '⟨(spec )?[0-9]' | grep -v ', informative)' | _drop_gitignored | _drop_report_documents )"
   if [ -z "$litstrays" ]; then ok "no bare-literal 'spec' == \"$PRIOR\" assertions"
   else
     # Same loud/advisory split as [2] — [2b] was the half that still dumped every fixture, which is the

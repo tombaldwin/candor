@@ -234,7 +234,10 @@ fi
 for pf in "candor/adopt/candor.yml:CANDOR_JAVA_VERSION:candor-java" "candor/adopt/candor-digest.yml:candor-agents@v:candor-agents"; do
   f="$ROOT_C/${pf%%:*}"; rest="${pf#*:}"; key="${rest%%:*}"; pin_repo="${rest##*:}"
   [ -f "$f" ] || continue
-  pv="$(grep -oE "$key *:? *v?[0-9]+\.[0-9]+\.[0-9]+" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  # R408 — `pin_version` (bin/_release_set.sh) instead of `head -1`: if the key matches more than one
+  # DISTINCT version in this file the answer depended on line order, and a bump note left above the pin
+  # was enough to make it the wrong one. It now refuses loudly and `pv` stays empty.
+  pv="$(pin_version "$f" "$key *:? *v?[0-9]+\.[0-9]+\.[0-9]+")"
   if ! rs_in_set "$pin_repo"; then oos "${pf%%:*} pins ${pv:-?} — names $pin_repo, which is not in this cut"
   elif [ -z "$pv" ]; then bad "${pf%%:*}: no $key pin found — a consumer-facing pin nothing verifies"
   elif [ "$pv" != "$VER" ]; then bad "${pf%%:*} pins $pv, not $VER — every repo that ran \`candor init\` keeps installing $pv"

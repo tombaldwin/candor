@@ -156,6 +156,36 @@ hook_dir() {
 }
 # a Rust raw bin lives on PATH or under ~/.candor/bin
 rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$CDBIN/$1"; else return 1; fi; }
+
+# REPORT THE BINARY THAT WILL RUN, NOT THE FILE WE JUST WROTE.
+#
+# `rust_bin` searches PATH FIRST and only then `$CDBIN`. So an engine left on PATH by an older install —
+# a `swift build` copied to /usr/local/bin, a stale cargo binary — SHADOWS everything `candor update`
+# fetches, and the update said ✔ anyway, because it version-checked the path it had just written. A real
+# report of this: `✔ candor-swift 0.37.0` printed four lines above `candor-swift 0.27.0 (spec 0.27)` in
+# the same run's own summary table, with the update having downloaded 0.37.0 correctly and the engine
+# that actually runs still being the 2026-08-04 one.
+#
+# That is this tool's cardinal sin committed by its own installer: a claim recorded in one place and
+# never checked against the artifact it names. The ✔ now resolves the engine the way every later command
+# will, and when the two differ it says so and names both paths — a shadow is not a failure to install,
+# and telling the user "installed" without telling them it will not be used is the useless half.
+installed_or_shadowed() {   # $1 = engine command, $2 = path this run wrote
+  local resolved rpath
+  if ! resolved="$(rust_bin "$1" 2>/dev/null)"; then
+    echo "         ✘ wrote $2 but candor cannot resolve $1 — is it executable?"
+    return 1
+  fi
+  rpath="$(command -v "$resolved" 2>/dev/null || echo "$resolved")"
+  echo "         ✔ $("$rpath" --version 2>/dev/null | head -1)"
+  if [ "$rpath" != "$2" ]; then
+    echo "         ⚠ SHADOWED — that is NOT the build this run installed."
+    echo "             runs:      $rpath"
+    echo "             installed: $2"
+    echo "           Remove the first, or put $CDBIN ahead of it on PATH."
+    return 1
+  fi
+}
 # run (or, in dry-run, just announce) the resolved engine command
 run() {
   if [ -n "${CANDOR_DISPATCH_DRYRUN:-}" ]; then echo "WOULD-RUN: $*"; exit 0; fi
@@ -1135,7 +1165,10 @@ PY
     have curl || die "install needs curl on PATH."
     mkdir -p "$CDBIN"
     # Provenance, stated up front — `update` is the ONE network action; the analysis itself never is.
-    echo "candor: fetching from package registries only (github.com · crates.io · npm) — no candor server, no telemetry, no version-check ping."
+    # Wrapped by hand at ~76 cols. These lines are read in a terminal, and a sentence that soft-wraps
+    # at whatever width the window happens to be reads as damage rather than as prose.
+    echo "candor: fetching from package registries only (github.com · crates.io · npm)"
+    echo "        no candor server, no telemetry, no version-check ping."
     tag="v$ENGINE_PIN_JAVA"
     base="https://github.com/tombaldwin/candor-java/releases/download/$tag"
     # CANDOR_JAVA_RELEASE_BASE points the JVM fetch at somewhere else (a `file://` dir works, curl reads
@@ -1270,9 +1303,23 @@ PY
     if want rust; then
       if have cargo; then
         echo "  rust   → cargo install --version $ENGINE_PIN_RUST candor-scan candor-query"
+        echo "           building from source — this takes a few minutes, cargo reports below"
         # Pin to ENGINE_PIN (NOT latest) so the whole family stays at one version — an unpinned `cargo install`
         # fetched crates.io's newest and split the family (rust ahead of the pinned jvm/ts).
-        cargo install -q --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>/dev/null && echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)" || echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
+        # NOT `-q`, and NOT `2>/dev/null`. Both were set, so a multi-minute source build printed
+        # NOTHING and read as a hang — the single most common thing a user reports about this command.
+        # cargo's own "Compiling …/Finished" lines ARE the progress indicator; let them through and
+        # indent them so they sit under this engine's row rather than looking like candor's own output.
+        # READ CARGO'S STATUS, NOT SED'S. `if cargo … | sed …; then` tests the LAST command in the
+        # pipeline, so a failed build behind a successful `sed` reports ✔ — the exact false-green this
+        # tool exists to refuse, in its own installer. PIPESTATUS[0] is the only honest read here.
+        cargo install --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>&1 \
+          | sed 's/^/           /'
+        if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+          echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
+        else
+          echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
+        fi
       else
         echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
       fi
@@ -1289,7 +1336,10 @@ PY
         if curl -fsSL -o "$CDBIN/candor-swift.tmp" "$sw" 2>/dev/null; then
           chmod +x "$CDBIN/candor-swift.tmp"; mv "$CDBIN/candor-swift.tmp" "$CDBIN/candor-swift"
           echo "  swift  → native binary (candor-swift-macos-arm64), no Swift toolchain required"
-          echo "         ✔ $("$CDBIN/candor-swift" --version 2>/dev/null | head -1)"
+          # A SHADOWED INSTALL IS NOT A SUCCESSFUL ONE. `update` exits non-zero so a script, a CI step
+          # or `candor doctor` sees it — the bytes arrived and the engine still will not be used, which
+          # is precisely the state that looked like success before.
+          installed_or_shadowed candor-swift "$CDBIN/candor-swift" || jvm_rc=1
         else
           rm -f "$CDBIN/candor-swift.tmp"
           if have swift; then
@@ -1355,7 +1405,9 @@ PY
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
     u=$(printf "%s\n" $specs | sort -u | grep -c .)
     if [ "$u" -gt 1 ]; then
-      echo "  ✘ SPEC DRIFT: installed engines declare different spec versions ($(printf "%s" "$specs" | tr ' ' ',' | sed 's/^,//')) — upgrade the stragglers."; rc=1
+      echo "  ✘ SPEC DRIFT — installed engines declare different spec versions:"
+      echo "      $(printf "%s" "$specs" | tr ' ' ',' | sed 's/^,//')"
+      echo "      Upgrade the stragglers; a mixed family is not one contract."; rc=1
     elif [ "$u" -eq 1 ]; then
       echo "  ✔ all installed engines agree on spec $(printf "%s\n" $specs | sort -u)"
     fi
@@ -1410,7 +1462,10 @@ PY
         drift=1
       fi
     done
-    [ "$drift" -eq 1 ] && echo "    → the engines above agree with each other but not with your checkout; rebuild + reinstall before trusting a measurement against them"
+    if [ "$drift" -eq 1 ]; then
+      echo "    → the engines above agree with each other but not with your checkout."
+      echo "      Rebuild + reinstall before trusting a measurement against them."
+    fi
     exit $rc;;
   init)
     # candor init — stand up the effect gate in one command (engine picked by manifest):

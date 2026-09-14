@@ -292,7 +292,19 @@ so the next rung is probably not a new idea, it is finishing this one.
 Everything in §§0b–6b is closed. The queue below is ordered by what a user can lose, which is not the
 order it was filed in.
 
-**A. rust wrapper-peel gaps — R401. (R400's fabrication half is CLOSED; its under-report half stays open.)**
+**~~A. rust wrapper-peel gaps~~ — DONE 2026-09-14, both rows half-closed, and the residuals are SCOPED
+rather than vague.**
+  - **R400** — the FABRICATION half is closed (candor-rust `d98fa60`): a body that constructs a `Vec` and
+    nothing else was reporting `['Exec']`. The UNDER-REPORT half stays open ON PURPOSE — the grandparent's
+    binding is not recoverable at that site (`out` holds one scope, not a stack), so depth ≥ 2 keeps its
+    literal and still reads silent-pure. Priced 0/0/0 over 400 crates with reach PROVEN at 74 hits.
+  - **R401** — `Pin` and `ManuallyDrop` closed (candor-rust `8ef8be8`); `Weak` and a `HashMap` VALUE stay
+    open. Priced ADDED 3 / REMOVED 0 / CHANGED 25, all disclosure-direction.
+    **THE LEAD FOR FINISHING IT IS THE PART WORTH KEEPING:** I wrote the element-route half and REVERTED
+    it, measured INERT. A MINIMAL crate whose only function is `f[0].go()` over `&Vec<Box<dyn Doer>>` does
+    not charge while the identical function in a larger crate does — a crate-wide guard gates that
+    machinery (`has_dyn_return` is one). **A fixture for the element route must be large enough to open
+    the guard, or it measures the guard and not the fix.**
 *Updated 2026-09-14 after verification. **R430 was filed here and WITHDRAWN the same day — it was not a
 defect, it was my extraction script asking for `FBox.run` where the report says `FBox::run`.** The
 fix-order note it created is void. What caught it: an in-tree test PASSING on source my CLI run called

@@ -1230,7 +1230,7 @@ PY
     [ -n "$_dv" ] && echo "candor:   …except $_dv — pinned separately (a one-engine patch; \`candor doctor\` shows this too)"
     # --- JVM engine (flagship) ---
     if want jvm; then
-    jvm_rc=0
+    update_rc=0   # the exit status of `candor update` — set by ANY engine arm, not just the JVM one
     # fetch the portable jar for the pinned tag. Used by BOTH routes: the platforms that have no native
     # binary at all, and as the fallback when this platform's native asset is not published for this tag.
     # ~/.candor, NOT $CANDOR_CACHE: every jar READER here (run_java, doctor, the status dashboard) looks
@@ -1288,7 +1288,7 @@ PY
         echo "           machine). NOT falling back to the jar: this asset is published and broken, and a"
         echo "           quiet substitution would hide that. Nothing was installed or removed."
         echo "           Report it, and to proceed on the jar meanwhile:  CANDOR_NO_NATIVE=1 candor update jvm"
-        jvm_rc=1
+        update_rc=1
       elif [ "$native_fail" = absent ]; then
         echo "         ✘ no native binary published at v$ENGINE_PIN_JAVA ($base/$asset)"
         echo "  jvm    → falling back to the jar for the same tag — SAME engine, SAME version, but it"
@@ -1314,7 +1314,7 @@ PY
           echo "         ✘ the jar failed too ($base/candor-java-$ENGINE_PIN_JAVA-all.jar)"
           echo "         ✘ no JVM engine installed: native $asset unavailable AND the jar unavailable at v$ENGINE_PIN_JAVA."
           echo "           Check the release exists: https://github.com/tombaldwin/candor-java/releases/tag/$tag"
-          jvm_rc=1
+          update_rc=1
         fi
       fi
     else
@@ -1323,7 +1323,7 @@ PY
         echo "         ✔ jar stashed in ~/.candor/"
       else
         echo "         ✘ jar download failed ($base/candor-java-$ENGINE_PIN_JAVA-all.jar)"
-        jvm_rc=1
+        update_rc=1
       fi
     fi
     fi
@@ -1363,7 +1363,12 @@ PY
             mv "$CDBIN/candor-scan.tmp"  "$CDBIN/candor-scan"
             mv "$CDBIN/candor-query.tmp" "$CDBIN/candor-query"
             echo "  rust   → native binaries (candor-scan/-query-$rust_plat), no Rust toolchain required"
-            installed_or_shadowed candor-scan "$CDBIN/candor-scan" || jvm_rc=1
+            # BOTH binaries, not just the scanner. `candor-query` is what `candor tour` / `where` /
+            # `path` run, so a shadowed or stale query beside a fresh scanner looks entirely healthy
+            # until the user's first question — the same asymmetry `ci/verify-binary.sh` refuses to
+            # ship, refused here too rather than only there.
+            installed_or_shadowed candor-scan  "$CDBIN/candor-scan"  || update_rc=1
+            installed_or_shadowed candor-query "$CDBIN/candor-query" || update_rc=1
             rust_done=1
           else
             rm -f "$CDBIN/candor-scan.tmp" "$CDBIN/candor-query.tmp"
@@ -1417,7 +1422,7 @@ PY
           # A SHADOWED INSTALL IS NOT A SUCCESSFUL ONE. `update` exits non-zero so a script, a CI step
           # or `candor doctor` sees it — the bytes arrived and the engine still will not be used, which
           # is precisely the state that looked like success before.
-          installed_or_shadowed candor-swift "$CDBIN/candor-swift" || jvm_rc=1
+          installed_or_shadowed candor-swift "$CDBIN/candor-swift" || update_rc=1
         else
           rm -f "$CDBIN/candor-swift.tmp"
           if have swift; then
@@ -1452,7 +1457,7 @@ PY
     # …the FLAGSHIP engine is a different matter. If `update` was asked for the JVM engine and finished
     # with none installed by either route, exit 1 — an ✘ that scrolls past above a green doctor summary
     # is exactly how a failed install gets read as a successful one in a script or a CI step.
-    exit "${jvm_rc:-0}";;
+    exit "${update_rc:-0}";;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).

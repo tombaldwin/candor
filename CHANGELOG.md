@@ -8,6 +8,21 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 — family build bump (released 2026-09-14 as 0.38.0)
+
+No change to the umbrella's shipped surface — `adopt/`, `integrations/` and `fingerprint/` are as they
+were. `ENGINE_PIN` moves to 0.38.0 so `candor update` and the Homebrew formula fetch the engines this
+cut published, and `UMBRELLA_VERSION` moves with it.
+
+What did move here is the family record, because ⟨0.38⟩ closed its own gap late: `BACKLOG.md` §6c now
+states that PART 89 is green on all nine arms in both engines with an EMPTY xfail list (R438 rust, R429
+swift and R287 all closed), and names the three rows that opened while closing it — **R439** (candor-ts
+condition maps, a live ⟨0.21⟩ break that should land before anyone says ⟨0.38⟩ closes the
+conditional-arm family), **R440** (a pre-existing rust silence, found by an instrument added to
+disprove it and measured at 960 occurrences over 1,556 crates, 53 undisclosed), and the fact that the
+swift fix's A/B measured **REACH 0** over 878 real Swift files — so its blast radius is bounded by a
+gate and a fixture rather than measured on code carrying the shape.
+
 ## 2026-09-14 (later) — the review of those fixes found a THIRD lie, and it was mine
 
 - **R437 — the R408 fix turned a caught stale build-constant into a GREEN.** `pin_version` returned an

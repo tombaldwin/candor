@@ -608,7 +608,9 @@ engine_present() {
     *) return 1;;
   esac
 }
-# auto-fetch a missing engine (used by init — a setup command, so a fetch is expected; scan never does this).
+# auto-fetch a missing engine, with init's own reporting. NOTE the sibling: `autofetch_engine` above is
+# the SCAN path's version of this, and every engine arm in `engine_scan` now uses it — the comment here
+# used to end "scan never does this", which stopped being true for rust and swift and then for java.
 ensure_engine() {
   engine_present "$1" && return 0
   echo "  · the $1 engine isn't installed — fetching it (candor update $1)…"
@@ -644,6 +646,17 @@ engine_scan() {
     rust) local c; c=$(rust_bin candor-scan) || { autofetch_engine rust && c=$(rust_bin candor-scan); }; [ -n "$c" ] || die "a Rust project, but the rust engine isn't installed and could not be fetched — run \`candor update rust\`."; run "$c" "$@";;
     ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN_TS" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
+      # SELF-HEAL, exactly as the rust and swift arms above do. This arm alone used to fall through to
+      # `run_java`, whose last tier dies with "run `candor update` to fetch it" — so a first-time JVM user
+      # pasting `candor scan .` got an instruction instead of a scan, while a Rust user pasting the same
+      # line just worked. Three arms self-healing and one not is worse than none: nothing tells the reader
+      # which language they are in.
+      #
+      # HERE AND NOT IN `run_java`, deliberately: `engine_release` calls `run_java --version` to PROBE the
+      # installed engine, and a probe that installs is not a probe. Putting the fetch on the scan path
+      # keeps it where the user asked for work to be done.
+      engine_present java || autofetch_engine java \
+        || die "a Java project, but the JVM engine isn't installed and could not be fetched — run \`candor update java\`."
       # --workspace/--deps is N/A for the bytecode engine — it is given the whole classpath, so cross-module
       # interface dispatch resolves natively (no per-package chaining). The JVM CLI errors on the unknown flag,
       # so strip it here with a note (the source engines rust/ts/swift forward it unchanged via "$@").

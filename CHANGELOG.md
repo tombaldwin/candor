@@ -8,6 +8,26 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 (later still) — `candor scan` self-heals a missing JVM engine
+
+Three of the four scan arms already fetched a missing engine; the JVM arm fell through to `run_java`,
+whose last tier dies with *"run `candor update` to fetch it"*. So a first-time Rust user pasting
+`candor scan .` just worked, and a first-time JVM user pasting the identical line got an instruction
+instead of a scan. **Three arms self-healing and one not is worse than none self-healing** — nothing in
+the output tells the reader which language they happen to be in, so the behaviour looks arbitrary.
+
+The java arm now calls the same `autofetch_engine` the rust and swift arms use: it announces what it is
+fetching and from where, fetches, and goes on to scan. With `CANDOR_NO_AUTOFETCH=1` it exits 2 naming
+the remedy, rather than crashing — verified both ways, including that the healed run then produces a
+report rather than merely installing something.
+
+**Put on the scan path, not inside `run_java`**, because `engine_release` calls `run_java --version` to
+PROBE which engine is installed, and a probe that installs is not a probe.
+
+A comment on `ensure_engine` still read *"scan never does this"*. That stopped being true for rust and
+swift some time ago and is now false for java too; corrected rather than left as a description of a
+policy the code had already abandoned.
+
 ## 2026-09-14 (later) — `candor update`: it looked hung, and it lied about the engine it installed
 
 Three defects, all in the first thing a new user runs after installing.

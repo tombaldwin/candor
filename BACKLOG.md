@@ -287,6 +287,41 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-14, not remembered)
+
+Everything in §§0b–6b is closed. The queue below is ordered by what a user can lose, which is not the
+order it was filed in.
+
+**A. TWO rust SILENT UNDER-REPORTS, both AGENT-MEASURED AND NOT COORDINATOR-VERIFIED.** This is the top
+of the list and the verification is the first step, not the fix — the register's own standing rule is
+that a row is not evidence until falsified against a pre-fix binary, and neither of these has been.
+  - **R400** — `super::super::X` strips N levels and resolves against ONE. *"HEAD is worse than a miss,
+    it is confidently wrong."* `lang.rs:2458`.
+  - **R401** — R380's wrapper peel misses `Pin`, `HashMap` lookup, `Weak`, `ManuallyDrop`. Residual,
+    pre-existing at v0.36.0. `lang.rs:301`. This is the R346 shape — *one spelling over* — so the fix
+    must write the WHOLE family into one fixture, not the spelling in hand ([[candor-allowlist-chain]]).
+
+**B. R415 — swift, a live SPEC ⟨0.29⟩ non-conformance.** `locatorLabelsForFree` narrowed the positional
+picker by three names and the call site still falls back to a whole-argument scan. Found by a Fable plan
+review correcting a claim I made; the R393 residual it was supposed to retire is NOT retired.
+
+**C. THE INSTRUMENT CLUSTER — R402-R408, §5b.** The things that authorise a release and are themselves
+ungated. **Two of this family were closed on 2026-09-13/14 and both were found the same way — by running
+the instrument's own fault hook rather than by reading it:** R427 (`gate-run.sh` called candor-java's
+whole gate list NOT GREEN because GraalVM is absent) and R428 (`ci-watch.sh`'s earlier-commit red guard
+was CORRECT and UNREACHABLE — `CI_WATCH_FAULT=stale-red` produced a green summary). R403 is the root of
+the rest: `ci-watch.sh` has no automated coverage of any kind, and R402/R404 are two more of its arms.
+**Do these as a block while the area is warm, and start each one by trying to make the guard fire.**
+
+**D. R413** — release-preflight's [5b] and [9] can contradict once a repo is tagged mid-cut, and [9]'s
+remedy wrote a FALSE heading. Bites only during a cut; fix before the next one.
+
+**NOT WORK: R412** is BUILT, MEASURED and DELIBERATELY NOT SHIPPED — see the DO-NOT list below. Leave it.
+
+**A RELEASE HOLD IS NOW OPEN, and it is deliberate:** SPEC.md describes ⟨0.38⟩ while declaring floor
+0.37, so `release-preflight [12]` will stop the next cut until `spec-bump.sh` runs. The rung is written
+and pinned; the bump is a separate decision.
+
 ### 7. API-surface harvest — DEMOTED, still worth building
 Under its own mechanical first phase ("start where the locator type is mechanical; `String`-typed is the
 residue") it reaches **two** of nine, not six: R410's `hostname: string`, R393's `UnsafePointer<CChar>`,
@@ -478,12 +513,18 @@ still double-cd's`. Coarse neutralisation shows where the suite has teeth: killi
 - **R407** move `--dry-run`'s `exit 0` below the verdict block. **R408** narrow-key `head -1` pin reads.
 
 ### 6. NEEDS TOM — these block or cannot be done from here.
-- **The union-vs-hedge ruling** (SOUNDNESS.md §"OWED TO TOM"). *"Blocking the ⟨0.37⟩ conformance PART"*
-  and *"the engines should not be changed further until it is made."* Note the scope: it governs the
-  `#[cfg]`-arm semantics and the `use`/type route, NOT the classify-guard widenings in §1 — those are a
-  different surface and can proceed. UNION reverts nothing and has the R222 precedent; the owed fixture
-  (whether a union surface can CERTIFY where a hedge failed closed) is still argument, not result, and
-  two attempts never reached the shape.
+- ~~**The union-vs-hedge ruling**~~ **CLOSED. RULED UNION by Tom 2026-09-12; CARRIED OUT 2026-09-13/14
+  as ⟨0.38⟩ + PART 89** (candor-rust `e56fbca`, candor-swift `cae604a`, spec clause + part + ledger).
+  The owed fixture — *"whether a union surface can CERTIFY where a hedge failed closed"* — is built, and
+  it ANSWERED THE OPPOSITE WAY ROUND: the union fails closed; it is the HEDGE that exits 0 under
+  `allow Fs`, by renaming the effect to `Unknown`, which a bare `allow` does not constrain.
+  **This item sat here for two days after it had been decided**, which is the third stale-snapshot in
+  this file in one week — the entry is struck rather than deleted for that reason.
+  **The ruling's own premise was measured FALSE**: it said "the engines already do it, so this confirms
+  `main`". rust hedged on the `use`-alias route (one program answering two ways depending on whether its
+  alias crossed a module boundary) and swift PICKED BY SOURCE ORDER on the `typealias` route — a cardinal
+  sin, R429, that a bare `deny` structurally cannot see because the helper carries the effect as a unit
+  of its own. Carrying out a ruling is not always a no-op, even when the ruling says it is.
 - **uflexi access.** `git ls-remote` on that repo is `Permission denied (publickey)` from this machine,
   so the local clone is a stale 2025-07-28 snapshot and **we cannot tell whether our one field
   deployment still runs candor.** A Fable claim that it does not was withdrawn on this evidence — the

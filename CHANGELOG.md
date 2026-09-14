@@ -10,6 +10,32 @@ keeps its own.
 
 ## 2026-09-14 (later still) — `candor scan` self-heals a missing JVM engine
 
+Two follow-ons, both found by running the three-line install block from a machine with nothing on it.
+
+**`candor update` is out of the install copy.** Now that every scan arm self-heals, `candor scan .`
+fetches the one engine that repo needs. `candor update` is the existing-user command — it syncs the whole
+family to a new pin after `brew upgrade candor`. In the install block it made a first-time reader
+download three engines to fix a problem they did not have.
+
+**The failed-fetch message named a remedy that could not work.** `candor update <lang>` SKIPS rather than
+fails when the prerequisite is missing — no cargo ⇒ "skipped (no Rust toolchain)" — so a scan that then
+said *"could not be fetched — run `candor update rust`"* sent the user round a loop whose second lap
+prints the same skip. Measured end to end: announce a fetch, skip it, then advise the command that just
+skipped. It now says **"install a Rust toolchain first (https://rustup.rs), then re-run"** when cargo is
+absent, and keeps the update command when cargo is present; swift names its macOS-arm64 constraint the
+same way. A failure has to carry a remedy that can actually work.
+
+**Worth knowing, not fixed here:** candor-java and candor-swift ship native binaries — *no JVM required*,
+*no Swift toolchain required* — while **candor-rust publishes no release assets at all**, so the Rust
+engine is the only one that needs a compiler on the user's machine. That is the reverse of what a reader
+would guess, and it is why the rust arm is the one that can dead-end.
+
+**And the progress fix would have regressed the moment anyone piped it.** `sed` line-buffers on a tty and
+BLOCK-buffers into a pipe, so `candor update | tee build.log` — and the autofetch path, which sends this
+to stderr — would have gone silent again and dumped at the end. Replaced with a `read` loop, which emits
+per line whatever stdout is. Verified through a pipe: one line per second, not four at the end.
+
+
 Three of the four scan arms already fetched a missing engine; the JVM arm fell through to `run_java`,
 whose last tier dies with *"run `candor update` to fetch it"*. So a first-time Rust user pasting
 `candor scan .` just worked, and a first-time JVM user pasting the identical line got an instruction

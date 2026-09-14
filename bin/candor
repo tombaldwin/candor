@@ -567,6 +567,26 @@ engine_name() {
 # from the same package registries `candor update` uses (github.com · crates.io · npm) — no candor
 # server, no telemetry — and says so before it does it, because a tool that reaches the network without
 # saying so has spent trust it cannot get back. CANDOR_NO_AUTOFETCH=1 turns it off.
+# THE REMEDY A FAILED AUTOFETCH SHOULD NAME — which is not always "run candor update".
+#
+# `candor update <lang>` SKIPS rather than fails when the prerequisite is absent: no cargo ⇒ the rust arm
+# prints "skipped (no Rust toolchain)", and a non-arm64-mac ⇒ the swift arm has no binary to fetch. So a
+# scan that told the user to run `candor update rust` after the autofetch had already run it sent them
+# round a loop whose second lap prints the same skip. That is a dead end, and this family's UX rule is
+# that a failure carries a remedy that can actually work.
+#
+# candor-java and candor-swift ship native binaries (no JVM, no Swift toolchain); candor-rust publishes
+# NO release assets, so the Rust engine is the one that genuinely requires a toolchain on the user's
+# machine. Until that changes, say so plainly instead of naming a command that will skip again.
+missing_engine_remedy() {
+  case "$1" in
+    rust)  have cargo || { echo "install a Rust toolchain first (https://rustup.rs), then re-run"; return; }
+           echo "run \`candor update rust\`";;
+    swift) if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then echo "run \`candor update swift\`"
+           else echo "the prebuilt engine is macOS arm64 only — build candor-swift from source, or scan on a Mac"; fi;;
+    *)     echo "run \`candor update $1\`";;
+  esac
+}
 autofetch_engine() {
   local lang="$1"
   [ -z "${CANDOR_NO_AUTOFETCH:-}" ] || return 1
@@ -643,7 +663,7 @@ engine_release() {
 engine_scan() {
   local lang="$1"; shift
   case "$lang" in
-    rust) local c; c=$(rust_bin candor-scan) || { autofetch_engine rust && c=$(rust_bin candor-scan); }; [ -n "$c" ] || die "a Rust project, but the rust engine isn't installed and could not be fetched — run \`candor update rust\`."; run "$c" "$@";;
+    rust) local c; c=$(rust_bin candor-scan) || { autofetch_engine rust && c=$(rust_bin candor-scan); }; [ -n "$c" ] || die "a Rust project, but the rust engine isn't installed and could not be fetched — $(missing_engine_remedy rust)."; run "$c" "$@";;
     ts)    if have candor-ts; then run candor-ts "$@"; elif have node; then run npx -y "candor-ts@$ENGINE_PIN_TS" "$@"; else die "a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node."; fi;;
     java)
       # SELF-HEAL, exactly as the rust and swift arms above do. This arm alone used to fall through to
@@ -656,7 +676,7 @@ engine_scan() {
       # installed engine, and a probe that installs is not a probe. Putting the fetch on the scan path
       # keeps it where the user asked for work to be done.
       engine_present java || autofetch_engine java \
-        || die "a Java project, but the JVM engine isn't installed and could not be fetched — run \`candor update java\`."
+        || die "a Java project, but the JVM engine isn't installed and could not be fetched — $(missing_engine_remedy java)."
       # --workspace/--deps is N/A for the bytecode engine — it is given the whole classpath, so cross-module
       # interface dispatch resolves natively (no per-package chaining). The JVM CLI errors on the unknown flag,
       # so strip it here with a note (the source engines rust/ts/swift forward it unchanged via "$@").
@@ -679,7 +699,7 @@ engine_scan() {
           if [ -d "$jt" ] && mkdir -p "$jt/.candor" 2>/dev/null; then run_java "$@" --json "$jt/.candor/report.json"
           else run_java "$@"; fi;;
       esac;;
-    swift) local c; c=$(rust_bin candor-swift) || { autofetch_engine swift && c=$(rust_bin candor-swift); }; [ -n "$c" ] || die "a Swift project, but the swift engine isn't installed and could not be fetched — run \`candor update swift\`."; run "$c" "$@";;
+    swift) local c; c=$(rust_bin candor-swift) || { autofetch_engine swift && c=$(rust_bin candor-swift); }; [ -n "$c" ] || die "a Swift project, but the swift engine isn't installed and could not be fetched — $(missing_engine_remedy swift)."; run "$c" "$@";;
     *) die "no engine for '$lang'.";;
   esac
 }
@@ -1326,8 +1346,12 @@ PY
         # READ CARGO'S STATUS, NOT SED'S. `if cargo … | sed …; then` tests the LAST command in the
         # pipeline, so a failed build behind a successful `sed` reports ✔ — the exact false-green this
         # tool exists to refuse, in its own installer. PIPESTATUS[0] is the only honest read here.
+        # A `read` LOOP, NOT `sed`. sed line-buffers on a tty and BLOCK-buffers into a pipe, so
+        # `candor update | tee build.log`, or the autofetch path where scan sends this to stderr, would
+        # sit silent and then dump everything at the end — the hang this whole change removes, back
+        # again for anyone who pipes. A read loop emits per line whatever stdout is.
         cargo install --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>&1 \
-          | sed 's/^/           /'
+          | while IFS= read -r cline; do printf '           %s\n' "$cline"; done
         if [ "${PIPESTATUS[0]}" -eq 0 ]; then
           echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
         else

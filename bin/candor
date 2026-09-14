@@ -1334,7 +1334,47 @@ PY
     fi
     # --- Rust engine: needs a toolchain; set up only when present ---
     if want rust; then
-      if have cargo; then
+      # PREBUILT BINARY FIRST — candor-rust ships `candor-scan-<plat>` / `candor-query-<plat>` from
+      # ⟨0.38⟩ onward (`.github/workflows/binaries.yml`). Before that it published no assets at all,
+      # which made the Rust engine the ONLY one in the family that required a compiler on the user's
+      # machine — candor-java and candor-swift have shipped native binaries for releases. The curl
+      # simply 404s for an older pin and falls through to cargo, so this needs no version test.
+      #
+      # Seconds instead of minutes, and no toolchain: the reason `candor scan .` can self-heal on a
+      # Rust project at all. cargo remains the fallback for platforms with no published binary.
+      rust_plat=""
+      case "$(uname -s)/$(uname -m)" in
+        Darwin/arm64) rust_plat=macos-arm64;;
+        Linux/x86_64) rust_plat=linux-x64;;
+      esac
+      rust_done=""
+      if [ -n "$rust_plat" ]; then
+        rbase="https://github.com/tombaldwin/candor-rust/releases/download/v$ENGINE_PIN_RUST"
+        mkdir -p "$CDBIN"
+        if curl -fsSL -o "$CDBIN/candor-scan.tmp"  "$rbase/candor-scan-$rust_plat"  2>/dev/null \
+        && curl -fsSL -o "$CDBIN/candor-query.tmp" "$rbase/candor-query-$rust_plat" 2>/dev/null; then
+          chmod +x "$CDBIN/candor-scan.tmp" "$CDBIN/candor-query.tmp"
+          # PROVE IT RUNS BEFORE INSTALLING IT. `curl -f` only says the bytes arrived; a truncated or
+          # wrong-arch binary arrives with a 200 and then fails to exec — and this path is what every
+          # later scan resolves, so an unusable file here takes the Rust engine down for every command,
+          # not just this one. Same guard the JVM arm already applies to its native binary.
+          if "$CDBIN/candor-scan.tmp" --version >/dev/null 2>&1 \
+          && "$CDBIN/candor-query.tmp" --version >/dev/null 2>&1; then
+            mv "$CDBIN/candor-scan.tmp"  "$CDBIN/candor-scan"
+            mv "$CDBIN/candor-query.tmp" "$CDBIN/candor-query"
+            echo "  rust   → native binaries (candor-scan/-query-$rust_plat), no Rust toolchain required"
+            installed_or_shadowed candor-scan "$CDBIN/candor-scan" || jvm_rc=1
+            rust_done=1
+          else
+            rm -f "$CDBIN/candor-scan.tmp" "$CDBIN/candor-query.tmp"
+            echo "  rust   → published binary for v$ENGINE_PIN_RUST did not run here; falling back to cargo"
+          fi
+        else
+          rm -f "$CDBIN/candor-scan.tmp" "$CDBIN/candor-query.tmp"
+        fi
+      fi
+      if [ -n "$rust_done" ]; then :
+      elif have cargo; then
         echo "  rust   → cargo install --version $ENGINE_PIN_RUST candor-scan candor-query"
         echo "           building from source — this takes a few minutes, cargo reports below"
         # Pin to ENGINE_PIN (NOT latest) so the whole family stays at one version — an unpinned `cargo install`
@@ -1358,7 +1398,8 @@ PY
           echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
         fi
       else
-        echo "  rust   → skipped (no Rust toolchain; install rustup to enable the Rust engine)"
+        echo "  rust   → skipped: no published binary for v$ENGINE_PIN_RUST on $(uname -s)/$(uname -m),"
+        echo "           and no Rust toolchain to build one (https://rustup.rs)"
       fi
     fi
     # --- Swift engine: a released macOS binary from 0.27, source build below that ---

@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 (later still) — `candor update rust` prefers a prebuilt binary
+
+candor-rust now publishes `candor-scan-<plat>` / `candor-query-<plat>` for `macos-arm64` and
+`linux-x64`, so the Rust arm fetches a binary in seconds instead of building from source for minutes —
+and, more to the point, **without a Rust toolchain at all**. It was the only engine in the family that
+required one; candor-java and candor-swift have shipped native binaries for releases.
+
+The curl simply 404s for a pin older than ⟨0.38⟩ and falls through to cargo, so no version test is
+needed, and cargo remains the path for platforms with no published binary. The downloaded binaries are
+**run before being installed** — `curl -f` only says the bytes arrived, and a truncated or wrong-arch
+file arrives with a 200 and then fails to exec, which would take the Rust engine down for every later
+command rather than just this one. That is the guard the JVM arm already applied to its native binary.
+
+Verified against the current state, where v0.38.0 has no assets yet: the fetch fails, and `update` falls
+back to cargo without breaking.
+
 ## 2026-09-14 (later still) — `candor scan` self-heals a missing JVM engine
 
 Two follow-ons, both found by running the three-line install block from a machine with nothing on it.

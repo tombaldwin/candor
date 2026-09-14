@@ -300,15 +300,25 @@ rs_banner() { # $1 = the calling script's own note/info function name
 # one the release meant, so it prints them and fails rather than picking. A loud refusal is recoverable;
 # a wrong version silently verified is not.
 #
-# Prints the version on stdout and returns 0; on disagreement prints nothing, writes the candidates to
-# stderr and returns 1. An ABSENT key returns 1 with no output, exactly as `head -1` yielded "" before,
-# so callers that treat empty as "not pinned here" are unchanged.
+# Prints the version on stdout and returns 0. **A REFUSAL RETURNS 2; AN ABSENT KEY RETURNS 1.** Those
+# two must not share an exit code, and the first cut of this function made them share one — which cost a
+# FALSE GREEN in the release gate within the hour.
+#
+# `grabver` in release-preflight.sh is `[ -n "$v" ] && { …collect… }`: it treats an empty answer as
+# "nothing here", which is right for an absent key and catastrophic for a refusal. A refusing repo
+# dropped silently out of the build-version set and preflight then printed **"✔ all self-declared build
+# versions agree"** over a repo it had never read — MEASURED with one line of `candor-query/Cargo.toml`
+# changed to 0.36.0, where the pre-R408 `head -1` had answered with a hard `✘`. The guard lost the
+# finding it was written to protect.
+#
+# So the distinction is in the EXIT CODE, where a caller cannot spend it by accident, rather than in the
+# empty string, where three of four callers happened to check and one did not.
 pin_version() {                 # $1 = file, $2 = extended-regex matching key+version, $3 = version regex
   local f="$1" keyre="$2" vre="${3:-[0-9]+\.[0-9]+\.[0-9]+}"
   [ -f "$f" ] || return 1
   local all uniq n
   all="$(grep -oE "$keyre" "$f" 2>/dev/null | grep -oE "$vre")"
-  [ -n "$all" ] || return 1
+  [ -n "$all" ] || return 1        # ABSENT — silent, as `head -1` was
   uniq="$(printf '%s\n' "$all" | sort -u)"
   n="$(printf '%s\n' "$uniq" | grep -c .)"
   if [ "$n" -gt 1 ]; then
@@ -321,7 +331,7 @@ pin_version() {                 # $1 = file, $2 = extended-regex matching key+ve
     printf '%s\n' "$uniq" | while IFS= read -r _v; do [ -n "$_v" ] && printf '  %s\n' "$_v" >&2; done
     printf '  (the key is not unique in this file; `head -1` would have answered %s by line order alone)\n' \
            "$(printf '%s\n' "$all" | head -1)" >&2
-    return 1
+    return 2                       # REFUSED — never confusable with absent
   fi
   printf '%s' "$uniq"
 }

@@ -428,7 +428,16 @@ declare -a builds=()
 declare -a set_builds=()
 grabver() { # $1 label ; $2 file ; $3 regex ; $4 owning repo
   local f="$ROOT/$2"; [ -f "$f" ] || return
-  local v; v="$(pin_version "$f" "$3")"                     # R408 — refuses on a key that matches two versions
+  # A REFUSAL IS A FINDING, NOT AN ABSENCE. This line was `[ -n "$v" ] && {…}`, which silently dropped a
+  # refusing repo out of `builds` — and the agreement check below then printed "✔ all self-declared build
+  # versions agree" over a repo it had never read. A false GREEN in the gate that authorises the release,
+  # introduced by the fix for a false green one check over. `pin_version` now separates the two by EXIT
+  # CODE so this cannot be got wrong by omission.
+  local v rc; v="$(pin_version "$f" "$3")"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    bad "$1: the version key is not unique in $2 — refusing to guess which line is the build version (see the candidates above). This repo was NOT included in the agreement check."
+    return
+  fi
   [ -n "$v" ] && { note "$1: $v"; builds+=("$v"); rs_in_set "$4" && set_builds+=("$v"); }
 }
 grabver "agents VERSION" "candor-agents/candor_agents/scan.py"            'VERSION *= *"agents-[0-9.]+'     candor-agents

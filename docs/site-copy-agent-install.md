@@ -45,6 +45,22 @@ to make on the way.
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
 > clients and directories can discover it without anyone pasting a link.
 
+**What "fetches the engine it needs" is true of, exactly.** Measured on a machine with nothing
+installed, one language at a time:
+
+| language | what `candor scan .` needs from the reader |
+| --- | --- |
+| JVM | **nothing** — fetches a native binary, no JVM required |
+| Swift | **nothing** on macOS arm64 — fetches a native binary, no Swift toolchain |
+| TypeScript | **Node**, which the reader already has if this is their repo; the engine runs via `npx` |
+| Rust | **cargo today.** candor-rust only began publishing binaries after v0.38.0, so the fetch 404s and falls back to a source build. From the next release it needs nothing, like the JVM and Swift rows. |
+
+Neither remaining prerequisite is one a reader in that language is likely to lack — a Rust developer has
+cargo and a Node developer has Node — and both now fail with a remedy that works (`https://rustup.rs`,
+"install Node") rather than the old loop that advised a command which would skip again. **Do not write
+"no prerequisites" on the page until the Rust row says "nothing"**; that is one release away, not
+shipped.
+
 **`candor update` is deliberately NOT in this block, and that is a recent change.** The formula installs
 only the dispatcher (`bin.install "bin/candor"`), so something has to fetch an engine — but `candor scan`
 now does it itself, for all four languages, announcing what it is fetching and from where. It pulls the

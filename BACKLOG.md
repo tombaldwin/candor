@@ -292,7 +292,14 @@ so the next rung is probably not a new idea, it is finishing this one.
 Everything in §§0b–6b is closed. The queue below is ordered by what a user can lose, which is not the
 order it was filed in.
 
-**A. TWO rust SILENT UNDER-REPORTS, both AGENT-MEASURED AND NOT COORDINATOR-VERIFIED.** This is the top
+**A. rust wrapper-peel gaps — R401. (R400's fabrication half is CLOSED; its under-report half stays open.)**
+*Updated 2026-09-14 after verification. **R430 was filed here and WITHDRAWN the same day — it was not a
+defect, it was my extraction script asking for `FBox.run` where the report says `FBox::run`.** The
+fix-order note it created is void. What caught it: an in-tree test PASSING on source my CLI run called
+silent — a test and a CLI disagreeing about identical bytes has to be resolved before either is believed.
+The general rule, and it cost an hour: **print the whole set; do not probe for the names you expect.***
+
+**PRIOR STATE, kept for the record:** This is the top
 of the list and the verification is the first step, not the fix — the register's own standing rule is
 that a row is not evidence until falsified against a pre-fix binary, and neither of these has been.
   - **R400** — `super::super::X` strips N levels and resolves against ONE. *"HEAD is worse than a miss,

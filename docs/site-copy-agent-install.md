@@ -7,40 +7,58 @@ remote document and act on whatever it currently says: the instructions can chan
 be tampered with, and arrive from somewhere other than the thing being installed.
 
 **Every command below was run end to end before this file was written**, and re-run against 0.38.0 on
-2026-09-14. A first draft of this copy led with `candor mcp install` and `npx -y candor-ts --mcp`; both
-were wrong for a first-time reader at the time — the first needs candor already on PATH (in an *install*
-guide), and the second was a flag the published package did not have. One of those two has since
-shipped and is used below; see **What changed since the first draft**.
+2026-09-14 — on a Rust, a TypeScript, a JVM and a Swift project, not just one. A first draft led with
+`candor mcp install` and `npx -y candor-ts --mcp`; both were wrong for a first-time reader at the time —
+the first needs candor already on PATH (so it belongs under a route that says so, which it now does), and
+the second was a flag the published package did not have (it has since shipped, and is used below).
 
 ---
 
 ## USE NOW — tested against the published 0.38.0
 
+**Two routes, and the page should show both.** The previous draft led with `npx` and put every other
+language in an italic parenthetical, which reads as "candor is a TypeScript tool". It is a four-engine
+family, and the route below that does not mention a language is the one most readers want.
+
+### Route A — already have candor installed (any language)
+
 > ### Give your agent candor
 >
-> Two commands, nothing to install first. Your agent asks *"what's the blast radius of this change?"* or
-> *"what reaches the network?"* and gets a deterministic answer from a precomputed map, instead of
-> tracing call graphs by hand.
+> ```bash
+> candor scan .                             # map the repo — any language
+> claude mcp add candor -- candor mcp       # give the agent the queries
+> ```
 >
+> `candor scan` dispatches to whichever engine fits the repo — Rust, the JVM, Swift or TypeScript — and
+> `candor mcp` reads whatever engine's report is in `.candor/`. One pair of commands regardless of what
+> the project is written in. `candor mcp install` writes the same `.mcp.json` for you, and
+> `candor mcp --help` prints the snippet — from the copy on your machine, not from a URL.
+>
+> Not installed yet? `brew install tombaldwin/tap/candor`, then `candor update` to fetch the engines.
+
+### Route B — nothing installed, TypeScript or JavaScript
+
 > ```bash
 > npx -y candor-ts . --out .candor/report          # map the repo
 > claude mcp add candor -- npx -y candor-ts --mcp  # give the agent the queries
 > ```
 >
+> Zero install — `npx` fetches the engine for the run. TypeScript works as written; for a
+> **JavaScript** repo add `--allow-js` to the scan line.
+
+### Shared copy for either route
+
+> Your agent asks *"what's the blast radius of this change?"* or *"what reaches the network?"* and gets a
+> deterministic answer from a precomputed map, instead of tracing call graphs by hand.
+>
 > Claude Code will ask you to approve the server the next time you start it — that prompt is the point:
 > nothing registers itself behind your back.
 >
-> Any MCP client works; point it at `npx -y candor-ts --mcp`. Already have candor installed?
-> `candor mcp install` writes the same `.mcp.json` for you, and `candor mcp --help` prints the snippet —
-> from the copy on your machine, not from a URL.
+> Any MCP client works; point it at `candor mcp` (Route A) or `npx -y candor-ts --mcp` (Route B).
 >
 > Your client may already know about candor: it is published to the
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
 > clients and directories can discover it without anyone pasting a link.
->
-> *(`npx` covers TypeScript out of the box; for a **JavaScript** repo add `--allow-js` to the scan line.
-> For Rust, the JVM or Swift, install that engine — `cargo install candor-scan`, the `candor-java` jar,
-> `brew install tombaldwin/tap/candor` — then `candor scan .` and the same `claude mcp add` line.)*
 
 ---
 
@@ -65,7 +83,19 @@ real, verified by running them rather than by assuming the release implied them:
    `money.candor/candor-finance`, also answers that search — look for the `io.github.tombaldwin` name
    specifically.
 
-## Two corrections to the previous draft, both found by re-running its own commands
+## Three corrections to the previous draft
+
+The first was a review catch; the other two came from re-running the draft's own commands.
+
+- **It read as a TypeScript tool.** Both headline commands were `candor-ts`, and every other language sat
+  in an italic parenthetical ending "…then `candor scan .` and the same `claude mcp add` line". The
+  parenthetical was *true* — reports are engine-agnostic, and candor-ts's MCP server does read a Rust
+  report (measured: `candor_where Exec` → `{"directly":["fetch"]}` against a `candor-scan` report) — but
+  telling someone who just ran `cargo install candor-scan` to invoke an **npm package** for the server is
+  the wrong shape, and burying three of four engines in an aside misrepresents what candor is. The two
+  routes are now peers, and Route A names no language at all. Verified on all four:
+  `candor scan .` → `candor-scan` on a Rust crate, `candor-ts` on a TS project, `candor-java` on compiled
+  classes (`Fs 1`, 1 entry), `candor-swift` on an SPM package — then `candor mcp` served each report.
 
 - **`npx` does not cover plain JavaScript without a flag.** The old parenthetical said it "covers
   JavaScript and TypeScript". Measured: a JS-only repo answers

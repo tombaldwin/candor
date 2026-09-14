@@ -8,6 +8,25 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 — two release instruments that were lying, both caught by their own fault hooks
+
+- **`gate-run.sh` — a missing GraalVM made candor-java's whole gate list read NOT GREEN** with no defect
+  in the repo (SOUNDNESS R427). `./gradlew nativeCompile` is a path the repo owns, so the pre-run skip
+  check runs it, and it then fails inside on the absent toolchain: nine gates green, one red, verdict
+  NOT GREEN. This is the sibling of the `${{ }}` arm that file already carries, which exists because an
+  unexpandable GitHub expression "made candor-java permanently red for a reason that is not a defect in
+  candor-java" — a missing toolchain is the same thing by another spelling, and only one of the two was
+  handled. Matched on the TOOL'S OWN sentence, never on the exit code; calibrated both ways so a genuine
+  `nativeCompile` failure still FAILs; counted as UNRUN, so the verdict stays INCOMPLETE rather than green.
+- **`ci-watch.sh` — the earlier-commit red guard was CORRECT and UNREACHABLE** (SOUNDNESS R428). The
+  branch that prints "no run expected" ends in `continue`, so the check written for exactly that case
+  sat below it and never ran — a failure on commit N stayed invisible the moment a docs-only commit N+1
+  landed whose paths trigger nothing. **Found by the tool's own `CI_WATCH_FAULT=stale-red`**, which
+  recolours every completed non-HEAD run as a failure and still produced `ci-watch: OK`. A guard that
+  cannot be made to fire is not a guard, and this is the first time a fault hook here has caught its own
+  arm being unreachable rather than wrong. The re-verification recipe is now in the function header,
+  because it needs the live API and cannot live in `--selftest`.
+
 ## 2026-09-13 — the tooling a code review found wanting (released 2026-09-13 as 0.37.0)
 
 - **Front-door pins moved to 0.37.0** — `ENGINE_PIN`, the `adopt/` java + agents pins, and the VS Code /

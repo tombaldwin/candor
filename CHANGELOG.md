@@ -10,6 +10,15 @@ keeps its own.
 
 ## 2026-09-14 — family build bump (released 2026-09-14 as 0.38.0)
 
+**Pins moved to 0.38.0 after the engines published**, which is the order that makes them meaningful:
+`bin/candor` `ENGINE_PIN`, `adopt/candor.yml` (`CANDOR_JAVA_VERSION`), `adopt/candor-digest.yml`
+(`candor-agents@v0.38.0`), the VS Code extension's `version` **and** `candorTsVersion` (they must track
+each other at major.minor — enforced by `integrations/vscode/test-vscode.sh` gate 4, not by preflight),
+and JetBrains' `candorTsVersion` + `candorJavaVersion`. Each was RESOLVED before being written, not
+string-matched: crates ×4 at 0.38.0, `candor-ts@0.38.0` on npm, six GitHub releases all non-draft, and
+the jar the jbang and adopt pins name returning HTTP 200 at 1,243,992 bytes — byte-identical to the
+locally built artifact. That is the 0.24 lesson: a pin naming a URL is not the URL existing.
+
 `assert-audit`'s structural arm no longer counts a **version constant** as an effect-classification
 rule. It reddened candor-ts's `main` at the ⟨0.38⟩ bump, after the release was staged, on the single
 line every floor bump edits in every rule file: `const SPEC_VERSION = "0.38"`. By the arm's own words a

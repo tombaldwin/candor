@@ -94,7 +94,7 @@ declare -a specs=()
 grab() { # $1 label ; $2 file ; $3 regex capturing the version
   local f="$ROOT/$2"
   [ -f "$f" ] || { bad "$1: missing $2"; return; }
-  local v; v="$(grep -oE "$3" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+  local v; v="$(pin_version "$f" "$3" '[0-9]+\.[0-9]+')"   # R408 — refuses on a key that matches two versions
   [ -n "$v" ] || { bad "$1: no spec string in $2"; return; }
   note "$1: spec $v"; specs+=("$v")
 }
@@ -310,6 +310,34 @@ checkpin() { # $1 label ; $2 file ; $3 grep pattern to show
   local f="$ROOT/$2"; [ -f "$f" ] || { note "$1: (no $2)"; return; }
   local line; line="$(grep -nE "$3" "$f" | head -1)"
   [ -n "$line" ] && note "$1: $line" || note "$1: (pin not found)"
+  # SOUNDNESS R408, the arm `pin_version` does not reach. The `head -1` above picks the FIRST matching
+  # LINE and the comparison below asks only whether THAT line contains $WANT_VER. So a version-bearing
+  # line that matches the pattern before the real pin is judged instead of it — and if it happens to
+  # carry the wanted version, this gate goes GREEN over a stale pin. Measured on the live
+  # `adopt/candor.yml` with one bump note added above the pin: this check reported the COMMENT as the
+  # pin. Not hypothetical and not ordering-proof.
+  #
+  # Refuse rather than choose: if the pattern matches lines carrying MORE THAN ONE distinct version,
+  # no rule here can say which is the pin. Patterns that name no version at all (`candor-agents@`,
+  # `releases/download`, `ENGINE_PIN=`) extract nothing and are unaffected.
+  # THE AMBIGUITY IS ABOUT WHICH *LINE* IS THE PIN, NOT ABOUT TEXT ON ONE LINE — and the first cut of
+  # this guard got that wrong and fired on a CLEAN tree. `ENGINE_PIN="0.37.0"` carries a trailing comment
+  # that mentions 0.18.0 and 0.23.1 (the history note explaining why the pin must move), so counting every
+  # version ON the matching line found three and refused a correct pin. A false RED in a release gate,
+  # introduced by the fix for a false GREEN, one level over. Caught by running the clean tree — which is
+  # why the calibration is both directions, always.
+  #
+  # So: take the FIRST version on EACH matching line (the one adjacent to the key), and refuse only when
+  # two different LINES disagree. One matching line is never ambiguous, whatever its comment says.
+  local _vs _nv
+  _vs="$(grep -E "$3" "$f" 2>/dev/null \
+         | while IFS= read -r _l; do printf '%s' "$_l" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; done \
+         | grep -E '.' | sort -u)"
+  _nv="$(printf '%s\n' "$_vs" | grep -c .)"
+  if [ "${_nv:-0}" -gt 1 ]; then
+    bad "$1: the pin pattern matches $_nv DIFFERENT versions in $2 — the key is not unique, so which line is the pin depends on ORDER. Refusing to judge one: $(printf '%s' "$_vs" | tr '\n' ' ')"
+    return
+  fi
   # WHOSE VERSION DOES THIS PIN NAME? Each of these names exactly ONE engine's release, so a cut moves
   # the pins whose owner it publishes and no others — demanding $VER from a pin naming an engine this
   # cut is not touching asks for a version that will never exist. (Family-wide: every owner is in the
@@ -400,7 +428,7 @@ declare -a builds=()
 declare -a set_builds=()
 grabver() { # $1 label ; $2 file ; $3 regex ; $4 owning repo
   local f="$ROOT/$2"; [ -f "$f" ] || return
-  local v; v="$(grep -oE "$3" "$f" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  local v; v="$(pin_version "$f" "$3")"                     # R408 — refuses on a key that matches two versions
   [ -n "$v" ] && { note "$1: $v"; builds+=("$v"); rs_in_set "$4" && set_builds+=("$v"); }
 }
 grabver "agents VERSION" "candor-agents/candor_agents/scan.py"            'VERSION *= *"agents-[0-9.]+'     candor-agents
@@ -506,6 +534,9 @@ elif [ -n "$WANT_VER" ]; then
   bad_dep=0
   while IFS= read -r f; do
     while IFS= read -r line; do
+      # R408 does NOT apply here: this scans ONE captured `$line`, not a file, so `head -1` is over a
+      # single line's matches rather than over line ORDER. Left as it is, and said so — the other four
+      # sites moved to `pin_version` and an unexplained survivor reads like an oversight.
       dv="$(printf '%s' "$line" | grep -oE 'version = "\^?[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
       [ -n "$dv" ] || continue
       [ "$dv" = "$WANT_VER" ] && continue
@@ -523,7 +554,10 @@ fi
 # the release at step 3 — after crates.io and the npm tag have already gone out irreversibly. A documented
 # blind spot is still a blind spot.
 echo "[7] candor-java's gradle version names the jar the release will look for"
-JGRADLE="$(grep -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/candor-java/build.gradle.kts" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+# R408 — `pin_version`, not `head -1`. Anchored to `^version = ` so a `//` comment cannot match today,
+# but "cannot match today" is the reasoning `head -1` was already resting on everywhere else in this
+# file; a second top-level `version =` should refuse, not be silently ordered.
+JGRADLE="$(pin_version "$ROOT/candor-java/build.gradle.kts" '^version = "[0-9]+\.[0-9]+\.[0-9]+"')"
 if ! rs_in_set candor-java; then
   # `release.sh` step 3 only demands the jar for a cut that publishes candor-java. Outside the set the
   # gradle version legitimately names the last release, and the jar for THIS version was never built.

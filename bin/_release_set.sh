@@ -278,3 +278,50 @@ rs_banner() { # $1 = the calling script's own note/info function name
   rs_is_full && return 0
   "$1" "CUT SET: $RS_SET  (scoped — the rest of the family is NOT moving; ENGINE_PIN and the umbrella stay on the family line)"
 }
+
+# ── SOUNDNESS R408 — A PIN EXTRACTED BY `head -1` IS A GUESS WHEN THE KEY MATCHES TWICE ──────────────
+#
+# `release-verify.sh` and `release-preflight.sh` both read a pinned version as
+# `grep -oE "<key>…<version>" | grep -oE '<version>' | head -1`. `head -1` takes whichever match comes
+# FIRST IN THE FILE, which is the narrow-key shape this family measures at 400 vs 16,461 elsewhere: the
+# key is not unique, so the answer depends on line order rather than on meaning.
+#
+# MEASURED, on the real `adopt/candor.yml` with one line added — a bump note of exactly the kind people
+# leave behind:
+#     # upgrade note: CANDOR_JAVA_VERSION: 0.36.2 superseded by the line below
+#     CANDOR_JAVA_VERSION: 0.37.0
+# `head -1` returns **0.36.2**. The real pin is 0.37.0, and the instrument that AUTHORISES a release
+# would have verified the wrong line and said so confidently. Latent in the tree today only because the
+# one file with four key matches happens to carry its real pin first.
+#
+# THE FIX IS NOT "STRIP COMMENTS" — comment syntax differs per file type (`#` in yaml/toml, `//` in
+# gradle, none in json) and a stripper is a fifth thing to keep in sync. It is to REFUSE: if every match
+# agrees, the answer is unambiguous whatever the lines are; if they DISAGREE, no rule here can say which
+# one the release meant, so it prints them and fails rather than picking. A loud refusal is recoverable;
+# a wrong version silently verified is not.
+#
+# Prints the version on stdout and returns 0; on disagreement prints nothing, writes the candidates to
+# stderr and returns 1. An ABSENT key returns 1 with no output, exactly as `head -1` yielded "" before,
+# so callers that treat empty as "not pinned here" are unchanged.
+pin_version() {                 # $1 = file, $2 = extended-regex matching key+version, $3 = version regex
+  local f="$1" keyre="$2" vre="${3:-[0-9]+\.[0-9]+\.[0-9]+}"
+  [ -f "$f" ] || return 1
+  local all uniq n
+  all="$(grep -oE "$keyre" "$f" 2>/dev/null | grep -oE "$vre")"
+  [ -n "$all" ] || return 1
+  uniq="$(printf '%s\n' "$all" | sort -u)"
+  n="$(printf '%s\n' "$uniq" | grep -c .)"
+  if [ "$n" -gt 1 ]; then
+    printf 'pin_version: %s matches %s DIFFERENT versions for this key — refusing to guess which is the pin:\n' \
+           "$f" "$n" >&2
+    # A `while read` loop, NOT `printf '  %s\n' $uniq`: unquoted word-splitting is a BASH behaviour and
+    # these helpers get sourced into an interactive zsh while being developed, where the same line
+    # prints the whole list as ONE word. The output then differs between the shell it was tested in and
+    # the shell it runs in — which is the zsh-splitting trap this repo has been bitten by before.
+    printf '%s\n' "$uniq" | while IFS= read -r _v; do [ -n "$_v" ] && printf '  %s\n' "$_v" >&2; done
+    printf '  (the key is not unique in this file; `head -1` would have answered %s by line order alone)\n' \
+           "$(printf '%s\n' "$all" | head -1)" >&2
+    return 1
+  fi
+  printf '%s' "$uniq"
+}

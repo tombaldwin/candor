@@ -560,6 +560,11 @@ if [ "$SELFTEST" -eq 1 ]; then
   _cmp_case() {  # $1 label ; $2 rows blob ; $3 want_rc ; $4 want_pending ; $5 cancels_in_progress
     local out="${TMPDIR:-/tmp}/ci-watch-cmp.$$" got_rc got_pending
     (
+      # `CI_WATCH_FAULT` is read INSIDE `report_earlier_reds` and is inherited by this subshell, so an
+      # EXPORTED fault variable — which this file's own re-verification recipe tells you to set — made
+      # these cases fail and took umbrella gate 14 red for nothing. Cleared here: a selftest asserts
+      # against the UNFAULTED function, and the faults are for driving the live path.
+      CI_WATCH_FAULT=
       rc=0; pending=0; repo="fakerepo"; d="/nonexistent"; sha="HEADSHA"; WF_PATH_FAILED=0
       dupe_latest=""; latest="$2"; _cip="$5"
       fetch_earlier_commit_rows() { :; }                 # `latest` is supplied directly
@@ -586,6 +591,14 @@ if [ "$SELFTEST" -eq 1 ]; then
   _cmp_case "earlier-commit in_progress"    "$(_row 1 in_progress '' OLDSHA)"       0 0 no
   _cmp_case "cancelled, cancel-in-progress" "$(_row 1 completed cancelled OLDSHA)"  0 1 yes
   _cmp_case "cancelled, NO such group"      "$(_row 1 completed cancelled OLDSHA)"  1 0 no
+  # THE DEDUP LINE (`seen_wf`), which 8 single-line mutations found was asserted by NOTHING: every case
+  # above feeds ONE row, so "only the NEWEST run of each workflow is reported" was untested. Two rows
+  # for one workflow id, newest first: the newest SUCCEEDED, so the older failure must NOT be reported.
+  # Failure direction is a false RED — an older failing run of a workflow whose newest earlier-commit
+  # run passed.
+  _cmp_case "two rows, one workflow: newest wins" \
+            "$(_row 1 completed success OLDSHA)
+$(_row 1 completed failure OLDERSHA)" 0 0 no
   unset -f _cmp_case _row     # ONLY the harness's own helpers — never the functions under test
 
   if gh_call run list -R fake/fake --commit deadbeef; then

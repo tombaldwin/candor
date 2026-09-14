@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 (later) — the review of those fixes found a THIRD lie, and it was mine
+
+- **R437 — the R408 fix turned a caught stale build-constant into a GREEN.** `pin_version` returned an
+  empty string both when a key was ABSENT and when it REFUSED, and `grabver` treats empty as "nothing
+  here". So a refusing repo dropped silently out of the build-version set and preflight printed
+  **"✔ all self-declared build versions agree"** over a repo it had never read — where the pre-R408
+  `head -1` had answered with a hard `✘`. A false GREEN in the gate that authorises the release,
+  introduced by the fix for a false green one check over. The two outcomes are now separated by EXIT
+  CODE (refused = 2, absent = 1), where a caller cannot spend the distinction by accident, and `grabver`
+  reports a refusal as a finding.
+- **`CI_WATCH_FAULT` leaked into the R403 selftest subshells**, so an exported fault variable — which
+  this file's own re-verification recipe tells you to set — took umbrella gate 14 red for nothing
+  (`--selftest` exit 3). Cleared in the case subshells; the live fault path still reddens.
+- **The comparison arm gained the case 8 mutations proved was missing**: the `seen_wf` dedup was
+  asserted by nothing, because every case fed a single row. Two rows for one workflow, newest first.
+
 ## 2026-09-14 — two release instruments that were lying, both caught by their own fault hooks
 
 - **`gate-run.sh` — a missing GraalVM made candor-java's whole gate list read NOT GREEN** with no defect

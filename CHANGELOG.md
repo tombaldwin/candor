@@ -8,6 +8,31 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-14 (later) — `candor update`: it looked hung, and it lied about the engine it installed
+
+Three defects, all in the first thing a new user runs after installing.
+
+**It printed nothing for minutes and read as a hang.** The rust engine builds from source, and the call
+was `cargo install -q … 2>/dev/null` — quiet *and* stderr discarded, so cargo's own `Compiling …` lines,
+which are the progress indicator, were thrown away. They now come through, indented under that engine's
+row, behind a line that says the build takes a few minutes.
+
+Fixing that introduced a worse bug for one commit: `if cargo … | sed …; then` tests the LAST command in
+the pipeline, so a FAILED build behind a successful `sed` would have printed ✔. Read `PIPESTATUS[0]`.
+That is this tool's own cardinal sin — a green verdict over an unchecked artifact — in its installer.
+
+**The ✔ verified the file it had just written, not the engine that will run.** `rust_bin` searches PATH
+*first* and only then `~/.candor/bin`, so an engine left on PATH by an older install shadows everything
+`candor update` fetches — and the update said ✔ regardless. Reported from a real machine: `✔ candor-swift
+0.37.0` printed four lines above `candor-swift 0.27.0 (spec 0.27)` in the same run's own summary table.
+The download was correct; the engine that actually runs was from 2026-08-04. The ✔ now resolves the
+engine the way every later command will, and when the two differ it names both paths and the fix, and
+`update` exits non-zero — a shadowed install is not a successful one.
+
+**Long lines wrapped badly even on a wide terminal.** The registries banner, the SPEC DRIFT line and the
+checkout-drift note are wrapped by hand at ~76 columns. These are read in a terminal; a sentence that
+soft-wraps at whatever width the window happens to be reads as damage, not prose.
+
 ## 2026-09-14 — family build bump (released 2026-09-14 as 0.38.0)
 
 **Pins moved to 0.38.0 after the engines published**, which is the order that makes them meaningful:

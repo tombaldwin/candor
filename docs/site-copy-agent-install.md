@@ -16,15 +16,14 @@ the second was a flag the published package did not have (it has since shipped, 
 
 ## USE NOW — tested against the published 0.38.0
 
-The whole path, from nothing installed to an agent that can answer. Four lines, one paste, no choices
+The whole path, from nothing installed to an agent that can answer. Three lines, one paste, no choices
 to make on the way.
 
 > ### Give your agent candor
 >
 > ```bash
 > brew install tombaldwin/tap/candor   # install candor
-> candor update                        # fetch the engines — JVM as a native binary, no JVM needed
-> candor scan .                        # map the repo — engine picked from the manifest
+> candor scan .                        # map the repo — fetches the engine it needs
 > claude mcp add candor -- candor mcp  # give the agent the queries
 > ```
 >
@@ -46,9 +45,12 @@ to make on the way.
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
 > clients and directories can discover it without anyone pasting a link.
 
-**Both install lines are load-bearing — do not trim to one.** The formula installs only the dispatcher
-(`bin.install "bin/candor"`); `candor update` is what fetches the engines. A reader who runs only the
-first gets a `candor` that cannot scan anything.
+**`candor update` is deliberately NOT in this block, and that is a recent change.** The formula installs
+only the dispatcher (`bin.install "bin/candor"`), so something has to fetch an engine — but `candor scan`
+now does it itself, for all four languages, announcing what it is fetching and from where. It pulls the
+ONE engine that repo needs rather than all four. `candor update` is the *existing-user* command: it syncs
+the whole family to a new pin after `brew upgrade candor`. Putting it in the install block made a
+first-time reader download three engines they may never use, to fix a problem they did not have.
 
 **If they can't use Homebrew**, a single engine still works standalone — `npx -y candor-ts . --out
 .candor/report` for TypeScript (add `--allow-js` for JavaScript), `cargo install candor-scan` for Rust,

@@ -235,7 +235,30 @@ selftest() {
   if [ "$rc" -ne 0 ]; then echo "  ✘ a COMMENT-ONLY edit to a rule file failed (rc=$rc) — the arm counts documentation as a rule change"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ …and a comment-only edit to the same file does NOT fail — documenting a rule asserts nothing new"; fi
 
-  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 9 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
+  # (10) THE FLOOR-BUMP CASE, both directions. A spec bump edits one line in EVERY rule file
+  # (`SPEC_VERSION = "0.38"`) and touches no test — and on candor-ts at ⟨0.38⟩ that reddened `main`
+  # after the release was staged. A version constant asserts nothing about what candor believes an
+  # effect to be, which is this arm's own stated subject; and the reason it looked untested is the
+  # sharp half — candor-ts's doc-drift gate DERIVES the floor from the rule file, and a derived
+  # assertion does not change when the value it derives from does. Requiring a test file to move
+  # rewards a literal pin over a derived one, which is the opposite of what this repo asks for.
+  printf 'pub fn classify(c: &str) -> Option<&str> {\n    if c == "reqwest" { return Some("Net"); }\n    if c == "curl" { return Some("Net"); }\n    None\n}\npub const SPEC_VERSION: &str = "0.38";\n' \
+    > "$tmp/crates/candor-classify/src/lib.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm ten
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "  ✘ a VERSION-CONSTANT bump in a rule file failed (rc=$rc) — a floor bump reddens every release"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ a VERSION constant moving in a rule file does NOT fail — it asserts nothing about an effect"; fi
+
+  # …AND THE NARROWING MUST NOT OVERSHOOT: a real rule added on the SAME line as a version constant, and
+  # a rule added in the same commit as one, both still fail. The match is the WHOLE line for exactly this.
+  printf 'pub fn classify(c: &str) -> Option<&str> {\n    if c == "reqwest" { return Some("Net"); }\n    if c == "curl" { return Some("Net"); }\n    if c == "hyper" { return Some("Net"); }\n    None\n}\npub const SPEC_VERSION: &str = "0.39";\n' \
+    > "$tmp/crates/candor-classify/src/lib.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm eleven
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ]; then echo "  ✘ a REAL rule change rode in beside a version bump and was excused (rc=$rc) — the narrowing overshot"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and a real rule riding beside a version bump still FAILS — the narrowing is per-LINE"; fi
+
+  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 11 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
   else echo; echo "assert-audit selftest: FAILED — $fails case(s)"; return 1; fi
 }
 
@@ -280,6 +303,28 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
           l=substr($0,2); sub(/^[ \t]+/,"",l);
           if (l=="" ) next;
           if (l ~ /^(\/\/|\/\*|\*|#)/) next;
+          # A VERSION CONSTANT IS NOT AN EFFECT RULE. This arm fires on any added line in a rule file,
+          # and a spec FLOOR BUMP edits one line in every one of them: `const SPEC_VERSION = "0.38"`.
+          # By this gate'"'"'s own words a rule change "IS an assertion about what candor believes an effect
+          # to be" — a version constant asserts nothing about any effect. It says which contract this
+          # build speaks, and that claim is gated elsewhere and harder: `release-preflight [1]` (every
+          # engine declares the same floor), `[4]` (declared build versions agree), `[2]` (no prior-floor
+          # string survives) and the four-way conformance suite.
+          #
+          # AND THE REASON IT LOOKED UNTESTED IS THE SHARP PART. It fired on candor-ts at the ⟨0.38⟩
+          # bump because no TEST FILE changed in that range — while candor-ts'"'"'s doc-drift gate reads the
+          # floor straight out of `scan.mjs` and asserts every doc agrees with it. That test is DERIVED,
+          # and a derived assertion does not change when the value it derives from does. candor-swift
+          # passed the same bump only because its floor pin is a LITERAL, so the bump had to edit a test.
+          # Requiring a test file to move therefore penalises the better design and rewards the literal —
+          # the opposite of what this repo tells everyone to do, and the exact reason candor-ts wrote
+          # that gate derived: "a literal in a drift gate pins the drift it exists to catch".
+          #
+          # FAIL DIRECTION: this can only silence a changed VERSION LITERAL. A wrong one is caught by
+          # four preflight checks and by conformance; it cannot encode a belief about an effect, which is
+          # the only thing this arm is for. Anything else on the line keeps it loud — the match is the
+          # WHOLE line, so `SPEC_VERSION = "0.38"; FS.add("x")` is not excused.
+          if (l ~ /^[^\"'"'"']*[A-Za-z_]*VERSION[A-Za-z_]*[^\"'"'"']*[=:][^\"'"'"']*[\"'"'"'][0-9]+([.][0-9]+)*[\"'"'"'][,;)]*$/) next;
           print l
         }' || true)"
 

@@ -10,6 +10,23 @@ keeps its own.
 
 ## 2026-09-14 — family build bump (released 2026-09-14 as 0.38.0)
 
+`assert-audit`'s structural arm no longer counts a **version constant** as an effect-classification
+rule. It reddened candor-ts's `main` at the ⟨0.38⟩ bump, after the release was staged, on the single
+line every floor bump edits in every rule file: `const SPEC_VERSION = "0.38"`. By the arm's own words a
+rule change *"IS an assertion about what candor believes an effect to be"* — a version constant asserts
+nothing of the kind. Which contract a build speaks is gated elsewhere and harder: preflight [1], [2] and
+[4], plus the four-way suite.
+
+**The sharp half is why it looked untested.** No test FILE changed in that range — because candor-ts's
+doc-drift gate reads the floor straight out of `scan.mjs` and asserts every doc agrees with it, and a
+DERIVED assertion does not change when the value it derives from does. candor-swift passed the identical
+bump only because its floor pin is a literal, so the bump had to edit a test. The gate was rewarding a
+literal pin over a derived one — the opposite of what this repo asks for, and the exact thing candor-ts's
+own comment warns about: *"a literal in a drift gate pins the drift it exists to catch."*
+
+Narrowed per LINE, with both directions in the selftest (now 11 cases): a version constant alone is
+excused; a real rule riding on the same line, or added in the same commit, still fails.
+
 `release-preflight [2]` — the bump-miss check — now ignores a stale `spec` inside a **committed report
 document**, and only there. A report records a scan that happened; its `spec` is a record, not a
 declaration of what this build speaks, and editing it would replace a true record with a false one.

@@ -289,8 +289,31 @@ so the next rung is probably not a new idea, it is finishing this one.
 
 ### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-14, not remembered)
 
-Everything in §§0b–6b is closed. The queue below is ordered by what a user can lose, which is not the
-order it was filed in.
+**⟨0.38⟩ IS CODE-COMPLETE AND UNRELEASED as of 2026-09-14 20:10. The rung's own gap is CLOSED.** PART 89
+is green on all nine arms in both engines and its xfail list is EMPTY: R438 (rust `7bea441`) and R429
+(swift `2a3d577`) both fixed, R287 closed with them. Four-way conformance OK, probe-check 10/10,
+must-ledger 550/550, gates 29/29 rust and 11/11 swift. **SPEC.md describes ⟨0.38⟩ while declaring floor
+0.37, so `release-preflight [12]` will HOLD a cut until `spec-bump.sh 0.38` runs — that is the guard
+working, not a defect.** The ladder from there is in [[candor-pre-publish-checklist]]; publishing needs
+an explicit go.
+
+**Three rows opened while closing it, none blocking:**
+  - **R439 ts** — `package.json` condition maps ARE a mutually-exclusive arm set and candor-ts resolves
+    one and drops the other with NO disclosure. Measured: two trees differing only in which condition
+    NAME carries which file answer `deny Fs <fn>` rc 1 and rc 0 over a real write, `unanalyzed` and
+    `incompleteSurfaces` both absent. A ⟨0.21⟩ break, NOT a ⟨0.38⟩ one — PART 89's fixtures are
+    source-level arms. **Do the DISCLOSURE half before any cut that claims ⟨0.38⟩ closes the
+    conditional-arm family**; the union half is a ⟨0.39⟩ question.
+  - **R440 rust** — the R105 branch can charge nothing, resolve nothing and disclose nothing, then
+    `continue` past all ordinary handling. 960 occurrences over 1,556 crates, 53 undisclosed by the κ
+    ledger, every sampled one a pure-type arm set. Pre-existing. First lead: `loom` is a dev-dependency
+    absent from `deps`, and teaching the ledger that would disclose a chunk of them for free.
+  - **The swift fix's evidence has a stated limit**: its A/B over 878 real Swift files measured REACH
+    **0** — those trees contain no conditional typealias at all — so its blast radius is bounded by the
+    project-arm gate and a fixture, not by a measurement over code that has the shape. Weaker than
+    R438's 1,556 crates. If a real Swift corpus ever lands, re-run it.
+
+*The queue below is ordered by what a user can lose, which is not the order it was filed in.*
 
 **~~A. rust wrapper-peel gaps~~ — DONE 2026-09-14, both rows half-closed, and the residuals are SCOPED
 rather than vague.**

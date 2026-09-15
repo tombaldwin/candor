@@ -21,7 +21,7 @@ remote document and act on whatever it currently says: the instructions can chan
 be tampered with, and arrive from somewhere other than the thing being installed.
 
 **Every command below was run end to end before this file was written**, and re-run against the
-published **0.38.1** on 2026-09-15 — on a Rust, a TypeScript, a JVM and a Swift project, not just one,
+published **0.38.2** on 2026-09-15 — on a Rust, a TypeScript, a JVM and a Swift project, not just one,
 each from a completely empty engine cache.
 
 *What a reader actually installs today:* `brew install` gives the **0.38.1** umbrella, which pins the
@@ -39,7 +39,7 @@ to make on the way.
 >
 > ```bash
 > brew install tombaldwin/tap/candor   # install candor
-> candor scan .                        # map the repo (Rust: builds the engine, see below)
+> candor scan .                        # map the repo — fetches the engine it needs
 > candor mcp install                   # give the agent the queries
 > ```
 >
@@ -61,8 +61,8 @@ to make on the way.
 > - **JVM** — a native binary on macOS arm64 and Linux x64 (no JVM required). On other platforms, notably
 >   arm64 Linux, it fetches the jar instead and runs it with your JVM.
 > - **TypeScript** — runs via `npx`, so it needs Node on every platform.
-> - **Rust** — no published binaries yet, so line 2 builds the engine with `cargo` (~50s, needs a Rust
->   toolchain). This is the one rough edge, and it is temporary.
+> - **Rust** — a native binary on macOS arm64 and Linux x64 (no Rust toolchain required), as of 0.38.2.
+>   On other platforms — arm64 Linux, Intel Macs — it builds with `cargo` instead.
 > - **Swift** — a macOS arm64 binary only. A Swift package on Linux needs a Mac, or candor-swift built
 >   from source.
 >
@@ -269,3 +269,16 @@ an arm64 Mac, in about a minute each — including the two that falsified the se
 
 **So: before any sentence in §1 that says what a platform does, run it.** A claim about a platform is now
 a one-minute command, which makes an untested one a choice.
+
+### 0.38.2 published the Rust binaries — what changed, and what is STILL not true
+
+Cut 2026-09-15. `candor-rust` v0.38.2 attaches `candor-scan` and `candor-query` for **macos-arm64 and
+linux-x64**, so on those two platforms line 2 fetches rather than building (`candor update` measured at
+**5.6s** for the whole family, against a ~50s cargo build before). The "Rust today" caveat is retired.
+
+**DO NOT upgrade this into "no engine needs a compiler".** The dispatcher maps exactly two platforms —
+`bin/candor:1504-1506`, `Darwin/arm64` and `Linux/x86_64` — so **arm64 Linux (Graviton, Ampere, Docker on
+Apple silicon) and Intel Macs still hit `cargo install`**. That is the same split the JVM bullet already
+describes, which is why Rust now reads like it. The coordinator wrote "no engine needs a compiler now"
+in a session note and it was wrong for the same reason every other overstatement in this file has been:
+it summarised the happy path as though it were the rule.

@@ -45,6 +45,16 @@ to make on the way.
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
 > clients and directories can discover it without anyone pasting a link.
 
+**Homebrew 7 requires third-party taps to be TRUSTED, and the page should say so.** Verified on
+Homebrew 7.0.1: `brew trust tombaldwin/tap` followed by `brew install tombaldwin/tap/candor` installs
+candor 0.38.0 cleanly. Without it, brew refuses with a message naming whichever tap is untrusted — on a
+machine that already has any other third-party tap, the name in that message is **that other tap**, not
+ours, which makes the failure read as unrelated to candor. Brew prints the remedy itself
+(`brew trust <tap>`), so this is a note for the page rather than a fourth command in the block:
+
+> *(On Homebrew 7 or newer, run `brew trust tombaldwin/tap` first — Homebrew now asks you to trust a
+> third-party tap before installing from it.)*
+
 **What "fetches the engine it needs" is true of, exactly.** Measured on a machine with nothing
 installed, one language at a time:
 

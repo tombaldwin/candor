@@ -40,7 +40,27 @@ else
 for c in candor-report candor-classify candor-query candor-scan; do
   v=$(curl -sSL -H "User-Agent: $UA" "https://crates.io/api/v1/crates/$c" 2>/dev/null \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["crate"]["max_version"])' 2>/dev/null)
-  [ "$v" = "$VER" ] && ok "$c $v" || bad "$c: max_version '${v:-?}' != $VER"
+  # A SCOPED PATCH LEAVES AN ENGINE DELIBERATELY AHEAD OF THE FAMILY LINE, and this check has to know
+  # that or it is permanently red afterwards. `release-verify 0.38 0.38.0` run after the 0.38.1 rust
+  # patch reported all four crates as failures for being at 0.38.1 — the version the front door pins
+  # them to, on purpose. A verifier that cries wolf after every scoped cut is a verifier nobody runs,
+  # and this one is the release ladder's last step.
+  #
+  # The pin is the authority: if `bin/candor` pins rust separately, THAT is the version these crates are
+  # expected at. Stated, not silently accepted — the row says which version it checked and why.
+  want="$VER"; why=""
+  if [ "$v" != "$VER" ]; then
+    # ONLY when we are checking the FAMILY LINE. Without this guard the pin excuses ANY mismatch —
+    # `release-verify 0.38 0.99.0` would pass, because the crates match the pin and the pin was allowed
+    # to override whatever was asked for. The pin explains a crate sitting above the family line; it is
+    # not a licence to ignore the version under test. Measured before the guard: 0.99.0 passed.
+    fam="$(sed -n 's/^ENGINE_PIN="\([0-9.]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$HERE_V/candor" 2>/dev/null | head -1)"
+    rp="$(sed -n 's/^ENGINE_PIN_RUST="\([0-9.]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$HERE_V/candor" 2>/dev/null | head -1)"
+    if [ -n "$rp" ] && [ -n "$fam" ] && [ "$VER" = "$fam" ]; then
+      want="$rp"; why=" (pinned separately from the family line $VER)"
+    fi
+  fi
+  [ "$v" = "$want" ] && ok "$c $v$why" || bad "$c: max_version '${v:-?}' != $want"
 done
 fi
 

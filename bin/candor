@@ -215,21 +215,28 @@ else
   C_RST=''; C_DIM=''; C_B=''; C_OK=''; C_WRN=''; C_ERR=''; C_ACC=''
 fi
 
-# PLAIN vs FANCY PROGRESS, because a carriage-return animation is not portable and guessing has cost
-# three rounds of this. In a terminal that repaints a command's output as a block rather than live, the
-# in-place line never updates — it just appears, so the durable milestone at 0:21 and the live line at
-# 0:24 read as the same thing printed twice. They are one line that was supposed to overwrite itself.
+# PLAIN vs FANCY PROGRESS — and PLAIN IS THE DEFAULT, deliberately.
 #
-# `CANDOR_PROGRESS=plain` drops the animated line entirely and prints a durable line more often; `fancy`
-# forces the animation; `auto` (the default) picks plain for terminals known to render in blocks. The
-# override exists because terminal detection is a guess and the user always knows better than the guess.
+# An in-place carriage-return line is only an animation in a terminal that repaints mid-command. Where
+# it does not, the line persists as its own row, so the durable milestone and the live line arrive as
+# two rows three seconds apart with the same text — read, correctly, as duplication. That was reported
+# four times across as many attempts, and each time the fix was another guess about the terminal.
+#
+# So the safe mode is the default and the animation is the opt-in. Plain output is clean, aligned and
+# informative EVERYWHERE; fancy is strictly nicer only where it genuinely animates, and the set of
+# terminals known to do that is small and namable. Guessing the other way means a reader on any
+# unrecognised terminal gets the broken-looking one — the wrong direction for a default.
+#
+#   CANDOR_PROGRESS=fancy   force the spinner
+#   CANDOR_PROGRESS=plain   force durable lines only
+#   (unset)                 fancy on terminals known to animate, plain everywhere else
 _progress_mode() {
   case "${CANDOR_PROGRESS:-auto}" in
     plain|fancy) printf '%s' "$CANDOR_PROGRESS"; return;;
   esac
   case "${TERM_PROGRAM:-}" in
-    WarpTerminal) printf 'plain';;
-    *) printf 'fancy';;
+    iTerm.app|Apple_Terminal|vscode|ghostty|Alacritty|kitty) printf 'fancy';;
+    *) printf 'plain';;
   esac
 }
 
@@ -1696,8 +1703,15 @@ PY
       # rather than stopping at the file that triggered the audit. See AGENT-CORPUS-BRIEF attack L.
       # Both flavours are selected by asking for a KNOWN ANSWER, never by an exit code.
       if [ -n "$(stat -c %Y / 2>/dev/null | tr -dc '0-9')" ]; then _mf=-c; _mv=%Y; else _mf=-f; _mv=%m; fi
-      newest=$(find "$src" -name '*.rs' -o -name '*.swift' -o -name '*.mjs' 2>/dev/null \
-               | grep -v -e '/\.build/' -e '/target/' -e '/node_modules/' \
+      # `-prune`, NOT `grep -v`. The filter used to run AFTER the walk, so `find` still descended into
+      # `target/`, `.build/` and `node_modules/` — tens of thousands of files — and only then threw the
+      # results away. MEASURED on candor-rust alone: 2.6s to reach 590 files, against 0.0s for 297 with
+      # the prune. Across four engines that was the ~15-SECOND SILENT PAUSE at the end of every
+      # `candor update` and `candor doctor`, with nothing printed while it ran. Filtering output is not
+      # the same as not walking, and this is what that difference costs.
+      newest=$(find "$src" \
+                 \( -name target -o -name .build -o -name node_modules -o -name .git \) -prune -o \
+                 \( -name '*.rs' -o -name '*.swift' -o -name '*.mjs' \) -print 2>/dev/null \
                | xargs stat "$_mf" "$_mv" 2>/dev/null | sort -rn | head -1)
       ibin=$(stat "$_mf" "$_mv" "$inst" 2>/dev/null)
       case "$newest$ibin" in *[!0-9]*|'') newest=""; ibin="" ;; esac

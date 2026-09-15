@@ -10,6 +10,26 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**"Why so many candor-scans?" — a good question with a measurable answer, and both halves of it were
+wrong in the output.** Measured on a real run: `Compiling candor-scan` appears **once**. The repeated
+milestones were one long compile — the last and biggest crate of that build — which the per-crate clock
+now says. But two other things were genuinely misleading:
+
+- **`cargo install` runs one build PER BINARY.** `Installing candor-scan`, then `Installing
+  candor-query`, so every shared dependency compiles twice and the crate list appears to restart from
+  `serde` for no visible reason. Each phase now announces itself: `→ 0:16   building candor-query`.
+- **The count was compile STEPS, not crates** — 48 lines over **34 distinct crates** on that run. It
+  told the reader it had built 48 crates when it had built 34, most of them twice. Both the live tally
+  and the summary now count distinct crates, so they agree with each other and with the truth.
+
+```
+           →  0:03   building candor-scan
+           ·  0:13   toml                      25 crates
+           →  0:16   building candor-query
+           ·  0:26   candor-query              34 crates
+           built 34 crates in 0:30
+```
+
 **Two more, both from watching it run rather than from a test.**
 
 *Alignment.* The milestone line and the live line had drifted apart — one space after `·` against two

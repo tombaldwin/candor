@@ -217,7 +217,7 @@ fi
 
 _build_progress() {             # $1 = indent; $2.. = the command to run
   local ind="$1"; shift
-  local log done_f rc i=0 start now el cols cw crate n tally milestone=-7 prev='' since=0 onit
+  local log done_f rc i=0 start now el cols cw crate n tally milestone=-7 prev='' since=0 onit pkg prevpkg=''
   local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
   done_f="$log.done"
@@ -235,7 +235,14 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     crate="$(grep -a 'Compiling ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Compiling \([^ ]*\).*/\1/')"
     # NO `|| echo 0`: `grep -c` PRINTS the count and still exits 1 when it is zero, so the fallback
     # appended a second line and `[ "$n" -gt 0 ]` got "0\n0" — "integer expression expected".
-    n="$(grep -ac 'Compiling ' "$log" 2>/dev/null)"; n="${n:-0}"
+    # DISTINCT crates, not compile STEPS. `cargo install` runs one build PER BINARY, so every shared
+    # dependency is compiled twice — measured on a real run: 48 `Compiling` lines over 34 distinct
+    # crates. Counting lines told the user it had built 48 crates when it had built 34, twice-ish. The
+    # count a person means by "crates" is the distinct one.
+    n="$(grep -aoE 'Compiling [^ ]+' "$log" 2>/dev/null | sort -u | grep -c . )"; n="${n:-0}"
+    # WHICH BINARY WE ARE ON. Two builds look like one stalled build otherwise — the crate list restarts
+    # from serde and the reader has no way to know why.
+    pkg="$(grep -a 'Installing ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Installing \([^ ]*\).*/\1/')"
     [ -n "$crate" ] || crate="resolving dependencies"
     now=$(date +%s); el=$(( now - start ))
     i=$(( (i + 1) % 10 ))
@@ -262,6 +269,15 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     # evidence instead of a void. Tuned after a real report of no animation at all — some terminals
     # (Warp among them) render a command's output as a block and never show in-place updates while it
     # runs, so the carriage-return view is the BONUS and these lines are the contract.
+    # A phase change gets its own line immediately, whatever the milestone clock says: it is the one
+    # moment the restarting crate list is explained rather than confusing.
+    if [ -n "$pkg" ] && [ "$pkg" != "$prevpkg" ]; then
+      prevpkg="$pkg"
+      printf '\r%*s\r' "$cols" ''
+      printf '%s%s→%s  %s%d:%02d%s   %sbuilding %s%s\n' "$ind" "$C_ACC" "$C_RST" \
+             "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" "$C_DIM" "$pkg" "$C_RST"
+      milestone=$el
+    fi
     if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + 10 )) ]; then
       milestone=$el
       printf '\r%*s\r' "$cols" ''
@@ -279,7 +295,8 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
   wait 2>/dev/null
   rc="$(cat "$done_f" 2>/dev/null || echo 1)"
   now=$(date +%s); BUILD_ELAPSED=$(( now - start ))
-  BUILD_CRATES="$(grep -ac 'Compiling ' "$log" 2>/dev/null)"; BUILD_CRATES="${BUILD_CRATES:-0}"
+  BUILD_CRATES="$(grep -aoE 'Compiling [^ ]+' "$log" 2>/dev/null | sort -u | grep -c . )"
+  BUILD_CRATES="${BUILD_CRATES:-0}"
   printf '\r%*s\r' "$cols" ''     # erase, so the ✔ / ✘ below owns the line
   if [ "$rc" != 0 ]; then
     echo "${ind}the build failed — last lines:"

@@ -50,14 +50,13 @@ to make on the way.
 > nothing registers itself behind your back.
 >
 > **Any language.** `candor scan` picks the engine from the manifest — Rust, the JVM, Swift or
-> TypeScript — and `candor mcp` reads whatever engine's report is in `.candor/`. The three commands are the
-> same for every language; what differs is what line 2 has to fetch or build (see the two notes below).
+> TypeScript — and `candor mcp` reads whatever engine's report is in `.candor/`.
 >
 > Any MCP client works; point its server config at `candor mcp`. `candor mcp --help` prints the snippet —
 > from the copy on your machine, not from a URL.
 >
-> **What line 2 needs.** The three commands are the same everywhere; the engine behind them differs, and
-> `candor scan` names anything missing instead of failing quietly.
+> **What line 2 needs.** The three commands above are the same for every language; the engine behind them
+> differs, and `candor scan` names anything missing instead of failing quietly.
 >
 > - **JVM** — a native binary on macOS arm64 and Linux x64 (no JVM required). On other platforms, notably
 >   arm64 Linux, it fetches the jar instead and runs it with your JVM.
@@ -251,3 +250,22 @@ than a claim of its own. Both false claims caught in this file so far have been 
 Note the near-miss in the other direction too: "the JVM, Rust and TypeScript engines work there" is true
 on Linux, but all three need something (a JVM, a toolchain, Node). True and load-bearing is not the same
 as true and free.
+
+### How to CHECK a platform claim in about a minute — use this before writing one
+
+Both false claims this file has produced were sentences I could have tested and did not, because each
+read as a recap of the rows above rather than a claim of its own. The fix is not resolving to read more
+carefully. It is that checking is cheap, so there is no excuse for asserting instead. `bin/candor` is a
+bash dispatcher — a Linux check needs no Homebrew, no VM and no CI:
+
+```bash
+docker run --rm -v "$HOME/git/candor:/candor:ro" -v "$PWD:/work" -w /work debian:stable-slim \
+  bash -c 'apt-get update -qq && apt-get install -y -qq curl ca-certificates; /candor/bin/candor scan .'
+```
+
+Swap the image for `node:22-slim` or `eclipse-temurin:21-jdk` to give it a toolchain, or add
+`--platform linux/amd64` for x64. Every bullet in the "What line 2 needs" list was produced this way, on
+an arm64 Mac, in about a minute each — including the two that falsified the sentence this replaced.
+
+**So: before any sentence in §1 that says what a platform does, run it.** A claim about a platform is now
+a one-minute command, which makes an untested one a choice.

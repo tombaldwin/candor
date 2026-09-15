@@ -377,6 +377,36 @@ of drift can only happen once; the spec's normative surface shrinks to §2 + §4
 **This is the change that turns the treadmill into a ladder, and it is consistent with the DO-NOT below
 — it restructures CONCEPTS and does not move code between files for tidiness.**
 
+**S5 GROUNDWORK — MEASURED 2026-09-16, so the decision does not need a study first.**
+
+Back-half surface, counted at HEAD (`wc -l` over each engine's policy/gate/query/report-writer):
+
+    rust    12,372     candor-classify/src/policy.rs + all of candor-query/src
+    java     8,192     Policy.java + Query.java
+    ts       6,599     policy.mjs + query.mjs + query-core.mjs
+    swift    3,789     Gate*.swift + Policy*.swift
+    -------------
+    total  ~30,950 lines implementing ONE back half four times
+
+Conformance split, my own count over the 71 titled PARTs: **30 pin back-half semantics** (policy, gate,
+verdict, query, exit, config, sink, report) against **17 that pin front-end resolution**. Fable counted
+53/30 over 111 part markers — different denominators, **same ~2:1 ratio**, which is the number that
+matters and it survives being counted two ways.
+
+**AND THE FINDING THAT CHANGES THE SHAPE OF S5: candor-swift HAS NO QUERY VERBS AT ALL.** Its `main.swift`
+exposes only flags — `--policy`, `--gate-json`, `--out`, `--agents`, `--peek-*` — no `where`, no
+`blastradius`, no `whatif`, no `tour`. **One of the four engines is ALREADY a front-end plus a gate**, and
+nothing broke; `candor-query` answers questions off its report like any other. So S5 is not a speculative
+restructure, it is *finishing a migration that has already happened once by accident*. That is the
+cheapest possible evidence for it and it was free to obtain.
+
+**What that implies for sequencing, if S5 is ever taken:** the QUERY layer is the easy half (3 engines,
+one already absent, and `candor-query`/`candor-mcp`/`candor-lsp` already read any engine's report). The
+GATE is the hard half, because it is the surface every adopter's CI depends on and a verdict change there
+is a breaking change for real pipelines. **Do not start with the gate**, and note that [[R443]]'s "cheap
+half" is a miniature of exactly this problem: two implementations of one question, where the honest fix
+is a shared core rather than a third copy.
+
 **WHAT THE REVIEW RATED GENUINELY STRONG, recorded so it is not traded away by accident:** SPEC §4.0's
 `(S, D)` product lattice and the monotone-predicate reading of verbs; `unknownWhy` + `blindspots` ranking
 by reach (183 direct Unknowns → **13** on a real Spring app — the disclosure channel made ACTIONABLE, not

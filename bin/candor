@@ -215,14 +215,35 @@ else
   C_RST=''; C_DIM=''; C_B=''; C_OK=''; C_WRN=''; C_ERR=''; C_ACC=''
 fi
 
+# PLAIN vs FANCY PROGRESS, because a carriage-return animation is not portable and guessing has cost
+# three rounds of this. In a terminal that repaints a command's output as a block rather than live, the
+# in-place line never updates — it just appears, so the durable milestone at 0:21 and the live line at
+# 0:24 read as the same thing printed twice. They are one line that was supposed to overwrite itself.
+#
+# `CANDOR_PROGRESS=plain` drops the animated line entirely and prints a durable line more often; `fancy`
+# forces the animation; `auto` (the default) picks plain for terminals known to render in blocks. The
+# override exists because terminal detection is a guess and the user always knows better than the guess.
+_progress_mode() {
+  case "${CANDOR_PROGRESS:-auto}" in
+    plain|fancy) printf '%s' "$CANDOR_PROGRESS"; return;;
+  esac
+  case "${TERM_PROGRAM:-}" in
+    WarpTerminal) printf 'plain';;
+    *) printf 'fancy';;
+  esac
+}
+
 _build_progress() {             # $1 = indent; $2.. = the command to run
   local ind="$1"; shift
-  local log done_f rc i=0 start now el cols cw crate n tally milestone=-7 prev='' since=0 onit pkg prevpkg=''
+  local log done_f rc i=0 start now el cols cw crate n tally milestone=-7 prev='' since=0 onit pkg prevpkg='' mode gap
   local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
   done_f="$log.done"
   ( "$@" >"$log" 2>&1; echo $? >"$done_f" ) &
   start=$(date +%s); cols=$(tput cols 2>/dev/null || echo 80)
+  mode="$(_progress_mode)"
+  # plain has no live line, so its durable lines carry the whole job and come twice as often.
+  if [ "$mode" = plain ]; then gap=5; else gap=10; fi
   # ONE crate-column width for BOTH the milestone line and the live line. They drifted apart — one
   # space after `·` against two after the spinner, a fixed 24 against a dynamic width — and the result
   # was three lines that each started their crate name in a different column. Same geometry, computed
@@ -258,7 +279,16 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     if [ "$crate" != "$prev" ]; then prev="$crate"; since=$el; fi
     onit=$(( el - since ))
     if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
-    [ "$onit" -ge 8 ] && tally="$tally · ${onit}s on this one"
+    # CARGO COMPILES THE ROOT PACKAGE LAST, so when the crate being compiled IS the package being
+    # installed, this is the final crate of that build — and it is usually the big one. That is the only
+    # genuinely new thing anyone can say during the long silent stretch at the end, and it is far more
+    # use than repeating the crate count: "nearly done" rather than "still here".
+    if [ -n "$pkg" ] && [ "$crate" = "$pkg" ]; then
+      tally="final crate"
+      [ "$onit" -ge 5 ] && tally="final crate · ${onit}s"
+    elif [ "$onit" -ge 8 ]; then
+      tally="$tally · ${onit}s on this one"
+    fi
     # A PERSISTENT MILESTONE EVERY 15s, because an animated line leaves NO TRACE in a terminal that does
     # not render carriage returns mid-command — and reported from exactly that: a 50-second build that
     # showed "building from source" and then nothing at all until the ✔. The animation is the nice case;
@@ -278,13 +308,14 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
              "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" "$C_DIM" "$pkg" "$C_RST"
       milestone=$el
     fi
-    if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + 10 )) ]; then
+    if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + gap )) ]; then
       milestone=$el
       printf '\r%*s\r' "$cols" ''
       printf '%s%s·%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
              "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
              "$C_B" "$cw" "$cw" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
     fi
+    [ "$mode" = plain ] && { sleep 1; continue; }
     printf '\r%s%s%s%s  %s%d:%02d%s   %s%-*.*s%s  %s%-10s%s' \
            "$ind" "$C_ACC" "${fr[$i]}" "$C_RST" \
            "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \

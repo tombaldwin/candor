@@ -287,9 +287,12 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-14, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-15, not remembered)
 
-**⟨0.38⟩ IS CODE-COMPLETE AND UNRELEASED as of 2026-09-14 20:10. The rung's own gap is CLOSED.** PART 89
+**⟨0.38⟩ IS SHIPPED — v0.38.0, the v0.38.1 scoped rust patch, and v0.38.2 (FULL family, 2026-09-15) are
+all live and verified.** 0.38.2 published the candor-rust RELEASE BINARIES (so no engine needs a compiler
+any more — `candor update` is 5.6s) and CLEARED `ENGINE_PIN_RUST`; all four per-engine pins are now empty.
+**R439 is CLOSED in it** (candor-ts `60c578f`). The rung's own gap is CLOSED. PART 89
 is green on all nine arms in both engines and its xfail list is EMPTY: R438 (rust `7bea441`) and R429
 (swift `2a3d577`) both fixed, R287 closed with them. Four-way conformance OK, probe-check 10/10,
 must-ledger 550/550, gates 29/29 rust and 11/11 swift. **SPEC.md describes ⟨0.38⟩ while declaring floor
@@ -298,7 +301,13 @@ working, not a defect.** The ladder from there is in [[candor-pre-publish-checkl
 an explicit go.
 
 **Three rows opened while closing it, none blocking:**
-  - **R439 ts** — `package.json` condition maps ARE a mutually-exclusive arm set and candor-ts resolves
+  - **~~R439 ts~~ — CLOSED 2026-09-15, candor-ts `60c578f`, shipped in v0.38.2.** The DISCLOSURE half, as
+    scoped: a call through a multi-arm condition map over analysed files now takes `Unknown` +
+    `unknownWhy: ambiguous:condition-map <spec>`, so both arm orders AGREE and both exit 2 instead of
+    disagreeing rc 0 / rc 1. The union half remains a ⟨0.39⟩ question and was deliberately NOT done.
+    *The filed remedy was WRONG and re-measuring caught it — it planned to disclose via `unanalyzed`, but
+    both arm files ARE analyzed; the defect was a missing CALL EDGE.* Original text follows.
+  - **R439 ts (as filed)** — `package.json` condition maps ARE a mutually-exclusive arm set and candor-ts resolves
     one and drops the other with NO disclosure. Measured: two trees differing only in which condition
     NAME carries which file answer `deny Fs <fn>` rc 1 and rc 0 over a real write, `unanalyzed` and
     `incompleteSurfaces` both absent. A ⟨0.21⟩ break, NOT a ⟨0.38⟩ one — PART 89's fixtures are
@@ -360,9 +369,9 @@ remedy wrote a FALSE heading. Bites only during a cut; fix before the next one.
 
 **NOT WORK: R412** is BUILT, MEASURED and DELIBERATELY NOT SHIPPED — see the DO-NOT list below. Leave it.
 
-**A RELEASE HOLD IS NOW OPEN, and it is deliberate:** SPEC.md describes ⟨0.38⟩ while declaring floor
-0.37, so `release-preflight [12]` will stop the next cut until `spec-bump.sh` runs. The rung is written
-and pinned; the bump is a separate decision.
+**~~A RELEASE HOLD IS NOW OPEN~~ — RESOLVED 2026-09-15.** `spec-bump.sh 0.38` ran, the floor moved, and
+⟨0.38⟩ shipped three times over. `release-preflight [12]` passes (`highest rung ⟨0.38⟩ is within the
+declared 0.38`). Kept as the record of the guard working as designed rather than as an open item.
 
 ### 7. API-surface harvest — DEMOTED, still worth building
 Under its own mechanical first phase ("start where the locator type is mechanical; `String`-typed is the

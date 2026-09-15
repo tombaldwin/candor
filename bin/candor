@@ -324,7 +324,17 @@ installed_or_shadowed() {   # $1 = engine command, $2 = path this run wrote
     echo "         ✘ wrote $2 but candor cannot resolve $1 — is it executable?"
     return 1
   fi
-  rpath="$(command -v "$resolved" 2>/dev/null || echo "$resolved")"
+  # RESOLVE TO A REAL PATH OR SAY SO. The fallback used to be the bare command name, which then got
+  # printed under "runs:" as though it were a location — a claim about the filesystem made from a
+  # failed lookup. If PATH resolution fails here the honest answer is that we cannot tell what will
+  # run, not a plausible-looking string.
+  if ! rpath="$(command -v "$resolved" 2>/dev/null)"; then
+    if [ -x "$resolved" ]; then rpath="$resolved"
+    else
+      echo "         ✘ installed $2, but $1 no longer resolves on PATH — re-run \`candor update\`"
+      return 1
+    fi
+  fi
   echo "         ✔ $("$rpath" --version 2>/dev/null | head -1)"
   if [ "$rpath" != "$2" ]; then
     printf '         %s⚠ SHADOWED%s — that is NOT the build this run installed.\n' "$C_WRN" "$C_RST"

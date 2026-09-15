@@ -3545,12 +3545,22 @@ if ! probe_wait_quiet; then
 else
 PR="$(mktemp -d)"
 ctl="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf X 2>&1)"; ctlrc=$?
+# SOUNDNESS R405 RESIDUAL — THE ONE ARM IN THIS SUITE WHERE A REFUSAL PASSES. The section comment above
+# names it ("the FIRST row went GREEN for a reason that was not the subject either") and the remedy went
+# to the SECTION guard, which covers only a machine busy BEFORE the section starts. In the race — quiet
+# at the check, a build starting during the section — this row still goes green on `exit 2` produced by
+# quiet_tree_check rather than by the differ-check. MEASURED with PROBE_FAULT: rc 2, row green.
+# Two mechanisms, one exit code; the TEXT is what tells them apart, so ask the text FIRST.
+if probe_refused "$ctl"; then
+  note_skip "section 13's differ-check rows — probe.sh refused for a machine-wide reason, and that refusal is exit 2, the SAME code the differ-check uses. UNRUN, not passed."
+else
 [ "$ctlrc" = 2 ] \
   && ok "control and subject producing IDENTICAL output is REFUSED (exit 2), not reported as a finding" \
   || bad "control==subject was not refused (exit $ctlrc) — the differ-check is not doing its job"
 printf '%s' "$ctl" | grep -q "CONTROL AND SUBJECT AGREE" \
   && ok "…and says why: the probe is presumed BROKEN, not that the two arms agree meaningfully" \
   || bad "no diagnostic for an agreeing control/subject pair"
+fi
 diff="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; diffrc=$?
 [ "$diffrc" = 0 ] \
   && ok "control and subject producing DIFFERENT output is accepted, not refused" \
@@ -3625,17 +3635,47 @@ git -C "$PR2/candor-rust" checkout -q -- lib.rs
 
 # A CONFORMANCE RUN IN FLIGHT is fatal — it reads engines from their working trees, and probing or
 # editing during it contaminates the run in both directions (failure 2 in this file's own header).
+#
+# SOUNDNESS R442 — THESE TWO ARMS COULD NOT FAIL ON A BUSY MACHINE, and that is the direction that hides.
+# `quiet_tree_check` pgreps the WHOLE box, so ANOTHER agent's conformance run or `cargo build` produces
+# exactly the exit code and exactly the text these rows assert. MEASURED: with both fixtures entirely
+# REMOVED — no fake `conformance/run.sh`, no fake `cargo` — all four rows below printed ✔. The arm was
+# crediting its own fixture for someone else's process. (The tell is in the message: the grep is
+# `a build is running`, so a `swift build` from another agent satisfies a row headed `cargo build`.)
+#
+# THE CALIBRATION, not a wider grep: take a control probe FIRST. If it already refuses, the machine is
+# busy and NOTHING these arms observe can be attributed to the fixture — skip rather than credit. If it
+# succeeds, a refusal that appears after the fixture starts IS the fixture. That is the same rule this
+# suite applies everywhere else: an oracle is not evidence until it has been proven able to fail.
+attrib="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; attribrc=$?
 mkdir -p "$PR2/candor-spec/conformance"
+# THE OTHER DIRECTION, MEASURED AND DELIBERATELY KEPT: this fixture spawns a process matching
+# `conformance/run.sh`, and the one below matches `cargo build`. Those patterns are MACHINE-WIDE, so for
+# as long as they live this suite makes every OTHER agent's probe.sh on this box refuse. That is real,
+# and it is a sound trade rather than a defect — three numbers, not an opinion:
+#   · the window is ~0.35s per spawn (0.3s `sleep` + probe.sh's own 0.05s, measured over three runs),
+#     twice per suite run;
+#   · the family's OWN standing tools hold that same machine-wide state for MINUTES BY DESIGN —
+#     `verify-local.sh:75/127` (`cargo test --workspace`, `./gradlew test`), `spec-bump.sh:465/467/475`
+#     and `bootstrap-dev.sh:129-131`. probe.sh's guard exists FOR those, not for this;
+#   · and the failure it causes is FAIL-CLOSED and loud: the other agent's probe exits 2 with a reason,
+#     never a quiet mismeasurement.
+# It also cannot be replaced by the new `PROBE_FAULT` hook, and that is the point: this arm's subject is
+# that `quiet_tree_check` DETECTS a real process. Injecting the refusal here would test the hook.
 printf '#!/bin/bash\nsleep 6\n' > "$PR2/candor-spec/conformance/run.sh"
 chmod +x "$PR2/candor-spec/conformance/run.sh"
 bash "$PR2/candor-spec/conformance/run.sh" & confpid=$!
 sleep 0.3
 inflight="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; inflightrc=$?
 kill "$confpid" 2>/dev/null; wait "$confpid" 2>/dev/null
+if [ "$attribrc" != 0 ]; then
+  note_skip "section 13b's IN-FLIGHT row — the control probe taken before the fixture started ALREADY refused (rc=$attribrc), so a refusal here cannot be attributed to this fixture. UNRUN, not passed: $(printf '%s' "$attrib" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-110)"
+else
 [ "$inflightrc" = 2 ] && ok "a conformance run IN FLIGHT refuses the probe outright" \
   || bad "a live conformance run did not refuse the probe (rc=$inflightrc): $inflight"
 printf '%s' "$inflight" | grep -q "conformance run is IN FLIGHT" \
   && ok "…and says why" || bad "no IN FLIGHT diagnostic: $inflight"
+fi
 rm -rf "$PR2/candor-spec"
 
 # A BUILD IN PROGRESS is fatal for the same reason — the binary being probed may be replaced mid-run.
@@ -3646,10 +3686,16 @@ chmod +x "$PR2/fakebin/cargo"
 sleep 0.3
 building="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; buildingrc=$?
 kill "$buildpid" 2>/dev/null; wait "$buildpid" 2>/dev/null
+if [ "$attribrc" != 0 ]; then
+  note_skip "section 13b's BUILD-IN-PROGRESS row — the control probe taken before the fixture started ALREADY refused (rc=$attribrc), so a refusal here cannot be attributed to this fixture. UNRUN, not passed: $(printf '%s' "$attrib" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-110)"
+else
 [ "$buildingrc" = 2 ] && ok "a build in progress (cargo build) refuses the probe" \
   || bad "a live 'cargo build' process did not refuse the probe (rc=$buildingrc): $building"
-printf '%s' "$building" | grep -q "a build is running" \
-  && ok "…and says which" || bad "no build-in-progress diagnostic: $building"
+# NAMES THE PATTERN, not just "a build". The loose grep let another agent's `swift build` satisfy a row
+# headed `cargo build` — R442's tell, and the reason the row could pass with no fixture at all.
+printf '%s' "$building" | grep -q "a build is running (cargo build)" \
+  && ok "…and says which" || bad "no 'cargo build' diagnostic (a different pattern would be the wrong cause): $building"
+fi
 
 # PROVENANCE: a binary OLDER than the newest source file is a STALE measurement (failure 4).
 printf '#!/bin/bash\necho ran\n' > "$PR2/candor-rust/binary"; chmod +x "$PR2/candor-rust/binary"
@@ -4120,9 +4166,19 @@ touch -t 202601020000 "$PB/root/candor-rust/binary"; touch -t 202601010000 "$PB/
 
 # CONTROL: this platform's own date, unshimmed. Both timestamps must render.
 base="$(CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
+# SOUNDNESS R405 RESIDUAL — THE SIBLING THE REMEDY MISSED, four lines above the one it reached. This row
+# reads the SAME provenance line, from the SAME script, and fails the same way: quiet_tree_check runs at
+# probe.sh:236, BEFORE provenance() at :238, so a refusal means this line was never rendered — and the
+# diagnostic then tails `grep built` over output that has no `built` line, which is the EMPTY failure
+# message R405 was filed about. The `probe_refused` guard went to the `gnu` arm below and not to its
+# control. That is R402's shape exactly: a remedy applied to one of two siblings in the same change.
+if probe_refused "$base"; then
+  note_skip "probe.sh refused before rendering provenance (the native-date control) — $(printf '%s' "$base" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-120)"
+else
 printf '%s' "$base" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
   && ok "provenance renders both timestamps on this platform's own date(1)" \
   || bad "a timestamp did not render on the native date(1): $(printf '%s' "$base" | grep built)"
+fi
 
 # THE OTHER FLAVOUR. A GNU-shaped `date`: `-r` wants a FILE, `-d @EPOCH` renders an epoch.
 # THE SHIM MUST NOT ITSELF BE PLATFORM-BOUND. Its first cut rendered via `/bin/date -r EPOCH` and

@@ -97,13 +97,32 @@ quiet_tree_check() {
   done
   [ -n "$dirty" ] && echo "probe: NOTE — dirty tree(s):$dirty (your measurement includes uncommitted work)" >&2
   [ -n "$unreadable" ] && echo "probe: NOTE — not a git checkout, tree state NOT checked:$unreadable" >&2
-  if pgrep -f "conformance/run.sh" >/dev/null 2>&1; then
+  # FAULT HOOK — SOUNDNESS R405's stated residual, which is a RACE nobody could force. `release-test.sh`
+  # calls this script 15 times; its three probe sections each wait 10s for a quiet machine and then skip,
+  # so the COMMON case is handled — but a build that STARTS mid-section makes every remaining call in that
+  # section refuse, and R405's own closing note says the integrated path "has NOT been observed firing,
+  # because forcing that race reliably is the thing nobody could do."
+  #
+  # It is forceable now, and without the thing that made it unforceable: reproducing it for real means
+  # spawning a process matching `cargo build` / `gradlew` / `conformance/run.sh`, and those patterns are
+  # MACHINE-WIDE — a fixture that spawns one trips every OTHER agent's probe guard on the same box
+  # (release-test.sh:3629-3649 really does this, for ~0.3s each). So the hook injects the REFUSAL, not the
+  # process: byte-identical text and exit status, reaching nothing outside this process.
+  #
+  #   PROBE_FAULT=in-flight  bash bin/probe.sh …   # the conformance-run refusal
+  #   PROBE_FAULT=building   bash bin/probe.sh …   # the build refusal
+  #
+  # Same convention as ci-watch.sh's CI_WATCH_FAULT: an arm that reports only when something upstream is
+  # broken is, on a healthy machine, indistinguishable from an arm that does nothing.
+  if [ "${PROBE_FAULT:-}" = "in-flight" ] || pgrep -f "conformance/run.sh" >/dev/null 2>&1; then
     die "a conformance run is IN FLIGHT. It reads engines from their working trees; measuring now, or
       editing now, contaminates it in both directions. Wait for it."
   fi
   for p in "swift build" "gradlew" "cargo build" "cargo test"; do
-    pgrep -f "$p" >/dev/null 2>&1 && die "a build is running ($p) — the binary you are about to probe may
+    if [ "${PROBE_FAULT:-}" = "building" ] || pgrep -f "$p" >/dev/null 2>&1; then
+      die "a build is running ($p) — the binary you are about to probe may
       be replaced mid-run. Wait for it."
+    fi
   done
 }
 

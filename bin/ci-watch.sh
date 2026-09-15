@@ -901,7 +901,29 @@ median_secs() {
 
 for repo in "${REPOS[@]}"; do
   d="$ROOT/$repo"
-  [ -d "$d" ] || { printf "  %-14s SKIP  (not checked out)\n" "$repo"; continue; }
+  # SOUNDNESS R441 — A SKIP USED TO LEAVE THE VERDICT GREEN, in the one script whose entire thesis is
+  # that the summary must never be greener than its rows. `SKIP (not checked out)` printed, `continue`
+  # ran, and nothing touched `rc` — so a family repo that is simply absent from this machine contributed
+  # NOTHING and the last line still read "OK — every workflow enumerated at every HEAD concluded
+  # success". MEASURED: six of the seven repos symlinked into a scratch ROOT and candor-swift left out
+  # gave exactly that line, exit 0, with candor-swift never checked at all.
+  #
+  # It is the same sentence this file already applies to an unknown ARGUMENT forty lines above —
+  # "silence about a name we cannot check reads as a pass" — and the branch one over from it was the
+  # exception. Reachable in normal use: `anya.local` is a second machine with the same layout, a fresh
+  # box clones repos one at a time, and a moved or renamed directory looks identical to an absent one.
+  #
+  # RED, not PENDING: pending means "not yet answered, ask again", and `--wait` cannot clone a repo.
+  # The remedy goes on the row, per this family's UX rule that a failure carries the way out — and
+  # naming the repos you DO have is a real answer, because an explicit argument list is a narrower
+  # claim than the family default and this script already validates those names.
+  if [ ! -d "$d" ]; then
+    printf "  %-14s %-26s ✘ NOT CHECKED OUT at %s — this repo was not checked, and an unchecked repo\n" \
+           "$repo" "(absent)" "$d"
+    printf "  %-14s %-26s   is not a green one. Clone it, or name the repos you have: ci-watch.sh <repo…>\n" "" ""
+    rc=1
+    continue
+  fi
   resolve_sha "$d"
   if [ "$sha_failed" -eq 1 ]; then
     # Named and red, never folded into "no run expected" or any other clean-looking branch below — see

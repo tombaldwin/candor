@@ -73,7 +73,38 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # An absence-of-effect claim IS a safety assertion by definition, which is why the wide form is right
 # here and would not be right in the test-file allowlist below — that one fails safe by being narrow,
 # this one fails safe by being wide.
-ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume)(es|s)? (no|nothing)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
+#
+# SOUNDNESS R435 — A FOURTH MISS, and it is the one the tool most needed to catch. `Candor.java:5240`
+# shipped a BOLDED *"THIS ADDS NO CAPTURE, ONLY DISCLOSURE"* twelve lines above a line that writes into
+# `pathsDirect`, plus *"remains the sole authority over what enters paths"* — and R434 is the direct
+# consequence of that sentence being believed. This regex returned "no safety assertions added — nothing
+# to defend" on that range. MEASURED against the live pattern before touching it: all four spellings
+# ("adds no capture", "adds no new capture", "cannot introduce", "sole authority") MISSED, while a
+# control sentence the list does cover ("trivially pure") matched — so the blindness was the regex's,
+# not a harness artefact.
+#
+# The three shapes added, each by the same reasoning the paragraph above already gives for the wide form:
+#   · the ABSENCE family gains its missing verbs — "adds no", "introduces no", "captures nothing". An
+#     "adds no X" claim is an absence-of-effect claim, which this comment already calls a safety
+#     assertion BY DEFINITION; the list simply had `touch|open|perform|draw|consume` and not the verbs
+#     this family actually writes about CAPTURE.
+#   · "cannot <introduce|add|capture|widen|escape|leak|reach>" — the list already had `cannot happen`,
+#     which is the same claim about a narrower subject.
+#   · "sole authority" / "only authority" — a single-writer claim, the exact form R435 shipped, and the
+#     one whose falseness is hardest to see because it names a real function that really is A authority.
+# The direction this fails in, stated: this arm FAILS a commit, so breadth costs noise and a noisy tool
+# gets ignored — but every shape here is an absence-or-exclusivity claim about effects, which is the
+# narrow subject this file exists for, not a general widening.
+#
+# CALIBRATED BOTH WAYS, and the one FALSE POSITIVE is recorded rather than designed out: all six R435
+# spellings now match, all seven pre-existing shapes still match (no regression), and four benign lines
+# ("add a new test", "record the version", "widen the allowlist", "capture the output") stay quiet —
+# the `(no|nothing)` requirement is what keeps those verbs from firing on ordinary prose. The miss is
+# `the only authority on this is the spec author`: an authority claim about a PERSON. Kept deliberately.
+# Narrowing to `authority (over|on what)` would re-introduce the remembered-sentence brittleness that
+# R336 retired, and the costs are not symmetric — this false positive asks for one fixture that is not
+# needed, while the blindness it replaces let a false safety assertion ship and become R434.
+ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume|add|introduce|capture|record|widen|broaden)(e?s)? (no|nothing)|(sole|only) authority|cannot (introduce|add|capture|widen|escape|leak|reach)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
 
 # SOUNDNESS R339 — THE STRUCTURAL ARM, because the VOCABULARY ARM HAS NOW MISSED THREE TIMES and the
 # third miss retired the approach rather than the wording. R332 added this project's dialect after the

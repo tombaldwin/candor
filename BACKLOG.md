@@ -338,7 +338,59 @@ held constant (pre-September: rust 25 / swift 16 / java 8 / ts 4; rust hosts the
 been probed hardest). So the honest reading is design-then-sampling-then-language, and the conclusion
 that follows is S2, not "rewrite rust".
 
-**S2. REPLACE THE ESCAPE MODEL WITH CHARGE-AT-CONSTRUCTION.** Nine open silent rows live in one model
+**~~S2. REPLACE THE ESCAPE MODEL WITH CHARGE-AT-CONSTRUCTION.~~ BUILT, PRICED OVER 1,561 CRATES, AND
+NOT ADOPTED — 2026-09-16. THE TRADE IS BAD AND THE PREMISE BELOW WAS WRONG BY TWO ORDERS OF MAGNITUDE.**
+
+    ADDED 1,953  /  REMOVED 0  /  CHANGED 3,587      REACH 13,290 hits across 465 entries
+    flag-off vs the pre-change binary, 300 crates:  0 / 0 / 0   (inertness measured, not asserted)
+
+**REMOVED 0 held**, so the change introduces no silence — it is the COST side that kills it. 1,666
+functions gain an effect: **551 a HARD one across 30 crates**, 1,115 only `Unknown`. Of 584 hard-effect
+gains, **327 (56%) are functions whose declared return type contains the very type they are now charged
+for** — the definition of an escape. **28 were read against source: 23–24 fabrications, 4–5 transitive
+consequences of one, and ZERO confirmed real in-frame drops.**
+
+**THE PREMISE THIS ENTRY STATED — that the model "exists to buy off ONE over-charge (`anyhow` `render`)" —
+IS FALSE.** It buys off ≥551 hard-effect fabrications plus 1,115 `Unknown` degradations, and the dominant
+shape is not a library function at all: it is **the CONSTRUCTOR of every effectful-`Drop` type in the
+program**. `H::new` itself gets charged, so the fabrication propagates to every caller. The shapes are
+`fn new() -> Self`, one-line delegations, and — worst — bodies that say `std::mem::forget(self)` or
+`ManuallyDrop::new(self)` outright (x11rb `into_seg`, jni `Global::into_raw`, tokio
+`RwLockWriteGuard::skip_drop`), each executed and confirmed to drop NOTHING in frame. Concentration is in
+exactly the RAII crates people gate against: **x11rb 175, jni 65, tokio 48, lapin 38, rdkafka 28,
+tempfile 28, rusqlite 25**. *"An over-charge is the acceptable direction"* says which way to FAIL; it is
+not a budget. This would make `deny Fs` / `deny Log` unadoptable in 30 widely-depended-on crates — which
+is [[R443]]'s own argument one rung down.
+
+**AND THE ROW GROUPING BELOW WAS WRONG TOO — it is 7 rows plus half of one, not nine.** Measured in both
+arms: **R197** (turbofish type origin) is ABSENT in both; **R200's CALLEE half** (`Option<H>`/`Vec<H>`/
+tuple params) is ABSENT in both while its bare-typed twin is charged in both — that is a `type_path`
+container-unwrapping defect, a different bug; **R209(a)** is charged in both. Closed by the experiment:
+R189, R195, R198, R201, R297, R300, R323, and R200's CALLER half — verified with an in-frame drop counter
+whose result is `mem::forget`-ed so an escaping value cannot be miscounted.
+
+**WHERE THE MEASUREMENT DOES POINT, and it is a different change:** 56% of the fabrications are decided
+correctly by a purely syntactic test on the **RETURN TYPE** — no names, no sites, no scopes, which is
+exactly where all seven rows fail. **It is NOT sound as an exemption on its own** (`fn replace(&mut self,
+v: H) -> H` returns the charged type and really does drop one), so it must be priced in its own right
+rather than bolted onto this. That is the next experiment if anyone wants one.
+
+**KEPT, NOT REVERTED: candor-rust `499a807` ships it default-OFF behind `CANDOR_CHARGE_AT_CTOR`** with a
+loud stderr banner, the full measurement in `charge_at_construction`'s doc comment, and two test arms —
+the second **asserts the fabrication on purpose**, so a future edit that closes the rows without it fails
+loudly instead of passing unnoticed. The reason to keep dead code here is narrow and specific: the next
+re-price is one command instead of a rebuilt 1,561-crate experiment.
+
+**A CORRECTION THE AGENT MADE TO ITSELF, worth more than the result:** its first write-up attributed the
+1,115 `Unknown` gains to *"the `ambiguous:` refusal firing more often"*. That was a guess — **none of them
+gained an `unknownWhy`, which is what that refusal writes.** Measured shape only: all 1,115 flip to
+`unresolved: true` and 928 carry a new `<Type>::drop` edge. Cause NOT established, and the comment now
+says so rather than carrying a plausible sentence nobody would re-check.
+
+**NOTE FOR ANY FUTURE PRICING OF THIS AREA: `soundness/run.sh` CANNOT judge it either way** — it asserts
+never-silent-pure and is blind to fabrication by design. A green there is not evidence about this change.
+
+**THE ORIGINAL ENTRY, kept because the reasoning was sound and the DATA was what was missing:** Nine open silent rows live in one model
 (R189, R195, R197, R198, R200, R201, R209, R297, R300, R323 — the cluster this file already defers as
 "the same model change"). R297 shows a site-keyed model is blind BY CONSTRUCTION: `*slot = v` has no
 construction site. The model exists to buy off ONE over-charge (`anyhow` `render`, R189's plan column) —

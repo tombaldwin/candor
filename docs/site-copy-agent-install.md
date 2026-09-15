@@ -1,5 +1,18 @@
 # Drop-in replacement copy for candor.poly.io — the agent install block
 
+> **READ THIS FIRST — what to publish.**
+>
+> **Publish only the blockquoted text in “§1 THE COPY” (and “§1b” if you want the second block).** That is the page content. Everything from
+> “§2 BACKGROUND” onward is working notes for whoever maintains this file — the measurements behind the
+> copy, and a record of claims that turned out to be false. **None of §2 goes on the site.**
+>
+> The code blocks inside §1 are commands a reader will paste. Reproduce them **verbatim** — every one has
+> been run end to end, and the flags are load-bearing (`-y`, `--allow-js`, the exact `claude mcp add`
+> form). If a command looks redundant, it is not; check §2 before trimming it.
+>
+> If anything in §1 contradicts what the live product does, the product wins and this file is stale —
+> say so rather than publishing it.
+
 **Why this changes.** The live page says *"Install and map your repo by pasting one line — paste this to
 your coding agent"*, and the pasted line tells the agent to **read
 `https://github.com/tombaldwin/candor/blob/main/AGENTS.md` and follow it**. That asks an agent to fetch a
@@ -19,7 +32,7 @@ the second was a flag the published package did not have (it has since shipped, 
 
 ---
 
-## USE NOW — tested against the published 0.38.1
+## §1 THE COPY — publish this. Tested against the published 0.38.1
 
 The whole path, from nothing installed to an agent that can answer. Three lines, one paste, no choices
 to make on the way.
@@ -90,55 +103,7 @@ as a footnote, not a second route.
 
 ---
 
-## What changed since the first draft — both deferred items have landed
-
-Both were written as "SWAP IN LATER, only once its precondition is real". Both preconditions are now
-real, verified by running them rather than by assuming the release implied them:
-
-1. **The shorter server command is in.** `npx -y candor-ts --mcp` answers a real `initialize` result on
-   0.38.0, so the copy above uses it instead of `-p candor-ts candor-mcp`. The longer form still works
-   and is not wrong — it is just noisier. Re-verify after any release with:
-   `printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"p","version":"0"}}}\n' | npx -y candor-ts --mcp`
-   — a JSON result means it has shipped.
-
-2. **The registry paragraph is in.** The blocker was measured and is gone: the 0.36.2 publish was
-   REFUSED with `NPM package 'candor-ts' is missing required 'mcpName' field` — npm verifies namespace
-   ownership from a `mcpName` field in `package.json`, while the `mcp-name:` README marker is the
-   *crates.io* convention and had been copied across without checking it transfers. npm does not allow
-   republishing a version, so the listing could only land with a later release. It has:
-   `curl -s 'https://registry.modelcontextprotocol.io/v0/servers?search=candor'` now returns
-   `io.github.tombaldwin/candor` at 0.37.0 and 0.38.0. Note a *different* product,
-   `money.candor/candor-finance`, also answers that search — look for the `io.github.tombaldwin` name
-   specifically.
-
-## Three corrections to the previous draft
-
-The first was a review catch; the other two came from re-running the draft's own commands.
-
-- **It offered the reader a choice, and it read as a TypeScript tool.** Both headline commands were
-  `candor-ts`, every other language sat in an italic parenthetical ending "…then `candor scan .` and the
-  same `claude mcp add` line", and a later draft turned that into two labelled routes — which is worse:
-  a reader who has to pick a route has already stopped reading, and the install steps were still not in
-  the block. It is now one paste that starts from nothing installed. The
-  parenthetical was *true* — reports are engine-agnostic, and candor-ts's MCP server does read a Rust
-  report (measured: `candor_where Exec` → `{"directly":["fetch"]}` against a `candor-scan` report) — but
-  telling someone who just ran `cargo install candor-scan` to invoke an **npm package** for the server is
-  the wrong shape, and burying three of four engines in an aside misrepresents what candor is. The two
-  routes are now peers, and Route A names no language at all. Verified on all four:
-  `candor scan .` → `candor-scan` on a Rust crate, `candor-ts` on a TS project, `candor-java` on compiled
-  classes (`Fs 1`, 1 entry), `candor-swift` on an SPM package — then `candor mcp` served each report.
-
-- **`npx` does not cover plain JavaScript without a flag.** The old parenthetical said it "covers
-  JavaScript and TypeScript". Measured: a JS-only repo answers
-  `candor-ts: no TypeScript sources under .` and exits **2** with no report — the paste-line silently
-  does nothing for a JavaScript reader. `--allow-js` fixes it, and the copy above says so.
-- **SPEC §7.12 does not exist and never did.** The note below cited it for the server's read-only
-  boundary. The read-only query surface is **§3.1**, and §7's conformance item 10 points at §3.1/§3.2.
-  A section number in public copy is a pin like any other: resolve it, do not carry it forward.
-
----
-
-## The natural NEXT step, if the page wants one
+## §1b OPTIONAL — a second block, if the page wants a next step
 
 Once the agent can query the map, the other half of candor is the gate. **`candor init` is now worth
 linking**, which it was not before 2026-09-15 — it had two defects that made its first run fail, and both
@@ -166,7 +131,57 @@ gains `Fs` fails it with `AS-EFF-005`, exit 1.
 being wired anyway, one from assuming Maven. Do not link `init` from any page built before this date
 without re-checking it.)*
 
-## Notes for whoever edits the page
+## §2 BACKGROUND — NOT for the page
+
+### What changed since the first draft — both deferred items have landed
+
+Both were written as "SWAP IN LATER, only once its precondition is real". Both preconditions are now
+real, verified by running them rather than by assuming the release implied them:
+
+1. **The shorter server command is in.** `npx -y candor-ts --mcp` answers a real `initialize` result on
+   0.38.0, so the copy above uses it instead of `-p candor-ts candor-mcp`. The longer form still works
+   and is not wrong — it is just noisier. Re-verify after any release with:
+   `printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"p","version":"0"}}}\n' | npx -y candor-ts --mcp`
+   — a JSON result means it has shipped.
+
+2. **The registry paragraph is in.** The blocker was measured and is gone: the 0.36.2 publish was
+   REFUSED with `NPM package 'candor-ts' is missing required 'mcpName' field` — npm verifies namespace
+   ownership from a `mcpName` field in `package.json`, while the `mcp-name:` README marker is the
+   *crates.io* convention and had been copied across without checking it transfers. npm does not allow
+   republishing a version, so the listing could only land with a later release. It has:
+   `curl -s 'https://registry.modelcontextprotocol.io/v0/servers?search=candor'` now returns
+   `io.github.tombaldwin/candor` at 0.37.0 and 0.38.0. Note a *different* product,
+   `money.candor/candor-finance`, also answers that search — look for the `io.github.tombaldwin` name
+   specifically.
+
+### Three corrections to the previous draft
+
+The first was a review catch; the other two came from re-running the draft's own commands.
+
+- **It offered the reader a choice, and it read as a TypeScript tool.** Both headline commands were
+  `candor-ts`, every other language sat in an italic parenthetical ending "…then `candor scan .` and the
+  same `claude mcp add` line", and a later draft turned that into two labelled routes — which is worse:
+  a reader who has to pick a route has already stopped reading, and the install steps were still not in
+  the block. It is now one paste that starts from nothing installed. The
+  parenthetical was *true* — reports are engine-agnostic, and candor-ts's MCP server does read a Rust
+  report (measured: `candor_where Exec` → `{"directly":["fetch"]}` against a `candor-scan` report) — but
+  telling someone who just ran `cargo install candor-scan` to invoke an **npm package** for the server is
+  the wrong shape, and burying three of four engines in an aside misrepresents what candor is. The two
+  routes are now peers, and Route A names no language at all. Verified on all four:
+  `candor scan .` → `candor-scan` on a Rust crate, `candor-ts` on a TS project, `candor-java` on compiled
+  classes (`Fs 1`, 1 entry), `candor-swift` on an SPM package — then `candor mcp` served each report.
+
+- **`npx` does not cover plain JavaScript without a flag.** The old parenthetical said it "covers
+  JavaScript and TypeScript". Measured: a JS-only repo answers
+  `candor-ts: no TypeScript sources under .` and exits **2** with no report — the paste-line silently
+  does nothing for a JavaScript reader. `--allow-js` fixes it, and the copy above says so.
+- **SPEC §7.12 does not exist and never did.** The note below cited it for the server's read-only
+  boundary. The read-only query surface is **§3.1**, and §7's conformance item 10 points at §3.1/§3.2.
+  A section number in public copy is a pin like any other: resolve it, do not carry it forward.
+
+---
+
+### Notes for whoever edits the page
 
 - **Keep the scan as its own step.** The MCP server is deliberately read-only: it reads
   `.candor/report*.json` and never scans (SPEC §3.1 — a written report plus its call-graph sidecar

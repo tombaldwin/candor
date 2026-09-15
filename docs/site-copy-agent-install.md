@@ -6,15 +6,20 @@ your coding agent"*, and the pasted line tells the agent to **read
 remote document and act on whatever it currently says: the instructions can change under the reader, can
 be tampered with, and arrive from somewhere other than the thing being installed.
 
-**Every command below was run end to end before this file was written**, and re-run against 0.38.0 on
-2026-09-14 — on a Rust, a TypeScript, a JVM and a Swift project, not just one. A first draft led with
+**Every command below was run end to end before this file was written**, and re-run against the
+published **0.38.1** on 2026-09-15 — on a Rust, a TypeScript, a JVM and a Swift project, not just one,
+each from a completely empty engine cache.
+
+*What a reader actually installs today:* `brew install` gives the **0.38.1** umbrella, which pins the
+engines at **0.38.0** with **rust at 0.38.1** (a one-engine patch). `candor doctor` shows that split and
+calls it a deliberate pin rather than drift. A first draft led with
 `candor mcp install` and `npx -y candor-ts --mcp`; both were wrong for a first-time reader at the time —
 the first needs candor already on PATH (so it belongs under a route that says so, which it now does), and
 the second was a flag the published package did not have (it has since shipped, and is used below).
 
 ---
 
-## USE NOW — tested against the published 0.38.0
+## USE NOW — tested against the published 0.38.1
 
 The whole path, from nothing installed to an agent that can answer. Three lines, one paste, no choices
 to make on the way.
@@ -47,7 +52,7 @@ to make on the way.
 
 **Homebrew 7 requires third-party taps to be TRUSTED, and the page should say so.** Verified on
 Homebrew 7.0.1: `brew trust tombaldwin/tap` followed by `brew install tombaldwin/tap/candor` installs
-candor 0.38.0 cleanly. Without it, brew refuses with a message naming whichever tap is untrusted — on a
+candor cleanly (0.38.1 as of 2026-09-15). Without it, brew refuses with a message naming whichever tap is untrusted — on a
 machine that already has any other third-party tap, the name in that message is **that other tap**, not
 ours, which makes the failure read as unrelated to candor. Brew prints the remedy itself
 (`brew trust <tap>`), so this is a note for the page rather than a fourth command in the block:
@@ -63,7 +68,7 @@ installed, one language at a time:
 | JVM | **nothing** — fetches a native binary, no JVM required |
 | Swift | **nothing** on macOS arm64 — fetches a native binary, no Swift toolchain |
 | TypeScript | **Node**, which the reader already has if this is their repo; the engine runs via `npx` |
-| Rust | **cargo today.** candor-rust only began publishing binaries after v0.38.0, so the fetch 404s and falls back to a source build. From the next release it needs nothing, like the JVM and Swift rows. |
+| Rust | **cargo today, and still today.** The binaries workflow exists and is green, but `v0.38.1` shipped *without* assets — the tag predates the workflow, and a workflow is read from the ref it runs on. So the fetch 404s and falls back to a source build (~50s, with progress). It joins the JVM and Swift rows at the next candor-rust release, **not** at "the next release" — an earlier draft of this row said that, 0.38.1 came and went, and the row was wrong the moment it shipped. |
 
 Neither remaining prerequisite is one a reader in that language is likely to lack — a Rust developer has
 cargo and a Node developer has Node — and both now fail with a remedy that works (`https://rustup.rs`,
@@ -133,6 +138,34 @@ The first was a review catch; the other two came from re-running the draft's own
 
 ---
 
+## The natural NEXT step, if the page wants one
+
+Once the agent can query the map, the other half of candor is the gate. **`candor init` is now worth
+linking**, which it was not before 2026-09-15 — it had two defects that made its first run fail, and both
+are fixed:
+
+> ```bash
+> candor init          # propose a policy from what the code already does, record a baseline, write CI
+> ```
+>
+> Every rule it proposes passes today, so adopting it is safe; what it catches is the *next* change. It
+> also writes `.candor/run` — the gate as one command — and a CI workflow.
+
+Verified on 2026-09-15 across all four engines, in both directions, which is the claim that matters for a
+gate: a freshly initialised project's first `.candor/run` exits **0**, and a formerly-pure function that
+gains `Fs` fails it with `AS-EFF-005`, exit 1.
+
+| engine | first run | after a regression |
+| --- | --- | --- |
+| TypeScript | 0 | exit 1 |
+| Rust | 0 | exit 1 |
+| JVM | 0 | exit 1 |
+| Swift | 0 | exit 1 |
+
+*(Both TypeScript and the JVM used to exit **2** on that first run — one from a rule-less proposed policy
+being wired anyway, one from assuming Maven. Do not link `init` from any page built before this date
+without re-checking it.)*
+
 ## Notes for whoever edits the page
 
 - **Keep the scan as its own step.** The MCP server is deliberately read-only: it reads
@@ -144,7 +177,9 @@ The first was a review catch; the other two came from re-running the draft's own
 - The written route (AGENTS.md) still works and should stay — it just should not be the first thing an
   agent is told to fetch. Once an engine is installed, `--agents` prints the same contract
   version-matched to the installed build, which a web page cannot do.
-- **Sixteen tools**, verified against 0.38.0's `tools/list`: `candor_activity`, `candor_blindspots`,
+- **Sixteen tools**, verified by calling every one of them against a real report on 2026-09-15 — and
+  the gate among them checked in BOTH directions, since a tool that only ever answers `ok` is not
+  evidence. Names from `tools/list`: `candor_activity`, `candor_blindspots`,
   `candor_callers`, `candor_containment`, `candor_diff`, `candor_fix`, `candor_gains`, `candor_gate`,
   `candor_impact`, `candor_map`, `candor_path`, `candor_reachable`, `candor_show`, `candor_unverified`,
   `candor_whatif`, `candor_where`. If the page names a subset, `candor_impact`, `candor_reachable` and

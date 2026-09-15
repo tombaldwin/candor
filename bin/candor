@@ -206,22 +206,37 @@ rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$
 # would be the worst of both.
 _build_progress() {             # $1 = indent; $2.. = the command to run
   local ind="$1"; shift
-  local log done_f rc i=0 start now el cols max last
+  local log done_f rc i=0 start now el cols max crate n tally
   local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
   done_f="$log.done"
   ( "$@" >"$log" 2>&1; echo $? >"$done_f" ) &
   start=$(date +%s); cols=$(tput cols 2>/dev/null || echo 80)
   while [ ! -f "$done_f" ]; do
-    last="$(tail -n 1 "$log" 2>/dev/null)"
-    last="${last#"${last%%[![:space:]]*}"}"
-    i=$(( (i + 1) % 10 )); now=$(date +%s); el=$(( now - start ))
-    max=$(( cols - ${#ind} - 14 )); [ "$max" -lt 16 ] && max=16
-    printf '\r%s%s %d:%02d  %-*.*s' "$ind" "${fr[$i]}" $(( el / 60 )) $(( el % 60 )) "$max" "$max" "$last"
+    # WHAT cargo IS DOING, NOT WHAT IT SAID. The last raw line is mostly noise a reader cannot act on
+    # ("Locking 35 packages", "Downloaded candor-scan v0.38.1"); the crate being compiled and how many
+    # are done is the thing that actually tells you it is moving and roughly how far along it is.
+    crate="$(grep -a 'Compiling ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Compiling \([^ ]*\).*/\1/')"
+    # NO `|| echo 0`: `grep -c` PRINTS the count and still exits 1 when it is zero, so the fallback
+    # appended a second line and `[ "$n" -gt 0 ]` got "0\n0" — "integer expression expected".
+    n="$(grep -ac 'Compiling ' "$log" 2>/dev/null)"; n="${n:-0}"
+    [ -n "$crate" ] || crate="resolving dependencies"
+    now=$(date +%s); el=$(( now - start ))
+    i=$(( (i + 1) % 10 ))
+    # NO FAKE DENOMINATOR. cargo does not say how many crates it will compile — `Locking N packages` is
+    # the dep graph, not the build list, and several are already cached. A bar filling against a number
+    # this tool invented would be exactly the over-claim candor exists to refuse, in candor's own
+    # installer. A climbing tally is true, and it moves.
+    if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
+    max=$(( cols - ${#ind} - 30 )); [ "$max" -lt 12 ] && max=12
+    printf '\r%s%s  %d:%02d   %-*.*s  %s' "$ind" "${fr[$i]}" $(( el / 60 )) $(( el % 60 )) \
+           "$max" "$max" "$crate" "$tally"
     sleep 1
   done
   wait 2>/dev/null
   rc="$(cat "$done_f" 2>/dev/null || echo 1)"
+  now=$(date +%s); BUILD_ELAPSED=$(( now - start ))
+  BUILD_CRATES="$(grep -ac 'Compiling ' "$log" 2>/dev/null)"; BUILD_CRATES="${BUILD_CRATES:-0}"
   printf '\r%*s\r' "$cols" ''     # erase, so the ✔ / ✘ below owns the line
   if [ "$rc" != 0 ]; then
     echo "${ind}the build failed — last lines:"
@@ -1471,7 +1486,19 @@ PY
           cargo_rc="${PIPESTATUS[0]}"
         fi
         if [ "$cargo_rc" -eq 0 ]; then
-          echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
+          # SAY WHAT THAT TIME BOUGHT. `✔ candor-scan 0.38.1` alone makes a two-minute wait feel like
+          # nothing happened; naming both engines, the crates built and the elapsed time is the same
+          # fact with the work visible. Only on the TTY path — the redirected one already has the whole
+          # log above it, and BUILD_* are unset there.
+          if [ -n "${BUILD_CRATES:-}" ] && [ "${BUILD_CRATES:-0}" -gt 0 ]; then
+            printf '         ✔ %s · %s\n' \
+              "$(candor-scan --version 2>/dev/null | head -1)" \
+              "$(candor-query --version 2>/dev/null | head -1)"
+            printf '           built %s crates in %d:%02d\n' \
+              "$BUILD_CRATES" $(( BUILD_ELAPSED / 60 )) $(( BUILD_ELAPSED % 60 ))
+          else
+            echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
+          fi
         else
           echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
         fi

@@ -10,6 +10,31 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**And the line now says something worth reading.** Flashing cargo's raw last line was just a quieter
+wall — *"Locking 35 packages"*, *"Downloaded candor-scan v0.38.1"* — none of which a person can act on.
+It now shows the crate being compiled and a climbing tally:
+
+```
+           ⠦  0:05   candor-classify                          10 crates
+           ⠧  0:06   candor-scan                              11 crates
+```
+
+and finishes by naming what the wait bought, rather than a bare tick:
+
+```
+         ✔ candor-scan 0.38.1 (spec 0.38) · candor-query 0.38.1 (spec 0.38)
+           built 31 crates in 1:44
+```
+
+**No progress bar, deliberately.** cargo never says how many crates it will compile — `Locking N
+packages` is the dependency graph, not the build list, and several are already cached. A bar filling
+against a number this tool invented would be exactly the over-claim candor exists to refuse, committed
+in candor's own installer. A climbing count is true, and it moves.
+
+One bug found on the way and worth remembering: **`grep -c` PRINTS the count and still exits 1 when it
+is zero**, so a `|| echo 0` fallback appends a second line and `[ "$n" -gt 0 ]` gets `0\n0` —
+*"integer expression expected"*.
+
 Letting cargo speak fixed the hang and created a wall: ~90 lines of build transcript in the user's
 terminal. On a TTY the rust build is now **one self-erasing line** — spinner, elapsed clock, and the
 build's current action, truncated to the terminal width — which flashes each line as it arrives and

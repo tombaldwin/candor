@@ -8,7 +8,26 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (unreleased)
+## 2026-09-15 — cut as umbrella 0.38.2 (engines 0.38.2)
+
+The front-door pass in the two entries below reaches Homebrew users for the first time, and the Rust
+engine stops requiring a toolchain. Highlights, with the detail in those entries:
+
+- **`candor update` no longer looks hung or misreports what it installed** — one live progress line for
+  the Rust build instead of ninety, rendered independently of the log poll (at 1fps it read as a stalled
+  program), naming the crate being built; colour, and a persistent form for terminals that do not animate.
+- **`candor doctor` 15.6s → 0.6s.** The end-of-update pause was never the build: `grep -v` filtering
+  AFTER a `find` walk instead of `-prune`. Verified the prune does not change the answer.
+- **`candor scan` self-heals a missing JVM engine**, as the other three arms already did.
+- **`candor update rust` prefers a prebuilt binary** — which candor-rust 0.38.2 now publishes, so the
+  Rust engine no longer needs a compiler on the user's machine.
+- **`candor init` reads the JVM build system** instead of assuming Maven, and will not write a rule-less
+  policy.
+- **Shadowed installs resolve to a real path, or say they cannot**, instead of reporting a guess.
+- Release tooling: `release-verify` understands per-engine pins without excusing a genuine mismatch.
+- **All per-engine pin overrides are CLEARED** — `ENGINE_PIN` alone names the line at 0.38.2.
+
+## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (released 2026-09-15 as 0.38.2)
 
 **`release-verify` was permanently red after a scoped patch — and then permanently green for anything.**
 Run at the family line after the 0.38.1 rust cut, it reported all four crates as failures for sitting at
@@ -65,7 +84,7 @@ on later. First gate run: **exit 0, was 2.** Verified not to be a vacuous pass �
 catches a formerly-pure function gaining `Fs` (`AS-EFF-005`, exit 1) — and a policy that *does* have
 rules is still wired.
 
-## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
+## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (released 2026-09-15 as 0.38.2)
 
 **The shadow resolver no longer invents a path.** If `command -v` failed it fell back to the bare command
 name and printed that under `runs:` as though it were a location — a claim about the filesystem derived

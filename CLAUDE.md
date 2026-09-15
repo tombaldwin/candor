@@ -92,6 +92,25 @@ dispatching a wave, never during one**, and if you must clean mid-wave, delete o
 this turn. `bash bin/disk-guard.sh` before dispatching is a second's work and is the whole point of
 having it.
 
+**TWO AGENTS CHOSE THE SAME SCRATCHPAD DIRECTORY NAME AND ONE ATE THE OTHER'S FIXTURE.** Measured
+2026-09-15: a candor-rust agent and a candor-swift agent were both working SOUNDNESS **R349** — different
+halves, different repos, correctly partitioned — and both created `scratchpad/r349/`. The swift agent
+wrote `Main.swift` + `r.json` over the rust agent's directory and its `src/lib.rs` **vanished
+mid-measurement**. Nothing was lost permanently because the rust agent noticed and re-created it, but it
+noticed by accident.
+
+**One owner per repo does not partition the scratchpad, and the obvious naming convention — name the
+directory after the row — is exactly what guarantees the collision**, because a row worked in two engines
+is the normal case, not the exception. The shared-instrument rule already covers `conformance/run.sh`,
+`gate-run.sh` and disk sweeps; this is the same class in the one place the file did not name.
+
+**The fix is a prefix, and it belongs in the BRIEF rather than in an agent's judgement:** tell every
+dispatched agent to prefix ITS OWN scratch paths with its repo — `rustagent-r349/`, `swiftagent-r349/`.
+The rust agent adopted that convention itself after the collision; it should not have had to.
+
+**An agent that must invent a shared name will collide, for the same reason one that must invent a row ID
+will** — and the row-ID paragraph above is the proof that naming it in the brief is what works.
+
 **An audit's boundary must be stated and justified, and must not be drawn around its own trigger.** Every
 audit in that session except one scoped itself to the instance in hand and missed the next one: a
 `::clone` exclusion, then a `walkdir` audit that ruled "unique victim, not a class" while citing `ignore`

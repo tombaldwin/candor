@@ -217,12 +217,17 @@ fi
 
 _build_progress() {             # $1 = indent; $2.. = the command to run
   local ind="$1"; shift
-  local log done_f rc i=0 start now el cols max crate n tally milestone=-7
+  local log done_f rc i=0 start now el cols cw crate n tally milestone=-7 prev='' since=0 onit
   local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
   done_f="$log.done"
   ( "$@" >"$log" 2>&1; echo $? >"$done_f" ) &
   start=$(date +%s); cols=$(tput cols 2>/dev/null || echo 80)
+  # ONE crate-column width for BOTH the milestone line and the live line. They drifted apart — one
+  # space after `·` against two after the spinner, a fixed 24 against a dynamic width — and the result
+  # was three lines that each started their crate name in a different column. Same geometry, computed
+  # once: marker, two spaces, m:ss, three spaces, crate (cw), two spaces, tally.
+  cw=$(( cols - ${#ind} - 26 )); [ "$cw" -gt 24 ] && cw=24; [ "$cw" -lt 10 ] && cw=10
   while [ ! -f "$done_f" ]; do
     # WHAT cargo IS DOING, NOT WHAT IT SAID. The last raw line is mostly noise a reader cannot act on
     # ("Locking 35 packages", "Downloaded candor-scan v0.38.1"); the crate being compiled and how many
@@ -238,8 +243,15 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     # the dep graph, not the build list, and several are already cached. A bar filling against a number
     # this tool invented would be exactly the over-claim candor exists to refuse, in candor's own
     # installer. A climbing tally is true, and it moves.
+    # HOW LONG WE HAVE BEEN ON *THIS* CRATE. The last crate a Rust build compiles is usually the big
+    # one — candor-scan took 20 seconds alone — and during it BOTH the name and the count freeze, so two
+    # consecutive milestones read identically and the thing looks hung again at the very end. Reported
+    # as "pauses here". The per-crate clock is the one number still moving, and it says "this crate is
+    # big", which is the true reason rather than a reassurance.
+    if [ "$crate" != "$prev" ]; then prev="$crate"; since=$el; fi
+    onit=$(( el - since ))
     if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
-    max=$(( cols - ${#ind} - 30 )); [ "$max" -lt 12 ] && max=12
+    [ "$onit" -ge 8 ] && tally="$tally · ${onit}s on this one"
     # A PERSISTENT MILESTONE EVERY 15s, because an animated line leaves NO TRACE in a terminal that does
     # not render carriage returns mid-command — and reported from exactly that: a 50-second build that
     # showed "building from source" and then nothing at all until the ✔. The animation is the nice case;
@@ -253,14 +265,14 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + 10 )) ]; then
       milestone=$el
       printf '\r%*s\r' "$cols" ''
-      printf '%s%s·%s %s%d:%02d%s   %s%-24.24s%s %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
+      printf '%s%s·%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
              "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
-             "$C_B" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
+             "$C_B" "$cw" "$cw" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
     fi
-    printf '\r%s%s%s%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s' \
+    printf '\r%s%s%s%s  %s%d:%02d%s   %s%-*.*s%s  %s%-10s%s' \
            "$ind" "$C_ACC" "${fr[$i]}" "$C_RST" \
            "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
-           "$C_B" "$max" "$max" "$crate" "$C_RST" \
+           "$C_B" "$cw" "$cw" "$crate" "$C_RST" \
            "$C_DIM" "$tally" "$C_RST"
     sleep 1
   done

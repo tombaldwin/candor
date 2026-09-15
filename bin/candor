@@ -1927,7 +1927,20 @@ PY
     if [ "$nlang" -eq 1 ] && [ ! -f "$runsh" ]; then
       if runtpl="$(adopt_tool candor-run)"; then
         case "$langs" in
-          java)  rbuild='mvn -q compile'; rtarget='target/classes' ;;
+          # LOOK, DO NOT GUESS. This hardcoded Maven for every JVM project, so a Gradle repo and a
+          # plain-javac one both got a `.candor/run` whose first execution failed — `mvn: command not
+          # found`, exit 2. That fails CLOSED and says so, which is the right direction, but `init`
+          # sells itself as "stand up the gate in one command" and the gate it wrote could not run.
+          # The build system is visible in the directory; read it.
+          java)
+            if   [ -f "$idir/pom.xml" ]; then rbuild='mvn -q compile'; rtarget='target/classes'
+            elif [ -f "$idir/build.gradle" ] || [ -f "$idir/build.gradle.kts" ]; then
+                 rbuild='./gradlew -q classes'; rtarget='build/classes/java/main'
+            elif ls "$idir"/*.class >/dev/null 2>&1 || [ -d "$idir/classes" ]; then
+                 # Already-compiled classes and no build system: nothing to build, scan what is here.
+                 rbuild=''; rtarget='.'
+            else rbuild='mvn -q compile'; rtarget='target/classes'   # unknown: the commonest default
+            fi ;;
           rust)  rbuild=''; rtarget='.' ;;
           ts)    rbuild=''; rtarget='.' ;;
           swift) rbuild=''; rtarget='.' ;;

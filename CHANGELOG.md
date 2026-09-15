@@ -10,6 +10,24 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**The long silent pause at the END was not the build at all — `candor doctor` took 15.6 seconds.** It is
+the same code that closes every `candor update`, which is why the wait kept appearing after the ✔ with
+nothing on screen. The cause: the source-drift check filtered `target/`, `.build/` and `node_modules/`
+with `grep -v` **after** the walk, so `find` still descended into all of them and then threw the results
+away. Measured on candor-rust alone: **2.6s to reach 590 files, against 0.0s for 297 with `-prune`**.
+Across four engines that is the whole pause. **Filtering output is not the same as not walking.**
+
+`doctor` now runs in **0.6s**, and the prune is verified not to change the answer — the newest-source
+timestamp is byte-identical for candor-rust, candor-swift and candor-ts with and without it, which is
+the check that matters, since a faster wrong answer would be worse than a slow right one.
+
+**And `auto` now defaults to PLAIN.** An in-place line is only an animation where the terminal repaints
+mid-command; elsewhere it persists as its own row, so the durable milestone and the live line arrive as
+two rows with the same text — read, correctly, as duplication, and reported four times. Plain output is
+clean and informative everywhere; fancy is strictly nicer only where it genuinely animates, and that set
+is small and namable (`iTerm.app`, `Apple_Terminal`, `vscode`, `ghostty`, `Alacritty`, `kitty`).
+Defaulting the other way meant every unrecognised terminal got the broken-looking one.
+
 **The spinner ran at 1 fps, which reads as a stalled program — the exact impression it exists to
 prevent.** The loop polled the log and redrew together, once a second. Those are now two rates: the
 spinner redraws ~8×/second while the log is read once a second, so the cost is unchanged (one

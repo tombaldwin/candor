@@ -25,10 +25,7 @@ each from a completely empty engine cache.
 
 *What a reader actually installs today:* `brew install` gives the **0.38.1** umbrella, which pins the
 engines at **0.38.0** with **rust at 0.38.1** (a one-engine patch). `candor doctor` shows that split and
-calls it a deliberate pin rather than drift. A first draft led with
-`candor mcp install` and `npx -y candor-ts --mcp`; both were wrong for a first-time reader at the time —
-the first needs candor already on PATH (so it belongs under a route that says so, which it now does), and
-the second was a flag the published package did not have (it has since shipped, and is used below).
+calls it a deliberate pin rather than drift.
 
 ---
 
@@ -134,6 +131,11 @@ without re-checking it.)*
 ## §2 BACKGROUND — NOT for the page
 
 ### What changed since the first draft — both deferred items have landed
+
+A first draft led with `candor mcp install` and `npx -y candor-ts --mcp`; both were wrong for a
+first-time reader at the time — the first needs candor already on PATH (so it belongs under a route that
+says so, which it now does), and the second was a flag the published package did not have (it has since
+shipped, and is used below).
 
 Both were written as "SWAP IN LATER, only once its precondition is real". Both preconditions are now
 real, verified by running them rather than by assuming the release implied them:

@@ -182,6 +182,55 @@ rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$
 # never checked against the artifact it names. The ✔ now resolves the engine the way every later command
 # will, and when the two differ it says so and names both paths — a shadow is not a failure to install,
 # and telling the user "installed" without telling them it will not be used is the useless half.
+# A ONE-LINE, SELF-ERASING PROGRESS VIEW FOR A LONG BUILD — not a transcript of one.
+#
+# `cargo install` emits ~90 lines for the two rust engines. Dumping them into a terminal is the opposite
+# of the problem this was meant to fix: the FIRST version was silent (`-q` plus `2>/dev/null`) and read
+# as a hang, so I let cargo speak — and turned a hang into a wall. What a person wants is: is it alive,
+# how long has it been, what is it doing now.
+#
+# THE CLOCK IS OURS, NOT THE OUTPUT'S — and that is the whole design, because the stretch that looks
+# hung is the one where cargo says NOTHING for a minute inside one crate. A spinner driven by arriving
+# lines freezes exactly then. The first attempt used `read -t 1` to tick on a timeout; **bash 3.2, which
+# is what macOS ships and what this script runs under, returns 1 from `read -t` on timeout —
+# indistinguishable from EOF** — so the loop exited at the first quiet second and the heartbeat never
+# beat. Measured: a 6-second silent build produced ONE tick. The command now runs in the background and
+# this loop polls, so the tick rate is independent of the build's chattiness and of the bash version.
+#
+# The exit status comes back through a sentinel file rather than `kill -0` + `wait`: a finished-but-
+# unreaped child still answers `kill -0`, so that idiom can spin forever.
+#
+# ONLY ON A TTY. Redirected — `candor update | tee build.log`, CI, the autofetch path that writes to
+# stderr — carriage returns are garbage and the full log is what someone needs to debug a failed build.
+# And ON FAILURE the tail is printed even here, because a self-erasing view that erases the error too
+# would be the worst of both.
+_build_progress() {             # $1 = indent; $2.. = the command to run
+  local ind="$1"; shift
+  local log done_f rc i=0 start now el cols max last
+  local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+  log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
+  done_f="$log.done"
+  ( "$@" >"$log" 2>&1; echo $? >"$done_f" ) &
+  start=$(date +%s); cols=$(tput cols 2>/dev/null || echo 80)
+  while [ ! -f "$done_f" ]; do
+    last="$(tail -n 1 "$log" 2>/dev/null)"
+    last="${last#"${last%%[![:space:]]*}"}"
+    i=$(( (i + 1) % 10 )); now=$(date +%s); el=$(( now - start ))
+    max=$(( cols - ${#ind} - 14 )); [ "$max" -lt 16 ] && max=16
+    printf '\r%s%s %d:%02d  %-*.*s' "$ind" "${fr[$i]}" $(( el / 60 )) $(( el % 60 )) "$max" "$max" "$last"
+    sleep 1
+  done
+  wait 2>/dev/null
+  rc="$(cat "$done_f" 2>/dev/null || echo 1)"
+  printf '\r%*s\r' "$cols" ''     # erase, so the ✔ / ✘ below owns the line
+  if [ "$rc" != 0 ]; then
+    echo "${ind}the build failed — last lines:"
+    tail -n 12 "$log" | sed "s/^/${ind}  /"
+  fi
+  rm -f "$log" "$done_f"
+  return "$rc"
+}
+
 installed_or_shadowed() {   # $1 = engine command, $2 = path this run wrote
   local resolved rpath
   if ! resolved="$(rust_bin "$1" 2>/dev/null)"; then
@@ -1393,7 +1442,7 @@ PY
       if [ -n "$rust_done" ]; then :
       elif have cargo; then
         echo "  rust   → cargo install --version $ENGINE_PIN_RUST candor-scan candor-query"
-        echo "           building from source — this takes a few minutes, cargo reports below"
+        echo "           building from source — a few minutes; progress below, full log if redirected"
         # Pin to ENGINE_PIN (NOT latest) so the whole family stays at one version — an unpinned `cargo install`
         # fetched crates.io's newest and split the family (rust ahead of the pinned jvm/ts).
         # NOT `-q`, and NOT `2>/dev/null`. Both were set, so a multi-minute source build printed
@@ -1407,9 +1456,21 @@ PY
         # `candor update | tee build.log`, or the autofetch path where scan sends this to stderr, would
         # sit silent and then dump everything at the end — the hang this whole change removes, back
         # again for anyone who pipes. A read loop emits per line whatever stdout is.
-        cargo install --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>&1 \
-          | while IFS= read -r cline; do printf '           %s\n' "$cline"; done
-        if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+        # ONE status variable for BOTH branches. The redirected branch is a pipeline, so its truth is
+        # PIPESTATUS[0] (a failed build behind a successful reader reports ✔ otherwise — the false-green
+        # this tool exists to refuse, in its own installer); the TTY branch is a function call, so its
+        # truth is the return value. Reading PIPESTATUS after the `if` would have read the `[ -t 1 ]`
+        # test on the TTY path and called every build a success.
+        if [ -t 1 ]; then
+          _build_progress "           " \
+            cargo install --force --version "$ENGINE_PIN_RUST" candor-scan candor-query
+          cargo_rc=$?
+        else
+          cargo install --force --version "$ENGINE_PIN_RUST" candor-scan candor-query 2>&1 \
+            | while IFS= read -r cline; do printf '           %s\n' "$cline"; done
+          cargo_rc="${PIPESTATUS[0]}"
+        fi
+        if [ "$cargo_rc" -eq 0 ]; then
           echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
         else
           echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"

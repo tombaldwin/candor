@@ -8,6 +8,30 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
+
+Letting cargo speak fixed the hang and created a wall: ~90 lines of build transcript in the user's
+terminal. On a TTY the rust build is now **one self-erasing line** — spinner, elapsed clock, and the
+build's current action, truncated to the terminal width — which flashes each line as it arrives and
+leaves nothing behind but the ✔.
+
+**The clock is ours, not the output's, and that is the whole design.** The stretch that looks hung is
+the one where cargo says nothing for a minute inside a single crate; a spinner driven by arriving lines
+freezes exactly then. The first attempt ticked on a `read -t 1` timeout — and **bash 3.2, which is what
+macOS ships and what this script runs under, returns 1 from `read -t` on timeout, indistinguishable from
+EOF**, so the loop exited at the first quiet second. Measured: a 6-second silent build produced ONE
+tick. The build now runs in the background while this loop polls, so the tick rate is independent of the
+build's chattiness and of the bash version — same test now shows six.
+
+Two things it deliberately does not do. **Redirected output is untouched** — `candor update | tee`, CI,
+and the autofetch path that writes to stderr all still get every line, because carriage returns are
+garbage there and the full log is what debugs a failed build. And **a failure prints the tail even on
+the TTY path**: a self-erasing view that erased the error too would be the worst of both.
+
+Exit status is read per branch — `PIPESTATUS[0]` for the redirected pipeline, the return value for the
+TTY function. Reading `PIPESTATUS` after the `if` would have read the `[ -t 1 ]` test and called every
+build a success.
+
 ## 2026-09-15 — 0.38.1: the front door, after using it (released 2026-09-15 as 0.38.1)
 
 **The hazard note broke the pin it was warning about.** Written as a trailing comment on the

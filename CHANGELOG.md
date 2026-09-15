@@ -10,6 +10,19 @@ keeps its own.
 
 ## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (unreleased)
 
+**`release-verify` was permanently red after a scoped patch — and then permanently green for anything.**
+Run at the family line after the 0.38.1 rust cut, it reported all four crates as failures for sitting at
+0.38.1: the version the front door pins them to, deliberately. A verifier that cries wolf after every
+scoped cut is one nobody runs, and this is the release ladder's **last** step, the only one that resolves
+artifacts rather than matching strings.
+
+It now reads the pin as the authority and says so in the row — `✔ candor-report 0.38.1 (pinned separately
+from the family line 0.38.0)`. **The first version of that fix was worse than the bug**: the pin excused
+*any* mismatch, so `release-verify 0.38 0.99.0` passed. The pin explains a crate sitting above the family
+line; it is not a licence to ignore the version under test. Guarded to apply only when the version being
+checked *is* the family line, and calibrated three ways: family line accepted with its reason, `0.99.0`
+correctly failed, scoped form exact.
+
 **`candor init` hardcoded Maven for every JVM project.** `BUILD="mvn -q compile"`, `TARGET=
 "target/classes"`, regardless of what the repo actually uses — so a Gradle project and a plain-`javac`
 one both got a `.candor/run` whose first execution died with `mvn: command not found`, exit 2. It fails

@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-15 — cut as umbrella 0.38.2 (engines 0.38.2)
+## 2026-09-15 — the front door reaches Homebrew, and Rust stops needing a toolchain (released 2026-09-15 as 0.38.2)
 
 The front-door pass in the two entries below reaches Homebrew users for the first time, and the Rust
 engine stops requiring a toolchain. Highlights, with the detail in those entries:
@@ -25,7 +25,11 @@ engine stops requiring a toolchain. Highlights, with the detail in those entries
   policy.
 - **Shadowed installs resolve to a real path, or say they cannot**, instead of reporting a guess.
 - Release tooling: `release-verify` understands per-engine pins without excusing a genuine mismatch.
-- **All per-engine pin overrides are CLEARED** — `ENGINE_PIN` alone names the line at 0.38.2.
+- **All per-engine pin overrides are CLEARED** — `ENGINE_PIN` alone names the line at 0.38.2, which is
+  the reason this is a full family cut rather than a scoped one: `ENGINE_PIN` must name a version every
+  engine has published, and a non-empty per-engine override silently beats it.
+- Staged by `bin/release-stage.sh 0.38.2` (23 sites across 7 repos: crate versions, inter-crate deps,
+  `Cargo.lock`, the gradle version, `UMBRELLA_VERSION`, and each engine's changelog heading).
 
 ## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (released 2026-09-15 as 0.38.2)
 

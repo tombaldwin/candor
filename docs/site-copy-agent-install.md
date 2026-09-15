@@ -38,8 +38,8 @@ to make on the way.
 >
 > ```bash
 > brew install tombaldwin/tap/candor   # install candor
-> candor scan .                        # map the repo — fetches the engine it needs
-> claude mcp add candor -- candor mcp  # give the agent the queries
+> candor scan .                        # map the repo (Rust: builds the engine, see below)
+> candor mcp install                   # give the agent the queries
 > ```
 >
 > Your agent asks *"what's the blast radius of this change?"* or *"what reaches the network?"* and gets a
@@ -49,16 +49,23 @@ to make on the way.
 > nothing registers itself behind your back.
 >
 > **Any language.** `candor scan` picks the engine from the manifest — Rust, the JVM, Swift or
-> TypeScript — and `candor mcp` reads whatever engine's report is in `.candor/`. Nothing above changes
-> per language.
+> TypeScript — and `candor mcp` reads whatever engine's report is in `.candor/`. The three commands are the
+> same for every language; what differs is what line 2 has to fetch or build (see the two notes below).
 >
-> Any MCP client works; point its server config at `candor mcp`. `candor mcp install` writes the same
-> `.mcp.json` for you, and `candor mcp --help` prints the snippet — from the copy on your machine, not
-> from a URL.
+> Any MCP client works; point its server config at `candor mcp`. `candor mcp --help` prints the snippet —
+> from the copy on your machine, not from a URL.
+>
+> **Rust today:** `candor-rust` publishes no release binaries yet, so on a Rust crate line 2 builds the
+> engine with `cargo` (~50s, needs a Rust toolchain). Every other language fetches a native binary.
+>
+> **Swift on Linux:** the Swift engine ships as a macOS arm64 binary only. The CLI runs on Linux, and the
+> JVM, Rust and TypeScript engines work there — a Swift package needs a Mac, or candor-swift built from
+> source. `candor scan` says so rather than failing quietly.
 >
 > Your client may already know about candor: it is published to the
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
-> clients and directories can discover it without anyone pasting a link.
+> clients and directories can discover it by that exact ID without anyone pasting a link. Search by the
+> bare word "candor" and an unrelated `money.candor/candor-finance` comes back too, so name the ID.
 
 **Homebrew 7 requires third-party taps to be TRUSTED, and the page should say so.** Verified on
 Homebrew 7.0.1: `brew trust tombaldwin/tap` followed by `brew install tombaldwin/tap/candor` installs

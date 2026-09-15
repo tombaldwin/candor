@@ -10,6 +10,20 @@ keeps its own.
 
 ## 2026-09-15 — 0.38.1: the front door, after using it (released 2026-09-15 as 0.38.1)
 
+**The scoped pin turned three dispatcher-contract rows red — for being right — and the repair is the
+interesting part.** `bin/candor.test.sh` asserted that rust sits on the FAMILY line, which is true only
+while the shipped file leaves `ENGINE_PIN_RUST` empty. The file itself already records this happening
+once, for java at 0.35.1: *"they used to run with no override at all, which silently depended on every
+`ENGINE_PIN_<E>` in the shipped file being empty."* Rust is the second case.
+
+The two `doctor`/`engines` controls now construct the undiverged state across **all four** engines rather
+than one. And the row about java not moving rust asserts the INVARIANT instead of a literal: it resolves
+rust with and without a java pin and requires the two to be identical. **The first repair was worse than
+the defect** — pinning rust at the family line inside the row made it pass by asserting what the *next*
+row already tests, so the leak it exists to catch would have gone untested. A test edited to unblock a
+release. The invariant form needs no literal and survives any future scoped patch; calibrated by
+injecting a real java→rust leak, which reddens it.
+
 **Pin moved after the engine published:** `ENGINE_PIN_RUST="0.38.1"` in `bin/candor`, with `ENGINE_PIN`
 left on the family line (`0.38.0`) because java/ts/swift/agents were not part of this cut. The hazard
 note sits beside the line itself, not only here — see the warning above about clearing it.

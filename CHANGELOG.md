@@ -8,6 +8,28 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-15 — 0.38.1: the front door, after using it
+
+A SCOPED patch — `candor-rust` and the umbrella only. The spec floor does not move (`git diff
+v0.38..HEAD -- SPEC.md` is empty), and java/ts/swift/agents are not republished because nothing in them
+changed. What this ships is everything below, and all of it came from **running the install path as a
+user rather than from a suite**: every gate stayed green throughout.
+
+- `candor update` showed no progress for minutes and read as a hang; it also claimed ✔ for an engine
+  that a stale copy earlier on PATH would shadow — reported from a real machine as `✔ candor-swift
+  0.37.0` printed four lines above `candor-swift 0.27.0` in the same run's own table.
+- `candor scan` self-heals a missing JVM engine, so all four arms now behave the same way.
+- A failed fetch names a remedy that can actually work, instead of the command that had just skipped.
+- `candor doctor`'s drift warning printed its own evidence as a contradiction (identical dates).
+- **candor-rust ships release binaries for the first time**, so the Rust engine no longer needs a
+  compiler. It was the only engine in the family that did.
+
+**`ENGINE_PIN_RUST` IS SET FOR THIS CUT, AND IT MUST BE CLEARED AT THE NEXT FAMILY ONE.** A scoped patch
+moves one engine, so `ENGINE_PIN` stays `0.38.0` and `ENGINE_PIN_RUST="0.38.1"` overrides it — which is
+exactly what the per-engine pins are for. But a NON-EMPTY override silently beats `ENGINE_PIN`, and a
+stale `ENGINE_PIN_JAVA` doing precisely that nearly shipped java 0.36.2 behind a 0.37.0 front door at the
+⟨0.37⟩ cut. The note lives beside the line in `bin/candor` too.
+
 ## 2026-09-15 — review pass: three defects in last night's own changes
 
 - **`candor doctor`'s drift warning printed its own evidence as a contradiction.** A build trailing its

@@ -10,6 +10,25 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**The long silent stretch now says the one useful thing there is to say.** `cargo` compiles the root
+package LAST, so when the crate being compiled *is* the package being installed, that is the final crate
+of that build — and it is the big one. Instead of repeating the count while only a clock moves:
+
+```
+           ·  0:14   candor-scan               final crate
+           ·  0:19   candor-scan               final crate · 5s
+           ·  0:24   candor-scan               final crate · 10s
+```
+
+"Nearly done" rather than "still here", and it is true rather than reassuring.
+
+**`CANDOR_PROGRESS=plain|fancy|auto`**, because guessing at the terminal cost three rounds of this. A
+terminal that repaints a command's output as a block never shows the in-place line, so the durable
+milestone and the live line arrive as two near-identical rows — one line that was supposed to overwrite
+itself, read as a duplicate. `plain` drops the animated line and prints durable lines twice as often;
+`fancy` forces the animation; `auto` picks plain for terminals known to render in blocks. **The override
+exists because terminal detection is a guess and the person running it always knows better.**
+
 **"Why so many candor-scans?" — a good question with a measurable answer, and both halves of it were
 wrong in the output.** Measured on a real run: `Compiling candor-scan` appears **once**. The repeated
 milestones were one long compile — the last and biggest crate of that build — which the per-crate clock

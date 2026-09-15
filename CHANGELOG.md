@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (unreleased)
+
+**`candor update` printed `✘ cargo install failed` and exited 0.** Every other engine arm sets the
+command's exit status on failure; the rust arm printed the ✘ and returned success, so a script, a CI step
+or an `&&` chain after it saw a clean run over an engine that had not installed. **It was invisible until
+a REAL cargo failure was forced** — the synthetic stub used to test that path only ever exercised the
+printing, never the status. Fixed, and checked both ways: a failed install now exits 1, a good one still
+exits 0.
+
+**`candor init` generated a configuration that fails its own gate.** The policy proposer writes a
+COMMENTS-ONLY file when it finds no layering to propose — *"no clear layering under a common package
+prefix"* — which is the normal outcome for a single-module project. `init` wired that into
+`.candor/config` regardless, so the very first `.candor/run` exited **2**: the engine refuses a rule-less
+policy, correctly and by design, because a gate with no rules cannot have caught anything and reporting
+`ok` would be indistinguishable from one that ran and found nothing.
+
+The engine's refusal is right; creating the state it refuses is the defect — and it is the same rule this
+family already records elsewhere, hit in a second place. `init` now wires the policy only when the file
+has a line that is neither blank nor a comment, and says plainly what it did not wire and how to turn it
+on later. First gate run: **exit 0, was 2.** Verified not to be a vacuous pass — the baseline gate still
+catches a formerly-pure function gaining `Fs` (`AS-EFF-005`, exit 1) — and a policy that *does* have
+rules is still wired.
+
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
 **The shadow resolver no longer invents a path.** If `command -v` failed it fell back to the bare command

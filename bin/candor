@@ -1583,7 +1583,14 @@ PY
             echo "         ✔ $(candor-scan --version 2>/dev/null | head -1)"
           fi
         else
+          # …AND IT MUST REACH THE EXIT STATUS. Every other arm sets `update_rc` on failure; this one
+          # printed ✘ and returned 0, so `candor update` reported success over an engine that had not
+          # installed. A script, a CI step or `&&` chain after it saw a clean run. That is the false
+          # green this tool exists to refuse, in its own installer — and it was invisible until a
+          # REAL cargo failure was forced, because the synthetic stub used to test this path only ever
+          # exercised the printing.
           echo "         ✘ cargo install failed (see: cargo install --version $ENGINE_PIN_RUST candor-scan candor-query)"
+          update_rc=1
         fi
       else
         echo "  rust   → skipped: no published binary for v$ENGINE_PIN_RUST on $(uname -s)/$(uname -m),"
@@ -1819,7 +1826,24 @@ PY
     # WIRE the config. policy is safe to share. The baseline key is per-engine, so only wire it for a
     # single-language repo; a polyglot repo gates each language with its own baseline (shown below).
     cfg="$idir/.candor/config"; touch "$cfg"
-    grep -q "^policy" "$cfg" 2>/dev/null || { [ -f "$idir/.candor/arch.policy" ] && printf 'policy .candor/arch.policy\n' >> "$cfg" && echo "  ✔ config: policy wired"; }
+    # ONLY WIRE A POLICY THAT HAS RULES IN IT. The proposer writes a COMMENTS-ONLY file when it finds
+    # no layering to propose — "no clear layering under a common package prefix", which is the normal
+    # outcome for a single-module project. Wiring that into the config made the very first `.candor/run`
+    # exit 2: the engine refuses a rule-less policy, correctly and by design, because a gate with no
+    # rules cannot have caught anything and reporting `ok` would be indistinguishable from one that ran.
+    #
+    # So `candor init` was generating a configuration that fails its own gate — the thing this family
+    # already has a rule against, hit in a second place. The engine's refusal is right; creating the
+    # state it refuses is the defect. A rules-free line is one that is neither blank nor a `#` comment.
+    if ! grep -q "^policy" "$cfg" 2>/dev/null && [ -f "$idir/.candor/arch.policy" ]; then
+      if grep -qE '^[[:space:]]*[^#[:space:]]' "$idir/.candor/arch.policy"; then
+        printf 'policy .candor/arch.policy\n' >> "$cfg"; echo "  ✔ config: policy wired"
+      else
+        echo "  · config: policy NOT wired — the proposal has no rules yet (no layering was found)."
+        echo "    The baseline gate below is active on its own; add rules to .candor/arch.policy and"
+        echo "    then add \`policy .candor/arch.policy\` to .candor/config to turn the layering gate on."
+      fi
+    fi
     # ⟨0.28⟩ THE ENGINE PIN (spec §3.4) — the single source of truth for the engine version, so it and
     # the committed baseline cannot drift. It used to live in the consumer's CI YAML, decoupled from the
     # baseline it is married to: a newer engine resolves more dispatch, legitimately reports more

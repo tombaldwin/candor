@@ -28,6 +28,9 @@ engine stops requiring a toolchain. Highlights, with the detail in those entries
 - **All per-engine pin overrides are CLEARED** — `ENGINE_PIN` alone names the line at 0.38.2, which is
   the reason this is a full family cut rather than a scoped one: `ENGINE_PIN` must name a version every
   engine has published, and a non-empty per-engine override silently beats it.
+- Cross-repo pins moved to 0.38.2 after the engines published, each RESOLVED rather than string-matched:
+  `ENGINE_PIN`, the `adopt/` java + agents pins, `jbang-catalog.json` (HTTP 200), the VS Code
+  `candorTsVersion` (and the extension `version`, which must track it), and both JetBrains pins.
 - Staged by `bin/release-stage.sh 0.38.2` (23 sites across 7 repos: crate versions, inter-crate deps,
   `Cargo.lock`, the gradle version, `UMBRELLA_VERSION`, and each engine's changelog heading).
 

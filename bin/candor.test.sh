@@ -555,7 +555,30 @@ pinsay() { # $1 label ; $2 want ; $3 engine ; rest: env — what `update <engine
   local got; got="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$h" CANDOR_CACHE="$h/.candor" CANDOR_DISPATCH_DRYRUN= "${@:4}" bash "$D" update "$3" 2>&1)"
   if [[ "$got" == *"$2"* ]]; then echo "  ok   $1"; else echo "  FAIL $1"; echo "       want: *$2*"; echo "       got:  $got"; fails=$((fails+1)); fi
 }
-pinsay "java pin leaves rust on the family line"  "cargo install --version $PIN" rust  "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+# THE INVARIANT IS "A JAVA PIN DOES NOT MOVE RUST", and it is now asserted as that rather than as a
+# literal. The old row expected `cargo install --version $PIN` — i.e. that rust sits on the FAMILY line —
+# which is true only while the shipped file leaves ENGINE_PIN_RUST empty. The 0.38.1 scoped patch set it,
+# and the row went red for being right, exactly as the doctor controls below did for java at 0.35.1.
+#
+# The first repair was worse than the defect: pinning rust AT the family line inside the row made it pass
+# by asserting that an explicit rust pin is honoured — which is the NEXT row's job, so the leak this row
+# exists to catch would have gone untested. A test changed to unblock a release, in other words.
+#
+# Run rust's resolution WITH and WITHOUT the java pin and require the two to be IDENTICAL. That is the
+# real invariant, it needs no literal, and it holds whatever any future scoped patch does to the file.
+rusth1="$(mktemp -d "$T/rp1.XXXXXX")"; rusth2="$(mktemp -d "$T/rp2.XXXXXX")"
+r_nojava="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$rusth1" CANDOR_CACHE="$rusth1/.candor" \
+             CANDOR_DISPATCH_DRYRUN= bash "$D" update rust 2>&1 | grep -E 'cargo install|native binaries')"
+r_java="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$rusth2" CANDOR_CACHE="$rusth2/.candor" \
+             CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash "$D" update rust 2>&1 | grep -E 'cargo install|native binaries')"
+if [ -n "$r_nojava" ] && [ "$r_nojava" = "$r_java" ]; then
+  echo "  ok   a java pin does not move rust"
+else
+  echo "  FAIL a java pin does not move rust"
+  echo "       without java pin: $r_nojava"
+  echo "       with java pin:    $r_java"
+  fails=$((fails+1))
+fi
 pinsay "…and a rust pin moves rust, alone"        "cargo install --version $JPIN" rust  "CANDOR_ENGINE_PIN_RUST=$JPIN"
 # THE SWIFT PIN HAS NO SURFACE IN `update` OFF Darwin/arm64 — and that is a fact about `candor update
 # swift`, not about the pin. candor-swift publishes only a macos-arm64 asset, so the branch that builds
@@ -602,15 +625,23 @@ ok "…and a JAVA pin does not touch the ts route" "candor-ts@$PIN" \
 # override at all, which silently depended on every ENGINE_PIN_<E> in the shipped file being empty — so
 # the first real one-engine patch (java 0.35.1 on the 0.35.0 line) turned them red for being RIGHT.
 # Pinning java AT the family line is a no-divergence state whatever the file says.
+#
+# …AND JAVA WAS NOT THE LAST ONE. The 0.38.1 scoped patch set ENGINE_PIN_RUST, and these controls went
+# red again — for being right again, since rust genuinely diverged from the family line. Neutralising ONE
+# engine only constructs the undiverged state while that engine is the only one pinned, which is a fact
+# about today's file, not a property of the test. `ALLFAM` pins all four AT the family line, so the state
+# is constructed whatever any future scoped patch does.
 dochome="$(mktemp -d "$T/doc.XXXXXX")"
+# Every engine AT the family line == nothing diverges, by construction rather than by assumption.
+ALLFAM="CANDOR_ENGINE_PIN_JAVA=$PIN CANDOR_ENGINE_PIN_RUST=$PIN CANDOR_ENGINE_PIN_TS=$PIN CANDOR_ENGINE_PIN_SWIFT=$PIN"
 ok "doctor discloses the divergence"    "pinned separately: java $JPIN" \
    bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash '$D' doctor"
 no "CONTROL: doctor says nothing when nothing diverges" "pinned separately" \
-   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$PIN CANDOR_DISPATCH_DRYRUN= bash '$D' doctor"
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' $ALLFAM CANDOR_DISPATCH_DRYRUN= bash '$D' doctor"
 ok "engines discloses it too"           "pinned separately: java $JPIN" \
    bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN= bash '$D' engines"
 no "CONTROL: …and nothing when nothing diverges"        "pinned separately" \
-   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' CANDOR_ENGINE_PIN_JAVA=$PIN CANDOR_DISPATCH_DRYRUN= bash '$D' engines"
+   bash -c "env HOME='$dochome' CANDOR_CACHE='$dochome/.candor' $ALLFAM CANDOR_DISPATCH_DRYRUN= bash '$D' engines"
 # 7. THE UPDATE NOTICE compares each CHANNEL to its own pin. Against the family line alone it would nag
 # about the very release the machine is pinned to, which is how a real notice stops being read.
 nhome="$(mktemp -d "$T/note.XXXXXX")"; mkdir -p "$nhome/.candor"

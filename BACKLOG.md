@@ -322,6 +322,68 @@ an explicit go.
     project-arm gate and a fixture, not by a measurement over code that has the shape. Weaker than
     R438's 1,556 crates. If a real Swift corpus ever lands, re-run it.
 
+### 6d. STRUCTURAL FINDINGS FROM THE 2026-09-15 PRODUCT REVIEW — measured, and bigger than rows
+
+A Fable review of candor-as-a-product, read-only, with every number recomputed at HEAD rather than taken
+from this file. **It corrected three figures this document had been repeating**, which is the first thing
+to note about it: not ~490 rows but **413 unique R-rows** (337 closed, 76 open, **33 open-silent**, of
+which 7 are the accepted syntactic floor R2–R8); java is **1.39** rows/KLOC not 0.97, against rust 3.56,
+swift 2.50, ts 2.04; and **380 of the 413 rows were filed on/after 2026-09-01** — the register's growth is
+the growth of the parallel-agent hunt, not of the code. Treat that last one as the correction to any
+argument of the form "rows keep appearing, so the approach does not close".
+
+**S1. THE ROWS/KLOC GAP IS ONE DESIGN DECISION, NOT A LANGUAGE STORY.** 89 of rust's 183 rows are the
+Drop-glue escape model in `lang.rs`. **Subtract it and rust is 1.83 — next to ts.** Sampling was also not
+held constant (pre-September: rust 25 / swift 16 / java 8 / ts 4; rust hosts the oracle and has always
+been probed hardest). So the honest reading is design-then-sampling-then-language, and the conclusion
+that follows is S2, not "rewrite rust".
+
+**S2. REPLACE THE ESCAPE MODEL WITH CHARGE-AT-CONSTRUCTION.** Nine open silent rows live in one model
+(R189, R195, R197, R198, R200, R201, R209, R297, R300, R323 — the cluster this file already defers as
+"the same model change"). R297 shows a site-keyed model is blind BY CONSTRUCTION: `*slot = v` has no
+construction site. The model exists to buy off ONE over-charge (`anyhow` `render`, R189's plan column) —
+**and by this family's own ranking that is the wrong trade**, because an over-charge is disclosed and an
+under-report is not. Charge any function that constructs or receives by value a type with an effectful
+`Drop`. Sound, no name keys, deletes the root of ~half the rust register, loses precision in the
+direction we have repeatedly said is acceptable.
+
+**S3. THE PRODUCT SHIPS THE PROFILE ITS OWN BANNER CALLS ADVISORY.** Every `candor-scan --policy` run
+prints `policy ✓ (advisory floor — the syntactic backend under-reports; the nightly engine is the sound
+gate)`. That sound gate is the dylint lint pinned to `nightly-2026-06-14` with `rustc_private`
+(`candor-rust/rust-toolchain`, `Cargo.toml:21`) — which `cargo install candor-scan` does not install and
+which `bin/candor` never dispatches (`bin/candor:824`). **Decide this deliberately**: either make the
+sound backend reachable from the front door, or stop describing the shipped one as a floor beneath a gate
+nobody can run. This is a product-truth question, not a defect.
+
+**S4. R443 — THE TWO GATE ROUTES DISAGREE, and the silent one is the deployed one.** Filed as a row and
+REPRODUCED by the coordinator: `candor-query gate` certifies a `pure` rule over an `{Unknown}` function at
+rc 0 with **zero** advisory lines; `candor-scan --policy` over the identical tree prints three, naming the
+remedy. Route A is what CI runs. Cheap half: make route A print route B's advisory. Expensive half
+(whether `pure`/`deny` should fail closed on `Unknown`) is a SPEC question — do not bundle them.
+
+**S5. THE ONE STRUCTURAL CHANGE WORTH PLANNING: STOP IMPLEMENTING THE BACK HALF FOUR TIMES.**
+Policy, gate, query, report writer, `unverified` and `fix` are implemented once per engine — `policy.rs`
+1,742 lines, `Policy.java` 2,176, `policy.mjs` 1,475, plus swift's `Gate*.swift`; `Query.java` 6,016,
+`query.mjs`+`query-core.mjs` 5,124. **53 of the 111 conformance PARTs exist to prove four copies of the
+same logic agree**, against 30 that pin front-end resolution. And the primary justification for four
+implementations — that they catch each other — is ranked **#4 of 7** in `SOUNDNESS.md`'s own evidence
+ladder, "WEAK for shared blind spots (the log-macro bug survived 4 engines + the differential for months)".
+
+Collapse the back half to ONE implementation (`candor-query` already reads any engine's report; so do
+`candor-mcp` and `candor-lsp`). Engines become FRONT-ENDS whose contract is the callgraph sidecar +
+direct effects + disclosure reasons. Consequences: tier-1 verdict divergence becomes impossible by
+construction; ~53 conformance parts collapse into one unit suite; the R105/R140/R287 union-vs-hedge kind
+of drift can only happen once; the spec's normative surface shrinks to §2 + §4.
+**This is the change that turns the treadmill into a ladder, and it is consistent with the DO-NOT below
+— it restructures CONCEPTS and does not move code between files for tidiness.**
+
+**WHAT THE REVIEW RATED GENUINELY STRONG, recorded so it is not traded away by accident:** SPEC §4.0's
+`(S, D)` product lattice and the monotone-predicate reading of verbs; `unknownWhy` + `blindspots` ranking
+by reach (183 direct Unknowns → **13** on a real Spring app — the disclosure channel made ACTIONABLE, not
+merely correct); `check_honesty.py` reading edges from the sidecar so omitted pure functions are still
+checked; the syscall oracle as a standing CI gate on real crates; determinism + the precomputed-report
+query layer; candor-java's bytecode + bounded-CHA design, whose row density is the argument for S5.
+
 *The queue below is ordered by what a user can lose, which is not the order it was filed in.*
 
 **~~A. rust wrapper-peel gaps~~ — DONE 2026-09-14, both rows half-closed, and the residuals are SCOPED

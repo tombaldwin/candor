@@ -10,6 +10,21 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**The duplicate was the DESIGN, not the terminal — reported from iTerm, which animates carriage returns
+perfectly well.** A timed milestone is printed directly ABOVE the live line, so both rows carry the same
+fields, and while one crate compiles for 17 seconds only the clock differs between them. *Every* terminal
+shows that pair. Four of the five attempts before this one were guesses about the terminal — detect Warp,
+invert the default, keep an allow-list — and the terminal was never the problem.
+
+The two modes no longer overlap:
+
+- **fancy** (default): live line, plus durable rows **only at phase changes** (`→ building candor-query`).
+  The live line already shows the crate, count and clock continuously; a timed snapshot of it, printed
+  above itself, adds nothing and *is* the duplicate. Verified on a real cargo log: 2 newlines, 189
+  carriage returns — two durable rows, one animating row.
+- **plain**: timed durable rows, no live line — for terminals that do not repaint mid-command, for CI,
+  and for anything redirected.
+
 **The long silent pause at the END was not the build at all — `candor doctor` took 15.6 seconds.** It is
 the same code that closes every `candor update`, which is why the wait kept appearing after the ✔ with
 nothing on screen. The cause: the source-drift check filtered `target/`, `.build/` and `node_modules/`

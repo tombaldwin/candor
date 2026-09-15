@@ -215,28 +215,26 @@ else
   C_RST=''; C_DIM=''; C_B=''; C_OK=''; C_WRN=''; C_ERR=''; C_ACC=''
 fi
 
-# PLAIN vs FANCY PROGRESS — and PLAIN IS THE DEFAULT, deliberately.
+# PROGRESS: THE DUPLICATE WAS THE DESIGN, NOT THE TERMINAL.
 #
-# An in-place carriage-return line is only an animation in a terminal that repaints mid-command. Where
-# it does not, the line persists as its own row, so the durable milestone and the live line arrive as
-# two rows three seconds apart with the same text — read, correctly, as duplication. That was reported
-# four times across as many attempts, and each time the fix was another guess about the terminal.
+# A timed milestone is printed directly ABOVE the live line, so both rows carry the same fields — and
+# while one crate compiles for 17 seconds, only the clock differs between them. EVERY terminal shows
+# that pair; it was reported from iTerm, which animates carriage returns perfectly well. Four of the
+# five "fixes" before this one were guesses about the terminal, and the terminal was never the problem.
 #
-# So the safe mode is the default and the animation is the opt-in. Plain output is clean, aligned and
-# informative EVERYWHERE; fancy is strictly nicer only where it genuinely animates, and the set of
-# terminals known to do that is small and namable. Guessing the other way means a reader on any
-# unrecognised terminal gets the broken-looking one — the wrong direction for a default.
+# So the two modes no longer overlap:
+#   fancy  live line + DURABLE ROWS ONLY AT PHASE CHANGES (→ building candor-query). The live line
+#          already shows the crate, the count and the clock, continuously; a timed snapshot of it above
+#          itself adds nothing and is exactly the duplicate.
+#   plain  timed durable rows, NO live line. For terminals that do not repaint mid-command, CI, and
+#          anything redirected — where an in-place line is invisible or is noise.
 #
-#   CANDOR_PROGRESS=fancy   force the spinner
-#   CANDOR_PROGRESS=plain   force durable lines only
-#   (unset)                 fancy on terminals known to animate, plain everywhere else
+# Default is fancy; `CANDOR_PROGRESS=plain` is the escape hatch, and the redirected path never animates
+# regardless (the caller checks `[ -t 1 ]`).
 _progress_mode() {
-  case "${CANDOR_PROGRESS:-auto}" in
-    plain|fancy) printf '%s' "$CANDOR_PROGRESS"; return;;
-  esac
-  case "${TERM_PROGRAM:-}" in
-    iTerm.app|Apple_Terminal|vscode|ghostty|Alacritty|kitty) printf 'fancy';;
-    *) printf 'plain';;
+  case "${CANDOR_PROGRESS:-fancy}" in
+    plain) printf 'plain';;
+    *)     printf 'fancy';;
   esac
 }
 
@@ -288,7 +286,7 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
                "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" "$C_DIM" "$pkg" "$C_RST"
         milestone=$el
       fi
-      if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + gap )) ]; then
+      if [ "$mode" = plain ] && [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + gap )) ]; then
         milestone=$el
         printf '\r%*s\r' "$cols" ''
         printf '%s%s·%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \

@@ -10,6 +10,13 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**The spinner ran at 1 fps, which reads as a stalled program — the exact impression it exists to
+prevent.** The loop polled the log and redrew together, once a second. Those are now two rates: the
+spinner redraws ~8×/second while the log is read once a second, so the cost is unchanged (one
+`grep`/`tail`/`date` per second, not eight — the expensive part is reading the log, not printing a
+line). Measured by counting carriage returns in the raw output: 24 frames in 3 seconds, up from 1 per
+second. Plain mode has nothing to animate and stays on the one-second tick.
+
 **The long silent stretch now says the one useful thing there is to say.** `cargo` compiles the root
 package LAST, so when the crate being compiled *is* the package being installed, that is the final crate
 of that build — and it is the big one. Instead of repeating the count while only a clock moves:

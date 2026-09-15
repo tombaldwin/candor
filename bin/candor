@@ -249,79 +249,55 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
   # was three lines that each started their crate name in a different column. Same geometry, computed
   # once: marker, two spaces, m:ss, three spaces, crate (cw), two spaces, tally.
   cw=$(( cols - ${#ind} - 26 )); [ "$cw" -gt 24 ] && cw=24; [ "$cw" -lt 10 ] && cw=10
+  # TWO RATES, NOT ONE. The loop used to poll the log and redraw together, once a second — so the
+  # spinner ran at 1 fps and read as a stalled program rather than a working one, which is precisely the
+  # impression the spinner exists to prevent. Reported as "slow, looks a bit laggy", and it made the
+  # 17-second final crate feel like a hang even with the clock moving.
+  #
+  # The spinner now redraws ~8×/second while the LOG is read once a second. That keeps the cost where it
+  # was — one `grep`/`tail`/`date` per second, not eight — because the expensive part is reading the log,
+  # not printing a line. In plain mode there is nothing to animate, so it stays on the one-second tick.
+  local tick=0 fps=8
+  [ "$mode" = plain ] && fps=1
   while [ ! -f "$done_f" ]; do
-    # WHAT cargo IS DOING, NOT WHAT IT SAID. The last raw line is mostly noise a reader cannot act on
-    # ("Locking 35 packages", "Downloaded candor-scan v0.38.1"); the crate being compiled and how many
-    # are done is the thing that actually tells you it is moving and roughly how far along it is.
-    crate="$(grep -a 'Compiling ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Compiling \([^ ]*\).*/\1/')"
-    # NO `|| echo 0`: `grep -c` PRINTS the count and still exits 1 when it is zero, so the fallback
-    # appended a second line and `[ "$n" -gt 0 ]` got "0\n0" — "integer expression expected".
-    # DISTINCT crates, not compile STEPS. `cargo install` runs one build PER BINARY, so every shared
-    # dependency is compiled twice — measured on a real run: 48 `Compiling` lines over 34 distinct
-    # crates. Counting lines told the user it had built 48 crates when it had built 34, twice-ish. The
-    # count a person means by "crates" is the distinct one.
-    n="$(grep -aoE 'Compiling [^ ]+' "$log" 2>/dev/null | sort -u | grep -c . )"; n="${n:-0}"
-    # WHICH BINARY WE ARE ON. Two builds look like one stalled build otherwise — the crate list restarts
-    # from serde and the reader has no way to know why.
-    pkg="$(grep -a 'Installing ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Installing \([^ ]*\).*/\1/')"
-    [ -n "$crate" ] || crate="resolving dependencies"
-    now=$(date +%s); el=$(( now - start ))
+    if [ $(( tick % fps )) -eq 0 ]; then
+      crate="$(grep -a 'Compiling ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Compiling \([^ ]*\).*/\1/')"
+      n="$(grep -aoE 'Compiling [^ ]+' "$log" 2>/dev/null | sort -u | grep -c . )"; n="${n:-0}"
+      pkg="$(grep -a 'Installing ' "$log" 2>/dev/null | tail -n 1 | sed 's/.*Installing \([^ ]*\).*/\1/')"
+      [ -n "$crate" ] || crate="resolving dependencies"
+      now=$(date +%s); el=$(( now - start ))
+      if [ "$crate" != "$prev" ]; then prev="$crate"; since=$el; fi
+      onit=$(( el - since ))
+      if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
+      if [ -n "$pkg" ] && [ "$crate" = "$pkg" ]; then
+        tally="final crate"; [ "$onit" -ge 5 ] && tally="final crate · ${onit}s"
+      elif [ "$onit" -ge 8 ]; then
+        tally="$tally · ${onit}s on this one"
+      fi
+      if [ -n "$pkg" ] && [ "$pkg" != "$prevpkg" ]; then
+        prevpkg="$pkg"
+        printf '\r%*s\r' "$cols" ''
+        printf '%s%s→%s  %s%d:%02d%s   %sbuilding %s%s\n' "$ind" "$C_ACC" "$C_RST" \
+               "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" "$C_DIM" "$pkg" "$C_RST"
+        milestone=$el
+      fi
+      if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + gap )) ]; then
+        milestone=$el
+        printf '\r%*s\r' "$cols" ''
+        printf '%s%s·%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
+               "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
+               "$C_B" "$cw" "$cw" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
+      fi
+    fi
+    tick=$(( tick + 1 ))
+    if [ "$mode" = plain ]; then sleep 1; continue; fi
     i=$(( (i + 1) % 10 ))
-    # NO FAKE DENOMINATOR. cargo does not say how many crates it will compile — `Locking N packages` is
-    # the dep graph, not the build list, and several are already cached. A bar filling against a number
-    # this tool invented would be exactly the over-claim candor exists to refuse, in candor's own
-    # installer. A climbing tally is true, and it moves.
-    # HOW LONG WE HAVE BEEN ON *THIS* CRATE. The last crate a Rust build compiles is usually the big
-    # one — candor-scan took 20 seconds alone — and during it BOTH the name and the count freeze, so two
-    # consecutive milestones read identically and the thing looks hung again at the very end. Reported
-    # as "pauses here". The per-crate clock is the one number still moving, and it says "this crate is
-    # big", which is the true reason rather than a reassurance.
-    if [ "$crate" != "$prev" ]; then prev="$crate"; since=$el; fi
-    onit=$(( el - since ))
-    if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
-    # CARGO COMPILES THE ROOT PACKAGE LAST, so when the crate being compiled IS the package being
-    # installed, this is the final crate of that build — and it is usually the big one. That is the only
-    # genuinely new thing anyone can say during the long silent stretch at the end, and it is far more
-    # use than repeating the crate count: "nearly done" rather than "still here".
-    if [ -n "$pkg" ] && [ "$crate" = "$pkg" ]; then
-      tally="final crate"
-      [ "$onit" -ge 5 ] && tally="final crate · ${onit}s"
-    elif [ "$onit" -ge 8 ]; then
-      tally="$tally · ${onit}s on this one"
-    fi
-    # A PERSISTENT MILESTONE EVERY 15s, because an animated line leaves NO TRACE in a terminal that does
-    # not render carriage returns mid-command — and reported from exactly that: a 50-second build that
-    # showed "building from source" and then nothing at all until the ✔. The animation is the nice case;
-    # these three or four lines are the floor, and they are what a scrollback or a pasted transcript
-    # still contains afterwards.
-    # FIRST AT 3s, THEN EVERY 10s. The first one matters most: it is what turns "did this hang?" into
-    # "it is working" before anyone reaches for ctrl-C, and a 50-second build then leaves five lines of
-    # evidence instead of a void. Tuned after a real report of no animation at all — some terminals
-    # (Warp among them) render a command's output as a block and never show in-place updates while it
-    # runs, so the carriage-return view is the BONUS and these lines are the contract.
-    # A phase change gets its own line immediately, whatever the milestone clock says: it is the one
-    # moment the restarting crate list is explained rather than confusing.
-    if [ -n "$pkg" ] && [ "$pkg" != "$prevpkg" ]; then
-      prevpkg="$pkg"
-      printf '\r%*s\r' "$cols" ''
-      printf '%s%s→%s  %s%d:%02d%s   %sbuilding %s%s\n' "$ind" "$C_ACC" "$C_RST" \
-             "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" "$C_DIM" "$pkg" "$C_RST"
-      milestone=$el
-    fi
-    if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + gap )) ]; then
-      milestone=$el
-      printf '\r%*s\r' "$cols" ''
-      printf '%s%s·%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
-             "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
-             "$C_B" "$cw" "$cw" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
-    fi
-    [ "$mode" = plain ] && { sleep 1; continue; }
     printf '\r%s%s%s%s  %s%d:%02d%s   %s%-*.*s%s  %s%-10s%s' \
            "$ind" "$C_ACC" "${fr[$i]}" "$C_RST" \
            "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
            "$C_B" "$cw" "$cw" "$crate" "$C_RST" \
            "$C_DIM" "$tally" "$C_RST"
-    sleep 1
+    sleep 0.125
   done
   wait 2>/dev/null
   rc="$(cat "$done_f" 2>/dev/null || echo 1)"

@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-09-15 — 0.38.1: the front door, after using it (released 2026-09-15 as 0.38.1)
 
+**Pin moved after the engine published:** `ENGINE_PIN_RUST="0.38.1"` in `bin/candor`, with `ENGINE_PIN`
+left on the family line (`0.38.0`) because java/ts/swift/agents were not part of this cut. The hazard
+note sits beside the line itself, not only here — see the warning above about clearing it.
+
 A SCOPED patch — `candor-rust` and the umbrella only. The spec floor does not move (`git diff
 v0.38..HEAD -- SPEC.md` is empty), and java/ts/swift/agents are not republished because nothing in them
 changed. What this ships is everything below, and all of it came from **running the install path as a

@@ -1535,10 +1535,16 @@ PY
       case "$newest$ibin" in *[!0-9]*|'') newest=""; ibin="" ;; esac
       if [ -n "$newest" ] && [ -n "$ibin" ] && [ "$newest" -gt "$ibin" ]; then
         [ "$drift" -eq 0 ] && echo ""
+        # DATE **AND TIME**. The comparison above is on epoch seconds and is right; the display was
+        # date-only, so a build that trails its sources by minutes on the SAME DAY printed
+        # "(2026-09-14 vs 2026-09-14)" — a true warning whose own evidence reads as self-refuting.
+        # That is worse than a silent check: it teaches the reader to disbelieve a correct message.
+        # Seen on this machine the moment `candor doctor` was run against a same-day rebuild.
+        _fmt='+%Y-%m-%d %H:%M'
         if [ "$(date -d @1000000000 '+%s' 2>/dev/null)" = "1000000000" ]; then
-          _di="$(date -d "@$ibin" +%Y-%m-%d)"; _dn="$(date -d "@$newest" +%Y-%m-%d)"
+          _di="$(date -d "@$ibin" "$_fmt")"; _dn="$(date -d "@$newest" "$_fmt")"
         else
-          _di="$(date -r "$ibin" +%Y-%m-%d)"; _dn="$(date -r "$newest" +%Y-%m-%d)"
+          _di="$(date -r "$ibin" "$_fmt")"; _dn="$(date -r "$newest" "$_fmt")"
         fi
         printf "  ⚠ %-14s installed build is OLDER than %s's sources (%s vs %s)\n" \
           "$eng" "$repo" "$_di" "$_dn"

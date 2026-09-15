@@ -7,8 +7,9 @@
 > copy, and a record of claims that turned out to be false. **None of §2 goes on the site.**
 >
 > The code blocks inside §1 are commands a reader will paste. Reproduce them **verbatim** — every one has
-> been run end to end, and the flags are load-bearing (`-y`, `--allow-js`, the exact `claude mcp add`
-> form). If a command looks redundant, it is not; check §2 before trimming it.
+> been run end to end, and the flags are load-bearing (`-y`, `--allow-js`, and `candor mcp install` rather
+> than `claude mcp add` — that one is not a style choice, see §2). If a command looks redundant, it is not;
+> check §2 before trimming it.
 >
 > If anything in §1 contradicts what the live product does, the product wins and this file is stale —
 > say so rather than publishing it.
@@ -208,3 +209,20 @@ The first was a review catch; the other two came from re-running the draft's own
   `candor_impact`, `candor_map`, `candor_path`, `candor_reachable`, `candor_show`, `candor_unverified`,
   `candor_whatif`, `candor_where`. If the page names a subset, `candor_impact`, `candor_reachable` and
   `candor_where` are the ones worth naming.
+
+### Why line 3 is `candor mcp install` and not `claude mcp add`
+
+Measured 2026-09-15, after §1 went live with the `claude mcp add` form. Two defects in one line:
+
+- **`claude mcp add` defaults to LOCAL scope** — `-s, --scope <scope> … (default: "local")`. Local scope
+  writes into the user's own Claude config keyed by project path. It does **not** create `.mcp.json`, so
+  the surrounding copy's promise of a committable, team-shareable artifact was false. `-s project` would
+  fix that half.
+- **It requires the `claude` CLI**, under a heading that says "your agent". The line simply fails on
+  Cursor, Windsurf or Zed.
+
+`candor mcp install` fixes both at once: it writes/merges the project-local `.mcp.json`, needs only what
+line 1 already installed, and is client-agnostic. Verified idempotent and non-destructive — run against a
+`.mcp.json` already holding an unrelated `other` server, both servers survive.
+
+Do not "simplify" this back to `claude mcp add`.

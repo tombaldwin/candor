@@ -8,6 +8,26 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-15 — review pass: three defects in last night's own changes
+
+- **`candor doctor`'s drift warning printed its own evidence as a contradiction.** A build trailing its
+  sources by minutes on the same day showed *"installed build is OLDER than candor-rust's sources
+  (2026-09-14 vs 2026-09-14)"*. The comparison is on epoch seconds and was right all along — the display
+  was date-only. A true warning whose evidence reads as self-refuting is worse than a silent check,
+  because it teaches the reader to disbelieve a correct message. Now prints date **and time**.
+
+- **`jvm_rc` was being set by the rust and swift arms.** It is `candor update`'s overall exit status, not
+  the JVM's. Renamed `update_rc`. The behaviour was right; the name sent a reader debugging a swift
+  shadow into JVM code.
+
+- **The rust arm verified `candor-scan` but not `candor-query`.** A shadowed query would have shipped
+  unreported — the same asymmetry `ci/verify-binary.sh` refuses, and the one that started this whole
+  thread. Both are checked now.
+
+Verified against the **real** `candor update`, reproducing buffy's exact shape (a 0.27.0 `candor-swift`
+earlier on PATH than `~/.candor/bin`): the ✔ reports the true 0.27.0 rather than the downloaded version,
+names both paths, and the command exits 1.
+
 ## 2026-09-14 (later still) — `candor update rust` prefers a prebuilt binary
 
 candor-rust now publishes `candor-scan-<plat>` / `candor-query-<plat>` for `macos-arm64` and

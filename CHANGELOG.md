@@ -10,6 +10,27 @@ keeps its own.
 
 ## 2026-09-15 (later) — two false greens found by testing the paths nobody tests (unreleased)
 
+**`candor init` hardcoded Maven for every JVM project.** `BUILD="mvn -q compile"`, `TARGET=
+"target/classes"`, regardless of what the repo actually uses — so a Gradle project and a plain-`javac`
+one both got a `.candor/run` whose first execution died with `mvn: command not found`, exit 2. It fails
+closed and says *"this is NOT a gate verdict"*, which is the right direction, but a command that sells
+itself as *stand up the gate in one command* wrote a gate that could not run. The build system is
+visible in the directory, so `init` now reads it: `pom.xml` → Maven, `build.gradle`/`.kts` → Gradle,
+loose `.class` files and neither → no build step at all, unknown → Maven as the commonest default.
+
+**All four engines are now calibrated in BOTH directions after `init`** — a fresh project's first
+`.candor/run` exits 0, and a formerly-pure function that gains `Fs` fails it:
+
+| engine | first run | after a regression |
+| --- | --- | --- |
+| TypeScript | 0 *(was 2)* | `AS-EFF-005`, exit 1 |
+| Rust | 0 | `AS-EFF-005`, exit 1 |
+| JVM | 0 *(was 2)* | `AS-EFF-005`, exit 1 |
+| Swift | 0 | `AS-EFF-005`, exit 1 |
+
+Both of those "was 2" figures are the same shape: a setup command producing a configuration that fails
+its own gate, in two different places, found only by running `init` on each engine rather than on one.
+
 **`candor update` printed `✘ cargo install failed` and exited 0.** Every other engine arm sets the
 command's exit status on failure; the rust arm printed the ✘ and returned success, so a script, a CI step
 or an `&&` chain after it saw a clean run over an engine that had not installed. **It was invisible until

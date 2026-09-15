@@ -10,6 +10,20 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**The shadow resolver no longer invents a path.** If `command -v` failed it fell back to the bare command
+name and printed that under `runs:` as though it were a location — a claim about the filesystem derived
+from a *failed* lookup. It now resolves to a real path, falls back to the written path if that is
+executable, and otherwise says plainly that the engine no longer resolves. Calibrated three ways: a real
+shadow reports the shadowing binary's true version and both paths; no shadow reports the installed
+version and stays quiet; an engine that vanished between install and check is reported as such rather
+than guessed at.
+
+**Confirmed working on the machine that had the defect.** `candor update swift` reported
+`✔ candor-swift 0.27.0` — the version that would actually run — beside the 0.38.0 it had just
+downloaded, and named both paths. Before this change that line read `✔ candor-swift 0.37.0`: a confident
+claim about a binary that would never execute. After removing the shadowing copy, `candor doctor` reports
+**all installed engines agree on spec 0.38**, with rust deliberately ahead at 0.38.1.
+
 **The duplicate was the DESIGN, not the terminal — reported from iTerm, which animates carriage returns
 perfectly well.** A timed milestone is printed directly ABOVE the live line, so both rows carry the same
 fields, and while one crate compiles for 17 seconds only the clock differs between them. *Every* terminal

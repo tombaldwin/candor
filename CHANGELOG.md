@@ -10,6 +10,27 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**Two more, both from watching it run rather than from a test.**
+
+*Alignment.* The milestone line and the live line had drifted apart — one space after `·` against two
+after the spinner, a fixed 24-wide crate column against a dynamic one — so consecutive lines started
+their crate names in different columns. One geometry now, computed once: marker, two spaces, `m:ss`,
+three spaces, crate, two spaces, tally. Verified by column position: marker@11, clock@14, crate@21 on
+both kinds.
+
+*The end of a Rust build looks hung, and it is the worst moment for that.* The last crate is usually
+the big one — `candor-scan` alone took 20 seconds — and during it **both** the name and the count
+freeze, so two consecutive milestones read identically:
+
+```
+           · 0:23   candor-scan              30 crates
+           · 0:33   candor-scan              30 crates
+```
+
+The per-crate clock is the one number still moving, so after 8 seconds on the same crate the line says
+so: `30 crates · 17s on this one`. That is the true reason it is quiet — this crate is big — rather
+than a reassurance that it is still alive.
+
 **A real report: no animation at all, and a 50-second void.** The paste that came back had neither the
 spinner nor the cargo log — which is the tell. Had stdout not been a terminal, all 48 `Compiling` lines
 would have been there; they were not, so the TTY branch DID run and the terminal simply never renders

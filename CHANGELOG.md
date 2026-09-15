@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-15 — 0.38.1: the front door, after using it
+## 2026-09-15 — 0.38.1: the front door, after using it (released 2026-09-15 as 0.38.1)
 
 A SCOPED patch — `candor-rust` and the umbrella only. The spec floor does not move (`git diff
 v0.38..HEAD -- SPEC.md` is empty), and java/ts/swift/agents are not republished because nothing in them

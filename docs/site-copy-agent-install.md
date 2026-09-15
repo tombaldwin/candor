@@ -56,12 +56,16 @@ to make on the way.
 > Any MCP client works; point its server config at `candor mcp`. `candor mcp --help` prints the snippet —
 > from the copy on your machine, not from a URL.
 >
-> **Rust today:** `candor-rust` publishes no release binaries yet, so on a Rust crate line 2 builds the
-> engine with `cargo` (~50s, needs a Rust toolchain). Every other language fetches a native binary.
+> **What line 2 needs.** The three commands are the same everywhere; the engine behind them differs, and
+> `candor scan` names anything missing instead of failing quietly.
 >
-> **Swift on Linux:** the Swift engine ships as a macOS arm64 binary only. The CLI runs on Linux, and the
-> JVM, Rust and TypeScript engines work there — a Swift package needs a Mac, or candor-swift built from
-> source. `candor scan` says so rather than failing quietly.
+> - **JVM** — a native binary on macOS arm64 and Linux x64 (no JVM required). On other platforms, notably
+>   arm64 Linux, it fetches the jar instead and runs it with your JVM.
+> - **TypeScript** — runs via `npx`, so it needs Node on every platform.
+> - **Rust** — no published binaries yet, so line 2 builds the engine with `cargo` (~50s, needs a Rust
+>   toolchain). This is the one rough edge, and it is temporary.
+> - **Swift** — a macOS arm64 binary only. A Swift package on Linux needs a Mac, or candor-swift built
+>   from source.
 >
 > Your client may already know about candor: it is published to the
 > [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.tombaldwin/candor`, so MCP
@@ -226,3 +230,24 @@ line 1 already installed, and is client-agnostic. Verified idempotent and non-de
 `.mcp.json` already holding an unrelated `other` server, both servers survive.
 
 Do not "simplify" this back to `claude mcp add`.
+
+### "Every other language fetches a native binary" was FALSE, and it shipped
+
+Written by me, published in good faith, caught 2026-09-15 by the web agent running the actual thing in a
+Linux container instead of taking the sentence on trust. It was wrong in two directions at once:
+
+- **TypeScript never fetches a binary, on any platform.** It runs via `npx` and needs Node — without it,
+  `candor: a TypeScript project, but Node isn't installed (the ts engine runs via npx) — install Node.`
+  The §1 table in this same file already said so, so the sentence contradicted the document it was in.
+- **The JVM fetches a binary only where one exists.** candor-java publishes `candor-linux-x64` and
+  `candor-macos-arm64`; on arm64 Linux — Graviton, Ampere, Docker on Apple Silicon — there is none, and
+  it fetches the jar and needs a JVM at runtime.
+
+The replacement lists what each engine actually needs rather than asserting a uniformity that does not
+exist. **The general lesson, which this file has now paid for twice:** a sentence that makes the copy
+tidy is exactly the kind nobody re-checks, because it reads like a summary of the rows above it rather
+than a claim of its own. Both false claims caught in this file so far have been that shape.
+
+Note the near-miss in the other direction too: "the JVM, Rust and TypeScript engines work there" is true
+on Linux, but all three need something (a JVM, a toolchain, Node). True and load-bearing is not the same
+as true and free.

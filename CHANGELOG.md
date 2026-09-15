@@ -10,6 +10,35 @@ keeps its own.
 
 ## 2026-09-15 (later) — `candor update`: one flashing line, not ninety (unreleased)
 
+**A real report: no animation at all, and a 50-second void.** The paste that came back had neither the
+spinner nor the cargo log — which is the tell. Had stdout not been a terminal, all 48 `Compiling` lines
+would have been there; they were not, so the TTY branch DID run and the terminal simply never renders
+in-place carriage returns while a command is in flight. Warp and other block-rendering terminals behave
+exactly this way. **An animation nobody can see is not a progress indicator**, so it is now the bonus
+rather than the mechanism.
+
+The floor is a PERSISTENT line — first at 3 seconds, then every 10 — which survives in scrollback and in
+a pasted transcript:
+
+```
+           · 0:03   resolving dependencies
+           · 0:13   syn                        3 crates
+           · 0:23   memchr                     5 crates
+           · 0:43   candor-scan                9 crates
+         ✔ candor-scan 0.38.1 · candor-query 0.38.1
+           built 9 crates in 0:45
+```
+
+The first one at 3s is the one that matters: it turns *"has this hung?"* into *"it is working"* before
+anyone reaches for ctrl-C.
+
+**Colour, gated so it cannot break anything.** `bin/candor` had none. It is now applied to the engine
+table (dim labels, bold versions), `✔`, `⚠ SHADOWED`, `✘ SPEC DRIFT`, `MISSING`, the drift warning and
+the progress line — and **only when stdout is a terminal**, with `NO_COLOR` and `TERM=dumb` honoured. Every
+captured run — `candor.test.sh`, CI, `$(candor …)`, anything piped — gets plain bytes, so the greps that
+read this output keep working. Verified: zero escape sequences in captured output, dispatcher contract
+still green.
+
 **And the line now says something worth reading.** Flashing cargo's raw last line was just a quieter
 wall — *"Locking 35 packages"*, *"Downloaded candor-scan v0.38.1"* — none of which a person can act on.
 It now shows the crate being compiled and a climbing tally:

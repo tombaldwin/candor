@@ -204,9 +204,20 @@ rust_bin() { if have "$1"; then echo "$1"; elif [ -x "$CDBIN/$1" ]; then echo "$
 # stderr — carriage returns are garbage and the full log is what someone needs to debug a failed build.
 # And ON FAILURE the tail is printed even here, because a self-erasing view that erases the error too
 # would be the worst of both.
+# COLOUR, AND ONLY WHERE IT CANNOT BREAK ANYTHING. Gated on an interactive stdout, so every captured
+# run — `candor.test.sh`, CI, `$(candor …)`, anything piped — gets plain bytes and the greps that read
+# this output keep working. `NO_COLOR` and `TERM=dumb` are honoured because a tool that ignores them is
+# a tool people turn off.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  C_RST=$'\033[0m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'
+  C_OK=$'\033[32m'; C_WRN=$'\033[33m'; C_ERR=$'\033[31m'; C_ACC=$'\033[36m'
+else
+  C_RST=''; C_DIM=''; C_B=''; C_OK=''; C_WRN=''; C_ERR=''; C_ACC=''
+fi
+
 _build_progress() {             # $1 = indent; $2.. = the command to run
   local ind="$1"; shift
-  local log done_f rc i=0 start now el cols max crate n tally
+  local log done_f rc i=0 start now el cols max crate n tally milestone=-7
   local -a fr=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   log="$(mktemp "${TMPDIR:-/tmp}/candor-build.XXXXXX")"
   done_f="$log.done"
@@ -229,8 +240,28 @@ _build_progress() {             # $1 = indent; $2.. = the command to run
     # installer. A climbing tally is true, and it moves.
     if [ "$n" -gt 0 ]; then tally="$(printf '%d crate%s' "$n" "$([ "$n" = 1 ] || echo s)")"; else tally=""; fi
     max=$(( cols - ${#ind} - 30 )); [ "$max" -lt 12 ] && max=12
-    printf '\r%s%s  %d:%02d   %-*.*s  %s' "$ind" "${fr[$i]}" $(( el / 60 )) $(( el % 60 )) \
-           "$max" "$max" "$crate" "$tally"
+    # A PERSISTENT MILESTONE EVERY 15s, because an animated line leaves NO TRACE in a terminal that does
+    # not render carriage returns mid-command — and reported from exactly that: a 50-second build that
+    # showed "building from source" and then nothing at all until the ✔. The animation is the nice case;
+    # these three or four lines are the floor, and they are what a scrollback or a pasted transcript
+    # still contains afterwards.
+    # FIRST AT 3s, THEN EVERY 10s. The first one matters most: it is what turns "did this hang?" into
+    # "it is working" before anyone reaches for ctrl-C, and a 50-second build then leaves five lines of
+    # evidence instead of a void. Tuned after a real report of no animation at all — some terminals
+    # (Warp among them) render a command's output as a block and never show in-place updates while it
+    # runs, so the carriage-return view is the BONUS and these lines are the contract.
+    if [ "$el" -ge 3 ] && [ "$el" -ge $(( milestone + 10 )) ]; then
+      milestone=$el
+      printf '\r%*s\r' "$cols" ''
+      printf '%s%s·%s %s%d:%02d%s   %s%-24.24s%s %s%s%s\n' "$ind" "$C_DIM" "$C_RST" \
+             "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
+             "$C_B" "$crate" "$C_RST" "$C_DIM" "$tally" "$C_RST"
+    fi
+    printf '\r%s%s%s%s  %s%d:%02d%s   %s%-*.*s%s  %s%s%s' \
+           "$ind" "$C_ACC" "${fr[$i]}" "$C_RST" \
+           "$C_DIM" $(( el / 60 )) $(( el % 60 )) "$C_RST" \
+           "$C_B" "$max" "$max" "$crate" "$C_RST" \
+           "$C_DIM" "$tally" "$C_RST"
     sleep 1
   done
   wait 2>/dev/null
@@ -255,7 +286,7 @@ installed_or_shadowed() {   # $1 = engine command, $2 = path this run wrote
   rpath="$(command -v "$resolved" 2>/dev/null || echo "$resolved")"
   echo "         ✔ $("$rpath" --version 2>/dev/null | head -1)"
   if [ "$rpath" != "$2" ]; then
-    echo "         ⚠ SHADOWED — that is NOT the build this run installed."
+    printf '         %s⚠ SHADOWED%s — that is NOT the build this run installed.\n' "$C_WRN" "$C_RST"
     echo "             runs:      $rpath"
     echo "             installed: $2"
     echo "           Remove the first, or put $CDBIN ahead of it on PATH."
@@ -1491,9 +1522,10 @@ PY
           # fact with the work visible. Only on the TTY path — the redirected one already has the whole
           # log above it, and BUILD_* are unset there.
           if [ -n "${BUILD_CRATES:-}" ] && [ "${BUILD_CRATES:-0}" -gt 0 ]; then
-            printf '         ✔ %s · %s\n' \
-              "$(candor-scan --version 2>/dev/null | head -1)" \
-              "$(candor-query --version 2>/dev/null | head -1)"
+            printf '         %s✔%s %s%s%s · %s%s%s\n' \
+              "$C_OK" "$C_RST" \
+              "$C_B" "$(candor-scan  --version 2>/dev/null | head -1)" "$C_RST" \
+              "$C_B" "$(candor-query --version 2>/dev/null | head -1)" "$C_RST"
             printf '           built %s crates in %d:%02d\n' \
               "$BUILD_CRATES" $(( BUILD_ELAPSED / 60 )) $(( BUILD_ELAPSED % 60 ))
           else
@@ -1566,10 +1598,10 @@ PY
     rc=0; specs=""
     report() { # $1 name, $2 version-line-or-empty, $3 hint
       if [ -n "$2" ]; then
-        printf "  %-14s %s\n" "$1" "$2"
+        printf "  %s%-14s%s %s%s%s\n" "$C_DIM" "$1" "$C_RST" "$C_B" "$2" "$C_RST"
         s=$(printf "%s" "$2" | sed -n 's/.*(spec \([0-9.]*\)).*/\1/p'); [ -n "$s" ] && specs="$specs $s"
       else
-        printf "  %-14s MISSING — %s\n" "$1" "$3"; rc=1
+        printf "  %s%-14s%s %sMISSING%s — %s\n" "$C_DIM" "$1" "$C_RST" "$C_WRN" "$C_RST" "$3"; rc=1
       fi
     }
     rb="$(rust_bin candor-scan 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
@@ -1588,7 +1620,7 @@ PY
     else printf "  %-14s not installed (optional — build from candor-swift)\n" "swift"; fi
     u=$(printf "%s\n" $specs | sort -u | grep -c .)
     if [ "$u" -gt 1 ]; then
-      echo "  ✘ SPEC DRIFT — installed engines declare different spec versions:"
+      printf '  %s✘ SPEC DRIFT%s — installed engines declare different spec versions:\n' "$C_ERR" "$C_RST"
       echo "      $(printf "%s" "$specs" | tr ' ' ',' | sed 's/^,//')"
       echo "      Upgrade the stragglers; a mixed family is not one contract."; rc=1
     elif [ "$u" -eq 1 ]; then
@@ -1646,8 +1678,8 @@ PY
         else
           _di="$(date -r "$ibin" "$_fmt")"; _dn="$(date -r "$newest" "$_fmt")"
         fi
-        printf "  ⚠ %-14s installed build is OLDER than %s's sources (%s vs %s)\n" \
-          "$eng" "$repo" "$_di" "$_dn"
+        printf "  %s⚠%s %s%-14s%s installed build is OLDER than %s's sources (%s vs %s)\n" \
+          "$C_WRN" "$C_RST" "$C_DIM" "$eng" "$C_RST" "$repo" "$_di" "$_dn"
         drift=1
       fi
     done

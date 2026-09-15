@@ -10,6 +10,16 @@ keeps its own.
 
 ## 2026-09-15 — 0.38.1: the front door, after using it (released 2026-09-15 as 0.38.1)
 
+**The hazard note broke the pin it was warning about.** Written as a trailing comment on the
+`ENGINE_PIN_RUST` line, it made `release.sh` step 7 report *"rust is pinned to 0.38.0"* about a file that
+said `0.38.1` — because `_release_set.sh` reads these with a sed anchored immediately after the closing
+quote. The dispatcher's own shell assignment read `0.38.1` fine, so **two readers of one value
+disagreed and the release tooling took the wrong half**. Fixed both ends: the note moved above the line,
+and the reader now tolerates a trailing comment — a widening in the safe direction, since failing to see
+a pin that IS set ships the wrong engine under a newer umbrella, while seeing one cannot. Calibrated on
+six shapes, including the two that must stay invisible (a commented-out pin, and the resolution line
+that references the variable).
+
 **The scoped pin turned three dispatcher-contract rows red — for being right — and the repair is the
 interesting part.** `bin/candor.test.sh` asserted that rust sits on the FAMILY line, which is true only
 while the shipped file leaves `ENGINE_PIN_RUST` empty. The file itself already records this happening

@@ -141,7 +141,13 @@ rs_family_pin() { # $1 = path to bin/candor
 rs_engine_pin() { # $1 = engine ; $2 = path to bin/candor
   local u o
   u="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
-  o="$(sed -n 's/^ENGINE_PIN_'"$u"'="\([0-9.]*\)"$/\1/p' "$2" 2>/dev/null | head -1)"
+  # TOLERATE A TRAILING COMMENT. The anchor used to sit immediately after the closing quote, so
+  # `ENGINE_PIN_RUST="0.38.1"   # clear me at the next family cut` read as ABSENT here while the
+  # dispatcher's own shell assignment read it fine — two readers of one value disagreeing, and the
+  # release tooling taking the wrong half. Measured during the 0.38.1 cut, where step 7 reported "rust
+  # is pinned to 0.38.0" about a file that said 0.38.1. The widening is in the SAFE direction: failing
+  # to see a pin that IS set ships the wrong engine under a newer umbrella; seeing one cannot.
+  o="$(sed -n 's/^ENGINE_PIN_'"$u"'="\([0-9.]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$2" 2>/dev/null | head -1)"
   [ -n "$o" ] && { printf '%s' "$o"; return 0; }
   printf '%s' "$(rs_family_pin "$2")"
 }

@@ -43,14 +43,19 @@ ENGINE_PIN_JAVA=""      # cleared at the 0.37.0 family cut: it was "0.36.2" from
                         # have kept installing candor-java 0.36.2 against a 0.37.0 front door, with
                         # every other engine on 0.37.0 and nothing saying so.
 ENGINE_PIN_TS=""
-ENGINE_PIN_RUST="0.38.1"   # ⚠ SET BY THE 0.38.1 SCOPED PATCH — CLEAR IT AT THE NEXT FAMILY CUT.
-                        # A scoped patch moves ONE engine, so ENGINE_PIN stays on the family line
-                        # (0.38.0) and this overrides it for rust alone. That is what these pins are
-                        # FOR — but a NON-EMPTY override SILENTLY WINS over ENGINE_PIN, the fallback
-                        # firing only when EMPTY, and a stale ENGINE_PIN_JAVA doing exactly this
-                        # nearly shipped java 0.36.2 behind a 0.37.0 front door at the ⟨0.37⟩ cut.
-                        # Leave it set and the next family release installs rust 0.38.1 under a newer
-                        # umbrella, with nothing saying so.
+# ⚠ SET BY THE 0.38.1 SCOPED PATCH — CLEAR IT AT THE NEXT FAMILY CUT.
+# A scoped patch moves ONE engine, so ENGINE_PIN stays on the family line (0.38.0) and this overrides it
+# for rust alone. That is what these pins are FOR — but a NON-EMPTY override SILENTLY WINS over
+# ENGINE_PIN, the fallback firing only when EMPTY, and a stale ENGINE_PIN_JAVA doing exactly this nearly
+# shipped java 0.36.2 behind a 0.37.0 front door at the ⟨0.37⟩ cut. Leave it set and the next family
+# release installs rust 0.38.1 under a newer umbrella, with nothing saying so.
+#
+# AND THE COMMENT LIVES ABOVE THE LINE, NOT AFTER IT. `_release_set.sh` reads these with a sed anchored
+# immediately after the closing quote (`^ENGINE_PIN_<E>="<semver>"$`), so a trailing comment makes the
+# pin read as ABSENT to the release tooling while the shell assignment below still sees it — two readers
+# of one value disagreeing. Written on the same line, this very note made `release.sh` step 7 report
+# "rust is pinned to 0.38.0" while `candor update` would have installed 0.38.1.
+ENGINE_PIN_RUST="0.38.1"
 ENGINE_PIN_SWIFT=""
 # Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
 # trying an unreleased engine without editing an installed file) beats the shipped constant, which beats

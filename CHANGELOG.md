@@ -8,6 +8,36 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-16 — a cardinal-sin wave in the rust and swift engines (unreleased)
+
+No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and `bin/candor` are
+as they were at 0.38.2. This entry exists because the engines moved and `ENGINE_PIN` follows them, and
+because a release with no notes of its own would otherwise publish under the PREVIOUS release's notes.
+
+What the engines fixed, all measured over the 1,561-crate registry corpus with **REMOVED 0** on every arm:
+
+- **rust R451** — a method chain attributed to the BASE type. `tokio_postgres::Client::cancel_query`
+  opened a TCP connection and read PURE; so did `sea_orm`'s DB queries and `async_process::ChildGuard::drop`.
+  ADDED 1,297 / CHANGED 2,254, and independently confirmed days later by the weekly coverage gate on Linux,
+  which named the same functions and reported `0 regressed`.
+- **rust R452** — a typed call resolving to NO UNIT was dropped with no `Unknown`, no `unresolved`, no
+  reason. ADDED 8,626 / CHANGED 8,369. The narrowing is the work: hedging every unresolved typed call
+  would have hit 14,409 callers across 230 of 250 crates, and the shipped cost is 1.44% of analysed units
+  against the 4.88–7.02% R190(c) priced and DECLINED.
+- **rust R454** — a map's CONCRETE value was never an element, so `HashMap<String, Box<dyn Doer>>` charged
+  while `HashMap<String, G>` was silent. Which silence you got depended on whether the value happened to be
+  a trait object.
+- **swift R390** — `privacy-manifest --verify` told a Bonjour app it needed no
+  `NSLocalNetworkUsageDescription`, returning `ok:true` against an empty `Info.plist`. A false verdict a
+  user acts on, not merely a missing row.
+- **swift R349 / rust R349** — a fold over an effectful element read pure in both engines. Now pinned
+  four-way by conformance **PART 90**.
+
+**Also recorded and NOT shipped:** BACKLOG §6d S2 (charge-at-construction) was built, priced over 1,561
+crates and REJECTED — 551 hard-effect fabrications against 7.5 rows closed, concentrated in the RAII crates
+people gate against. It ships default-OFF behind `CANDOR_CHARGE_AT_CTOR` so the next re-price is one
+command rather than a rebuilt experiment.
+
 ## 2026-09-15 — the front door reaches Homebrew, and Rust stops needing a toolchain (released 2026-09-15 as 0.38.2)
 
 The front-door pass in the two entries below reaches Homebrew users for the first time, and the Rust

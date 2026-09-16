@@ -399,7 +399,52 @@ under-report is not. Charge any function that constructs or receives by value a 
 `Drop`. Sound, no name keys, deletes the root of ~half the rust register, loses precision in the
 direction we have repeatedly said is acceptable.
 
-**S3. THE PRODUCT SHIPS THE PROFILE ITS OWN BANNER CALLS ADVISORY.** Every `candor-scan --policy` run
+**S3. ~~THE PRODUCT SHIPS THE PROFILE ITS OWN BANNER CALLS ADVISORY.~~ RE-FRAMED 2026-09-16 — THIS ENTRY
+WAS WRONG IN TWO PLACES AND THE SECOND INVERTS THE DECISION.**
+
+**(a) *"a gate nobody can run"* is FALSE.** `candor-rust/install.sh` builds the lint, copies the dylib to
+`~/.candor/lib/` and symlinks `cargo-candor`; `cargo candor policy` / `guard` drive it and `README.md:119-180`
+documents it. It is unreachable from **the umbrella front door, crates.io and the release binaries**
+(`Cargo.toml:13 publish = false`; `bin/candor` has zero dylint mentions and never looks in `~/.candor/lib`).
+Say that, not "nobody".
+
+**(b) THE BANNER'S SECOND CLAUSE IS THE WRONG HALF, and this entry attacked the first.** The lint IS sound
+on the effect lattice and fuzzer-gated — but it is **not a SPEC-CURRENT gate**. It stamps `spec: 0.38` from
+the shared constant while writing a pre-⟨0.21⟩ report with no `analyzed`/`unanalyzed` manifest and no
+coverage ledger, so **`candor-query gate` tells the user to "re-scan with a current engine"** over its
+output. Crate version **0.5.9**, unchanged since 2026-07-09, against candor-scan's 0.38.3. Filed as
+[[R456]]. **NOT bit-rotted** — it builds, and its behavioural-audit, self-guard and 8-form soundness gates
+are green on every push — **frozen and spec-drifted**, which is the distinction that matters.
+
+**So the original three options collapse.** "Make it reachable" and "make the banner actionable" would both
+route users to an engine the rest of the product discounts, into a pipeline enforcing a 0.38.x pin. And
+**SPEC §7 item 7 OBLIGES the floor to disclose that it can under-report silently** (`SPEC.md:247-249`,
+§7 `:5364-5372`), so deleting the sentence is not available either.
+
+**WHAT IS ACTUALLY LEFT — two decisions, previously bundled as one:**
+- **(i) What the floor says about itself.** Bounded by §7 item 7. Fix the SECOND clause (drop the nightly
+  pointer); keep the first. Better still, replace the qualitative *"under-reports"* with the **measured**
+  floor, which is item 7 done properly: the syscall oracle runs 19 drivers per push with
+  `KNOWN_UNDER_PROGRAM=()` — zero silent-pure on executed Fs/Net/Exec — and calibration reports **0 false
+  positives over 76 curated-pure crates**, with all errors in the under-report direction.
+  **"Advisory" overstates the pessimism; "sound gate" overstates the alternative.**
+- **(ii) What the deep engine IS.** Today it is the oracle/fuzzer instrument (`soundness/run.sh`,
+  `run_deep.sh`), not a product engine — 12 commits to `src/` since 2026-08-01 against 279 to
+  `crates/candor-scan`. Either bring it to ⟨0.21⟩–⟨0.38⟩ parity or stop calling it "the sound gate"
+  anywhere user-facing. **Do not build a distribution channel before parity is measured.**
+
+**A FOURTH OPTION THE ORIGINAL ENTRY MISSED — FAMILY CONSISTENCY.** candor-swift is also syntactic
+(`candor-swift/README.md:33`) and prints a bare `candor-swift: policy ✓` (`GateReportCLI.swift:1271`). One
+syntactic engine wears the floor label and the other does not. That is a SPEC §7 question, not a
+candor-rust string.
+
+**TO CONFIRM ON A QUIET MACHINE (not yet done — a preflight was running):** `cargo build` at the
+candor-rust root, then `CANDOR_JSON=r cargo dylint --lib-path target/debug/libcandor@*.dylib` on a
+fixture; check the envelope carries no `analyzed`/`coverage`/`fileSet` while `spec` reads 0.38; run
+`candor-query gate --report` over it and confirm the pre-⟨0.21⟩ note; `conformance/part.sh 79` with
+`cargo-dylint` on PATH; diff the deep and scan reports on one tree.
+
+**THE ORIGINAL ENTRY, kept because the OBSERVATION was real and only the DIAGNOSIS was wrong:** Every `candor-scan --policy` run
 prints `policy ✓ (advisory floor — the syntactic backend under-reports; the nightly engine is the sound
 gate)`. That sound gate is the dylint lint pinned to `nightly-2026-06-14` with `rustc_private`
 (`candor-rust/rust-toolchain`, `Cargo.toml:21`) — which `cargo install candor-scan` does not install and

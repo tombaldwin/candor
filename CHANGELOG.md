@@ -33,6 +33,11 @@ What the engines fixed, all measured over the 1,561-crate registry corpus with *
 - **swift R349 / rust R349** — a fold over an effectful element read pure in both engines. Now pinned
   four-way by conformance **PART 90**.
 
+- Cross-repo pins moved to 0.38.3 after the engines published, each RESOLVED rather than string-matched:
+  `ENGINE_PIN`, the `adopt/` java + agents pins, `jbang-catalog.json` (HTTP 200), the VS Code
+  `candorTsVersion` (and the extension `version`, which must track it), and both JetBrains pins. All four
+  per-engine overrides remain EMPTY — `ENGINE_PIN` alone names the line.
+
 **Also recorded and NOT shipped:** BACKLOG §6d S2 (charge-at-construction) was built, priced over 1,561
 crates and REJECTED — 551 hard-effect fabrications against 7.5 rows closed, concentrated in the RAII crates
 people gate against. It ships default-OFF behind `CANDOR_CHARGE_AT_CTOR` so the next re-price is one

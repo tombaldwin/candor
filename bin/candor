@@ -55,6 +55,13 @@ ENGINE_PIN_TS=""
 # pin read as ABSENT to the release tooling while the shell assignment below still sees it — two readers
 # of one value disagreeing. Written on the same line, this very note made `release.sh` step 7 report
 # "rust is pinned to 0.38.0" while `candor update` would have installed 0.38.1.
+# A PINNED INSTALLER DOES NOT SELF-HEAL, AND THAT IS THE COST OF COORDINATING FIVE ENGINES.
+# Observed 2026-09-16 while redacting a client identifier from published crates: an UNPINNED installer
+# (`cargo install <crate>`) starts serving the fixed version the moment it publishes, with no action.
+# This front door pins — it has to, because five engines must agree on a line — so a republished crate
+# reaches nobody until the pin moves. HEAD was clean and the registry was clean and this path was STILL
+# installing the affected version. **When a published artifact is fixed, the pin is a THIRD layer to
+# check, after the source and the registry.**
 ENGINE_PIN_RUST="0.38.4"   # REDACTION REPUBLISH, not a feature bump. candor-query 0.38.3 and every
                            # earlier version carry a doc comment naming a private client (Cargo packages
                            # SOURCE, unlike javac). candor-scan 0.38.4 is a version-only republish so ONE

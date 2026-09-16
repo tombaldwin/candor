@@ -55,7 +55,11 @@ ENGINE_PIN_TS=""
 # pin read as ABSENT to the release tooling while the shell assignment below still sees it — two readers
 # of one value disagreeing. Written on the same line, this very note made `release.sh` step 7 report
 # "rust is pinned to 0.38.0" while `candor update` would have installed 0.38.1.
-ENGINE_PIN_RUST=""
+ENGINE_PIN_RUST="0.38.4"   # REDACTION REPUBLISH, not a feature bump. candor-query 0.38.3 and every
+                           # earlier version carry a doc comment naming a private client (Cargo packages
+                           # SOURCE, unlike javac). candor-scan 0.38.4 is a version-only republish so ONE
+                           # pin covers both crates `cargo install` takes. java/ts/swift have no 0.38.4 and
+                           # MUST stay on ENGINE_PIN. CLEAR THIS AT THE NEXT FAMILY CUT.
 ENGINE_PIN_SWIFT=""
 # Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
 # trying an unreleased engine without editing an installed file) beats the shipped constant, which beats

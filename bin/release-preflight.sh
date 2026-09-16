@@ -460,6 +460,32 @@ else
     fi
   done
 fi
+# R470 — A PIN RESOLVING TO A REAL SEMVER IS NOT THE SAME CLAIM AS THAT VERSION HAVING A PUBLISHED
+# RELEASE ASSET. Measured 2026-09-16/17: ENGINE_PIN_RUST moved to a version published on crates.io with
+# no GitHub release. Every check above passed — it named a real, well-formed version — and `candor
+# update`'s prebuilt-binary route 404'd and fell through to `cargo install`, silently reintroducing the
+# Rust-toolchain requirement v0.38.2 shipped to remove. Nothing checked the URL before a user hit it.
+#
+# HEAD the EXACT URL `candor update` builds, via `candor __rust-asset-check` — NOT a retyped URL here,
+# or this check drifts from the thing it guards the moment either side changes the asset naming (see
+# `rust_asset_url` in bin/candor, the one place that shape lives). A network error is INCOMPLETE, not a
+# pass and not a fail: "could not reach GitHub" and "the asset is not there" are different claims.
+echo "[3c] rust engine pin names a PUBLISHED release asset"
+if [ ! -f "$_DISP" ]; then
+  oos "rust asset pin: no candor/bin/candor to check"
+elif ! rs_in_set candor; then
+  oos "rust asset pin: not checked — the umbrella is not in this cut, so ENGINE_PIN_RUST does not move"
+else
+  _rac_out="$(bash "$_DISP" __rust-asset-check 2>&1)"; _rac_rc=$?
+  _rac_reason="$(printf '%s\n' "$_rac_out" | sed -n 2p)"
+  case "$_rac_rc" in
+    0) ok "rust asset pin: $_rac_reason";;
+    1) bad "rust asset pin: $_rac_reason — \`candor update\` would silently fall back to \`cargo install\` (needs a Rust toolchain) until ENGINE_PIN_RUST moves";;
+    2) info "rust asset pin: could not verify — $_rac_reason (network unavailable; INCOMPLETE, not a pass or a fail — re-run when reachable)";;
+    3) note "rust asset pin: $_rac_reason (no prebuilt asset for THIS machine's platform — not what this check is for)";;
+    *) bad "rust asset pin: \`candor __rust-asset-check\` exited $_rac_rc unexpectedly — $_rac_out";;
+  esac
+fi
 
 # --- 4. self-declared BUILD versions agree (the hand-maintained constants, not the manifest) ------------
 # The 0.17 bump moved pyproject/package/Cargo but missed the agents `VERSION = "agents-0.16.0"` constant

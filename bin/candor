@@ -99,6 +99,59 @@ pin_divergence() {
   done
   printf '%s' "${out# · }"
 }
+# R470 — THE ONE PLACE THIS FAMILY BUILDS A CANDOR-RUST RELEASE-ASSET URL. Measured 2026-09-16/17: the
+# front-door install path (below) built this URL inline from ENGINE_PIN_RUST, the pin moved to a version
+# published on crates.io with NO GitHub release, the curl 404'd, and `candor update` silently fell back
+# to `cargo install` — exactly the toolchain requirement v0.38.2 existed to remove. Nothing checked the
+# URL before a user hit it. `candor doctor` and `release-preflight.sh` check [3] both need to ask "does
+# this pin's asset exist" and must ask it of the SAME URL the installer will actually fetch, so the
+# derivation lives here, once, and everything else calls it — retyping the URL is how the guard drifts
+# from the thing it guards.
+rust_asset_plat() {   # the platform token candor-rust ships a prebuilt binary for, or empty (no asset)
+  case "$(uname -s)/$(uname -m)" in
+    Darwin/arm64) printf 'macos-arm64';;
+    Linux/x86_64) printf 'linux-x64';;
+  esac
+}
+# CANDOR_RUST_RELEASE_BASE overrides the base (a `file://` dir or local http server works, curl reads
+# both) — the same seam CANDOR_JAVA_RELEASE_BASE already gives the jvm fetch, so both the download path
+# and the asset check below are exercisable in bin/candor.test.sh with no network.
+rust_asset_base() { printf '%s' "${CANDOR_RUST_RELEASE_BASE:-https://github.com/tombaldwin/candor-rust/releases/download}"; }
+rust_asset_url() {    # $1 = binary (candor-scan|candor-query), $2 = platform (default: this machine's)
+  local bin="${1:?rust_asset_url: need a binary name}" plat="${2:-$(rust_asset_plat)}"
+  [ -n "$plat" ] || return 1
+  printf '%s/v%s/%s-%s' "$(rust_asset_base)" "$ENGINE_PIN_RUST" "$bin" "$plat"
+}
+# HEAD the exact asset(s) the update path downloads. Prints STATE on line 1 (PASS/FAIL/INCOMPLETE/SKIP)
+# and a one-line reason on line 2; returns 0/1/2/3 to match. A network error (DNS, connect, timeout) is
+# INCOMPLETE, never FAIL — "could not reach GitHub" and "the asset is not there" are different claims,
+# and collapsing them would misreport a rate limit or an offline machine as a missing release. Checks
+# BOTH candor-scan and candor-query for this platform, because the installer needs both to succeed
+# (`&&`) before it treats the prebuilt route as usable — an asset missing for either is FAIL.
+rust_asset_check() {
+  local plat="${1:-$(rust_asset_plat)}"
+  if [ -z "$plat" ]; then printf 'SKIP\nno prebuilt candor-rust binary is published for %s/%s\n' "$(uname -s)" "$(uname -m)"; return 3; fi
+  have curl || { printf 'INCOMPLETE\nno curl on PATH — cannot check\n'; return 2; }
+  local bin url code rc worst_rc=0 worst_msg=""
+  for bin in candor-scan candor-query; do
+    url="$(rust_asset_url "$bin" "$plat")" || { printf 'INCOMPLETE\ncould not derive an asset URL (ENGINE_PIN_RUST=%s)\n' "$ENGINE_PIN_RUST"; return 2; }
+    code="$(curl -sS -L --max-time 15 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      [ "$worst_rc" -lt 2 ] && { worst_rc=2; worst_msg="could not reach GitHub for $bin (curl exit $rc against $url)"; }
+    elif [ "$code" = "200" ]; then
+      : # this asset is fine; keep checking the other one
+    elif [ "$code" = "404" ]; then
+      worst_rc=1; worst_msg="v$ENGINE_PIN_RUST has no $bin-$plat release asset ($url -> 404)"
+    else
+      [ "$worst_rc" -lt 2 ] && { worst_rc=2; worst_msg="GitHub answered $bin with HTTP $code, neither 200 nor 404 ($url)"; }
+    fi
+  done
+  case "$worst_rc" in
+    0) printf 'PASS\nv%s publishes both rust assets for %s\n' "$ENGINE_PIN_RUST" "$plat"; return 0;;
+    1) printf 'FAIL\n%s\n' "$worst_msg"; return 1;;
+    *) printf 'INCOMPLETE\n%s\n' "$worst_msg"; return 2;;
+  esac
+}
 # The first engine release that ENFORCES the §3.4 `engine` pin (⟨0.28 PROPOSED⟩, candor-java leads it).
 # `candor init` writes the pin regardless — `.candor/run` reads it to fetch the right engine — but it
 # must not claim enforcement an OLDER pinned engine does not perform. Move this when the rung ships.
@@ -1506,22 +1559,26 @@ PY
       # PREBUILT BINARY FIRST — candor-rust ships `candor-scan-<plat>` / `candor-query-<plat>` from
       # ⟨0.38⟩ onward (`.github/workflows/binaries.yml`). Before that it published no assets at all,
       # which made the Rust engine the ONLY one in the family that required a compiler on the user's
-      # machine — candor-java and candor-swift have shipped native binaries for releases. The curl
-      # simply 404s for an older pin and falls through to cargo, so this needs no version test.
+      # machine — candor-java and candor-swift have shipped native binaries for releases.
+      #
+      # WAS: "the curl simply 404s for an older pin and falls through to cargo, so this needs no
+      # version test." True when written, and false the direction that matters: that reasoning only
+      # covers a pin moving BACKWARDS to a version that predates the binaries workflow. R470, measured
+      # 2026-09-16/17: ENGINE_PIN_RUST moved FORWARD to a version published on crates.io with no GitHub
+      # release, the curl still 404'd, and the fallback below still fired — silently, because a fallen-
+      # through cargo build looks identical to the "no assets on this platform" case this arm was built
+      # for. `candor doctor` and `release-preflight.sh` check [3] now HEAD this same URL ahead of time
+      # (`rust_asset_check`) so that gap is a loud, named failure instead of a quiet toolchain
+      # requirement nobody asked for.
       #
       # Seconds instead of minutes, and no toolchain: the reason `candor scan .` can self-heal on a
       # Rust project at all. cargo remains the fallback for platforms with no published binary.
-      rust_plat=""
-      case "$(uname -s)/$(uname -m)" in
-        Darwin/arm64) rust_plat=macos-arm64;;
-        Linux/x86_64) rust_plat=linux-x64;;
-      esac
+      rust_plat="$(rust_asset_plat)"
       rust_done=""
       if [ -n "$rust_plat" ]; then
-        rbase="https://github.com/tombaldwin/candor-rust/releases/download/v$ENGINE_PIN_RUST"
         mkdir -p "$CDBIN"
-        if curl -fsSL -o "$CDBIN/candor-scan.tmp"  "$rbase/candor-scan-$rust_plat"  2>/dev/null \
-        && curl -fsSL -o "$CDBIN/candor-query.tmp" "$rbase/candor-query-$rust_plat" 2>/dev/null; then
+        if curl -fsSL -o "$CDBIN/candor-scan.tmp"  "$(rust_asset_url candor-scan  "$rust_plat")" 2>/dev/null \
+        && curl -fsSL -o "$CDBIN/candor-query.tmp" "$(rust_asset_url candor-query "$rust_plat")" 2>/dev/null; then
           chmod +x "$CDBIN/candor-scan.tmp" "$CDBIN/candor-query.tmp"
           # PROVE IT RUNS BEFORE INSTALLING IT. `curl -f` only says the bytes arrived; a truncated or
           # wrong-arch binary arrives with a 200 and then fails to exec — and this path is what every
@@ -1659,6 +1716,15 @@ PY
     # with none installed by either route, exit 1 — an ✘ that scrolls past above a green doctor summary
     # is exactly how a failed install gets read as a successful one in a script or a CI step.
     exit "${update_rc:-0}";;
+  __rust-asset-check)
+    # HIDDEN — not a user-facing verb (deliberately no help text, no completion entry). The ONE way an
+    # external script (release-preflight.sh check [3]) gets `rust_asset_check`'s answer without retyping
+    # the URL it derives: run the umbrella dispatcher itself, so the check and the installer it guards
+    # can never read different code. `candor doctor` below calls the function directly (same process).
+    #   $ candor __rust-asset-check [platform]
+    #   stdout: STATE\nreason   ·   exit: 0 PASS / 1 FAIL / 2 INCOMPLETE / 3 SKIP (no asset for this plat)
+    shift || true
+    rust_asset_check "${1:-}"; exit $?;;
   doctor)
     # one-shot install check: each engine's presence + version, and SPEC agreement (the interop
     # contract — matching `spec` matters; build versions may differ per the versioning ladder).
@@ -1677,6 +1743,18 @@ PY
     report "rust scan" "$v" "run \`candor update rust\` (needs a Rust toolchain)"
     rb="$(rust_bin candor-query 2>/dev/null)" && v=$("$rb" --version 2>/dev/null | head -1) || v=""
     report "rust query" "$v" "run \`candor update rust\`"
+    # R470 — CATCH A PINNED-BUT-UNPUBLISHED RUST ASSET BEFORE `candor update` SILENTLY FALLS TO CARGO.
+    # Asked of the PIN, not of what's installed: a machine that already has the rust binaries would
+    # otherwise see nothing wrong here right up until it re-runs `update` and quietly needs a toolchain.
+    # Silent when it passes (PASS) or when this platform has no prebuilt asset at all (SKIP, not this
+    # guard's business) — loud only for FAIL (the pin names no release) and INCOMPLETE (couldn't ask).
+    _rac="$(rust_asset_check)"; _rac_rc=$?
+    case "$_rac_rc" in
+      1) echo "  ${C_ERR}✘ RUST ASSET PIN${C_RST} — $(printf '%s\n' "$_rac" | tail -1)"
+         echo "      \`candor update\` will silently fall back to \`cargo install\` (needs a Rust toolchain) until ENGINE_PIN_RUST moves."
+         rc=1;;
+      2) echo "  ${C_WRN}⚠${C_RST} rust asset pin: $(printf '%s\n' "$_rac" | tail -1) — INCOMPLETE, not a pass or a fail; re-run when reachable";;
+    esac
     if have candor-java; then v=$(candor-java --version 2>/dev/null | head -1)
     elif [ -x "$CDBIN/candor-java" ]; then v=$("$CDBIN/candor-java" --version 2>/dev/null | head -1)
     else jar="${CANDOR_JAVA_JAR:-$(java_jar)}"

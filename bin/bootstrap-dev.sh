@@ -11,7 +11,8 @@
 # partial failure resumes rather than restarts.
 #
 # Usage:  bash bin/bootstrap-dev.sh [--with-corpora] [--check]
-#           --with-corpora   also clone the read-only real-world corpora (pollen, the field case)
+#           --with-corpora   also clone the read-only real-world corpora (pollen, and the private
+#                            field case if CANDOR_FIELD_CORPUS is set)
 #           --check          run the full verification at the end (slow: builds + conformance)
 set -uo pipefail
 
@@ -71,7 +72,13 @@ if [ "$WITH_CORPORA" = 1 ]; then
   # READ-ONLY corpora. Nothing should ever write into these — copy to /tmp before scanning. They are
   # other people's repositories and one of them is the live CI consumer.
   git -C "$ROOT/pollen" rev-parse --git-dir >/dev/null 2>&1 || git clone -q git@github.com:tombaldwin/pollen.git "$ROOT/pollen" || warn "pollen clone failed (optional)"
-  git -C "$ROOT/the field case" rev-parse --git-dir >/dev/null 2>&1 || git clone -q git@bitbucket.org:<redacted org>/the field case.git "$ROOT/the field case" || warn "the field case clone failed (needs Bitbucket auth; optional)"
+  # THE PRIVATE FIELD-CASE CORPUS IS NOT NAMED HERE, DELIBERATELY (redacted 2026-09-16). It is a client's
+  # in-production codebase, and publishing its clone URL in a public repo discloses both the org and the
+  # project. Set CANDOR_FIELD_CORPUS=<git-url> to clone it; without it this step is simply skipped, which
+  # is the right default for everyone who does not already have access.
+  if [ -n "${CANDOR_FIELD_CORPUS:-}" ]; then
+    git -C "$ROOT/field-case" rev-parse --git-dir >/dev/null 2>&1 || git clone -q "$CANDOR_FIELD_CORPUS" "$ROOT/field-case" || warn "field-case clone failed (needs auth; optional)"
+  fi
   ok "corpora attempted"
 fi
 

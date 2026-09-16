@@ -2830,7 +2830,7 @@ which only ever tested an mtime-advancing edit with the tree env var set.
   boundary anywhere the answer is `null` ("couldn't determine"), not every edit in the session.
 
 
-From a the field case field report (2,259 classes / 15MB of bytecode, a 4.9MB baseline): the Stop hook fires at
+From a field report (2,259 classes / 15MB of bytecode, a 4.9MB baseline): the Stop hook fires at
 the END OF EVERY TURN, including turns that only write a reply, and cost ~3.5s each — of which **3.30s is
 the scan**. Not JVM startup (0.10s), not jq (0.10s). Over a long session that is the difference between a
 feedback loop you keep and one you turn off.

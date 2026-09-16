@@ -765,7 +765,7 @@ still double-cd's`. Coarse neutralisation shows where the suite has teeth: killi
   alias crossed a module boundary) and swift PICKED BY SOURCE ORDER on the `typealias` route — a cardinal
   sin, R429, that a bare `deny` structurally cannot see because the helper carries the effect as a unit
   of its own. Carrying out a ruling is not always a no-op, even when the ruling says it is.
-- **the field case access.** `git ls-remote` on that repo is `Permission denied (publickey)` from this machine,
+- **Field-case access.** `git ls-remote` on that repo is `Permission denied (publickey)` from this machine,
   so the local clone is a stale 2025-07-28 snapshot and **we cannot tell whether our one field
   deployment still runs candor.** A Fable claim that it does not was withdrawn on this evidence — the
   honest state is UNKNOWN, and one SSH key makes it a fact.
@@ -2588,7 +2588,7 @@ the defect, in two different ways, and neither was caught locally.**
 I never re-ran it after. CI caught it. `verify-local.sh` runs CI's union — running it, rather than the
 last green suite I happened to remember, is the whole point of it existing.
 
-## A cheap report REFRESH (the the field case Stop-hook cost)
+## A cheap report REFRESH (the field-case Stop-hook cost)
 
 Field-measured: 3.30s of a 3.51s hook is the scan, re-analysing 2,259 classes when one changed. The
 FREQUENCY half is fixed (the hook skips turns where nothing the verdict depends on moved); the first turn
@@ -2605,7 +2605,7 @@ Measured with `CANDOR_TIMING=1` (opt-in, stderr, added for this and pinned so it
 over three independent targets:
 
     target          load+parse   analyze+edges   fixpoint      indexes
-    the field case          215 ms       860 ms (72%)    40 ms (3.4%)  37 ms
+    field case      215 ms       860 ms (72%)    40 ms (3.4%)  37 ms
     commons-lang3    71 ms       193 ms          5.4 ms (1.9%)  12 ms
     gson             47 ms        96 ms          2.1 ms (1.3%)  14 ms
 
@@ -2616,7 +2616,7 @@ per-class cache skips.
 
 **So the ceiling is quantified rather than hoped for.** On a one-class edit the unavoidable remainder is
 the fixpoint (~40 ms), the whole-program indexes (subtype/spring/stream, ~37 ms) and that one class —
-call it 80–120 ms against 1200 ms today, so **roughly 10× on this target**, and the field case is the field case
+call it 80–120 ms against 1200 ms today, so **roughly 10× on this target**, and it is the field case
 the item was filed for.
 
 **Two things the numbers change about the design.** The indexes are computed over ALL classes and are
@@ -2624,7 +2624,7 @@ cheap, so they can simply be recomputed — no cache key needed for them, which 
 invalidation question from the design. And the fixpoint should be recomputed every run as the original
 note says, now with a measurement behind it: at 3.4% it is not worth the risk of ever serving a stale one.
 
-**Baseline for any future comparison** (candor-java 0.30.0, the field case `build/classes`, 2,602 class files /
+**Baseline for any future comparison** (candor-java 0.30.0, the field case's `build/classes`, 2,602 class files /
 21,247 units): 1.65 s wall, of which 0.06 s is JVM start. Scaling is near-linear in input size (2× the
 files → ~2.3× the time), which independently rules out a runaway closure.
 
@@ -2716,7 +2716,7 @@ files → ~2.3× the time), which independently rules out a runaway closure.
   `declared` mechanism is understood.
 
 - **`[P1]` A CHEAP REPORT REFRESH — BUILT 2026-08-21, candor-java, opt-in `CANDOR_REFRESH=<dir>`.
-  It works and it is FAR below the projection: 1.48×, not 10×.** Measured on the field case (the field case,
+  It works and it is FAR below the projection: 1.48×, not 10×.** Measured on the field case (
   2,602 classes) with one class changed: cold 1750 ms → refresh 1184 ms, 2601 of 2602 classes reused.
 
       cold                        1750 ms

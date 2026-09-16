@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-16 — a cardinal-sin wave in the rust and swift engines (unreleased)
+## 2026-09-16 — a cardinal-sin wave in the rust and swift engines (released 2026-09-16 as 0.38.3)
 
 No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and `bin/candor` are
 as they were at 0.38.2. This entry exists because the engines moved and `ENGINE_PIN` follows them, and

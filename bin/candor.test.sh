@@ -729,6 +729,69 @@ initwf "init's rust workflow installs the RUST pin"    Cargo.toml    "--version 
 initwf "init's swift workflow curls the SWIFT pin"     Package.swift "download/v$JPIN/candor-swift"    "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
 
 echo
+echo "RUST ASSET PIN CHECK (R470 — a pin naming a real semver with NO published release asset must be a"
+echo "LOUD, DISTINCT failure, never a silent fall-through to \`cargo install\`; a network error must be a"
+echo "third state, not folded into pass or fail):"
+# A FAKE curl, not a real network call. It classifies by a marker baked into the URL — which is exactly
+# what `rust_asset_url` (bin/candor) builds from ENGINE_PIN_RUST — so no fixture server is needed and the
+# suite stays hermetic. `9.9.9-fail` simulates the real R470 incident: a pin naming a real-shaped version
+# with no GitHub release (curl reaches GitHub, gets 404). `9.9.9-down` simulates the network itself being
+# unreachable (curl never completes the request) — a DIFFERENT claim, and the row below asserts it reads
+# as one.
+racbin="$(mktemp -d "$T/racbin.XXXXXX")"
+cat > "$racbin/curl" <<'RACCURL'
+#!/bin/sh
+url=""; for a; do url="$a"; done
+case "$url" in
+  *v9.9.9-fail*) printf '404'; exit 0;;   # reached GitHub; the asset is not there
+  *v9.9.9-down*) exit 7;;                 # never reached GitHub at all
+  *) printf '200'; exit 0;;
+esac
+RACCURL
+chmod +x "$racbin/curl"
+racrun() { # $1 label ; $2 want-substring ; $3 want-exit ; rest: env assignments
+  local label="$1" want="$2" wantrc="$3"; shift 3
+  local got rc
+  got="$(env PATH="$racbin:/usr/bin:/bin" "$@" bash "$D" __rust-asset-check macos-arm64 2>&1)"; rc=$?
+  if [[ "$got" == *"$want"* ]] && [ "$rc" -eq "$wantrc" ]; then echo "  ok   $label"
+  else echo "  FAIL $label"; echo "       want: *$want* / rc=$wantrc"; echo "       got:  $got / rc=$rc"; fails=$((fails+1)); fi
+}
+racrun "CONTROL: a pin with published assets PASSES"        "PASS"                0 CANDOR_ENGINE_PIN_RUST=0.38.3
+racrun "a pin naming a version with no release asset FAILS" "release asset"       1 CANDOR_ENGINE_PIN_RUST=9.9.9-fail
+racrun "…and the fail state is FAIL, not silence"           "FAIL"                1 CANDOR_ENGINE_PIN_RUST=9.9.9-fail
+racrun "a network error reads INCOMPLETE, not FAIL"         "INCOMPLETE"          2 CANDOR_ENGINE_PIN_RUST=9.9.9-down
+racrun "…and names WHY, not just that it failed"            "could not reach"     2 CANDOR_ENGINE_PIN_RUST=9.9.9-down
+# no plat resolved (this platform ships no prebuilt candor-rust binary) → SKIP, not FAIL: it must not
+# read as "the pin is broken" when the real answer is "not applicable here".
+skbin="$(mktemp -d "$T/rac-skbin.XXXXXX")"
+cp "$racbin/curl" "$skbin/curl"
+cat > "$skbin/uname" <<'RACUNAME'
+#!/bin/sh
+case "$1" in -s) echo "PlanNine";; -m) echo "mips";; esac
+RACUNAME
+chmod +x "$skbin/uname"
+sk_got="$(env PATH="$skbin:/usr/bin:/bin" CANDOR_ENGINE_PIN_RUST=0.38.3 bash "$D" __rust-asset-check 2>&1)"; sk_rc=$?
+if [[ "$sk_got" == *"SKIP"* ]] && [ "$sk_rc" -eq 3 ]; then echo "  ok   no prebuilt asset for this platform is SKIP, not a fail"
+else echo "  FAIL no prebuilt asset for this platform is SKIP, not a fail"; echo "       got: $sk_got / rc=$sk_rc"; fails=$((fails+1)); fi
+# …AND `candor doctor` calls the SAME check, so the front door a release ships and the one a user reads
+# before ever running `update` cannot disagree. Guarded to Darwin/arm64 · Linux/x86_64 because doctor
+# resolves the platform from the REAL machine (no override), unlike the rows above.
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64|Linux:x86_64)
+    dochome_rac="$(mktemp -d "$T/dochome-rac.XXXXXX")"
+    docout="$(env PATH="$racbin:/usr/bin:/bin" HOME="$dochome_rac" CANDOR_CACHE="$dochome_rac/.candor" \
+                CANDOR_ENGINE_PIN_RUST=9.9.9-fail CANDOR_DISPATCH_DRYRUN= bash "$D" doctor 2>&1)"; docrc=$?
+    if [[ "$docout" == *"RUST ASSET PIN"* ]] && [ "$docrc" -ne 0 ]; then echo "  ok   doctor surfaces a FAIL rust asset pin and exits non-zero"
+    else echo "  FAIL doctor surfaces a FAIL rust asset pin and exits non-zero"; echo "       got: $docout / rc=$docrc"; fails=$((fails+1)); fi
+    dochome_rac2="$(mktemp -d "$T/dochome-rac2.XXXXXX")"
+    docout2="$(env PATH="$racbin:/usr/bin:/bin" HOME="$dochome_rac2" CANDOR_CACHE="$dochome_rac2/.candor" \
+                 CANDOR_ENGINE_PIN_RUST=0.38.3 CANDOR_DISPATCH_DRYRUN= bash "$D" doctor 2>&1)"
+    if [[ "$docout2" != *"RUST ASSET PIN"* ]]; then echo "  ok   CONTROL: doctor is silent when the rust asset pin passes"
+    else echo "  FAIL CONTROL: doctor is silent when the rust asset pin passes"; echo "       got: $docout2"; fails=$((fails+1)); fi;;
+  *) skip "the two doctor-integration rust-asset rows (platform-derived, not override-able)";;
+esac
+
+echo
 if [ "$fails" -eq 0 ]; then
   echo "candor-dispatch: OK$( [ "$skips" -gt 0 ] && printf ' (%d SKIPPED — a platform this row cannot be measured on, not a pass)' "$skips" )"
 else echo "candor-dispatch: $fails FAILED"; exit 1; fi

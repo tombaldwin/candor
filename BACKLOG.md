@@ -1925,7 +1925,7 @@ URL change already made there.
 `adopt/candor.yml:99` falls back to a SHA-pinned raw URL when a repo has no vendored `.candor/candor-sarif`:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/6e61e0afba8e90b4ada1ef0038ba56dbeb8b22a5/integrations/github/candor-sarif
+curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/2e8dbc7fb638eb3f94a0264b0ce50081b37d1b38/integrations/github/candor-sarif
 ```
 
 **That SHA is `6e61e0a`, 2026-07-09.** It predates BOTH ⟨0.32⟩ identity fixes — the one that stopped the

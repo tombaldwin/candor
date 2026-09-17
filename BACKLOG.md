@@ -287,7 +287,58 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-15, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-17, not remembered)
+
+**v0.38.3 SHIPPED 2026-09-16 and verified live; `candor-scan`/`candor-query` 0.38.4 published since as a
+REDACTION republish (Cargo packages source, so a doc comment reached every tarball). Register max R485,
+conformance green four-way with PART 90 and PART 91 added.**
+
+**THE MASKING-GUARD VEIN REOPENED ON THE `Exec` SPELLING AND IS NOW CLOSED FOUR-WAY.** Three live gate
+bypasses, all `allow Exec <benign>` exiting 0 over a caller-chosen program, found within 24 hours:
+
+  - **R464 java** — a benign `new ProcessBuilder("git")` certified `System.load(argv[0])`. Six spellings.
+    Its fix retrospectively invalidated **R409**'s recorded verdict (*"Net, Exec and Db are all CAUGHT"*),
+    which had been measured only on the two owners INSIDE its own guard.
+  - **R460 rust** — a `Command` arriving as a RECEIVER has no `Command::new` for the guard to fire on.
+    Real catch: **`aws-config` wraps a user-supplied AWS-profile command in `sh -c` and spawns it**, and
+    `allow Exec sh` certified it.
+  - **R477 java** — R464 closed the ARGUMENT form and left the RECEIVER form open. **Found by PART 91 on
+    its FIRST EXECUTION**, declared as an (arm, engine) xfail, and the xfail RETIRED ITSELF when java was
+    fixed because a passing xfail is a failure in that harness.
+
+**PART 91 exists because of the first two**: two engines shipped one class independently, in one overnight
+wave, by different agents, and nothing cross-engine could have caught either. That is the argument for a
+part rather than two fixes.
+
+**OPEN, MEASURED, AND SPECIFIED — in the order a user loses something:**
+
+  - **R480 java** — a builder built HERE whose program-setting verb the CLASSIFIER never charges `Exec`:
+    zt-exec `ProcessExecutor.command`, testcontainers `GenericContainer.withCommand`. Exits 0 BEFORE AND
+    AFTER R477, because the guard is correct over a call it never sees as a spawn. Widely-used libraries.
+  - **R475** — the chain join. A dep's closed-world CHA row is consumed as an open-world fact: chained,
+    java publishes an `Fs` the consumer never performs AND loses the `Net` it does; rust reports the
+    consumer ABSENT. **Both engines already hold the data a fix needs** (rust `dispatch_sites`, java
+    `chaTargets`).
+  - **R484 rust** — a pinned residual, deliberately not fixed: widening R476's removal to reach it is the
+    exact cut that cost 12 rows in the cardinal-sin direction.
+  - **R474** — REWRITTEN after re-measurement; the original was filed from an agent's prose and was wrong.
+    The genuinely-silent set is `#[macro_use]`, glob imports and proc-macros — priced at 9 of 1,608 crates
+    and DECLINED.
+
+**THE FIX-INTRODUCES-THE-CLASS PATTERN FIRED TWICE IN TWO DAYS, both caught by the A/B's REMOVED column
+and neither by a test:** R476's first cut took three tokio `watch` functions from a disclosed `Unknown` to
+ABSENT (12 rows); R479's first cut gave `?Sized` — *the removal of a bound* — the power of a bound and cost
+19 removals, 13 cardinal-sin. **Read every REMOVED row and trace it to a body; that is the only thing that
+caught either.**
+
+**R458 WAS RETIRED AS A DUPLICATE of R101's open-CHA half**, and the reframing I nearly shipped with it was
+a category error: `outOfScope`/`unanalyzed`/`excluded` are claims about FILES OF THE TARGET (`SPEC.md:969-1010`),
+and a downstream implementor is in a crate that does not exist yet. **R459 was also held wrongly** — its one
+disclosed→silent row was a `#[test] fn` whose `Unknown` came from a correctly-excluded `#[cfg(test)]` macro
+file, so zero production functions moved. **A stop condition stricter than the property it protects blocks
+correct work AND misattributes the block.**
+
+**PRIOR STATE, kept for the record:**
 
 **⟨0.38⟩ IS SHIPPED — v0.38.0, the v0.38.1 scoped rust patch, and v0.38.2 (FULL family, 2026-09-15) are
 all live and verified.** 0.38.2 published the candor-rust RELEASE BINARIES (so no engine needs a compiler

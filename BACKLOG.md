@@ -290,8 +290,51 @@ so the next rung is probably not a new idea, it is finishing this one.
 ### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-17, not remembered)
 
 **v0.38.3 SHIPPED 2026-09-16 and verified live; `candor-scan`/`candor-query` 0.38.4 published since as a
-REDACTION republish (Cargo packages source, so a doc comment reached every tarball). Register max R485,
-conformance green four-way with PART 90 and PART 91 added.**
+REDACTION republish (Cargo packages source, so a doc comment reached every tarball). Register max R490.
+Four-way conformance GREEN with PART 90, PART 91 and PART 92; CI green at every HEAD in all seven repos,
+MEASURED 2026-09-17 evening, not assumed.**
+
+**SPEC ⟨0.39⟩ IS WRITTEN AND UNPORTED — deliberately, and PART 92 records it honestly.** The clause is the
+chained-dispatch union (R475): a chained consumer's inherited signature must carry the effects of every
+implementor visible to it. **It closes a toggle running the WRONG WAY — a library whose public abstraction
+has ZERO implementors gives a consumer a disclosed `Unknown`, and adding ONE PURE implementor silently
+certifies the consumer pure, so adding a pure implementation REMOVES a disclosure from everyone
+downstream.** Live on `ratatui`: `deny Ipc app_size` and `pure app_size` BOTH exit 0. Chaining does not
+flip the gate; it DELETES the `invisible` disclosure ⟨0.30⟩'s non-gating ruling depends on.
+
+PART 92 lands with `c1_foreign_effectful` XFAILED on all four engines and sixteen control cells green — the
+producer side (`dispatchesOn`, foreign-trait `interfaceUnion`) is unimplemented EVERYWHERE, measured. **A
+passing xfail is a failure in that harness, so each engine retires its own the moment it ports.** Tom's
+ruling 2026-09-17: ship the consumer union DEFAULT-ON, not gated — priced over 1,608 crates, consumer
+verdicts move for at most 13 crates (0.8%) and only by ADDING a real effect.
+
+**THE REAL RESIDUE IS `KAPPA_COVERED_PREFIXES`, AND IT IS A SECOND, INDEPENDENT WAY TO LOSE A CALL.**
+R480 (java third-party subprocess builders) turned out to be DISCLOSED, not a sin — those four packages
+are NOT on that list, so every floored call carried `invisible` plus the coverage advisory, the honest
+floor working. **R486 is the same defect one owner over and IS a sin, purely because `scala` IS on the
+list**: `Classifier.java:2290` verb-gates `scala.sys.process` so `Process$.apply(String)` — the
+constructor carrying the program — is uncharged, and the covered prefix suppresses the disclosure, giving
+`coverage: null`, no `invisible`, no advisory, `deny Exec` exit 0. **The package claims coverage it does
+not have.** An audit of the whole prefix list is IN FLIGHT; treat the list, not the builder classifier, as
+the open question.
+
+**CLOSED 2026-09-17:** R439, R477, R480 (java `1e98b2d`), R485 (rust `acc808f`/`7fdb241`). **FILED:**
+R486 (silent, scala), R487 (ffmpeg, disclosed), R488, R489, R490.
+
+**R488 IS THE ONE TO READ IF YOU READ ONE.** `candor-query`'s frontier arm returned
+`possibleViaUnknownDispatch: []` for EVERY candor-scan report — a §3.1 FALSE ALL-CLEAR — because it split
+quals on the last `.` and a rust qual (`Impl::op`) has none. It was UNREACHABLE until R485's fix made the
+dotted path rust's normal case. **The assumption sat written down in the very file that would have caught
+it** — *"Names are dot-separated (the swift/JVM report shape this arm serves)"*. A fix that makes a latent
+defect reachable is not the same as a fix that introduces one, and both happened this week.
+
+**NEW INSTRUMENT: `candor-spec/scripts/doc-gates.sh`** — the six gates that read DOCUMENTS ONLY
+(`must_ledger`, `clause_check`, `part_declarations`, `field_audit`, `reanchor_banner`,
+`check_soundness_tables`). Safe on a dirty tree, mid-wave, mid-conformance. **It exists because I pushed
+the ⟨0.39⟩ clause with `must_ledger` RED**: that gate runs ONLY at `conformance/run.sh:8782`, the suite
+reads engine WORKING TREES, and two engine trees were dirty — so the cheap gate for a documents-only
+change was reachable only through the expensive instrument such a change has no business running. Run it
+after ANY edit to `SPEC.md`, `SOUNDNESS.md`, or a generator's declarations.
 
 **THE MASKING-GUARD VEIN REOPENED ON THE `Exec` SPELLING AND IS NOW CLOSED FOUR-WAY.** Three live gate
 bypasses, all `allow Exec <benign>` exiting 0 over a caller-chosen program, found within 24 hours:

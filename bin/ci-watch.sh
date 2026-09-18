@@ -1078,7 +1078,21 @@ for repo in "${REPOS[@]}"; do
       # name and a guessed one aborted the whole run under `set -u`. Compared against the LOCAL origin
       # ref (no fetch): a commit pushed from another machine can read NOT PUSHED until the next fetch,
       # which is the conservative direction — red, never a false green.
-      _up=$(git -C "$d" rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo origin/HEAD)
+      # SOUNDNESS R505 — THE FALLBACK DID NOT RESOLVE, SO THIS PRINTED "NOT PUSHED" FOR A PUSHED COMMIT.
+      # `@{u}` fails on SIX of the seven family repos (no upstream is configured for `main`), and the old
+      # fallback `origin/HEAD` is a symbolic ref that is not set in any of them — so `--is-ancestor` ERRORED
+      # and the `!` turned that error into a confident NOT PUSHED. Measured 2026-09-18 on candor-spec with
+      # the commit verifiably on the remote (`git ls-remote` agreeing with local `origin/main`).
+      # It failed RED, which is what the comment below promises — but red for a WRONG REASON is not the
+      # conservative direction in the sense that matters: it sends the reader to re-push a commit that is
+      # already pushed, and it says so in the one line a reader trusts. Fall back to `origin/<branch>`,
+      # which the push itself writes and which resolves in all seven repos; keep `origin/HEAD` last so a
+      # detached HEAD still has something to compare against.
+      _br=$(git -C "$d" branch --show-current 2>/dev/null)
+      _up=$(git -C "$d" rev-parse --abbrev-ref '@{u}' 2>/dev/null \
+            || { [ -n "$_br" ] && git -C "$d" rev-parse --verify -q "origin/$_br" >/dev/null \
+                 && echo "origin/$_br"; } \
+            || echo origin/HEAD)
       if ! git -C "$d" merge-base --is-ancestor HEAD "$_up" 2>/dev/null; then
         printf "  %-14s %-26s ✘ NOT PUSHED — HEAD %s is not on %s, nothing could have run\n" \
                "$repo" "(none)" "$(git -C "$d" rev-parse --short HEAD 2>/dev/null)" "$_up"

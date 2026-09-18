@@ -294,29 +294,76 @@ REDACTION republish (Cargo packages source, so a doc comment reached every tarba
 Four-way conformance GREEN with PART 90, PART 91 and PART 92; CI green at every HEAD in all seven repos,
 MEASURED 2026-09-17 evening, not assumed.**
 
-**SPEC ⟨0.39⟩ IS WRITTEN AND UNPORTED — deliberately, and PART 92 records it honestly.** The clause is the
-chained-dispatch union (R475): a chained consumer's inherited signature must carry the effects of every
-implementor visible to it. **It closes a toggle running the WRONG WAY — a library whose public abstraction
-has ZERO implementors gives a consumer a disclosed `Unknown`, and adding ONE PURE implementor silently
-certifies the consumer pure, so adding a pure implementation REMOVES a disclosure from everyone
-downstream.** Live on `ratatui`: `deny Ipc app_size` and `pure app_size` BOTH exit 0. Chaining does not
-flip the gate; it DELETES the `invisible` disclosure ⟨0.30⟩'s non-gating ruling depends on.
+**SPEC ⟨0.39⟩ IS PORTED IN RUST AND PART 92's RUST XFAIL HAS RETIRED ITSELF (2026-09-18).** The clause
+is the chained-dispatch union (R475): a chained consumer's inherited signature must carry the effects of
+every implementor visible to it. **It closes a toggle running the WRONG WAY — a library whose public
+abstraction has ZERO implementors gives a consumer a disclosed `Unknown`, and adding ONE PURE implementor
+silently certifies the consumer pure, so adding a pure implementation REMOVES a disclosure from everyone
+downstream.** Closed live on the released `ratatui` crates: `app_size` goes ABSENT → `['Ipc']`, and both
+`deny Net` and `pure` move 0 → 1.
 
-PART 92 lands with `c1_foreign_effectful` XFAILED on all four engines and sixteen control cells green — the
-producer side (`dispatchesOn`, foreign-trait `interfaceUnion`) is unimplemented EVERYWHERE, measured. **A
-passing xfail is a failure in that harness, so each engine retires its own the moment it ports.** Tom's
-ruling 2026-09-17: ship the consumer union DEFAULT-ON, not gated — priced over 1,608 crates, consumer
-verdicts move for at most 13 crates (0.8%) and only by ADDING a real effect.
+Four-way conformance is GREEN with `c1_foreign_effectful` **OK on rust and XFAILED on java, swift and ts**,
+sixteen control cells green four-way. **That is the self-retiring xfail surviving a real port, which was
+the untested half of the mechanism.** Tom ruled the consumer union ships DEFAULT-ON.
 
-**THE REAL RESIDUE IS `KAPPA_COVERED_PREFIXES`, AND IT IS A SECOND, INDEPENDENT WAY TO LOSE A CALL.**
-R480 (java third-party subprocess builders) turned out to be DISCLOSED, not a sin — those four packages
-are NOT on that list, so every floored call carried `invisible` plus the coverage advisory, the honest
-floor working. **R486 is the same defect one owner over and IS a sin, purely because `scala` IS on the
-list**: `Classifier.java:2290` verb-gates `scala.sys.process` so `Process$.apply(String)` — the
-constructor carrying the program — is uncharged, and the covered prefix suppresses the disclosure, giving
-`coverage: null`, no `invisible`, no advisory, `deny Exec` exit 0. **The package claims coverage it does
-not have.** An audit of the whole prefix list is IN FLIGHT; treat the list, not the builder classifier, as
-the open question.
+**THE PORT FOUND TWO ERRORS IN MY OWN CLAUSE, and the cost one matters because the ruling rested on it:**
+
+  - **Consumer cost was predicted at 13 crates (0.8%) and MEASURED at 46 (2.86%)** — 3.5× understated.
+    Direction held exactly (310 rows gained an effect, **0 lost one**, nothing hedged) and the producer
+    side held precisely (`inferred` CHANGED **0**). **The cause indicts the method: the pricing census
+    excluded ~70 trait leaf names (`Stream`, `AsyncRead`, `Future`, `Write`) and §4 permits excluding only
+    formatting/equality/hashing/cloning while EXPLICITLY FORBIDDING iterators, callbacks and I/O traits.**
+    The excluded population was `tower#Service::call`, `futures_core#Stream::poll_next` — precisely the
+    abstractions an effect hides behind. **A census that prices a rung must not narrow the population the
+    rung is about.** Both numbers are kept in the clause.
+  - **The worked key was UNDER-QUALIFIED** (`ratatui_core#Backend::size` for an abstraction at
+    `ratatui_core::backend::Backend`) in a clause that FORBIDS inventing a second spelling — a literal
+    copier would have invented one.
+
+**THE COVERED-PREFIX GRANT IS THE BIGGEST THING FOUND THIS WEEK, AND IT IS A CLASS (R492).** A prefix in
+`Rules.KAPPA_COVERED_PREFIXES` suppresses the `invisible` disclosure for its whole namespace — **an
+unqualified purity claim over every unmodelled member of it.** 46 of 52 prefixes censused; the instrument
+is `candor-java/soundness/kappa_census/`. Measured: `org.jetbrains` (zero owner rules, and the prefix
+silently extends an ANNOTATIONS namespace to the Exposed SQL framework) reported **`0 functions reach
+effects`** for a ten-method data layer with `deny Db`/`deny Net`/`deny Unknown` all exiting 0; `io.ktor`
+the same for an HTTP server. **Two grants contradict their own written rationale** — `commons.csv` reads
+*"pure-relative over caller sources"* and holds ZERO rules, and `com.sun` was written for the JDK while
+**JNA squats on it**.
+
+**Cross-engine, java is the LONE OUTLIER and differs in KIND, not degree**: rust grants exactly five
+sysroot crates AND identity-checks them (`is_real_sysroot_frontier`, written against a core/alloc
+impostor); ts says an unmodelled external call is *"never silent-pure"*; ts/swift `COVERED` is EARNED from
+a trusted loaded report, not asserted by name. **Java's 51 prefixes are name-matched with no identity
+check, which is exactly why JNA squatting works.** OPEN AND TOM'S CALL: whether to REMOVE the
+`org.jetbrains` and `io.ktor` grants (verdict-affecting — removal floods `invisible`); both are modelled
+now, so removal is hardening, not a fix.
+
+**R494 OPENED A CLASS NOTHING WAS LOOKING FOR, AND R496 IS ITS LIVE INSTANCE.** A member classified to a
+WEAKER effect than it performs produces **no disclosure at all** — an absent member floors to `invisible`,
+an over-charge is caught loudly by the A/B's ADDED column, but a weaker-but-plausible answer satisfies
+EVERY disclosure channel the engine has. `DefaultCredentialsProvider.resolveCredentials` — the most common
+AWS credentials call there is — was `Env` while its body reaches `Exec` via a profile's
+`credential_process`; `deny Exec`/`Fs`/`Net` all exited 0. Two spellings the row missed: the INTERFACE form
+(which `mongodb-driver-core` actually uses, so a concrete-class-only fix would have been evaded) and
+`resolveIdentity()`, which was not mis-classed but **SILENT**. New instrument:
+`soundness/kappa_census/weaker_claim_census.py` — **not a standing gate yet at 48% noise**, with three
+named changes that would make it one.
+
+**R497 IS THE ONE TO READ IF YOU READ ONE.** `candor path` resolves an ambiguous suffix SILENTLY and
+returns a **negative verdict about a DIFFERENT function** — asked about `ProfileCredentialsProvider` it
+answers about `InstanceProfileCredentialsProvider`, both present in the report, no ambiguity warning. **A
+negative is a claim in this contract, so a negative about a substituted subject is a fabricated one.** The
+remedy is to REFUSE (exit 2, naming candidates), never to pick — ⟨0.24⟩'s `ambiguous:` discipline applied
+to the query surface. Not yet fixed.
+
+**TWO INSTRUMENT FAILURES OF MINE, both recorded rather than quietly patched:** I pushed the ⟨0.39⟩ clause
+with `must_ledger` RED, because that gate runs ONLY inside the tree-reading four-way suite — fixed by
+`candor-spec/scripts/doc-gates.sh`, the six documents-only gates, **run it after ANY edit to `SPEC.md`,
+`SOUNDNESS.md` or a generator's declarations**. And **R500: I wrote a census whose oracle COULD NOT RETURN
+A NEGATIVE** (its reader spelled its own copy of the effect-name table and drifted from the authority), saw
+the symptom — identical output from two different classifiers — and published a wrong lesson explaining it
+away. **Corrected rule: when a before/after run does not discriminate, first ask whether the instrument can
+return a negative. Prove the negative before interpreting the positive.**
 
 **CLOSED 2026-09-17:** R439, R477, R480 (java `1e98b2d`), R485 (rust `acc808f`/`7fdb241`). **FILED:**
 R486 (silent, scala), R487 (ffmpeg, disclosed), R488, R489, R490.

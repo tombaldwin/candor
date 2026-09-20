@@ -10,6 +10,12 @@ keeps its own.
 
 ## 2026-09-20 — the ⟨0.39⟩ chained-dispatch cut (released 2026-09-20 as 0.39.0)
 
+**`ENGINE_PIN` moves to 0.39.0**, with `adopt/candor.yml`'s `CANDOR_JAVA_VERSION` and
+`adopt/candor-digest.yml`'s agents pin. Every target was RESOLVED before being pinned to, not just
+spelled: the java jar URL and the agents tag both return 200, all four crates report 0.39.0 on
+crates.io, and `npm view candor-ts@0.39.0` answers. **A pin naming a URL is not the URL existing** —
+at 0.24 preflight passed green over a `jbang-catalog.json` whose download 404'd.
+
 **`ENGINE_PIN_RUST` is CLEARED**, which is what its own comment instructed at the next family cut. It
 held `0.38.4` for a REDACTION REPUBLISH rather than a feature bump — candor-query 0.38.3 and earlier
 carry a doc comment naming a private client, and Cargo packages SOURCE unlike javac — while java, ts and

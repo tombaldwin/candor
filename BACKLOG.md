@@ -287,146 +287,63 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-17, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
 
-**v0.38.3 SHIPPED 2026-09-16 and verified live; `candor-scan`/`candor-query` 0.38.4 published since as a
-REDACTION republish (Cargo packages source, so a doc comment reached every tarball). Register max R490.
-Four-way conformance GREEN with PART 90, PART 91 and PART 92; CI green at every HEAD in all seven repos,
-MEASURED 2026-09-17 evening, not assumed.**
+**⟨0.39⟩ IS PORTED IN ALL FOUR ENGINES AND PART 92's XFAIL TABLE IS EMPTY.** Every line was retired by the
+engine that earned it, each announcing itself the same way — **a passing xfail is a FAILURE in that
+harness**. The table passed through four intermediate states (rust; rust+java; +swift; all four) and an
+arm-keyed table could not have expressed any of them. **Keep the mechanism; the next cross-engine rung
+lands identically.** Four-way conformance OK, 24/24 PART 92 cells, **zero xfails anywhere in the suite**.
 
-**SPEC ⟨0.39⟩ IS PORTED IN RUST AND PART 92's RUST XFAIL HAS RETIRED ITSELF (2026-09-18).** The clause
-is the chained-dispatch union (R475): a chained consumer's inherited signature must carry the effects of
-every implementor visible to it. **It closes a toggle running the WRONG WAY — a library whose public
-abstraction has ZERO implementors gives a consumer a disclosed `Unknown`, and adding ONE PURE implementor
-silently certifies the consumer pure, so adding a pure implementation REMOVES a disclosure from everyone
-downstream.** Closed live on the released `ratatui` crates: `app_size` goes ABSENT → `['Ipc']`, and both
-`deny Net` and `pure` move 0 → 1.
+**⟨0.40⟩ ALSO SHIPPED TO MAIN** — `macro:` is a sixth §4 reason kind. Its class stays `unresolved`, so the
+rung moves **no verdict by construction**; the finer `Unknown[macro]` filter was REFUSED with its price
+stated (it would withdraw those rows from `unresolved` and break every gate written with the broad filter).
 
-Four-way conformance is GREEN with `c1_foreign_effectful` **OK on rust and XFAILED on java, swift and ts**,
-sixteen control cells green four-way. **That is the self-retiring xfail surviving a real port, which was
-the untested half of the mechanism.** Tom ruled the consumer union ships DEFAULT-ON.
+**HOW MANY DEFECTS ARE WE SHIPPING — now answerable by a command, not by forensics:**
+`python3 candor-spec/scripts/soundness-status.py` → **23 open** of 479 rows (362 closed-with-fix, 92
+resolved-no-fix, 2 odd). **Eight of the 23 are the long-standing known-limits table (R2-R9)**, severity-rated
+low/v.low. The tool exists because the question needed grepping: closure is recorded in PROSE and only 37
+rows used strikethrough, so every row closed this week read as OPEN. **The discriminator that works is
+whether a row CITES A FIX** — a defect closed by a code change names the commit; that took the ambiguous
+bucket from 191 to 92, and those 92 are a real category (declined / refuted / accepted limit), not a
+parsing failure. **It caught two rows I had failed to close on its first run, including R475 itself.**
 
-**THE PORT FOUND TWO ERRORS IN MY OWN CLAUSE, and the cost one matters because the ruling rested on it:**
+**THE WEEK'S BIGGEST CLASS IS STILL `KAPPA_COVERED_PREFIXES` (R492), AND IT NOW HAS A GUARD.** A covered
+prefix suppresses `invisible` for its whole namespace — an unqualified purity claim over every unmodelled
+member. **R509 proved it ships: Exposed 1.0.0 MOVED the library (`…exposed.sql` → `…exposed.v1.jdbc`), every
+owner-equals missed, and `deny Db`/`deny Unknown`/`deny Net` ALL exited 0 over a complete data layer.** Its
+corpus reach was ZERO because the corpus pins one version per library — the A/B could never have found it.
+**`candor-java/soundness/rule_fires.sh`** is the answer: assert ≥1 rule still MATCHES the latest jar.
+Calibrated four ways; **its arm D initially passed while measuring nothing (the R500 shape, twice now)**;
+and it **fired independently** on `io.ktor` at first run. **Weekly + pre-release, NOT a PR gate — the run is
+not hermetic** (its verdict depends on what Maven published today, not the commit).
 
-  - **Consumer cost was predicted at 13 crates (0.8%) and MEASURED at 46 (2.86%)** — 3.5× understated.
-    Direction held exactly (310 rows gained an effect, **0 lost one**, nothing hedged) and the producer
-    side held precisely (`inferred` CHANGED **0**). **The cause indicts the method: the pricing census
-    excluded ~70 trait leaf names (`Stream`, `AsyncRead`, `Future`, `Write`) and §4 permits excluding only
-    formatting/equality/hashing/cloning while EXPLICITLY FORBIDDING iterators, callbacks and I/O traits.**
-    The excluded population was `tower#Service::call`, `futures_core#Stream::poll_next` — precisely the
-    abstractions an effect hides behind. **A census that prices a rung must not narrow the population the
-    rung is about.** Both numbers are kept in the clause.
-  - **The worked key was UNDER-QUALIFIED** (`ratatui_core#Backend::size` for an abstraction at
-    `ratatui_core::backend::Backend`) in a clause that FORBIDS inventing a second spelling — a literal
-    copier would have invented one.
+**R508, the limit underneath all of it: a κ rule is keyed on owner+method and cannot say "forks in ≤1.2,
+not in ≥1.3".** Direction chosen: **prefer the loud over-charge to the silent carve-out.** All 21
+javap-derived carve-outs are now enumerated WITH the version range checked per carve-out; both single-version
+gaps are closed (ffmpeg clean across all 13; **ehcache WRONG and silent — R515**).
 
-**THE COVERED-PREFIX GRANT IS THE BIGGEST THING FOUND THIS WEEK, AND IT IS A CLASS (R492).** A prefix in
-`Rules.KAPPA_COVERED_PREFIXES` suppresses the `invisible` disclosure for its whole namespace — **an
-unqualified purity claim over every unmodelled member of it.** 46 of 52 prefixes censused; the instrument
-is `candor-java/soundness/kappa_census/`. Measured: `org.jetbrains` (zero owner rules, and the prefix
-silently extends an ANNOTATIONS namespace to the Exposed SQL framework) reported **`0 functions reach
-effects`** for a ten-method data layer with `deny Db`/`deny Net`/`deny Unknown` all exiting 0; `io.ktor`
-the same for an HTTP server. **Two grants contradict their own written rationale** — `commons.csv` reads
-*"pure-relative over caller sources"* and holds ZERO rules, and `com.sun` was written for the JDK while
-**JNA squats on it**.
+**OPEN AND WORTH READING FIRST:**
 
-**Cross-engine, java is the LONE OUTLIER and differs in KIND, not degree**: rust grants exactly five
-sysroot crates AND identity-checks them (`is_real_sysroot_frontier`, written against a core/alloc
-impostor); ts says an unmodelled external call is *"never silent-pure"*; ts/swift `COVERED` is EARNED from
-a trusted loaded report, not asserted by name. **Java's 51 prefixes are name-matched with no identity
-check, which is exactly why JNA squatting works.** OPEN AND TOM'S CALL: whether to REMOVE the
-`org.jetbrains` and `io.ktor` grants (verdict-affecting — removal floods `invisible`); both are modelled
-now, so removal is hardening, not a fix.
+  - **R513 rust — a NEW silent sin, found because my own spot-check was half wrong.** A trait+impl NESTED
+    IN A MODULE publishes no `interfaceUnion` row, so a chained consumer reads `inferred: []` with **no
+    `invisible`** and `deny Net` exits 0; at the crate root the same code exits 1. The local leg looks up by
+    `{ty}::{method}` while `trait_impls` holds the self-type AS WRITTEN. **The FOREIGN leg has a fallback
+    for exactly this; the local leg does not.** The module form is the normal case in real crates.
+  - **R514 — PART 58 pins the exact clause R511 violated and ITS FIXTURE HAS NO TRAITS**, so the part could
+    not fail while rust shipped path-less `outOfScope` rows. A control that cannot fail is not a control.
+  - **R512 ts** — a STRUCTURAL implementor of a foreign abstraction still publishes no union entry.
 
-**R494 OPENED A CLASS NOTHING WAS LOOKING FOR, AND R496 IS ITS LIVE INSTANCE.** A member classified to a
-WEAKER effect than it performs produces **no disclosure at all** — an absent member floors to `invisible`,
-an over-charge is caught loudly by the A/B's ADDED column, but a weaker-but-plausible answer satisfies
-EVERY disclosure channel the engine has. `DefaultCredentialsProvider.resolveCredentials` — the most common
-AWS credentials call there is — was `Env` while its body reaches `Exec` via a profile's
-`credential_process`; `deny Exec`/`Fs`/`Net` all exited 0. Two spellings the row missed: the INTERFACE form
-(which `mongodb-driver-core` actually uses, so a concrete-class-only fix would have been evaded) and
-`resolveIdentity()`, which was not mis-classed but **SILENT**. New instrument:
-`soundness/kappa_census/weaker_claim_census.py` — **not a standing gate yet at 48% noise**, with three
-named changes that would make it one.
+**R511 IS CLOSED FOUR-WAY AND WAS A PROPERTY OF THE RUNG, NOT OF ANY ENGINE.** Un-gating ⟨0.23⟩ puts a
+bodiless synthetic entry in every report, and **three of four engines needed a DIFFERENT reader fixed**:
+swift's peek attribution (fail-closed — a green gate became exit 2), ts's gate scoring (fabrication), rust's
+four chokepoints. **44% REACH: 220 of 500 registry reports carry a union row.** On a scoped rule, **41 of 41
+verdicts changed** — the phantom row was masking the real verdict every time.
 
-**R497 IS THE ONE TO READ IF YOU READ ONE.** `candor path` resolves an ambiguous suffix SILENTLY and
-returns a **negative verdict about a DIFFERENT function** — asked about `ProfileCredentialsProvider` it
-answers about `InstanceProfileCredentialsProvider`, both present in the report, no ambiguity warning. **A
-negative is a claim in this contract, so a negative about a substituted subject is a fabricated one.** The
-remedy is to REFUSE (exit 2, naming candidates), never to pick — ⟨0.24⟩'s `ambiguous:` discipline applied
-to the query surface. Not yet fixed.
-
-**TWO INSTRUMENT FAILURES OF MINE, both recorded rather than quietly patched:** I pushed the ⟨0.39⟩ clause
-with `must_ledger` RED, because that gate runs ONLY inside the tree-reading four-way suite — fixed by
-`candor-spec/scripts/doc-gates.sh`, the six documents-only gates, **run it after ANY edit to `SPEC.md`,
-`SOUNDNESS.md` or a generator's declarations**. And **R500: I wrote a census whose oracle COULD NOT RETURN
-A NEGATIVE** (its reader spelled its own copy of the effect-name table and drifted from the authority), saw
-the symptom — identical output from two different classifiers — and published a wrong lesson explaining it
-away. **Corrected rule: when a before/after run does not discriminate, first ask whether the instrument can
-return a negative. Prove the negative before interpreting the positive.**
-
-**CLOSED 2026-09-17:** R439, R477, R480 (java `1e98b2d`), R485 (rust `acc808f`/`7fdb241`). **FILED:**
-R486 (silent, scala), R487 (ffmpeg, disclosed), R488, R489, R490.
-
-**R488 IS THE ONE TO READ IF YOU READ ONE.** `candor-query`'s frontier arm returned
-`possibleViaUnknownDispatch: []` for EVERY candor-scan report — a §3.1 FALSE ALL-CLEAR — because it split
-quals on the last `.` and a rust qual (`Impl::op`) has none. It was UNREACHABLE until R485's fix made the
-dotted path rust's normal case. **The assumption sat written down in the very file that would have caught
-it** — *"Names are dot-separated (the swift/JVM report shape this arm serves)"*. A fix that makes a latent
-defect reachable is not the same as a fix that introduces one, and both happened this week.
-
-**NEW INSTRUMENT: `candor-spec/scripts/doc-gates.sh`** — the six gates that read DOCUMENTS ONLY
-(`must_ledger`, `clause_check`, `part_declarations`, `field_audit`, `reanchor_banner`,
-`check_soundness_tables`). Safe on a dirty tree, mid-wave, mid-conformance. **It exists because I pushed
-the ⟨0.39⟩ clause with `must_ledger` RED**: that gate runs ONLY at `conformance/run.sh:8782`, the suite
-reads engine WORKING TREES, and two engine trees were dirty — so the cheap gate for a documents-only
-change was reachable only through the expensive instrument such a change has no business running. Run it
-after ANY edit to `SPEC.md`, `SOUNDNESS.md`, or a generator's declarations.
-
-**THE MASKING-GUARD VEIN REOPENED ON THE `Exec` SPELLING AND IS NOW CLOSED FOUR-WAY.** Three live gate
-bypasses, all `allow Exec <benign>` exiting 0 over a caller-chosen program, found within 24 hours:
-
-  - **R464 java** — a benign `new ProcessBuilder("git")` certified `System.load(argv[0])`. Six spellings.
-    Its fix retrospectively invalidated **R409**'s recorded verdict (*"Net, Exec and Db are all CAUGHT"*),
-    which had been measured only on the two owners INSIDE its own guard.
-  - **R460 rust** — a `Command` arriving as a RECEIVER has no `Command::new` for the guard to fire on.
-    Real catch: **`aws-config` wraps a user-supplied AWS-profile command in `sh -c` and spawns it**, and
-    `allow Exec sh` certified it.
-  - **R477 java** — R464 closed the ARGUMENT form and left the RECEIVER form open. **Found by PART 91 on
-    its FIRST EXECUTION**, declared as an (arm, engine) xfail, and the xfail RETIRED ITSELF when java was
-    fixed because a passing xfail is a failure in that harness.
-
-**PART 91 exists because of the first two**: two engines shipped one class independently, in one overnight
-wave, by different agents, and nothing cross-engine could have caught either. That is the argument for a
-part rather than two fixes.
-
-**OPEN, MEASURED, AND SPECIFIED — in the order a user loses something:**
-
-  - **R480 java** — a builder built HERE whose program-setting verb the CLASSIFIER never charges `Exec`:
-    zt-exec `ProcessExecutor.command`, testcontainers `GenericContainer.withCommand`. Exits 0 BEFORE AND
-    AFTER R477, because the guard is correct over a call it never sees as a spawn. Widely-used libraries.
-  - **R475** — the chain join. A dep's closed-world CHA row is consumed as an open-world fact: chained,
-    java publishes an `Fs` the consumer never performs AND loses the `Net` it does; rust reports the
-    consumer ABSENT. **Both engines already hold the data a fix needs** (rust `dispatch_sites`, java
-    `chaTargets`).
-  - **R484 rust** — a pinned residual, deliberately not fixed: widening R476's removal to reach it is the
-    exact cut that cost 12 rows in the cardinal-sin direction.
-  - **R474** — REWRITTEN after re-measurement; the original was filed from an agent's prose and was wrong.
-    The genuinely-silent set is `#[macro_use]`, glob imports and proc-macros — priced at 9 of 1,608 crates
-    and DECLINED.
-
-**THE FIX-INTRODUCES-THE-CLASS PATTERN FIRED TWICE IN TWO DAYS, both caught by the A/B's REMOVED column
-and neither by a test:** R476's first cut took three tokio `watch` functions from a disclosed `Unknown` to
-ABSENT (12 rows); R479's first cut gave `?Sized` — *the removal of a bound* — the power of a bound and cost
-19 removals, 13 cardinal-sin. **Read every REMOVED row and trace it to a body; that is the only thing that
-caught either.**
-
-**R458 WAS RETIRED AS A DUPLICATE of R101's open-CHA half**, and the reframing I nearly shipped with it was
-a category error: `outOfScope`/`unanalyzed`/`excluded` are claims about FILES OF THE TARGET (`SPEC.md:969-1010`),
-and a downstream implementor is in a crate that does not exist yet. **R459 was also held wrongly** — its one
-disclosed→silent row was a `#[test] fn` whose `Unknown` came from a correctly-excluded `#[cfg(test)]` macro
-file, so zero production functions moved. **A stop condition stricter than the property it protects blocks
-correct work AND misattributes the block.**
+**TOM'S TWO OPEN DECISIONS, neither urgent:** whether to REMOVE the `org.jetbrains` and `io.ktor` grants
+rather than keep patching members into them (safe direction, but it floods `invisible` and moves verdicts);
+and **when to cut a release — what users run is v0.38.3/spec 0.38, which now lags main by TWO RUNGS and every
+fix in this entry.**
 
 **PRIOR STATE, kept for the record:**
 

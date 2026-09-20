@@ -335,7 +335,7 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
           if (l=="" ) next;
           if (l ~ /^(\/\/|\/\*|\*|#)/) next;
           # A VERSION CONSTANT IS NOT AN EFFECT RULE. This arm fires on any added line in a rule file,
-          # and a spec FLOOR BUMP edits one line in every one of them: `const SPEC_VERSION = "0.38"`.
+          # and a spec FLOOR BUMP edits one line in every one of them: `const SPEC_VERSION = "X.Y"`.
           # By this gate'"'"'s own words a rule change "IS an assertion about what candor believes an effect
           # to be" — a version constant asserts nothing about any effect. It says which contract this
           # build speaks, and that claim is gated elsewhere and harder: `release-preflight [1]` (every
@@ -354,7 +354,9 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
           # FAIL DIRECTION: this can only silence a changed VERSION LITERAL. A wrong one is caught by
           # four preflight checks and by conformance; it cannot encode a belief about an effect, which is
           # the only thing this arm is for. Anything else on the line keeps it loud — the match is the
-          # WHOLE line, so `SPEC_VERSION = "0.38"; FS.add("x")` is not excused.
+          # WHOLE line, so `SPEC_VERSION = "X.Y"; FS.add("x")` is not excused. X.Y on purpose: prose
+          # pinned to a live floor impersonates the exact string a bump-miss makes, and release-preflight
+          # [2] flagged both of these at the 0.38 cut.
           if (l ~ /^[^\"'"'"']*[A-Za-z_]*VERSION[A-Za-z_]*[^\"'"'"']*[=:][^\"'"'"']*[\"'"'"'][0-9]+([.][0-9]+)*[\"'"'"'][,;)]*$/) next;
           print l
         }' || true)"

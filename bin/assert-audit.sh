@@ -403,9 +403,61 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   return 1
 }
 
+# ---- SOUNDNESS R517 — THE CENSUS MODE, and why it is a CENSUS and not a gate --------------------
+# This tool has only ever looked at a DIFF RANGE. So a false safety assertion that survives its own
+# commit is invisible forever after — measured: run over `fd4199c~1..fd4199c` it printed R516's false
+# clause and PASSED, because tests changed in the same range, and the clause then lived in the tree for
+# six days outside the reach of every later run. Its own header already says it cannot tell whether those
+# tests exercise those assertions; the range is the second half of that blind spot.
+#
+# **The negative of a range audit is the answer that gets believed**, which is this session's recurring
+# class pointed at the auditor for the second time.
+#
+# NOT A GATE, deliberately. candor-java alone ships 220 emphatic spans and 174 vocabulary lines; a check
+# that fails on those would be disabled within a day. This enumerates them so the population is KNOWN and
+# workable, the same posture `soundness/kappa_census/` takes for covered prefixes, and the same reasoning
+# that kept `rule_fires.sh` off the PR path.
+#
+# AND IT DELIBERATELY DOES NOT WIDEN `ASSERT_RE`. The R339 note above records that the vocabulary arm has
+# missed THREE times and that the third miss RETIRED the approach rather than its wording. An agent's
+# sweep proposed five more alternatives (`IS captured`, `already answered`, `cannot drift`, `never fires`,
+# `is a no-?op`, `byte-identical`) and each is a real miss — but adding them is the fourth attempt at a
+# method this file already abandoned, and the open-endedness of prose is why. The census's value is that
+# it makes the POPULATION enumerable even where the DETECTOR is imperfect: it reports both what the
+# vocabulary net catches and every emphatic span, so a reader can see what the regex did not.
+census() {
+  local d="$1" tracked n_emph n_vocab
+  tracked="$(git -C "$d" ls-files | grep -E '\.(java|rs|mjs|swift|py|sh)$' || true)"
+  [ -n "$tracked" ] || { echo "assert-audit --tree: no source files tracked in $d"; return 0; }
+  n_vocab=0; n_emph=0
+  echo "assert-audit --tree: standing safety-assertion census for $(basename "$d")"
+  echo "  (a CENSUS, not a gate — see the note above; exit is always 0)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    local v e
+    v="$(grep -cinE "$ASSERT_RE" "$d/$f" 2>/dev/null || true)"; v="${v:-0}"
+    # BOTH emphasis spellings. Counting only `**` undercounts by an order of magnitude in Java, where
+    # javadoc uses `<b>` — measured on candor-java's src/main: 16 `**` spans against 207 `<b>` ones.
+    # And `**` must EXCLUDE the `/**` javadoc opener or the count roughly doubles into nonsense.
+    e="$(grep -oE '(^|[^/])\*\*|<b>' "$d/$f" 2>/dev/null | wc -l | tr -d ' ')"; e="${e:-0}"
+    n_vocab=$(( n_vocab + v )); n_emph=$(( n_emph + e ))
+    if [ "$v" -gt 0 ] || [ "$e" -gt 0 ]; then
+      printf '  %-58s vocabulary=%-4s emphatic=%s\n' "$f" "$v" "$e"
+    fi
+  done <<< "$tracked"
+  echo "  TOTAL  vocabulary-net lines: $n_vocab   emphatic spans: $n_emph"
+  echo "  Neither number is a defect count. Each line is an assertion SOMEBODY MUST HAVE VERIFIED;"
+  echo "  the census exists because a range audit can never tell you how many there are."
+  return 0
+}
+
 case "${1:-}" in
   --selftest) selftest; exit $? ;;
-  "" ) echo "usage: assert-audit.sh <repo> [<git-range>]   |   assert-audit.sh --selftest" >&2; exit 2 ;;
+  --tree) shift; t="${1:-}"; [ -n "$t" ] || { echo "usage: assert-audit.sh --tree <repo>" >&2; exit 2; }
+          td="$ROOT/$t"; git -C "$td" rev-parse --git-dir >/dev/null 2>&1 || td="$t"
+          git -C "$td" rev-parse --git-dir >/dev/null 2>&1 || { echo "assert-audit --tree: $t is not a git repository" >&2; exit 2; }
+          census "$td"; exit 0 ;;
+  "" ) echo "usage: assert-audit.sh <repo> [<git-range>]   |   --tree <repo>   |   --selftest" >&2; exit 2 ;;
 esac
 
 repo="$1"

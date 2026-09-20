@@ -289,61 +289,40 @@ so the next rung is probably not a new idea, it is finishing this one.
 
 ### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
 
-**⟨0.39⟩ IS PORTED IN ALL FOUR ENGINES AND PART 92's XFAIL TABLE IS EMPTY.** Every line was retired by the
-engine that earned it, each announcing itself the same way — **a passing xfail is a FAILURE in that
-harness**. The table passed through four intermediate states (rust; rust+java; +swift; all four) and an
-arm-keyed table could not have expressed any of them. **Keep the mechanism; the next cross-engine rung
-lands identically.** Four-way conformance OK, 24/24 PART 92 cells, **zero xfails anywhere in the suite**.
+**⟨0.39⟩ / v0.39.0 IS PUBLISHED AND VERIFIED LIVE.** `release-verify` resolves every artifact rather than
+every string: four crates on crates.io, `candor-ts@0.39.0` on npm with provenance, six GitHub releases,
+the java shadow jar and all three binary assets at HTTP 200, the `adopt/` pins, the Homebrew tap, and
+`npx candor-ts@0.39.0` reporting **spec 0.39** live. **The shipped-vs-main gap that stood for two rungs is
+closed.**
 
-**⟨0.40⟩ ALSO SHIPPED TO MAIN** — `macro:` is a sixth §4 reason kind. Its class stays `unresolved`, so the
-rung moves **no verdict by construction**; the finer `Unknown[macro]` filter was REFUSED with its price
-stated (it would withdraw those rows from `unresolved` and break every gate written with the broad filter).
+**What the cut itself found, and none of it by reading:**
 
-**HOW MANY DEFECTS ARE WE SHIPPING — now answerable by a command, not by forensics:**
-`python3 candor-spec/scripts/soundness-status.py` → **23 open** of 479 rows (362 closed-with-fix, 92
-resolved-no-fix, 2 odd). **Eight of the 23 are the long-standing known-limits table (R2-R9)**, severity-rated
-low/v.low. The tool exists because the question needed grepping: closure is recorded in PROSE and only 37
-rows used strikethrough, so every row closed this week read as OPEN. **The discriminator that works is
-whether a row CITES A FIX** — a defect closed by a code change names the commit; that took the ambiguous
-bucket from 191 to 92, and those 92 are a real category (declined / refuted / accepted limit), not a
-parsing failure. **It caught two rows I had failed to close on its first run, including R475 itself.**
+  - **`release-preflight [2]` was VACUOUS on any bump that is not exactly one rung.** It derived PRIORS as
+    FLOOR-1 and stopped, so the historical 0.21 → 0.23 jump scanned for a leftover `spec 0.22` — a string
+    that never existed — while the real signature went unscanned and it printed `ok` over nothing. Fixed
+    to span the last released tag up to FLOOR-1, and it then found two real leftovers at this cut.
+  - **Two fixtures were pinned to the LIVE floor**, so at every cut they impersonate the exact string a
+    bump-miss produces. `verify-binary-selftest.sh` had already learned this at ⟨0.37⟩ — and applied the
+    fix to ONE arm. The whole file is now `7.7.7`, a version that can never be a floor.
+  - **⟨0.40⟩ was folded back into ⟨0.39⟩ before either shipped**, on Tom's challenge. A rung is a RELEASED
+    contract version; minting a second against an unreleased first skips a number no engine would ever
+    declare. **⟨0.22⟩ is the same failure, frozen in the ladder** — marker, §8 entry, no tag, floor
+    v0.21.0 → v0.23. Twice, so it is now a check: `candor-spec/scripts/rung-ladder-check.py`, in
+    doc-gates, which fired on its first run.
+  - **Two generated changelog stubs were CLAIMS, and one was false** — the umbrella's said "no change to
+    the umbrella's own surface" in a window that changed four of its scripts.
 
-**THE WEEK'S BIGGEST CLASS IS STILL `KAPPA_COVERED_PREFIXES` (R492), AND IT NOW HAS A GUARD.** A covered
-prefix suppresses `invisible` for its whole namespace — an unqualified purity claim over every unmodelled
-member. **R509 proved it ships: Exposed 1.0.0 MOVED the library (`…exposed.sql` → `…exposed.v1.jdbc`), every
-owner-equals missed, and `deny Db`/`deny Unknown`/`deny Net` ALL exited 0 over a complete data layer.** Its
-corpus reach was ZERO because the corpus pins one version per library — the A/B could never have found it.
-**`candor-java/soundness/rule_fires.sh`** is the answer: assert ≥1 rule still MATCHES the latest jar.
-Calibrated four ways; **its arm D initially passed while measuring nothing (the R500 shape, twice now)**;
-and it **fired independently** on `io.ktor` at first run. **Weekly + pre-release, NOT a PR gate — the run is
-not hermetic** (its verdict depends on what Maven published today, not the commit).
+**THE OPEN LIST IS 22 ROWS AND THE COMMAND IS `python3 candor-spec/scripts/soundness-status.py`.** Eight
+are the long-standing known-limits table (R2-R9, severity low). **Caveat the tool now states: it measures
+ROW HYGIENE, not reality** — R435 read open for six days after being fixed, because the row was never
+updated.
 
-**R508, the limit underneath all of it: a κ rule is keyed on owner+method and cannot say "forks in ≤1.2,
-not in ≥1.3".** Direction chosen: **prefer the loud over-charge to the silent carve-out.** All 21
-javap-derived carve-outs are now enumerated WITH the version range checked per carve-out; both single-version
-gaps are closed (ffmpeg clean across all 13; **ehcache WRONG and silent — R515**).
+**WHAT NEEDS TOM:** whether to REMOVE the `org.jetbrains` and `io.ktor` covered-prefix grants rather than
+keep patching members into them ([[R492]]) — safe direction, but it floods `invisible` and moves verdicts.
 
-**OPEN AND WORTH READING FIRST:**
-
-  - **R513 rust — a NEW silent sin, found because my own spot-check was half wrong.** A trait+impl NESTED
-    IN A MODULE publishes no `interfaceUnion` row, so a chained consumer reads `inferred: []` with **no
-    `invisible`** and `deny Net` exits 0; at the crate root the same code exits 1. The local leg looks up by
-    `{ty}::{method}` while `trait_impls` holds the self-type AS WRITTEN. **The FOREIGN leg has a fallback
-    for exactly this; the local leg does not.** The module form is the normal case in real crates.
-  - **R514 — PART 58 pins the exact clause R511 violated and ITS FIXTURE HAS NO TRAITS**, so the part could
-    not fail while rust shipped path-less `outOfScope` rows. A control that cannot fail is not a control.
-  - **R512 ts** — a STRUCTURAL implementor of a foreign abstraction still publishes no union entry.
-
-**R511 IS CLOSED FOUR-WAY AND WAS A PROPERTY OF THE RUNG, NOT OF ANY ENGINE.** Un-gating ⟨0.23⟩ puts a
-bodiless synthetic entry in every report, and **three of four engines needed a DIFFERENT reader fixed**:
-swift's peek attribution (fail-closed — a green gate became exit 2), ts's gate scoring (fabrication), rust's
-four chokepoints. **44% REACH: 220 of 500 registry reports carry a union row.** On a scoped rule, **41 of 41
-verdicts changed** — the phantom row was masking the real verdict every time.
-
-**TOM'S TWO OPEN DECISIONS, neither urgent:** whether to REMOVE the `org.jetbrains` and `io.ktor` grants
-rather than keep patching members into them (safe direction, but it floods `invisible` and moves verdicts);
-and **when to cut a release — what users run is v0.38.3/spec 0.38, which now lags main by TWO RUNGS and every
-fix in this entry.**
+**NEXT, IN ORDER:** [[R519]] (do ts's re-attributed effects stay REACHABLE from the caller, or are they
+orphaned on sixteen visitor methods?), [[R444]]'s reason-string ruling (mine — the engine cannot name a
+true owner, and both candidate fixes REMOVE an `Unknown`), then [[R498]]/[[R520]].
 
 **PRIOR STATE, kept for the record:**
 

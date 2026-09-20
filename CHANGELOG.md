@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-21 — `ENGINE_PIN_TS` → 0.39.1 (the R519 scoped patch)
+
+**v0.39.0 shipped a cardinal sin in candor-ts and it was live on npm.** SOUNDNESS R519: minting a
+structural member moved its body OUT of the enclosing unit, so a function building a structural
+implementor of a **dependency's** interface disappeared from `functions[]` altogether — which SPEC §2
+rule 3 reads as a positive purity claim over code the engine had read. Bisected to candor-ts `54d76a6`
+(the R512 fix); v0.38.3 and earlier are clean, as are rust, java and swift.
+
+**`ENGINE_PIN_TS="0.39.1"` is the whole point of the scoped cut.** Left empty it falls back to
+`ENGINE_PIN=0.39.0` and every `candor update` keeps fetching the broken engine. ⚠ **CLEAR IT AT THE
+NEXT FAMILY CUT** — a non-empty per-engine override silently WINS over `ENGINE_PIN`, which is the trap
+recorded against the ⟨0.37⟩ cut and again against `ENGINE_PIN_RUST`.
+
+`integrations/vscode`'s and `integrations/jetbrains`' `candorTsVersion` move to 0.39.1 as well. Both
+were still at **0.38.3** — they had lagged the 0.39.0 family cut entirely, which no gate had caught
+because preflight [3] only asserts the pin names the version being CUT.
+
+Verified end to end rather than by reading the pin: the umbrella with no env override now reports the
+enclosing `<module>` unit carrying `Rand` on a fixture where 0.39.0 dropped it, and
+`npx candor-ts@0.39.1 --version` answers `candor-ts 0.39.1 (spec 0.39)`. The front door `ENGINE_PIN`
+stays 0.39.0 — a scoped cut cannot move the family line, so brew and `candor update` keep installing
+0.39.0 for every other engine, which is correct: they have no defect to fix.
+
 ## 2026-09-20 — the ⟨0.39⟩ chained-dispatch cut (released 2026-09-20 as 0.39.0)
 
 **`ENGINE_PIN` moves to 0.39.0**, with `adopt/candor.yml`'s `CANDOR_JAVA_VERSION` and

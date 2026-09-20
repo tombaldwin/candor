@@ -42,7 +42,13 @@ ENGINE_PIN_JAVA=""      # cleared at the 0.37.0 family cut: it was "0.36.2" from
                         # fallback fires only when this is EMPTY. Left set, `candor update` would
                         # have kept installing candor-java 0.36.2 against a 0.37.0 front door, with
                         # every other engine on 0.37.0 and nothing saying so.
-ENGINE_PIN_TS=""
+ENGINE_PIN_TS="0.39.1"   # ⚠ SET BY THE 0.39.1 SCOPED PATCH — CLEAR IT AT THE NEXT FAMILY CUT.
+                         # v0.39.0 shipped SOUNDNESS R519, a cardinal sin: a function building a
+                         # structural implementor of a DEPENDENCY's interface vanished from
+                         # functions[] entirely, which SPEC §2 rule 3 reads as a purity claim.
+                         # Left EMPTY this falls back to ENGINE_PIN=0.39.0 and every umbrella user
+                         # keeps fetching the broken engine, so this override is the whole point
+                         # of the scoped cut. A NON-EMPTY override silently WINS over ENGINE_PIN.
 # ⚠ SET BY THE 0.38.1 SCOPED PATCH — CLEAR IT AT THE NEXT FAMILY CUT.
 # A scoped patch moves ONE engine, so ENGINE_PIN stays on the family line (0.38.0) and this overrides it
 # for rust alone. That is what these pins are FOR — but a NON-EMPTY override SILENTLY WINS over

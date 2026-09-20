@@ -451,8 +451,19 @@ PIN="$(grep -m1 -oE '^ENGINE_PIN="[0-9][0-9.]*"' "$D" | grep -oE '[0-9][0-9.]*')
 # assert a jar name the route would never ask for, so the moment a java patch shipped this file went red
 # for a reason that had nothing to do with the behaviour under test. Resolved exactly as bin/candor does:
 # the declared per-engine constant if non-empty, else the family line.
-JAVAPIN="$(grep -m1 -oE '^ENGINE_PIN_JAVA="[0-9][0-9.]*"' "$D" | grep -oE '[0-9][0-9.]*')"
-: "${JAVAPIN:=$PIN}"
+# …AND JAVA WAS NOT THE LAST ONE EITHER. This resolution was written for java at 0.35.1, and the ts rows
+# below were left reading the FAMILY pin — so the 0.39.1 scoped ts patch turned three of them red for
+# being right, the third time this exact shape has bitten this file (java 0.35.1, rust 0.38.1, ts 0.39.1).
+# Deriving ONE engine only survives while that engine is the only one ever patched, which is a fact about
+# a particular day rather than a property of the test. So resolve ALL FOUR the way bin/candor does — the
+# declared per-engine constant when non-empty, else the family line — and let a future scoped patch on
+# any engine be a no-op here.
+enginepin() {  # $1 = JAVA|TS|RUST|SWIFT -> that route's resolved pin
+  local v; v="$(grep -m1 -oE "^ENGINE_PIN_$1=\"[0-9][0-9.]*\"" "$D" | grep -oE '[0-9][0-9.]*')"
+  printf '%s' "${v:-$PIN}"
+}
+JAVAPIN="$(enginepin JAVA)"; TSPIN="$(enginepin TS)"
+RUSTPIN="$(enginepin RUST)"; SWIFTPIN="$(enginepin SWIFT)"
 REL="$T/rel"; mkdir -p "$REL"
 printf '#!/bin/sh\necho "candor-java 9.9.9 (spec 9.9)"\n' > "$REL/native-ok"; chmod +x "$REL/native-ok"
 printf 'this is not a mach-o binary\n'                    > "$REL/native-broken"
@@ -615,9 +626,9 @@ ok "ts pin → the query npx invocation"  "candor-ts@$JPIN" \
    bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_TS=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
 no "…and the family pin is not used"    "candor-ts@$PIN" \
    bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_TS=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
-ok "CONTROL: no ts override → the family pin" "candor-ts@$PIN" \
+ok "CONTROL: no ts ENV override → the DECLARED ts pin" "candor-ts@$TSPIN" \
    bash -c "cd '$T/tspin' && env $TSENV CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
-ok "…and a JAVA pin does not touch the ts route" "candor-ts@$PIN" \
+ok "…and a JAVA pin does not touch the ts route" "candor-ts@$TSPIN" \
    bash -c "cd '$T/tspin' && env $TSENV CANDOR_ENGINE_PIN_JAVA=$JPIN CANDOR_DISPATCH_DRYRUN=1 bash '$D' where Net"
 # 6. DISCLOSURE. Divergence is expressible, so an operator must be able to SEE it — and must see nothing
 # when there is nothing, which is what keeps the default output identical to the single-pin dispatcher.
@@ -723,7 +734,7 @@ initwf() { # $1 label ; $2 manifest ; $3 expected substring ; rest: env
 }
 initwf "init's java workflow curls the JAVA pin"      pom.xml       "download/v$JPIN/candor-linux-x64" "CANDOR_ENGINE_PIN_JAVA=$JPIN"
 initwf "CONTROL: …the SHIPPED java pin without it"     pom.xml       "download/v$JAVAPIN/candor-linux-x64"
-initwf "…and a java pin does not move the ts workflow" package.json  "candor-ts@$PIN"                   "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+initwf "…and a java pin does not move the ts workflow" package.json  "candor-ts@$TSPIN"                 "CANDOR_ENGINE_PIN_JAVA=$JPIN"
 initwf "init's ts workflow npx's the TS pin"           package.json  "candor-ts@$JPIN"                  "CANDOR_ENGINE_PIN_TS=$JPIN"
 initwf "init's rust workflow installs the RUST pin"    Cargo.toml    "--version '=$JPIN'"               "CANDOR_ENGINE_PIN_RUST=$JPIN"
 initwf "init's swift workflow curls the SWIFT pin"     Package.swift "download/v$JPIN/candor-swift"    "CANDOR_ENGINE_PIN_SWIFT=$JPIN"

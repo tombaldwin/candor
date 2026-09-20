@@ -8,6 +8,31 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-20 — the ⟨0.39⟩ chained-dispatch cut
+
+**`ENGINE_PIN_RUST` is CLEARED**, which is what its own comment instructed at the next family cut. It
+held `0.38.4` for a REDACTION REPUBLISH rather than a feature bump — candor-query 0.38.3 and earlier
+carry a doc comment naming a private client, and Cargo packages SOURCE unlike javac — while java, ts and
+swift had no 0.38.4 and stayed on `ENGINE_PIN`. **A scoped pin left behind after the family catches up is
+worse than no pin**: it silently holds one engine back while `candor --version` reports the family line,
+and `release-preflight` reads the DECLARATION, not the resolved value.
+
+Umbrella surface changes in this window, none of them engine behaviour:
+
+- **`bin/assert-audit.sh` gains `--tree`** — a standing census of safety assertions rather than a diff
+  audit. The tool had only ever looked at a commit RANGE, so a false assertion that survived its own
+  commit was invisible forever after; measured on `fd4199c`, where it printed the false clause and
+  PASSED because tests changed in the same range, and that clause then lived in the tree six days.
+  Deliberately not a gate — candor-java alone ships hundreds of such lines.
+- **`bin/ci-watch.sh` no longer reports NOT PUSHED for a pushed commit.** `@{u}` fails on six of seven
+  repos (no upstream configured for `main`) and the old fallback `origin/HEAD` is set in none of them, so
+  `--is-ancestor` errored and the `!` turned that error into a confident verdict — in the window right
+  after a push, which is exactly when a reader believes it.
+- **`release-preflight` check [2] was vacuous on any bump that is not exactly one rung.** It scanned for
+  a leftover `spec <FLOOR-1>` and nothing else, so the 0.21 → 0.23 jump looked for `spec 0.22`, a string
+  that never existed, while the real signature went unscanned. It now spans the last released tag up to
+  FLOOR-1.
+
 ## 2026-09-16 — a cardinal-sin wave in the rust and swift engines (released 2026-09-16 as 0.38.3)
 
 No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and `bin/candor` are

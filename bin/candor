@@ -62,11 +62,14 @@ ENGINE_PIN_TS=""
 # reaches nobody until the pin moves. HEAD was clean and the registry was clean and this path was STILL
 # installing the affected version. **When a published artifact is fixed, the pin is a THIRD layer to
 # check, after the source and the registry.**
-ENGINE_PIN_RUST="0.38.4"   # REDACTION REPUBLISH, not a feature bump. candor-query 0.38.3 and every
-                           # earlier version carry a doc comment naming a private client (Cargo packages
-                           # SOURCE, unlike javac). candor-scan 0.38.4 is a version-only republish so ONE
-                           # pin covers both crates `cargo install` takes. java/ts/swift have no 0.38.4 and
-                           # MUST stay on ENGINE_PIN. CLEAR THIS AT THE NEXT FAMILY CUT.
+ENGINE_PIN_RUST=""         # CLEARED at the ⟨0.39⟩ family cut, which is what its own comment said to do.
+                           # It held "0.38.4" for a REDACTION REPUBLISH, not a feature bump: candor-query
+                           # 0.38.3 and every earlier version carry a doc comment naming a private client
+                           # (Cargo packages SOURCE, unlike javac), and java/ts/swift had no 0.38.4 so they
+                           # had to stay on ENGINE_PIN. A scoped pin left behind after the family catches
+                           # up is worse than no pin: it silently holds one engine back while the
+                           # dispatcher reports the family version, and `release-preflight` reads the
+                           # DECLARATION rather than the resolved value.
 ENGINE_PIN_SWIFT=""
 # Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
 # trying an unreleased engine without editing an installed file) beats the shipped constant, which beats

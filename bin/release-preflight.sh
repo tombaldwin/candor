@@ -202,6 +202,25 @@ for v in $EXTRA_FLOORS; do
   pv="$(prior_of "$v")"
   case " $PRIORS " in *" $pv "*) ;; *) [ -n "$pv" ] && PRIORS="$PRIORS $pv";; esac
 done
+# ⟨0.39⟩ THE LAST RELEASED FLOOR IS A PRIOR TOO, and on a SKIPPED rung it is the ONLY one that matters.
+# `prior_of` derives FLOOR-1 and stops. That is right for a one-rung bump and VACUOUS for any other: at
+# the 0.21 -> 0.23 jump (⟨0.22⟩ was authored and never tagged) this scanned for a leftover `spec 0.22`,
+# a string that had never existed anywhere, while the real bump-miss signature `spec 0.21` went unscanned
+# and the check printed `ok` over nothing. Measured again on 2026-09-20, when a draft ⟨0.40⟩ against an
+# unreleased ⟨0.39⟩ would have made PRIORS="0.39" for exactly the same reason.
+#
+# So: add every minor from the LAST RELEASED TAG up to FLOOR-1. The union can only over-report, and
+# over-reporting is noise where under-reporting is a false all-clear about the wrong version entirely —
+# which is the rule the block above already states and this line failed to apply to itself.
+LASTTAG="$(git -C "$ROOT/candor-spec" tag 2>/dev/null | grep -oE '^v0\.[0-9]+' | sed 's/^v//' | sort -t. -k2 -n | tail -1)"
+if [ -n "$LASTTAG" ] && [ -n "$FLOOR" ]; then
+  lt="${LASTTAG#*.}"; fl="${FLOOR#*.}"
+  n="$lt"
+  while [ "$n" -lt "$fl" ] 2>/dev/null; do
+    case " $PRIORS " in *" 0.$n "*) ;; *) PRIORS="$PRIORS 0.$n";; esac
+    n=$((n+1))
+  done
+fi
 PRIORS="$(printf '%s' "$PRIORS" | tr -s ' ')"
 
 # WHICH LEFTOVERS ARE LOUD. Defined HERE, not inside [2]'s else-branch: it used to be, and when [2] found

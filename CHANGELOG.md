@@ -8,6 +8,30 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-21 — `bin/pin-currency.sh`, and the stale pin it found on its first run
+
+**A new standing check: does every cross-repo pin name the LATEST PUBLISHED version of the artifact it
+pins?** That is a different question from `release-preflight [3]`, which asks whether a pin names the
+version being CUT — the right question on release day and blind the rest of the time, because between
+cuts there is no `$WANT_VER` and nothing asks anything.
+
+**It found `candorJavaVersion=0.38.3` in the JetBrains plugin against a published candor-java 0.39.0**,
+bumped here. The plugin downloads and embeds that jar for its post-build hook, so a stale pin runs a
+rung-old ENGINE against the user's build. It had missed the entire 0.39.0 family cut.
+
+This class has now been found by a person twice and by a gate zero times: at 2026-08-16 both IDE pins
+sat at 0.16.0 while candor-ts was 0.28.2 — twelve rungs — and the remedy was to register them in [3],
+which closed release day and left the between-cuts case open. At the 0.39.1 cut `candorTsVersion` was
+0.38.3 in both integrations. **The vscode drift gate did not catch that either, because it compares the
+extension version against `candorTsVersion` and both had gone stale together: a gate comparing two
+values that move together cannot catch them both being stale.**
+
+Three states, not two — a network failure is INCOMPLETE and exits 2, never folded into pass or fail
+(the R470 rule, already applied to the rust asset pin). AHEAD is reported and is not a failure: a scoped
+patch legitimately puts one engine ahead of the family line, which is what `ENGINE_PIN_TS=0.39.1` is.
+`--selftest` asserts the pin set matches `release-preflight`'s `checkpin` set, so the two lists cannot
+silently diverge, and proves the version comparator can actually say 0.38.3 < 0.39.0.
+
 ## 2026-09-21 — `ENGINE_PIN_TS` → 0.39.1 (the R519 scoped patch)
 
 **v0.39.0 shipped a cardinal sin in candor-ts and it was live on npm.** SOUNDNESS R519: minting a

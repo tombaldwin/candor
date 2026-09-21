@@ -8,6 +8,40 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-21 — `ENGINE_PIN_RUST` → 0.39.1 (a CARDINAL SIN shipped in the 0.39.0 crates)
+
+**SOUNDNESS R525.** Adding an unrelated `deny Unknown[<a `.candor/config` alias>]` beside `deny Net` made
+`candor-scan` 0.39.0 exit **0 `policy ✓`** where `deny Net` alone exited 2 — and erased the ⟨0.30⟩
+disclosure that made it red: `outOfScope` ABSENT, `scannedUnder` ABSENT, every `excluded[].peeked` flipped
+to `false`. The peek parsed the policy with the alias-LESS `parse_policy` while the gate used
+`parse_policy_with_aliases`, so the alias was an unrecognised reason-class, the parse went fatal, and the
+fail-closed verdict never armed. A half-converted call site: `parse_policy_silent` had already landed a few
+lines away while its two siblings stayed bare.
+
+Of 1,593 crates.io registry crates, 108 gain a non-empty `outOfScope` under the fix and **56 flip exit 0 →
+exit 2**. Ground-truthed from source rather than from candor: serde_json 1.0.151 `tests/test.rs:1644`
+really does `TcpListener::bind("localhost:20000")`.
+
+**`ENGINE_PIN_RUST="0.39.1"` is what makes the fix reachable.** The comment block above that pin records
+the measurement it comes from: on the 0.38.4 redaction republish, HEAD was clean and the registry was
+clean and this door was *still* installing the affected version. A fixed artifact reaches nobody through a
+pinned installer until the pin moves.
+
+⚠ **THERE ARE NOW TWO LIVE SCOPED PINS** — `ENGINE_PIN_TS=0.39.1` and `ENGINE_PIN_RUST=0.39.1` — against a
+family line of 0.39.0. Both silently beat `ENGINE_PIN`, and both must be cleared at the next family cut;
+that trap nearly shipped java 0.36.2 behind a 0.37.0 front door. `bin/pin-currency.sh` reports both as
+AHEAD, which is correct for a scoped pin and is not a failure.
+
+Now pinned four-way so it cannot recur unseen: PART 55 gained a `deny-unknown-alias` shape (candor-spec
+`ccf3b6b`). Every prior `Unknown[…]` shape named a BUILTIN class, so no arm had ever needed the project's
+config and the whole ⟨0.19⟩ alias class was unreachable by the matrix. The new shape is calibrated against
+the pre-fix binary, and it immediately found a second engine — candor-java exits 2 with an empty
+`outOfScope` on the same shape (R526), fail-closed, declared in PART 55's new XFAIL table.
+
+Not verified by reading the pin: `bin/candor.test.sh`'s rust default-route CONTROL row was **measurably
+vacuous** while `ENGINE_PIN_RUST` was empty — it compared a number against itself. With this pin set it
+discriminates: patching the rust route to ignore the declared pin now reddens it, and did not before.
+
 ## 2026-09-21 — `bin/pin-currency.sh`, and the stale pin it found on its first run
 
 **A new standing check: does every cross-repo pin name the LATEST PUBLISHED version of the artifact it

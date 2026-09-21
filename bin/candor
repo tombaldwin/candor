@@ -81,8 +81,12 @@ ENGINE_PIN_RUST="0.39.1"   # ⚠ SET BY THE 0.39.1 SCOPED PATCH — CLEAR IT AT 
                            # engine back while the dispatcher reports the family version, and
                            # `release-preflight` reads the DECLARATION rather than the resolved value.
                            # THERE ARE NOW TWO LIVE SCOPED PINS — this and ENGINE_PIN_TS=0.39.1. Both must
-                           # go at the next family cut; `bin/pin-currency.sh` reports AHEAD for both, which
-                           # is correct for a scoped pin and is NOT a failure.
+                           # go at the next family cut. `bin/pin-currency.sh` names both every run as
+                           # "SCOPED, differs from ENGINE_PIN …; CLEAR IT AT THE NEXT FAMILY CUT", and
+                           # FAILS if either goes stale behind its registry or names a version that was
+                           # never published. (This comment first claimed the tool reported them AHEAD.
+                           # It did not report them at all — the table had no row for either, and I wrote
+                           # the claim without running it against the case. Corrected the same day.)
 ENGINE_PIN_SWIFT=""
 # Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
 # trying an unreleased engine without editing an installed file) beats the shipped constant, which beats

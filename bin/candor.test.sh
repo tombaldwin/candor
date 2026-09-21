@@ -738,6 +738,22 @@ initwf "…and a java pin does not move the ts workflow" package.json  "candor-t
 initwf "init's ts workflow npx's the TS pin"           package.json  "candor-ts@$JPIN"                  "CANDOR_ENGINE_PIN_TS=$JPIN"
 initwf "init's rust workflow installs the RUST pin"    Cargo.toml    "--version '=$JPIN'"               "CANDOR_ENGINE_PIN_RUST=$JPIN"
 initwf "init's swift workflow curls the SWIFT pin"     Package.swift "download/v$JPIN/candor-swift"    "CANDOR_ENGINE_PIN_SWIFT=$JPIN"
+# DEFAULT-ROUTE CONTROLS, one per engine: with no env override, the workflow must carry the pin that
+# engine's route RESOLVES to, not the family line.
+#
+# READ THE NEXT SENTENCE BEFORE TRUSTING A GREEN ROW HERE. Three of these four are VACUOUS while their
+# declared pin is empty, and that is measured, not suspected: patching bin/candor so the rust, swift AND
+# ts routes all ignore their declared ENGINE_PIN_<E>, only the TS row goes red — the others pass, because
+# an empty declared pin resolves to the family line and the two values the row compares are the same
+# number. So they discriminate exactly when that engine is scope-patched, and assert nothing until then.
+#
+# They earn their place anyway: this is the third release where a scoped patch made ENGINE_PIN_<E> differ
+# from ENGINE_PIN and the rows for that engine went red for being RIGHT (java 0.35.1, rust 0.38.1, ts
+# 0.39.1). These arm themselves at that moment instead of failing. What they must NOT be read as is
+# coverage that the per-engine seam works today — only the row for a currently-pinned engine says that.
+initwf "CONTROL: …the SHIPPED rust pin without it"    Cargo.toml    "--version '=$RUSTPIN'"
+initwf "CONTROL: …the SHIPPED swift pin without it"   Package.swift "download/v$SWIFTPIN/candor-swift"
+initwf "CONTROL: …the SHIPPED ts pin without it"      package.json  "candor-ts@$TSPIN"
 
 echo
 echo "RUST ASSET PIN CHECK (R470 — a pin naming a real semver with NO published release asset must be a"

@@ -67,3 +67,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash candor/bin/release-verify.sh "${{ steps.pin.outputs.spec }}" "${{ steps.pin.outputs.ver }}"
+
+      # A THIRD QUESTION, and the two above cannot answer it.
+      #   * `release-preflight [3]` asks whether a pin names the version being CUT. Right on release day,
+      #     blind between cuts: with no $WANT_VER there is nothing to compare against and nothing asks.
+      #   * `release-verify` (the step above) asks whether the artifacts a pin NAMES still resolve. A pin
+      #     four rungs behind passes it perfectly, because the old release is still sitting there.
+      #   * This asks whether the pin names the LATEST PUBLISHED version. Found `candorJavaVersion=0.38.3`
+      #     against a published candor-java 0.39.0 on its first run — the JetBrains plugin embeds that jar,
+      #     so it had been shipping a rung-old engine into users' builds since the 0.39.0 cut.
+      # Belongs here rather than on push: it compares the tree against REGISTRIES, so it goes stale with
+      # the world rather than with a commit — which is the definition of a monitor.
+      - name: pin currency — is every pin on the LATEST published version?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash candor/bin/pin-currency.sh

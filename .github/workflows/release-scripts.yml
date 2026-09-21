@@ -112,3 +112,19 @@ jobs:
           then echo "  ok  bin/_stage_changelogs.py"
           else echo "  ✘ PARSE ERROR  bin/_stage_changelogs.py"; bad=$((bad + 1)); fi
           [ "$bad" = 0 ] || { echo "parse: $bad file(s) do not parse"; exit 1; }
+
+      # The OFFLINE half of pin-currency: no registry, deterministic, so it belongs on push while the
+      # networked question stays in release-audit. It asserts the pin table here matches
+      # release-preflight's `checkpin` set — two hand-maintained copies of one list is this repo's
+      # four-copies-of-two-questions shape — and proves the version comparator can actually say
+      # 0.38.3 < 0.39.0, without which every row it prints would be vacuous.
+      - name: check out candor-java as a sibling (the jbang pin lives there)
+        run: |
+          set -eu
+          sibs="$(cd "$GITHUB_WORKSPACE/.." && pwd)"
+          git clone --quiet --depth 1 https://github.com/tombaldwin/candor-java.git "$sibs/candor-java"
+          test -f "$sibs/candor-java/jbang-catalog.json" \
+            || { echo "::error::candor-java/jbang-catalog.json absent — the jbang pin row would report SKIP and prove nothing"; exit 1; }
+
+      - name: pin-currency selftest (offline)
+        run: bash bin/pin-currency.sh --selftest

@@ -14,6 +14,34 @@ Seed a violation the policy denies, on the SAME tree, and prove the engine catch
 this, a broken scan and a clean codebase produce the identical output. This was the single
 highest-value step every productive agent took that night.
 
+## 1b. A NEW OR EDITED GATE LANDS WITH ITS CALIBRATION IN THE SAME COMMIT
+
+**Inject the defect the gate claims to catch, paste the RED line into the commit message, then the
+green.** Not "I ran it and it passed" — a gate that has never failed has not been shown to be a gate.
+
+MEASURED 2026-09-21, and the measurement is the reason this is a rule rather than advice. Three
+instruments were found vacuous in one day:
+
+  · `check_soundness_tables.py` could not see a doubled leading pipe (`|| R524`), which is exactly the
+    column-shifting corruption its cell-count property exists to catch. Blind for 12 days.
+  · three of four new default-route CONTROL rows in `bin/candor.test.sh` compared a number against
+    itself while the per-engine pin was empty.
+  · `bin/pin-currency.sh` did not check the pins its own CHANGELOG entry claimed it checked.
+  · and later the same day, `soundness-status.py` — the tool that prints "THIS is the shipping-defect
+    list" — had been reading `Not fixed.` as FIXED since it was written, hiding 32 open rows.
+
+**That is not evidence the gate population is rotten, and a review proved it.** Those four are the
+scripts committed or edited that day — the whole touched population. A seeded sample of the UNTOUCHED
+instruments (java + swift `self-gate.sh`, rust + swift `recall.sh`, `check_agents_drift.py`, aged 3–14
+weeks) fired **7 of 7** injections. So the failure is not age or neglect:
+
+> **An instrument is at its least trustworthy on the day it is written, and that is the one day nobody
+> tests it — because the author has just finished convincing themselves it works.**
+
+It is the fabrication-fix pattern (4 defects in 5 fabrication-fixes) pointed at our own tooling. §B and
+§C below are how you ATTACK someone else's checker; this is the rule for shipping your own. A gate you
+wrote today and did not falsify is a comment that costs CI minutes.
+
 ## 2. Scan libraries as a dependency of a hand-written consumer, not standalone
 
 A standalone scan answers "does the engine parse this code"; a consumer crate exercising the library's

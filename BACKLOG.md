@@ -287,7 +287,67 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-21, not remembered)
+
+**v0.39.1 IS PUBLISHED AND VERIFIED — a SCOPED candor-ts patch for a CARDINAL SIN THAT SHIPPED IN
+v0.39.0 AND WAS LIVE ON npm FOR A DAY.** SOUNDNESS R519: `mintStructuralMembers` gave every
+function-valued member of a structural implementor its own unit and `enclosing()` stops at the first
+`nodeName` hit, so **minting was a MOVE, not an addition**. Where no in-scan dispatch resolves to the
+minted unit — and nothing in a producer package need ever dispatch on a DEPENDENCY's abstraction — the
+effects sat in a unit reachable from nothing and the containing function vanished from `functions[]`
+entirely: SPEC §2 rule 3's positive purity claim over code the engine had read. Bisected to `54d76a6`
+(the R512 fix); v0.38.3 and earlier are clean, as are rust, java and swift.
+
+Confirmed on published npm code, not on a fixture: `ajv-formats#src.limit.<module>` is present at
+0.38.3 and ABSENT at 0.39.0. `bin/corpus-ab.py` over 47 entries, run twice independently —
+v0.39.0→fix `REMOVED 0`, v0.38.3→fix `REMOVED 0`, baseline v0.38.3→v0.39.0 `REMOVED 3` (the sin, in
+`ajv-formats` and `apollo-server-core`). The two `REMOVED 0` arms are what make the fix monotone-up
+against both shipped engines, which is the property that made rushing it safe.
+
+**⚠ `ENGINE_PIN_TS="0.39.1"` MUST BE CLEARED AT THE NEXT FAMILY CUT.** Third scoped pin in the family's
+history (`ENGINE_PIN_JAVA` 0.36.2, `ENGINE_PIN_RUST` 0.38.4). A non-empty per-engine pin SILENTLY beats
+`ENGINE_PIN`. Two post-cut states that are EXPECTED, not defects: `release-verify.sh 0.39 0.39.0` fails
+on `candor-ts: npm 0.39.1 != 0.39.0`, and preflight [3] reports the vscode/jetbrains pins red until the
+release exists.
+
+**What this cut found, and again none of it by reading:**
+
+  - **THREE of my four hand-built fixtures failed to reproduce a REAL shipped sin, and I twice reported
+    the non-reproduction as evidence against the finding.** One had two `Math.random()` sources at module
+    scope, so the second kept `<module>` charged and masked the drain of the first; another scanned a
+    package with no `node_modules`, which disables the foreign-abstraction path entirely
+    (`unknownWhy: ["no-node_modules:ajv"]` was in the report and I skimmed it). **After two hand fixtures
+    fail to reproduce a reported defect, stop building fixtures and run the corpus** — the baseline had
+    the answer while I was constructing the third confounded case. A hand fixture encodes my model of the
+    trigger; when the trigger is what is in dispute, it is the one instrument guaranteed to agree with me.
+  - **The R519 row's own TRIGGER was wrong as filed** — drawn around the instance in hand, which is the
+    failure `CLAUDE.md` names by name. Not "a union with a mapped arm": any function-valued property no
+    registered interface DECLARES, index-signature interfaces included, and NOT cross-package-only.
+  - **`bin/candor.test.sh`'s ts rows read the FAMILY pin, and went red the moment `ENGINE_PIN_TS`
+    differed — the third release running with this exact shape** (java 0.35.1, rust 0.38.1, ts 0.39.1).
+    The resolution had been written into that file for java and never carried across. `enginepin()` now
+    resolves all four. NOT neutralised: the file records that the first rust repair was worse than the
+    defect because it made the row assert the NEXT row's invariant.
+  - **Three of the four new default-route CONTROL rows are VACUOUS today, and that is measured.**
+    Patching the rust, swift AND ts routes to ignore their declared pin reddens only the TS row — an
+    empty declared pin resolves to the family line, so the row compares a number against itself. They
+    arm at the next scoped patch and assert nothing before it; the comment says so, because a row named
+    CONTROL that cannot fail is the vacuous-guard class this register keeps re-finding.
+  - **A GATE COMPARING TWO VALUES THAT MOVE TOGETHER CANNOT CATCH THEM BOTH GOING STALE.** The vscode
+    drift gate compares the extension version against `candorTsVersion`; both sat at 0.38.3 through the
+    entire 0.39.0 family cut and the equality held. Preflight [3] only asserts a pin names the version
+    being CUT, never that it is CURRENT. **Nothing compares a pin against the latest PUBLISHED version**
+    — jetbrains `pluginVersion=0.16.0` and `candorJavaVersion=0.38.3` are both long-stale and ungated.
+    OPEN: a check that resolves each pin against the registry's current version.
+  - **`release-preflight.sh` EXITS 0 WHILE PRINTING `N check(s) FAILED`.** Read the verdict line, never
+    the exit code — and do not pipe it through `tail` before capture, which hid two of three failures.
+
+**OPEN, needs Tom:** the older `invisible` hole the R519 work surfaced — a call on a member of a FOREIGN
+interface falls to the external-call path (`invisible:[dep]`) where the LOCAL twin hedges
+`Unknown[callback:Iface]`. Present at v0.34.0 through HEAD and NOT closed by the R519 fix; closing it
+means revisiting R133's non-gating `invisible` ruling, which is a family-level decision. Needs a row.
+
+### 6b-prev. 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
 
 **⟨0.39⟩ / v0.39.0 IS PUBLISHED AND VERIFIED LIVE.** `release-verify` resolves every artifact rather than
 every string: four crates on crates.io, `candor-ts@0.39.0` on npm with provenance, six GitHub releases,

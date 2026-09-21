@@ -48,7 +48,11 @@ latest_npm() {   # $1 = package
   printf '%s' "$j" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || return 2
 }
 latest_crate() { # $1 = crate
-  local j; j="$(curl -fsS --max-time 25 "https://crates.io/api/v1/crates/$1" 2>/dev/null)" || return 2
+  # crates.io REFUSES a request with no User-Agent, and curl -f turns that into a silent non-zero — which
+  # this script would then report as "network INCOMPLETE". Measured 2026-09-21: the row read INCOMPLETE
+  # against a crate that was sitting there perfectly. An UNSENT HEADER AND AN UNREACHABLE REGISTRY ARE THE
+  # SAME EXIT CODE, which is the whole reason INCOMPLETE must never read as a pass.
+  local j; j="$(curl -fsS --max-time 25 -H 'User-Agent: candor-pin-currency (https://github.com/tombaldwin/candor)' "https://crates.io/api/v1/crates/$1" 2>/dev/null)" || return 2
   printf '%s' "$j" | python3 -c 'import json,sys; print(json.load(sys.stdin)["crate"]["max_stable_version"])' 2>/dev/null || return 2
 }
 latest_gh() {    # $1 = repo — the newest SEMVER tag, not the newest by date
@@ -76,6 +80,52 @@ vscode ts   |candor/integrations/vscode/package.json|\"candorTsVersion\":[[:spac
 jetbrains ts|candor/integrations/jetbrains/gradle.properties|candorTsVersion=[0-9]+\.[0-9]+\.[0-9]+|npm:candor-ts
 jetbrains jvm|candor/integrations/jetbrains/gradle.properties|candorJavaVersion=[0-9]+\.[0-9]+\.[0-9]+|gh:candor-java
 "
+
+# ── THE PER-ENGINE PINS, checked SEPARATELY. ────────────────────────────────────────────────────────
+# Not in PINS above, deliberately: that table is asserted equal to release-preflight's `checkpin` set, and
+# preflight handles these through its own `rs_engine_pin` loop instead. Kept apart so neither assertion
+# has to be weakened — but CHECKED, because these are the pins most likely to go stale. A scoped pin is
+# the one thing in this file that is SUPPOSED to differ from the family line, which is exactly why a
+# forgotten one survives: nothing reads it as wrong.
+#
+# ADDED 2026-09-21 AFTER I ASSERTED THIS TOOL CHECKED THEM AND IT DID NOT. The umbrella CHANGELOG and the
+# comment beside ENGINE_PIN_RUST both said "pin-currency reports AHEAD for both, which is correct for a
+# scoped pin"; it reported neither, because the table had no row for either. A claim about an instrument,
+# written without running the instrument against the case — the same shape as a comment asserting safety.
+#
+# An EMPTY per-engine pin is not checked and not counted: empty means "follow ENGINE_PIN", which the
+# `engine pin` row above already judges. Only a DECLARED override is a claim about a published artifact.
+ENGINE_PINS="
+ENGINE_PIN_TS|npm:candor-ts
+ENGINE_PIN_RUST|crate:candor-scan
+ENGINE_PIN_JAVA|gh:candor-java
+ENGINE_PIN_SWIFT|gh:candor-swift
+"
+
+check_engine_pins() {
+  local famline; famline="$(pin_version "$ROOT/candor/bin/candor" '^ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"')"
+  while IFS='|' read -r key art; do
+    [ -z "$key" ] && continue
+    local v; v="$(pin_version "$ROOT/candor/bin/candor" "^$key=\"[0-9]+\.[0-9]+\.[0-9]+\"")" || v=""
+    if [ -z "$v" ]; then
+      note_pin "$key: (empty — follows ENGINE_PIN $famline; nothing declared, nothing to judge)"; continue
+    fi
+    local live; live="$(resolve "$art")" || live=""
+    if [ -z "$live" ]; then
+      warn "$key: $v — could not resolve $art (network). INCOMPLETE"; incomplete=$((incomplete+1)); continue
+    fi
+    local scoped=""; [ "$v" != "$famline" ] && scoped=" — SCOPED, differs from ENGINE_PIN $famline; CLEAR IT AT THE NEXT FAMILY CUT"
+    if [ "$v" = "$live" ]; then ok "$key: $v == latest $art$scoped"; current=$((current+1))
+    elif [ "$(printf '%s\n%s\n' "$v" "$live" | sort -V | head -1)" = "$v" ]; then
+      bad "$key: $v but $art publishes $live — STALE, and a non-empty per-engine pin SILENTLY BEATS ENGINE_PIN"
+      stale=$((stale+1))
+    else
+      bad "$key: $v is AHEAD of published $live ($art) — this pin names something that does not exist; the front door will 404"
+      stale=$((stale+1))
+    fi
+  done <<< "$(printf '%s' "$ENGINE_PINS" | grep -v '^$')"
+}
+note_pin() { printf '  \033[33m·\033[0m %s\n' "$*"; }
 
 if [ "${1:-}" = "--selftest" ]; then
   echo "== pin-currency selftest =="
@@ -142,6 +192,10 @@ while IFS='|' read -r label file keyre art; do
     ahead=$((ahead+1))
   fi
 done <<< "$(printf '%s' "$PINS" | grep -v '^$')"
+
+echo
+echo "== per-engine pins (scoped overrides — a non-empty one SILENTLY beats ENGINE_PIN) =="
+check_engine_pins
 
 echo
 printf 'pin-currency: %d current, %d STALE, %d ahead, %d incomplete\n' "$current" "$stale" "$ahead" "$incomplete"

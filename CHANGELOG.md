@@ -29,8 +29,22 @@ pinned installer until the pin moves.
 
 ⚠ **THERE ARE NOW TWO LIVE SCOPED PINS** — `ENGINE_PIN_TS=0.39.1` and `ENGINE_PIN_RUST=0.39.1` — against a
 family line of 0.39.0. Both silently beat `ENGINE_PIN`, and both must be cleared at the next family cut;
-that trap nearly shipped java 0.36.2 behind a 0.37.0 front door. `bin/pin-currency.sh` reports both as
-AHEAD, which is correct for a scoped pin and is not a failure.
+that trap nearly shipped java 0.36.2 behind a 0.37.0 front door.
+
+**`bin/pin-currency.sh` now checks the per-engine pins, and a correction: this entry first said it
+"reports both as AHEAD". It reported neither — the table had no row for either, because that table is
+asserted equal to `release-preflight`'s `checkpin` set and preflight handles the per-engine pins through a
+different loop. I asserted a behaviour of my own instrument without running it against the case, which is
+the same shape as a comment asserting safety.** They are checked in a separate section now, so neither
+assertion is weakened: each is resolved against its own registry (`ENGINE_PIN_TS` → npm,
+`ENGINE_PIN_RUST` → crates.io), printed every run as *"SCOPED, differs from ENGINE_PIN …; CLEAR IT AT THE
+NEXT FAMILY CUT"*, and FAILED if it falls behind its registry or names a version that was never published.
+Calibrated in both directions. An empty pin is explicitly *not judged* rather than silently passing.
+
+Also fixed while calibrating it: crates.io refuses a request with no `User-Agent`, and `curl -f` turns
+that into the same non-zero as an unreachable network — so the rust row read INCOMPLETE against a crate
+that was sitting there perfectly. An unsent header and a dead registry are the same exit code, which is
+why INCOMPLETE must never read as a pass.
 
 Now pinned four-way so it cannot recur unseen: PART 55 gained a `deny-unknown-alias` shape (candor-spec
 `ccf3b6b`). Every prior `Unknown[…]` shape named a BUILTIN class, so no arm had ever needed the project's

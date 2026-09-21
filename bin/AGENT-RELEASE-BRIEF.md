@@ -46,3 +46,11 @@ touching, say so before you start and confirm who owns it. Don't assume you're a
 Full context for any of these: `TESTING.md` (family test standards), `bin/release-preflight.sh`'s own
 comments (each check documents the defect it exists to catch), and the umbrella `CHANGELOG.md`'s dated
 entries for the incident history.
+
+## A NEW OR EDITED GATE LANDS WITH ITS CALIBRATION IN THE SAME COMMIT
+
+See `bin/AGENT-CORPUS-BRIEF.md` §1b. Inject the defect the gate claims to catch, paste the RED line
+into the commit message, then the green. Measured 2026-09-21: every instrument found vacuous that day
+was one written or edited that day, while a seeded sample of untouched instruments fired 7 of 7. A
+release gate you wrote today and did not falsify is the one most likely to pass over the thing it was
+built to stop.

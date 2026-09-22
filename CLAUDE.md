@@ -92,6 +92,20 @@ dispatching a wave, never during one**, and if you must clean mid-wave, delete o
 this turn. `bash bin/disk-guard.sh` before dispatching is a second's work and is the whole point of
 having it.
 
+**AND A RELATIVE SCRATCHPAD PATH PUTS THE LITTER IN A REPO.** Measured 2026-09-22: a read-only sweep
+agent was told to *"work only under `scratchpad/sweepagent-r534/`"* and did exactly that — **relative to
+its cwd, which was `/Users/tom/git/candor`**. It left **203 MB** of reports and fixtures inside the
+umbrella repo and reported, correctly by its own lights, that it had written nothing into any repo. It
+had no way to know: the path it was given resolved somewhere it never inspected.
+
+`git status` caught it (`?? scratchpad/`), which is the argument for NOT gitignoring that name — an
+ignored directory makes the next 203 MB invisible. **Give every agent the ABSOLUTE scratchpad path**, the
+one in the environment block, not a bare prefix. The prefix rule above is about COLLISION between agents;
+this is about which tree the prefix hangs off, and the two failures are independent.
+
+Worth pairing with the disk rule: 203 MB is not fatal at 56 GB free, but the same brief at 16 GB against
+4.8 GB free is the shape that faked four agents' results in one afternoon.
+
 **TWO AGENTS CHOSE THE SAME SCRATCHPAD DIRECTORY NAME AND ONE ATE THE OTHER'S FIXTURE.** Measured
 2026-09-15: a candor-rust agent and a candor-swift agent were both working SOUNDNESS **R349** — different
 halves, different repos, correctly partitioned — and both created `scratchpad/r349/`. The swift agent

@@ -10,7 +10,7 @@ keeps its own.
 
 ## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and four tool defects (released 2026-09-22 as 0.39.2)
 
-**`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED.** `ENGINE_PIN_TS` and
+**`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED** (`bcb4330`, after the engines were published — a pin names a published artifact, never a promised one). `ENGINE_PIN_TS` and
 `ENGINE_PIN_RUST` each held `0.39.1` from their own scoped patch, and a non-empty per-engine pin
 SILENTLY beats `ENGINE_PIN` — the trap that nearly shipped java 0.36.2 behind a 0.37.0 front door.
 Each pin's own comment instructed this. `bin/pin-currency.sh` now names a live scoped pin on every run
@@ -45,6 +45,16 @@ correct:
   scratchpad path in an agent brief puts the litter inside a git repo (203 MB, with the agent honestly
   reporting it had written nothing to any repo).
 - `integrations/vscode` and `integrations/jetbrains` pins moved to the engines this cut publishes.
+- **`release.sh` step 7 REFUSED to cut the umbrella until the pins agreed**, naming all four mismatches:
+  *"Cutting the umbrella now ships a 0.39.2 front door that installs the wrong engines."* The tarball
+  carries the front door and Homebrew hashes it, so the refusal is the only thing between a green release
+  and a front door that installs 0.39.0/0.39.1. It refused AFTER the unyankable crates step, which is the
+  correct order: a bad pin is fixable, a published crate is not.
+- **And then `preflight [5b]` refused the re-run**, because the pin commit touched `bin/candor`, `adopt/`
+  and `integrations/` without touching this file. `release.sh` had printed that warning verbatim before
+  the first run — *a pins-only commit makes the re-run die at the gate, AFTER the engines are published* —
+  and I reasoned past it on the grounds that the section above already described the bump. It did, but
+  [5b] compares COMMITS to the changelog, not prose to intent. This line is the fix.
 - **`release-preflight [7c]` collided with §1b, and the collision was mine.** [7c] flags a commit message
   carrying spliced build output, because backticks in a `-m "…"` message are executed before git sees
   them — it happened four times on 2026-08-19, one message shipping *"`test result: ok. 38 passed;` in

@@ -70,6 +70,12 @@ fi
 # neither. Running gates.sh twice — as this did — was two chances for the two counts to disagree.
 sed -n 's/^        //p' "$RAW" > "$GATELIST"
 manual=$(grep -c '^      ~ ' "$RAW")
+# …AND THE WHOLE GATES gates.sh LIFTED OUT OF A BLOCK. These are bare script invocations inside a
+# multi-line `run:` — real gates that this tool must not `eval` (they are not self-contained lines) but
+# must not hide either. `bash smoke.sh` is candor-swift's ACTUAL suite and sat among 101 `~` lines,
+# printed and never run. Counted and named at the bottom so "run + skipped + manual" is not mistaken
+# for "everything that exists".
+byhand=$(grep -c '^      ! ' "$RAW" || true)
 total=$(grep -c '^        ' "$RAW")
 
 # THE DISK. Checked before the first gate and after every one, because the expensive case is the
@@ -260,8 +266,9 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
 done < "$GATELIST"
 rm -f "${TMPDIR:-/tmp}/.candor-disk-guard-cursor-$$"
 
-printf '\n%s: %s gate(s) run, %s ok, %s failed, %s skipped, %s block line(s) not auto-run\n' \
-  "$repo" "$run" "$ok" "$bad" "$skip" "$manual"
+printf '\n%s: %s gate(s) run, %s ok, %s failed, %s skipped, %s block line(s) not auto-run, %s whole gate(s) to run BY HAND\n' \
+  "$repo" "$run" "$ok" "$bad" "$skip" "$manual" "$byhand"
+[ "$byhand" -gt 0 ] && printf '  (%s WHOLE gate(s) live inside multi-line `run:` blocks and are NOT run here — `bash bin/gates.sh %s` names them under "RUN THESE BY HAND". candor-swift'"'"'s real suite is one of them.)\n' "$byhand" "$repo"
 [ "$manual" -gt 0 ] && printf '  (see `bash bin/gates.sh %s` for the ~ lines — those belong to multi-line steps and need reading)\n' "$repo"
 
 # THE DISK VERDICT COMES FIRST, ahead of the accounting check and ahead of NOT GREEN. A full disk

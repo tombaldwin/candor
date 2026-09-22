@@ -1057,8 +1057,27 @@ else
         # So: distinguish. If HEAD is not pushed, that is still fatal. If it is pushed and simply
         # matched no path filter, report it and pass — the last commit that DID run CI is the one the
         # release actually depends on, and it is checked below.
-        if ! git -C "$ROOT/$r" merge-base --is-ancestor HEAD "@{u}" 2>/dev/null; then
-          ci_bad=1; bad "$r: HEAD ($head_sha) is NOT PUSHED — nothing could have run"
+        # SOUNDNESS R505, THE SIBLING COPY — fixed in bin/ci-watch.sh on 2026-09-18 and never ported
+        # here, which is this project's most-repeated shape: one copy of a question corrected, its
+        # sibling left. `@{u}` is UNSET on six of the seven family repos (`fatal: no upstream configured
+        # for branch 'main'`, exit 128), so `!` turned the ERROR into a confident NOT PUSHED for a commit
+        # verifiably on the remote. Measured 2026-09-23 mid-cut, on the umbrella, with `origin/main`
+        # equal to HEAD and the GitHub API returning the SHA.
+        #
+        # It stayed latent because this branch is only reached when a repo's HEAD has NO CI run at all —
+        # which a CHANGELOG-only commit produces, and a pin-bump commit is exactly that. So the defect
+        # was waiting specifically for the last step of a release ladder.
+        #
+        # Same fallback chain as ci-watch's, in the same order and for the same reasons: `@{u}` when it
+        # resolves, else `origin/<branch>` which the push itself writes and which resolves in all seven,
+        # else `origin/HEAD` so a detached HEAD still has something to compare against.
+        _br=$(git -C "$ROOT/$r" branch --show-current 2>/dev/null)
+        _up=$(git -C "$ROOT/$r" rev-parse --abbrev-ref '@{u}' 2>/dev/null \
+              || { [ -n "$_br" ] && git -C "$ROOT/$r" rev-parse --verify -q "origin/$_br" >/dev/null \
+                   && echo "origin/$_br"; } \
+              || echo origin/HEAD)
+        if ! git -C "$ROOT/$r" merge-base --is-ancestor HEAD "$_up" 2>/dev/null; then
+          ci_bad=1; bad "$r: HEAD ($head_sha) is NOT PUSHED — not on $_up, nothing could have run"
         else
           # THIRD SIBLING OF THE SAME FILTER, so it now shares bin/_ci_verdict.py too rather than
           # re-deriving a third `gh run list` reading — but the QUESTION differs from the other two call

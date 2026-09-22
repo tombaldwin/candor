@@ -705,8 +705,24 @@ for r in $WFREPOS; do
   # PER COMMIT, not per line: a body is multi-line, so grepping the whole log stream reports the matched
   # TEXT rather than the commit it came from — which is what the first version of this check printed.
   for h in $(git -C "$ROOT/$r" log --format='%h' "$base"..HEAD 2>/dev/null); do
+    # DELIBERATE QUOTATION IS NOT DAMAGE, and since §1b the difference matters. AGENT-CORPUS-BRIEF §1b
+    # now REQUIRES a gate's calibration in its own commit — "paste the RED line into the commit message,
+    # then the green" — so a correct commit under that rule contains `test result: FAILED. 0 passed`
+    # ON PURPOSE. This check fired on four such commits, which is a rule I added colliding with a rule
+    # I rely on.
+    #
+    # The discriminator is in the ORIGINAL incident, not invented here: the damage shipped
+    # "`test result: ok. 38 passed;` IN THE MIDDLE OF A SENTENCE" — bare, unindented, unquoted, because
+    # a shell spliced it where prose was meant to be. A human quoting it writes an INDENTED block or a
+    # `backticked` span. So strip both before looking:
+    #   · lines indented 4+ spaces  (a markdown code block — how the red line is pasted)
+    #   · text inside backticks     (a code span — how it is cited mid-sentence)
+    # What remains is output sitting where only a shell could have put it. Narrowing a detector is how
+    # its next miss happens, so this is CALIBRATED below rather than asserted: a bare mid-sentence splice
+    # must still fire.
     if git -C "$ROOT/$r" log -1 --format='%B' "$h" 2>/dev/null \
-       | grep -qE "test result: (ok|FAILED)\. [0-9]+ passed|^ *Compiling [a-z-]+ v[0-9]|^ *Finished .(dev|release|test) profile|^ *Executed [0-9]+ tests, with"; then
+       | sed -e 's/^    .*$//' -e 's/`[^`]*`//g' \
+       | grep -qE "test result: (ok|FAILED)\. [0-9]+ passed|^ *Compiling [a-z-]+ v[0-9]|^ *Finished .(dev|release|test) profile|^ *Executed [0-9]+ tests, wi"; then
       DAMAGED="$DAMAGED $r@$h"
     fi
   done

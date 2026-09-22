@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and four tool defects
+## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and four tool defects (released 2026-09-22 as 0.39.2)
 
 **`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED.** `ENGINE_PIN_TS` and
 `ENGINE_PIN_RUST` each held `0.39.1` from their own scoped patch, and a non-empty per-engine pin
@@ -45,6 +45,14 @@ correct:
   scratchpad path in an agent brief puts the litter inside a git repo (203 MB, with the agent honestly
   reporting it had written nothing to any repo).
 - `integrations/vscode` and `integrations/jetbrains` pins moved to the engines this cut publishes.
+- **`release-preflight [7c]` collided with §1b, and the collision was mine.** [7c] flags a commit message
+  carrying spliced build output, because backticks in a `-m "…"` message are executed before git sees
+  them — it happened four times on 2026-08-19, one message shipping *"`test result: ok. 38 passed;` in
+  the middle of a sentence"*. §1b, added today, REQUIRES a gate's calibration in its own commit: paste
+  the RED line, then the green. Four correct commits were therefore flagged as damaged. The
+  discriminator is in the original incident rather than invented: damage is bare, unindented and
+  unquoted; a human writes an INDENTED block or a `backticked` span. [7c] now strips both before
+  looking, and is calibrated in both directions — a bare mid-sentence splice still fires.
 
 ## 2026-09-21 — `ENGINE_PIN_RUST` → 0.39.1 (a CARDINAL SIN shipped in the 0.39.0 crates)
 

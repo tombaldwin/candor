@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and four tool defects (released 2026-09-22 as 0.39.2)
+## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and five tool defects (released 2026-09-22 as 0.39.2)
 
 **`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED** (`bcb4330`, after the engines were published — a pin names a published artifact, never a promised one). `ENGINE_PIN_TS` and
 `ENGINE_PIN_RUST` each held `0.39.1` from their own scoped patch, and a non-empty per-engine pin
@@ -23,6 +23,18 @@ statement that someone checked.
 
 What the umbrella actually ships in this cut, all of it tooling that failed in the direction of looking
 correct:
+
+- **`release-preflight.sh` [10] called a PUSHED commit `NOT PUSHED`, and it is the sibling copy of a
+  defect already fixed next door (SOUNDNESS R544, the same class as R505).** `git merge-base
+  --is-ancestor HEAD "@{u}"` — but `@{u}` is unset on six of the seven family repos, so `!` turned
+  `fatal: no upstream configured for branch 'main'` into a confident verdict about a commit that
+  `origin/main` equalled and the GitHub API returned. `bin/ci-watch.sh` was corrected on 2026-09-18 and
+  its fix was never ported here; the corrected copy's own comment warns about the trap this one hit.
+  It stayed latent because the branch is only reached when a HEAD has NO CI run at all — which is what a
+  pins-only or CHANGELOG-only commit produces, so **the defect was waiting for the last rung of a release
+  ladder**, and it stopped this one. It fails CLOSED (a false STOP, not a false GO), which is why the
+  cost was an hour mid-cut rather than a bad release. Fallback chain is now ci-watch's, in the same
+  order: `@{u}`, else `origin/<branch>`, else `origin/HEAD`.
 
 - **`bin/gates.sh` omitted whole gates from its own runnable list.** A bare script invocation inside a
   multi-line `run:` block was printed as one of ~100 `~` lines — `conformance/run.sh`, the four-way

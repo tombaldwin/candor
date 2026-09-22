@@ -88,12 +88,15 @@ print("" if gate else "on: %s%s — not a pre-push gate; %d run step(s) behind t
 PY
 
 excluded=0
+GATES_CAND="$(mktemp -t gates-cand.XXXXXX)"; export GATES_CAND
+trap 'rm -f "$GATES_CAND"' EXIT
 for r in "${REPOS[@]}"; do
   [ -n "$want" ] && [ "$r" != "$want" ] && continue
   d="$ROOT/$r/.github/workflows"
   printf '\n\033[1m== %s ==\033[0m\n' "$r"
   if [ ! -d "$d" ]; then echo "  (no workflows directory at $d)"; continue; fi
   for wf in "$d"/*.yml "$d"/*.yaml; do
+    GATES_WF="$(basename "$wf")"; export GATES_WF
     [ -e "$wf" ] || continue
     # WHICH WORKFLOWS GATE A PUSH IS DECIDED BY THEIR OWN `on:` BLOCK — NEVER BY THEIR FILENAME.
     #
@@ -129,7 +132,7 @@ for r in "${REPOS[@]}"; do
     # `run:` steps, both the one-line and block forms. Crude on purpose: over-printing a line is
     # cheap, and a clever parser that silently drops a step is exactly the failure this prevents.
     python3 - "$wf" <<'PY'
-import sys, re, shlex
+import os, sys, re, shlex
 lines = open(sys.argv[1]).read().splitlines()
 
 # A STEP'S `working-directory:` IS PART OF THE COMMAND, and dropping it is not a cosmetic loss.
@@ -172,7 +175,17 @@ while i < len(lines):
                 if lines[i].strip():
                     # `~` marks a line lifted from a multi-line block. It is part of a script, not
                     # necessarily a standalone command, so bin/gate-run.sh must not execute it blind.
-                    print("      ~", lines[i].strip())
+                    _t = lines[i].strip()
+                    print("      ~", _t)
+                    # A `~` line that is a BARE invocation of a script or package script is almost
+                    # certainly a whole gate. Collected here, named at the bottom — never promoted to
+                    # the 8-space column, because gate-run.sh parses that and executing a fragment
+                    # blind is what the `~` marker exists to prevent.
+                    if re.match(r'^(bash |sh |\./|npm run |yarn |make )\S', _t) and '&&' not in _t and '|' not in _t:
+                        _c = os.environ.get('GATES_CAND')
+                        if _c:
+                            with open(_c, 'a') as _fh:
+                                _fh.write("%s\t%s\n" % (os.environ.get('GATES_WF', '?'), _t))
                 i += 1
             continue
         # `cd X && …` rather than a separate annotation: it is what a human should type, AND it is
@@ -183,6 +196,17 @@ PY
   done
 done
 printf '\nRun every line above for the repo you are pushing. The gate you skip is the one that is red.\n'
+# ── THE `~` LINES THAT ARE WHOLE GATES, NAMED WHERE THE VERDICT IS READ. ───────────────────────────
+# A `~` line comes from a multi-line `run: |` block, so gate-run.sh will not execute it blind — that is
+# correct and stays. The CONSEQUENCE was not: candor-swift's real suite is `bash smoke.sh`, which lives
+# in such a block and was therefore one of 101 `~` lines — printed, never run, impossible to pick out.
+# Measured 2026-09-22 by an agent that ran smoke.sh BY HAND (148 passed) and noticed this tool had not
+# asked it to, in the file whose whole purpose is that the list you run cannot drift from the list that
+# exists. No blind execution; no burial either.
+if [ -s "${GATES_CAND:-/dev/null}" ]; then
+  printf '\nALSO GATES, and NOT in the runnable list above — each is a bare script invocation inside a\nmulti-line `run:` block, so this tool prints it as `~` and gate-run.sh will not execute it blind.\nRUN THESE BY HAND:\n'
+  sort -u "$GATES_CAND" | while IFS="$(printf '\t')" read -r _wf _cmd; do printf '        %s   (in workflow: %s)\n' "$_cmd" "$_wf"; done
+fi
 # COUNT WHAT WAS EXCLUDED, at the bottom, where the verdict is read. Each exclusion is already named
 # beside its workflow, but a per-workflow parenthetical scrolls past; a total does not. If this number
 # is not what you expect, the `on:` parse is wrong and the list above is short.

@@ -8,6 +8,44 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and four tool defects
+
+**`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED.** `ENGINE_PIN_TS` and
+`ENGINE_PIN_RUST` each held `0.39.1` from their own scoped patch, and a non-empty per-engine pin
+SILENTLY beats `ENGINE_PIN` — the trap that nearly shipped java 0.36.2 behind a 0.37.0 front door.
+Each pin's own comment instructed this. `bin/pin-currency.sh` now names a live scoped pin on every run
+so the instruction is not the only thing standing between the pin and the next cut.
+
+**The generated stub for this entry said "No change to the umbrella's own surface". That was false, and
+it is the same false claim the 0.38.1 cut's stub made** — recorded then as *"the umbrella IS the payload
+here"*. Rewritten rather than published, because a changelog entry asserting a negative is read as a
+statement that someone checked.
+
+What the umbrella actually ships in this cut, all of it tooling that failed in the direction of looking
+correct:
+
+- **`bin/gates.sh` omitted whole gates from its own runnable list.** A bare script invocation inside a
+  multi-line `run:` block was printed as one of ~100 `~` lines — `conformance/run.sh`, the four-way
+  suite the family's cross-engine guarantee rests on, was one of them, as was candor-swift's real suite
+  `bash smoke.sh`. Eleven across the family, now named under "RUN THESE BY HAND".
+- **…and my first version of that put them on the EXECUTABLE column**, where `gate-run.sh` `eval`s them,
+  so `bash smoke.sh   (in workflow: ci.yml)` became a syntax error reported as three FAILING gates. The
+  comment beside it claimed they were deliberately not on that column. A safety sentence false on
+  arrival, in the same commit as the code it described.
+- **`bin/pin-currency.sh`** — a new standing check: does every cross-repo pin name the LATEST PUBLISHED
+  version? `release-preflight [3]` only asks whether a pin names the version being CUT, and
+  `release-audit` only whether the artifact it names still exists; neither notices a pin four rungs
+  behind. It found `candorJavaVersion` at 0.38.3 on its first run. Its own first version did not check
+  the per-engine pins its CHANGELOG entry claimed it checked — corrected in place.
+- **`AGENT-CORPUS-BRIEF.md` §1b** — a new or edited gate lands with its calibration in the same commit.
+  Four instruments were found vacuous in one day and every one had been written or edited that day,
+  while a seeded sample of untouched instruments fired 7 of 7.
+- **`CLAUDE.md`** — two traps that each cost real time: `pgrep -f <pattern>` in an until-loop matches
+  the waiting shell itself (three stuck waits, each indistinguishable from a slow job), and a RELATIVE
+  scratchpad path in an agent brief puts the litter inside a git repo (203 MB, with the agent honestly
+  reporting it had written nothing to any repo).
+- `integrations/vscode` and `integrations/jetbrains` pins moved to the engines this cut publishes.
+
 ## 2026-09-21 — `ENGINE_PIN_RUST` → 0.39.1 (a CARDINAL SIN shipped in the 0.39.0 crates)
 
 **SOUNDNESS R525.** Adding an unrelated `deny Unknown[<a `.candor/config` alias>]` beside `deny Net` made

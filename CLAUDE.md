@@ -153,6 +153,21 @@ to wait for it — stopping really is its only move.** So the instruction must a
 *with*: **the Monitor tool with an until-loop.** Give agents the waiting mechanism up front, not just
 the prohibition, or the prohibition is unenforceable the moment they disobey it once.
 
+**AND THE UNTIL-LOOP HAS ITS OWN TRAP: `pgrep -f <pattern>` MATCHES THE WAITING SHELL ITSELF.** Measured
+three times on 2026-09-22 — once by me, twice by one agent, which left two loops that could never exit.
+
+    until ! pgrep -f 'release-preflight.sh 0.39 0.39.1' >/dev/null; do sleep 20; done
+
+The waiting shell's own command line CONTAINS that string, so `pgrep -f` finds itself, the condition is
+never false, and the loop spins forever. **It is indistinguishable from a slow job** — the thing you are
+waiting for may have finished minutes ago. My own instance sat "waiting" on a preflight that had already
+exited; the agent's two were still spinning after its process died.
+
+Wait on something that cannot match the waiter: **a PID** (`until ! kill -0 "$pid" 2>/dev/null; do …`)
+or **an end-marker the job itself writes** (`until grep -q '=== done ===' "$log"; do …`). If you must
+match on a name, exclude yourself: `pgrep -f pat | grep -v "^$$\$"`. This is the same shape as every
+other vacuous guard in this file — a check that cannot fail, here a wait that cannot finish.
+
 **THIRTEEN TIMES on 2026-09-01, and the Monitor fix is ALSO incomplete — stop counting the phrasings.**
 Every brief that day carried both halves: the prohibition AND the mechanism, verbatim, with the failure
 count in it. Thirteen agents stalled anyway. The clincher was the last one, which **armed a Monitor and

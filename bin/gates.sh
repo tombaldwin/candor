@@ -205,7 +205,15 @@ printf '\nRun every line above for the repo you are pushing. The gate you skip i
 # exists. No blind execution; no burial either.
 if [ -s "${GATES_CAND:-/dev/null}" ]; then
   printf '\nALSO GATES, and NOT in the runnable list above — each is a bare script invocation inside a\nmulti-line `run:` block, so this tool prints it as `~` and gate-run.sh will not execute it blind.\nRUN THESE BY HAND:\n'
-  sort -u "$GATES_CAND" | while IFS="$(printf '\t')" read -r _wf _cmd; do printf '        %s   (in workflow: %s)\n' "$_cmd" "$_wf"; done
+  # SIX SPACES AND A `!`, NOT EIGHT. `bin/gate-run.sh` executes EVERY 8-space line
+  # (`sed -n 's/^        //p'`), so printing these there fed `bash smoke.sh   (in workflow: ci.yml)`
+  # into `eval` — a syntax error, reported as three FAILing gates. Measured 2026-09-22 by an agent that
+  # ran all three by hand and found them passing. **The comment on this block already CLAIMED they were
+  # deliberately not at that column; they were.** A safety sentence written in the same commit as the
+  # code it describes, false on arrival — which is the exact class this session spent the day finding.
+  # `!` rather than `~`: gate-run counts `^      ~ ` as block lines, and these are neither gates to run
+  # nor fragments of one.
+  sort -u "$GATES_CAND" | while IFS="$(printf '\t')" read -r _wf _cmd; do printf '      ! %s   (in workflow: %s)\n' "$_cmd" "$_wf"; done
 fi
 # COUNT WHAT WAS EXCLUDED, at the bottom, where the verdict is read. Each exclusion is already named
 # beside its workflow, but a per-workflow parenthetical scrolls past; a total does not. If this number

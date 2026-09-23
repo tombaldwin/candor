@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and five tool defects (released 2026-09-22 as 0.39.2)
+## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and six tool defects (released 2026-09-22 as 0.39.2)
 
 **`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED** (`bcb4330`, after the engines were published — a pin names a published artifact, never a promised one). `ENGINE_PIN_TS` and
 `ENGINE_PIN_RUST` each held `0.39.1` from their own scoped patch, and a non-empty per-engine pin
@@ -23,6 +23,18 @@ statement that someone checked.
 
 What the umbrella actually ships in this cut, all of it tooling that failed in the direction of looking
 correct:
+
+- **`release-preflight.sh` [10] blocked the release step over the absence of the thing that step creates
+  (SOUNDNESS R545).** `release-audit.yml` derives its version from `ENGINE_PIN` and runs `release-verify`
+  against it, so between step 6 (the pins move to $VER) and step 7 (the umbrella `v$VER` release is cut),
+  its `candor:v$VER` row cannot resolve. [10] read that red as a statement about HEAD and refused step 7.
+  The first fix I planned — denylist the workflow by NAME — was unsound and was rejected in review:
+  release-audit also live-smokes the published artifacts, so a name denylist would wave through a DRAFT
+  engine release or a 404'd jar at exactly the moment that matters, which is the 0.24 class with a better
+  error message. What landed instead RE-RUNS THE AUDIT'S OWN INSTRUMENTS and demands they pass now — the
+  red is advisory only if every red is `release-audit` (a `corpus` red still blocks), the pins have moved,
+  `v$VER` does not yet exist, and both `release-verify --only <set minus candor>` and `pin-currency.sh`
+  pass at that moment. Calibrated 1 advisory / 4 blocking, including an injected draft engine release.
 
 - **`release-preflight.sh` [10] called a PUSHED commit `NOT PUSHED`, and it is the sibling copy of a
   defect already fixed next door (SOUNDNESS R544, the same class as R505).** `git merge-base

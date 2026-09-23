@@ -945,6 +945,57 @@ $one"
 # Release mode only (a version argument), and SKIPPED — never failed — when `gh` is unavailable or
 # unauthenticated, because preflight must stay usable offline. A skip says so loudly rather than passing
 # quietly, since "could not check" and "checked and fine" are the two things this file exists to separate.
+# --- SOUNDNESS R545 — THE ONE RED THAT ONLY THIS SCRIPT'S OWN NEXT STEP CAN CLEAR --------------------
+#
+# `release-audit.yml` derives its version from ENGINE_PIN in bin/candor and runs release-verify against
+# it. So from the moment step 6 moves the pins to $WANT_VER until step 7 creates the umbrella's
+# v$WANT_VER release, its `candor:v$VER` row CANNOT resolve — and if [10] reads that red, step 7 is
+# blocked by the absence of the thing step 7 exists to create. Measured 2026-09-23 mid-cut on 0.39.2.
+#
+# It is not reached on every cut: release-audit is `schedule` + `workflow_dispatch` only, so an
+# uninterrupted ladder never has a red run of it on HEAD. It bites when a cron lands inside the window,
+# when a pre-cut red (a stale pin the bump then FIXED) was never re-measured, or — as here — when the
+# operator dispatches it mid-cut and puts the run on HEAD itself.
+#
+# WHY NOT A NAME DENYLIST. `release-audit` also live-smokes the published artifacts. A candor-swift
+# release left in DRAFT (the 0.33.0 case step 8 cites) or a 404'd jar would then be waved through as
+# advisory, the umbrella tagged and brewed over it, and step 8 would report "published but did not
+# verify" — the 0.24 class with a better error message. So do not trust the workflow's NAME; RE-RUN ITS
+# OWN INSTRUMENTS HERE, minus the single row step 7 creates, and demand they pass NOW.
+#
+# WHY NOT FIX IT IN release-audit.yml OR release-verify.sh. The monitor cannot know a cut is in progress,
+# and a release-verify that tolerates a missing umbrella release is blind to the rot it exists to catch
+# ("release deleted or converted to draft"). Only preflight knows $WANT_VER and the cut set, so the
+# window logic belongs here and nowhere else.
+#
+# FAILS CLOSED AT EVERY CONDITION: any one of them false, and the red blocks exactly as before.
+rs_cut_window_expected() { # $1 = repo, $2 = verdict body (everything after "BAD ")
+  local entry others out
+  [ "$1" = candor ] || return 1
+  # (1) release mode, and this cut actually includes the umbrella
+  [ -n "$WANT_VER" ] && [ -n "$WANT_SPEC" ] || return 1
+  rs_in_set candor || return 1
+  # …and release-audit must be the ONLY thing red. A corpus red — or anything else — still blocks, which
+  # is the whole reason this is not an event-kind test: that would make every cron monitor advisory and
+  # decide a separate open question by way of a gate change.
+  printf '%s' "$2" | tr ',' '\n' | while read -r entry; do
+    case "${entry# }" in release-audit:*) ;; *) exit 1 ;; esac
+  done || return 1
+  # (2) the pins have moved — step 6 is done
+  [ "$(rs_family_pin "$ROOT/candor/bin/candor")" = "$WANT_VER" ] || return 1
+  # (3) …and step 7 has not run, so the row release-audit failed on is the one it is about to create
+  gh release view "v$WANT_VER" -R tombaldwin/candor >/dev/null 2>&1 && return 1
+  # (4) EVERY OTHER ROW THE AUDIT CHECKS MUST PASS, ASKED NOW, NOT INHERITED FROM ITS LOG. This is the
+  #     same instrument the workflow runs, with the umbrella carved out by --only, which release-verify
+  #     already supports. A draft or 404'd engine artifact fails here and the red blocks.
+  others="$(printf '%s' "$RS_SET" | tr ' ' '\n' | grep -v '^candor$' | tr '\n' ' ')"
+  out="$(bash "$HERE/release-verify.sh" "$WANT_SPEC" "$WANT_VER" --only ${others% } 2>&1)" || {
+    printf '%s\n' "$out" | sed -n 's/^/       /p' | grep -E '✘|FAILED' >&2; return 1; }
+  # (5) …and the pins themselves still resolve against their registries
+  bash "$HERE/pin-currency.sh" >/dev/null 2>&1 || return 1
+  return 0
+}
+
 echo "[10] CI is green on each repo's HEAD${WANT_VER:+ (releasing $WANT_VER)}"
 if [ -z "$WANT_VER" ]; then
   note "— skipped: no version argument; CI state matters at RELEASE time"
@@ -1120,12 +1171,29 @@ print(runs[0]['headSha'][:7] if runs else 'none')" 2>/dev/null)"
             ENUM_FAILED) ;;   # already reported above — do not also fall into the ERR|"" arm for it
             NONE) ci_bad=1; bad "$r: HEAD triggered no workflow, and this repo has no completed CI run to fall back on at all" ;;
             ERR|"") ci_bad=1; bad "$r: HEAD triggered no workflow, and CI status could not be read" ;;
-            BAD*) ci_bad=1; bad "$r: HEAD triggered no workflow AND the last known state is not all green — ${verdict#BAD }" ;;
+            BAD*)
+              # R545, the same predicate on the fallback path — a cron monitor's red reaches [10] here
+              # too, and this is in fact the path it reaches on an uninterrupted cut.
+              if rs_cut_window_expected "$r" "${verdict#BAD }"; then
+                info "$r: HEAD triggered no workflow; the only red is release-audit awaiting the v$WANT_VER release step 7 creates (R545) — its own checks re-run clean just now"
+              else
+                ci_bad=1; bad "$r: HEAD triggered no workflow AND the last known state is not all green — ${verdict#BAD }"
+              fi
+              ;;
           esac
         fi
         ;;
       ERR|"") ci_bad=1; bad "$r: could not read CI status — treat as NOT verified";;
-      BAD*) ci_bad=1; bad "$r: ${verdicts#BAD }";;
+      BAD*)
+        # SOUNDNESS R545 — see rs_cut_window_expected above. Downgraded to an advisory ONLY when every
+        # red is release-audit AND its own instruments, re-run here against everything but the umbrella
+        # row step 7 creates, pass right now. Anything else and this is the ✘ it always was.
+        if rs_cut_window_expected "$r" "${verdicts#BAD }"; then
+          info "$r: release-audit is red ONLY because v$WANT_VER does not exist yet — which is what step 7 creates (R545); re-ran its own release-verify (--only, umbrella carved out) and pin-currency just now and both PASS"
+        else
+          ci_bad=1; bad "$r: ${verdicts#BAD }"
+        fi
+        ;;
     esac
   done
   # …and the count is DERIVED. It said "all 7" while the loop walked a hard-coded seven; with a cut set

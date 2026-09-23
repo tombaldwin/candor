@@ -58,6 +58,25 @@ that will run four-way conformance, make sure every OTHER engine tree is clean a
 when one is running, do not measure or edit any engine. A four-way result taken over someone else's
 work-in-progress is not a measurement of anything that exists.
 
+**AND THE COORDINATOR IS AN AGENT TOO: EDITING `candor-spec` DURING A CONFORMANCE RUN FAKES A LITTER
+VERDICT.** Measured 2026-09-23. With all four engine trees clean I started `conformance/run.sh` and, while
+it ran, filed rows into `candor-spec/SOUNDNESS.md`. The suite exited **1** with
+*"THIS RUN LEFT FILES IN THE REPO — an engine arm is missing its `--out`"*, naming exactly one entry:
+` M SOUNDNESS.md`. No engine arm was missing anything. **The guard snapshots the repo before and after
+and attributes every difference to the run**, which is right — it cannot tell my edit from an engine
+writing a report into the cwd, and the failure it exists to catch (a scan with no `--out` dirties the
+tree and makes `release.sh` step 0 refuse) looks identical.
+
+The rule I had already written for agents — *one owner per repo, and the shared instrument reads TREES,
+not commits* — applies to the coordinator unchanged, and I am the one most likely to forget it because I
+am "only" editing a register while someone else's suite runs. **While `conformance/run.sh` is in flight,
+candor-spec is as read-only as any engine.**
+
+Worth noting what made this cheap: the serial re-run. The temptation was to explain the red away as my own
+edit and move on — which was even TRUE — but the file's own rule is *do not explain a FAIL by concurrency
+until you have failed to reproduce it serially*. The clean re-run cost sixteen minutes and turned a
+plausible story into a verdict: `EXIT=0`, 0 FAIL cells, 0 passing xfails, 0 left files.
+
 **`gate-run.sh` IS A SHARED INSTRUMENT TOO — DO NOT RUN FIVE REPOS' GATE LISTS AT ONCE.** Measured
 2026-09-11 during the 0.36.1 cut. I dispatched `gate-run.sh` for five repos concurrently and got three
 FAILs: two in candor-java's `smoke.sh` (the declared spec string absent from the envelope; a lambda body effect

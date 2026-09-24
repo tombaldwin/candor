@@ -1799,8 +1799,20 @@ PY
       repo="${pair%%:*}"; eng="${pair##*:}"; src="$HOME/git/$repo"
       # worktree-safe: `.git` is a FILE in a worktree, so `-d` skipped the drift check silently.
       git -C "$src" rev-parse --git-dir >/dev/null 2>&1 || continue
-      inst="$(command -v "$eng" 2>/dev/null)" || continue
-      [ -n "$inst" ] || continue
+      # SOUNDNESS R156 — ASK THE AUTHORITY THE DISPATCHER ASKS (§G). This read `command -v "$eng"`,
+      # while everything that RUNS an engine uses `rust_bin` — PATH first, then `$CDBIN`. On a standard
+      # install the engines are `~/.candor/bin`-only, so `command -v` found nothing and the loop
+      # `continue`d: MEASURED on this machine, the check skipped 4 of 4 engines, three of them
+      # installed and runnable. It was added after the 2026-08-01 stale-query incident and had
+      # therefore never once fired on the shape it exists for — a guard that cannot fire, which is the
+      # class this register keeps finding in its own instruments.
+      #
+      # `rust_bin` returns a bare NAME when the engine is on PATH and an absolute path when it is in
+      # `$CDBIN`; `stat` below needs a path either way, so resolve through `command -v` and fall back
+      # to what `rust_bin` said. Order is `rust_bin`'s, not re-derived here — that is the whole point.
+      rb="$(rust_bin "$eng" 2>/dev/null)" || continue
+      inst="$(command -v "$rb" 2>/dev/null)" || inst="$rb"
+      [ -n "$inst" ] && [ -e "$inst" ] || continue
       # newest tracked source file in the repo vs the installed binary's mtime.
       # BSD-ONLY `stat -f` / `date -r` WAS A SILENT NO-OP ON LINUX. GNU's `stat -f` is FILESYSTEM
       # status, so it printed a block/inode dump onto stdout and `newest` became a non-integer; the

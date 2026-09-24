@@ -270,8 +270,22 @@ daemons are GB each. `bash bin/disk-guard.sh` before dispatching is a second's w
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway
 worktree at the **last commit**, so commit first), `bin/ci-watch.sh`, `bin/release-test.sh`,
-`bin/corpus.sh`, **`bin/corpus-ab.py`**, `conformance/run.sh` and `conformance/part.sh <id>` in
+`bin/corpus.sh`, **`bin/corpus-ab.py`**, **`bin/fast-gates.sh`**, `conformance/run.sh` and `conformance/part.sh <id>` in
 `candor-spec`.
+
+**AND THERE IS A CHEAP TIER FOR THE UMBRELLA NOW: `bash bin/fast-gates.sh`.** Thirteen gates, ~50s,
+none of which builds an engine, an IDE or an npm tree — the umbrella's answer to what
+`candor-spec/scripts/doc-gates.sh` already did for the spec. Measured 2026-09-24: I edited ONE
+PARAGRAPH of markdown in `bin/AGENT-CORPUS-BRIEF.md`, ran `bin/gate-run.sh candor` per the fixed-list
+rule above, and gate 12 of 18 — `./gradlew verifyPlugin` — spent an hour unpacking SEVEN IntelliJ
+distributions and took the volume to **121 MiB free**. A docs edit had put every other measurement on
+the box at risk through the disk hazard this file documents two sections down.
+
+The lesson is not "skip the gate list". It is that **a rule with no affordable path gets broken, and
+then it is not a rule** — the fixed-list rule was sound and the only way to honour it cheaply did not
+exist. `fast-gates.sh` names the five heavier gates it does NOT run, at the top of the file, so the
+trade is visible rather than discovered after a push; it is never a substitute for
+`bin/gate-run.sh candor` before a release, and it refuses outright if `disk-guard.sh` is unhappy.
 
 **AND THE A/B IS ONE OF THEM NOW — `bin/corpus-ab.py`, never a fresh `ab.py`.** Measured 2026-09-07:
 fifteen ad-hoc `ab.py`/`ab.mjs` scripts in one session scratchpad, no shared tool, every one keyed on

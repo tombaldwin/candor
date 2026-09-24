@@ -266,6 +266,41 @@ which, so a startup-only check is blind to precisely the case that bites. The di
 When dispatching a wave, the cost is per-agent and concurrent: rust builds, Docker legs and Gradle
 daemons are GB each. `bash bin/disk-guard.sh` before dispatching is a second's work.
 
+## When a disclosure-only change ships without asking
+
+**Tom's ruling, 2026-09-24.** A change that ADDS disclosure (`Unknown`) and removes no effects has come
+to him four times with the same shape and a different number. It no longer has to, except in the middle.
+
+    A disclosure-only change — REMOVED 0, and REACH measured — SHIPS WITHOUT ASKING when it costs
+    under ~1.5% of analysed units AND names the silence it closes. It is DECLINED WITHOUT ASKING
+    above ~2.6%. It comes to Tom when it is in between, when the benefit is unclear, or when the
+    INSTRUMENT producing the number is new.
+
+**The bands are read off what he has already decided**, not invented: R452 SHIPPED at 1.44% (11,224
+rows newly carrying `Unknown`, of 676,572 analysed units); the ⟨0.39⟩ in-crate hedge was DECLINED at
+2.60% (18,034 of 694,497 functions); R190(c) was DECLINED at 7.02%. R452's own row already argued this
+way — *"1.44% … against the 4.88–7.02% R190(c) priced and DECLINED — which is the comparison that
+makes the case"* — so this writes down a practice rather than starting one.
+
+**THE PERCENTAGE IS NOT THE DECISION, AND THREE DATA POINTS ARE NOT A FORMULA.** Four things were
+stated as part of the ruling and are the reason it is not arithmetic:
+
+- **The denominators are not comparable.** 1.44% of rust's 676,572 units and 0.87% of java's 48,116
+  functions are 9,742 and 419 functions. A small-denominator engine swings on a handful of rows. Quote
+  the ABSOLUTE count beside the percentage, always.
+- **The rule prices the COST and ignores the BENEFIT, so the benefit must be stated separately.** 2% to
+  close a cardinal sin that ships a false `deny Net` pass is worth more than 0.5% to close a cosmetic
+  gap. "Names the silence it closes" is the load-bearing clause, not the number.
+- **The user-visible cost is GATE FLIPS, not `Unknown` counts.** The percentage is a proxy. If a change
+  flips gates on real code, say how many and on what — that outranks the proxy.
+- **A NEW INSTRUMENT ESCALATES REGARDLESS.** Both of this session's own errors were instrument errors:
+  a hollow corpus that prints 0/0/0 exactly like a safe change, and a check that was vacuous because a
+  heredoc ate a backslash. A threshold creates pressure to measure in whatever way lands under it, and
+  this family's instruments have repeatedly been wrong in the flattering direction.
+
+Had this existed this morning, R533 would have asked about ONE engine instead of four: java 0.87%,
+swift 0 and ts 0 are all below the lower band; only rust's measured 1.71% is in it.
+
 ## The standing checks
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway

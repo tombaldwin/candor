@@ -54,8 +54,24 @@ for c in candor-report candor-classify candor-query candor-scan; do
     # `release-verify 0.38 0.99.0` would pass, because the crates match the pin and the pin was allowed
     # to override whatever was asked for. The pin explains a crate sitting above the family line; it is
     # not a licence to ignore the version under test. Measured before the guard: 0.99.0 passed.
-    fam="$(sed -n 's/^ENGINE_PIN="\([0-9.]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$HERE_V/candor" 2>/dev/null | head -1)"
-    rp="$(sed -n 's/^ENGINE_PIN_RUST="\([0-9.]*\)"[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$HERE_V/candor" 2>/dev/null | head -1)"
+    # SOUNDNESS R408 — ASK `pin_version`, NOT `head -1`. These two read the pins that decide whether a
+    # crate sitting ABOVE the family line is excused, so picking the wrong line here excuses the wrong
+    # version. `head -1` answers by line ORDER: it cannot tell one pin from two, and `ENGINE_PIN_RUST`
+    # already appears on TWO lines of `bin/candor` (the literal at :67 and the env-override fold at
+    # :79). Today only one of them can match a numeric pattern, so `head -1` is right BY LUCK — which
+    # is the state R408 was filed about, not a state to leave alone.
+    #
+    # `pin_version` is in `_release_set.sh`, which this script already sources, and it REFUSES (rc 2)
+    # when one key matches differing versions rather than guessing — distinct from ABSENT (rc 1), which
+    # stays silent exactly as `head -1` did. The patterns keep their `^` anchor, so this is strictly the
+    # old behaviour plus a refusal: a commented-out pin still cannot be read as the pin.
+    fam=""; rp=""
+    _pv="$(pin_version "$HERE_V/candor" '^ENGINE_PIN="[0-9]+\.[0-9]+\.[0-9]+"')"; _rc=$?
+    [ "$_rc" = 0 ] && fam="$_pv"
+    [ "$_rc" = 2 ] && { echo "release-verify: bin/candor names more than one ENGINE_PIN — see above." >&2; exit 2; }
+    _pv="$(pin_version "$HERE_V/candor" '^ENGINE_PIN_RUST="[0-9]+\.[0-9]+\.[0-9]+"')"; _rc=$?
+    [ "$_rc" = 0 ] && rp="$_pv"
+    [ "$_rc" = 2 ] && { echo "release-verify: bin/candor names more than one ENGINE_PIN_RUST — see above." >&2; exit 2; }
     if [ -n "$rp" ] && [ -n "$fam" ] && [ "$VER" = "$fam" ]; then
       want="$rp"; why=" (pinned separately from the family line $VER)"
     fi

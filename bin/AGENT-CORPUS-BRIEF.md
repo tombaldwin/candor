@@ -152,6 +152,26 @@ This machine (`anya.local`, 12 cores) is dedicated to this work. Long runs are c
 anything that shares a cache — the cargo registry, `.candor/` — because concurrent agents on one box do
 contend, and one round had to pin to pre-drift crate versions after another agent's fetch moved them.
 
+**A GATE THAT DIES WITH SIGKILL IS THE BOX, NOT THE DIFF — AND IT IS NOT A REASON TO STOP BELIEVING
+LOCAL GATES.** SOUNDNESS R225: for days, 16 of candor-rust's auto-run gates died with
+`signal: 9 (SIGKILL)`, every one traced to `~/.dylint_drivers/…/dylint-driver`. Three agents established
+it was identical at merge-base — not the diff — and the cause was never found. Re-measured 2026-09-24 on
+a quiet box with 40 GiB free it **does not reproduce**: `cargo test --workspace` is exit 0, 902 tests,
+0 kills, with 57 dylint ui fixtures demonstrably executing through the driver, and 31 of 31 runnable
+gates OK.
+
+The likely mechanism, inferred and not confirmed: ambient memory/swap pressure from CONCURRENT AGENTS,
+i.e. jetsam. It fits the one measurement that otherwise makes no sense — `--test-threads=1` and
+`CARGO_BUILD_JOBS=2` changed nothing, because the pressure was not coming from that invocation. Note
+that R225 measured "52% memory free" and ruled memory out; swap on that box totals 2 GB, and a
+four-agent rust wave exhausts it. Same family as the full-disk rule in `CLAUDE.md`: **the environment
+fakes a FAIL and says nothing.**
+
+So: if a gate dies by signal rather than failing an assertion, **check disk and swap headroom before
+anything else**, and say in your report which it was. Do not carry forward the old advice that local
+gate results on a Mac are not evidence about a diff — that instruction is withdrawn, and believing it
+costs you the fastest check you have.
+
 ## 12. A cited BACKLOG or SOUNDNESS entry is a snapshot, not a fact — verify it against HEAD
 
 If your brief quotes a backlog entry, a SOUNDNESS row, or a "known" limitation, **check it still holds at

@@ -25,11 +25,26 @@
 #     bash integrations/vscode/test-vscode.sh               — needs npm
 #     python -m pip install --quiet jsonschema              — provisioning; CI-only
 #
-# So: this script is sufficient for a change to docs, briefs, workflows, or the shell tooling in
-# `bin/`. It is NOT sufficient for a change to the plugin, the VS Code extension, the release ladder,
-# or anything an engine builds — and it is NEVER a substitute for `bin/gate-run.sh candor` before a
-# release. Run that. The whole point of naming the five above is that a reader can see what they are
-# trading away instead of discovering it after a push.
+# SO — AND THE FIRST VERSION OF THIS PARAGRAPH WAS WRONG, corrected 2026-09-24 the same day it was
+# written. It said this script was "sufficient for a change to docs, briefs, workflows, or the shell
+# tooling in `bin/`". It is NOT sufficient for a `bin/**` change, and that is the very case it was
+# written for. THREE umbrella workflows filter on `bin/**` — `integrations.yml`, `release-scripts.yml`
+# and `shell-lint.yml` — and all three ran, green, on the markdown commit that prompted this file
+# (`3ec56b3`, 13:06). One of them runs `bash bin/release-test.sh`, the 18-build engine gate this tier
+# deliberately omits. So for a `bin/**` edit, CI runs strictly MORE than this does.
+#
+# THE ERROR IS THE ONE THIS REPO DOCUMENTS MOST OFTEN: a comment asserting safety, written in the same
+# commit as the code, that nobody verifies because it is what makes the diff look correct. I then
+# repeated the claim ("CI would have run nothing for that edit") twice before measuring it — the
+# measurement took one `gh run list` per workflow.
+#
+# WHAT IS ACTUALLY TRUE: this tier is sufficient for a change to documentation and briefs — files no
+# workflow's `paths:` selects. For `bin/**`, treat it as a fast FIRST pass and let CI be the gate, or
+# run `bin/gate-run.sh candor`. It is NOT sufficient for the plugin, the VS Code extension, the
+# release ladder, or anything an engine builds, and it is NEVER a substitute for `gate-run.sh` before
+# a release. Naming the five omissions above is so a reader sees the trade rather than discovering it
+# after a push — which is exactly what failed here, because the omission was named and the SCOPE
+# sentence beside it was not true.
 #
 # NOTE ON `python` vs `python3`: two of CI's steps invoke bare `python`, which is not installed on a
 # stock macOS, so `gate-run.sh` reports them SKIP locally and the syntax of two shipped scripts goes
@@ -65,6 +80,7 @@ run() {
 }
 
 echo "fast-gates — no engine build, no IDE, no npm. NOT a substitute for gate-run.sh before a release."
+echo "  For a bin/** change CI runs MORE than this (release-scripts.yml runs release-test.sh)."
 run "ast: candor-sarif"     python3 -c "import ast; ast.parse(open('integrations/github/candor-sarif').read())"
 run "ast: candor-init"      python3 -c "import ast; ast.parse(open('adopt/candor-init').read())"
 run "test-stop-hook"        bash integrations/claude-code/test-stop-hook.sh

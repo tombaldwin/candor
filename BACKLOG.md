@@ -96,7 +96,7 @@ this class: it reads its own source, asserts the copy count of a literal is ONE,
 is actually CONSULTED ≥3 times, and carries a vacuity floor. It exists in java only — the engine with the
 fewest rows per KLOC. Target the three ungated duplications first (§2 of the audit).
 
-**PORTED — rust `6cdad95`, ts `6daa46f`, swift `8c4354c` — AND THE ASSERTION HAD TO CHANGE.** java asserts
+**PORTED — rust `6307d45`, ts `6daa46f`, swift `7d37a82` — AND THE ASSERTION HAD TO CHANGE.** java asserts
 the reserved segments are listed exactly ONCE. **Porting that verbatim would have demanded a
 file-deletion bug in two of the three engines.** rust's sweep and swift's armer are DELIBERATE SUBSETS on
 DESTRUCTIVE paths, where a miss is cheap and an over-reach destroys `<stem>.gate.json` (a verdict sink) or
@@ -128,7 +128,7 @@ split is what matters:
 - **4 DOCS-ONLY** — pure `CHANGELOG:` commits whose tests landed in an EARLIER commit. Real imprecision:
   failing them asks this range for a test belonging to another, and the remedy a developer reaches for is
   to WEAKEN the assertion language in a changelog, which is backwards. Now a SELF-SKIP (exit 3 — visibly
-  unjudged, never a pass), candor `a788914`. The CHANGELOG+source shape is untouched and still FAILS.
+  unjudged, never a pass), candor `e80d8a0`. The CHANGELOG+source shape is untouched and still FAILS.
 - **9 SOURCE-TOUCHING** — the tool working, and the strongest argument for it. Four are the masking-guard
   commits **R379, R383, R386**, whose comments carried *"under-catching is a missed mask, never a broken
   gate"* — the sentence **R399 later proved FALSE** and which was struck 2026-09-12. This gate flagged
@@ -179,7 +179,7 @@ local replay, so a standalone clone step would put a network fetch in every loca
   (the standing oracle-recall rule): a determined-path control through the SAME verb publishes both
   literals with `incomplete: None`, and a pure function is absent from the Fs surface entirely. The
   instrument can show both states, so the negative is real.
-  **STILL OPEN on swift:** the `Files` package (`File`/`Folder`/`Storage`), which candor-swift `ab2c260`
+  **STILL OPEN on swift:** the `Files` package (`File`/`Folder`/`Storage`), which candor-swift `a06e8f9`
   reported-and-did-not-fix on purpose — no swift corpus here carries that dependency, so a fix would
   ship unpriced. That is a corpus problem before it is a code problem.
 
@@ -227,7 +227,7 @@ local replay, so a standalone clone step would put a network fetch in every loca
 - **`RS_FAMILY`** should be the only family list in `bin/` bar the two preflight [8] deliberately
   cross-checks. `ci-watch.sh:46` restates it in a DIFFERENT ORDER, and push order is load-bearing.
 
-### 6. ~~Four green-on-failure swift tests — 4 lines~~ **DONE 2026-09-13 (candor-swift `ab2c260`) — the ~14 legitimate skip sites were enumerated first and left untouched.**
+### 6. ~~Four green-on-failure swift tests — 4 lines~~ **DONE 2026-09-13 (candor-swift `a06e8f9`) — the ~14 legitimate skip sites were enumerated first and left untouched.**
 `PathProcessTests.swift:30` and `TourProcessTests.swift:34` do `XCTSkipUnless(r.code == 0)` inside the
 shared `scanned()` helper, turning **14 process tests into skips** if the scan crashes;
 `UnreadExclusionAdvisorySiblingTests.swift:73` and `UnreadExclusionRouteEqualityProcessTests.swift:92`
@@ -259,8 +259,8 @@ lose.
   the 0.36.1 jar). It was recorded only as a code comment saying "no worse"; a live AS-EFF-008 evasion in
   append-mode file writing belongs in the register, which is where it now is.
 
-**CLOSED 2026-09-13** — R418 + R424 + R425 (candor-swift `0c8d912`), R419 + R426 (`2a14ce9`), R420
-(`ca4fce1`), R421 (candor-java `5a320e7`), R427 (candor `5e6ae08`). Family CI green.
+**CLOSED 2026-09-13** — R418 + R424 + R425 (candor-swift `ef7d0f9`), R419 + R426 (`c3bc15f`), R420
+(`c3c48b1`), R421 (candor-java `7c6e204`), R427 (candor `09e854e`). Family CI green.
 
 Each fix was priced against real code rather than argued about, and the prices are the useful part:
 
@@ -390,8 +390,8 @@ true owner, and both candidate fixes REMOVE an `Unknown`), then [[R498]]/[[R520]
 all live and verified.** 0.38.2 published the candor-rust RELEASE BINARIES (so no engine needs a compiler
 any more — `candor update` is 5.6s) and CLEARED `ENGINE_PIN_RUST`; all four per-engine pins are now empty.
 **R439 is CLOSED in it** (candor-ts `60c578f`). The rung's own gap is CLOSED. PART 89
-is green on all nine arms in both engines and its xfail list is EMPTY: R438 (rust `7bea441`) and R429
-(swift `2a3d577`) both fixed, R287 closed with them. Four-way conformance OK, probe-check 10/10,
+is green on all nine arms in both engines and its xfail list is EMPTY: R438 (rust `7ffba33`) and R429
+(swift `dac7a01`) both fixed, R287 closed with them. Four-way conformance OK, probe-check 10/10,
 must-ledger 550/550, gates 29/29 rust and 11/11 swift. **SPEC.md describes ⟨0.38⟩ while declaring floor
 0.37, so `release-preflight [12]` will HOLD a cut until `spec-bump.sh 0.38` runs — that is the guard
 working, not a defect.** The ladder from there is in [[candor-pre-publish-checklist]]; publishing needs
@@ -472,7 +472,7 @@ exactly where all seven rows fail. **It is NOT sound as an exemption on its own*
 v: H) -> H` returns the charged type and really does drop one), so it must be priced in its own right
 rather than bolted onto this. That is the next experiment if anyone wants one.
 
-**KEPT, NOT REVERTED: candor-rust `499a807` ships it default-OFF behind `CANDOR_CHARGE_AT_CTOR`** with a
+**KEPT, NOT REVERTED: candor-rust `91e227c` ships it default-OFF behind `CANDOR_CHARGE_AT_CTOR`** with a
 loud stderr banner, the full measurement in `charge_at_construction`'s doc comment, and two test arms —
 the second **asserts the fabrication on purpose**, so a future edit that closes the rows without it fails
 loudly instead of passing unnoticed. The reason to keep dead code here is narrow and specific: the next
@@ -612,11 +612,11 @@ query layer; candor-java's bytecode + bounded-CHA design, whose row density is t
 
 **~~A. rust wrapper-peel gaps~~ — DONE 2026-09-14, both rows half-closed, and the residuals are SCOPED
 rather than vague.**
-  - **R400** — the FABRICATION half is closed (candor-rust `d98fa60`): a body that constructs a `Vec` and
+  - **R400** — the FABRICATION half is closed (candor-rust `6b7acba`): a body that constructs a `Vec` and
     nothing else was reporting `['Exec']`. The UNDER-REPORT half stays open ON PURPOSE — the grandparent's
     binding is not recoverable at that site (`out` holds one scope, not a stack), so depth ≥ 2 keeps its
     literal and still reads silent-pure. Priced 0/0/0 over 400 crates with reach PROVEN at 74 hits.
-  - **R401** — `Pin` and `ManuallyDrop` closed (candor-rust `8ef8be8`); `Weak` and a `HashMap` VALUE stay
+  - **R401** — `Pin` and `ManuallyDrop` closed (candor-rust `efb8edb`); `Weak` and a `HashMap` VALUE stay
     open. Priced ADDED 3 / REMOVED 0 / CHANGED 25, all disclosure-direction.
     **THE LEAD FOR FINISHING IT IS THE PART WORTH KEEPING:** I wrote the element-route half and REVERTED
     it, measured INERT. A MINIMAL crate whose only function is `f[0].go()` over `&Vec<Box<dyn Doer>>` does
@@ -851,7 +851,7 @@ still double-cd's`. Coarse neutralisation shows where the suite has teeth: killi
 
 ### 6. NEEDS TOM — these block or cannot be done from here.
 - ~~**The union-vs-hedge ruling**~~ **CLOSED. RULED UNION by Tom 2026-09-12; CARRIED OUT 2026-09-13/14
-  as ⟨0.38⟩ + PART 89** (candor-rust `e56fbca`, candor-swift `cae604a`, spec clause + part + ledger).
+  as ⟨0.38⟩ + PART 89** (candor-rust `7d6bdc6`, candor-swift `03009d3`, spec clause + part + ledger).
   The owed fixture — *"whether a union surface can CERTIFY where a hedge failed closed"* — is built, and
   it ANSWERED THE OPPOSITE WAY ROUND: the union fails closed; it is the HEDGE that exits 0 under
   `allow Fs`, by renaming the effect to `Unknown`, which a bare `allow` does not constrain.
@@ -906,7 +906,7 @@ version) · R54/R55 (§B1 below covers the one open question R55 leaves) · netP
 (already superseded in-doc, verified via PART 57) · **two found stale while sweeping, not on the
 filing list**: the ambiguous-edge false-green pair (a genuine fail-open, PART 63 now green four-way)
 and the policy-scope exact-segment matcher (PART 64, four-way fix same commit). candor-swift's PART 69
-tree-D claim also checked: `conformance/part.sh 69` is clean four-way, confirming candor-spec `f9ec992`
+tree-D claim also checked: `conformance/part.sh 69` is clean four-way, confirming candor-spec `7aaffa9`
 already closed it — nothing to file.
 
 **1. Fail-open / cannot-fail / passes-by-not-looking (highest):**
@@ -929,7 +929,7 @@ already closed it — nothing to file.
   7. `[NEW, B1 below]` `[DECISION]` receipt's TSV caveat shape — needs the SPEC-vs-engine-local ruling
      recorded (or SPEC §3.1 confirmed to already cover the principle).
   8. `[P1]` THE SARIF FALLBACK PIN STILL SERVES THE REPORTER SPEC §2 NAMES (2026-08-25, still open,
-     confirmed still pinned at `6e61e0a` — pre-dates both ⟨0.32⟩ identity fixes).
+     confirmed still pinned at `2e8dbc7` — pre-dates both ⟨0.32⟩ identity fixes).
   9. `[NEW, B6 below]` `fix` diverges across engines on disclosure shape — not a soundness bug, but the
      reference engine is the odd one out.
   10. `[NEW, B3 below]` opt-in `min-report-spec` — a ⟨0.34⟩ config rung, not yet implemented.
@@ -940,7 +940,7 @@ already closed it — nothing to file.
   12. `[P2]` `cargo candor explain <fn>` IGNORES ITS ARGUMENT (still open, field-reported).
   13. `[NEW, B7 below]` four conformance-row candidates from the 2026-08-26 fix wave were deferred —
       specification and fixture detail on file so the next pass starts ahead, not re-discovered.
-      **UPDATE 2026-08-27: three landed (PART 74/75/76, candor-spec `ede38f2`, `conformance: OK`); the
+      **UPDATE 2026-08-27: three landed (PART 74/75/76, candor-spec `54096d9`, `conformance: OK`); the
       ts/LSP advisory-prose row is still open and its underlying defect has since been fixed in
       candor-ts `73100d9` — read that commit before building it, detail in B7's own section.**
 
@@ -1288,8 +1288,8 @@ repo whose own workflow declares a matching `branches:`/`paths:` filter.
 Reproduced end-to-end before touching anything: a throwaway repo (a `branches: [main]`, `paths: ['**']`
 workflow) checked out `--detach`, plus a PATH-stubbed `gh` correctly emulating a real "no runs yet"
 `-q`-filtered empty response. Pre-fix: `ci-watch: OK`, exit 0, zero rows named. This is the THIRD false
-green this script has produced — after the argument-parsing bug (`b8c53a6`, 2026-08-28) and the
-unchecked `gh` calls (`98fe7df`, 2026-08-28) — each a *different* external subprocess, which is why the
+green this script has produced — after the argument-parsing bug (`21791fb`, 2026-08-28) and the
+unchecked `gh` calls (`9e0ca3b`, 2026-08-28) — each a *different* external subprocess, which is why the
 fix here also re-audits every subprocess the script invokes rather than re-patching just this one call
 site (see "audit boundary" note below).
 
@@ -1319,7 +1319,7 @@ that crashes (asserts the crash is surfaced, never swallowed).
 **FULL SUBPROCESS AUDIT of `ci-watch.sh`** (the "audit boundary must not be drawn around its own
 trigger" rule — this is not scoped to just the `wf-expected.py` call handed over):
 - `gh` (3 call sites, `run list --commit`/`--workflow`/`--branch main`) — already wrapped in `gh_call()`
-  since `98fe7df`; exit code and real stderr both checked at every site. SAFE.
+  since `9e0ca3b`; exit code and real stderr both checked at every site. SAFE.
 - `python3 wf-expected.py` — THIS finding; now wrapped in `resolve_required()`, exit + stderr checked,
   branch resolved locally rather than left to the callee's internal fallback. FIXED.
 - `git rev-parse HEAD` (the sha used for `--commit`) — **CLOSED 2026-08-29, see the dedicated section
@@ -1356,13 +1356,13 @@ a pass. **This is the "different mechanism, same property" shape the corpus brie
 — confirmed by testing the actual failure shape, not by reading the comment and trusting it.**
 on 2026-08-26. Two landed same-day in candor-spec `conformance/run.sh` — PART 72 (route equality,
 four-way, mutant-falsified) and PART 73 (candor-swift's `#if`-shadow, falsified against the real
-pre-fix binary `bcb4bc8`). The other four were judged not landable to the same evidentiary bar in one
+pre-fix binary `1c90a2f`). The other four were judged not landable to the same evidentiary bar in one
 pass and deferred here. **A follow-on pass on 2026-08-27 landed three of the remaining four — PART 74
 (rust), PART 75 (swift), PART 76 (ts), all falsified against their real pre-fix binaries with
 over-charge controls, `conformance: OK` — leaving only the ts/LSP advisory-prose row open.** Detail on
 each, kept for the commit SHAs and cross-engine notes even where closed:
 
-- **ts, "a covered package's unanswerable key still speaks." CLOSED — PART 76 (candor-spec `ede38f2`).**
+- **ts, "a covered package's unanswerable key still speaks." CLOSED — PART 76 (candor-spec `54096d9`).**
   Fixed in candor-ts `5b9cfd5` (own `.d.ts` silently shadowing a cross-file call into the compiled
   `.js`, dropping the effect entirely — measured live on `got@15.1.0`: `deny Rand` exits 1 on git-tag
   source, exits 0 on the identical compiled dist). Pre-fix parent `965a521`. The row uses a
@@ -1379,13 +1379,13 @@ each, kept for the commit SHAs and cross-engine notes even where closed:
   (`.swiftinterface`) describes a binary-framework boundary rather than a same-package source pairing.
   None of the three is audited beyond that reasoning — still open if a corpus round wants to press it.
 
-- **rust, "construction-site charging." CLOSED — PART 74 (candor-spec `ede38f2`).** Fixed in `e6ac9ee`
+- **rust, "construction-site charging." CLOSED — PART 74 (candor-spec `54096d9`).** Fixed in `0831d19`
   (`WalkDir::new(p)` charged at construction because `IntoIter::next` is receiver-typing-blocked) and
-  swept in `19ce144` (`ignore::Walk::new`, the one other same-shape victim found; the other 9 fixes in
+  swept in `32cac3b` (`ignore::Walk::new`, the one other same-shape victim found; the other 9 fixes in
   that sweep are a different bug — missing verb spellings, not the construction/iteration split).
-  Pre-fix parent for the primary fix: `8734b87`. The row drives three independently-idiomatic silent
+  Pre-fix parent for the primary fix: `fdd394f`. The row drives three independently-idiomatic silent
   forms (`for entry in WalkDir::new(".")`, `.into_iter().count()`, an untyped `.next()` loop) — all
-  three read `absent` from `functions` on `8734b87` and `["Fs"]` at HEAD — plus three over-charge
+  three read `absent` from `functions` on `fdd394f` and `["Fs"]` at HEAD — plus three over-charge
   controls that sit unmoved on both binaries: the narrower explicit-type-annotation shape the old rule
   already caught, the sibling `ignore` crate's already-modeled construction charge, and a plain
   `std::vec::Vec::into_iter()` chain (the entire reason the receiver-typing blocklist exists). Checked
@@ -1397,16 +1397,16 @@ each, kept for the commit SHAs and cross-engine notes even where closed:
   equivalent third-party SPM package shape exists is still UNAUDITED.
 
 - **swift, "an overloaded protocol-extension provided member must resolve or union — never vanish."
-  CLOSED — PART 75 (candor-spec `ede38f2`).** Fixed in `bcb4bc8` (parent `a9ab1a6`): a concrete-receiver
+  CLOSED — PART 75 (candor-spec `54096d9`).** Fixed in `1c90a2f` (parent `30d6319`): a concrete-receiver
   dispatch to a protocol extension's default member skipped the `overloadedBases` check its sibling
   dispatch arms already had, silently dropping the effect. Part of the dispatch-arc/provided-method
   vein (SOUNDNESS-VEIN docs, R32–R44 range) but not itself numbered in a commit message. The row's four
   cells: a protocol with two overloads (one pure, one `Exec`) called through a concrete conforming type
-  resolves onto the real member (`absent` on `a9ab1a6` → `["Exec"]` at HEAD); a genuinely ambiguous
+  resolves onto the real member (`absent` on `30d6319` → `["Exec"]` at HEAD); a genuinely ambiguous
   same-arity pair (`Exec` + `Env`, label-only distinguished — this engine does not model argument
   labels) unions rather than drops (`absent` → `["Env", "Exec"]`); two over-charge controls (a genuine
   local override; the non-overloaded case) sit unmoved at their pre-fix values on both binaries. This
-  is the item PART 73 was built from instead in the prior pass, for the SIBLING swift fix (`098a035`,
+  is the item PART 73 was built from instead in the prior pass, for the SIBLING swift fix (`345ac15`,
   conditional-compilation shadow) — both are from the same 2026-08-27 fix wave but are different code
   paths; PART 73's cross-engine question about candor-rust's `#[cfg(...)]` analogue is unrelated to this
   item's own cross-engine question, which is still open: an analogous
@@ -1645,7 +1645,7 @@ does not make anyone adopt it.
 
 **What moved.**
 
-- **candor-java `native.yml`** (`ebe40af`) — was `release: published` + dispatch, now also `push:
+- **candor-java `native.yml`** (`e6b52c4`) — was `release: published` + dispatch, now also `push:
   branches: [main]` and `pull_request`. The build and the whole-envelope parity check run on every
   trigger; the **upload is now the only release-only step in the file**, because it is the only one
   that cannot happen before there is a release to upload to. Measured cost on `main`: **2m21s
@@ -1653,7 +1653,7 @@ does not make anyone adopt it.
   dispatch-only positioning and **no `paths:` filter**, that last one deliberately: the ⟨0.32⟩ defect
   was a MISSING RESOURCE FILE, and a path filter that failed to name
   `src/main/resources/META-INF/native-image/**` would skip exactly the gate that catches it.
-- **candor-swift `ci.yml`** (`8c62b5a`) — found while taking the inventory, and the same defect shape.
+- **candor-swift `ci.yml`** (`0c9bdb8`) — found while taking the inventory, and the same defect shape.
   Every `swift build` in the repo was a **debug** build; nothing compiled `-c release` until
   `release.yml` did, on a pushed `v*` tag. So `candor-swift-macos-arm64` — the artifact a user
   downloads, the only install route not needing a Swift toolchain — was **first compiled after the
@@ -1664,13 +1664,13 @@ does not make anyone adopt it.
   hang-detector budget.
 
 **FALSIFIED, so the moved gate is known to bite.** PR #2 on candor-java reverted both halves of
-`e3e0097` — deleted `reflect-config.json` and removed `outputFields()`'s empty-set refusal — which is
+`5895261` — deleted `reflect-config.json` and removed `outputFields()`'s empty-set refusal — which is
 exactly the v0.32.0 state: the native binary exits 0 with an empty report and nothing on stderr. The
 `native` workflow ran **on the `pull_request` event** and went red on **both** legs at the parity
 step: `PARITY FAILED: native report differs from jar on ['analyzed', 'coverage', 'functions']`,
 `functions: jar 542 vs native 0`. `Build native image` SUCCEEDED, so the parity comparison is what
 caught it, not a crash; `Stage binary`, `Smoke-test` and both uploads were skipped. Green control on
-`main` at `ebe40af`: `parity OK: native report == jar, whole envelope (542 functions, 1329 analyzed)`
+`main` at `e6b52c4`: `parity OK: native report == jar, whole envelope (542 functions, 1329 analyzed)`
 — clearing the non-vacuousness floor (100 functions / 500 analyzed) by a wide margin. PR closed
 unmerged.
 
@@ -1889,7 +1889,7 @@ failure the script exists for.
 ### THE PLATFORM QUESTION, ANSWERED RATHER THAN INHERITED
 
 The brief said `candor.test.sh` is the only platform-sensitive step of `integrations.yml`'s nine, and
-asked whether that is still true. **It was true this morning and is not true now** — `0382c91` fixed it
+asked whether that is still true. **It was true this morning and is not true now** — `2e028d2` fixed it
 hours earlier. At HEAD all nine agree across darwin/arm64 and linux/amd64.
 
 **The check that proves the docker arm has teeth is the PARENT commit, and it matches real CI exactly:**
@@ -1916,7 +1916,7 @@ that reproduction; a faithless one manufactures work.
 Green control at each: 13 steps of the 3 triggered workflows in 88s; `--all` adds vscode (5s, npm from
 cache + network) and jetbrains (73s, IntelliJ SDK already cached on this box). **No workflow's check
 turned out to be locally irreproducible** — the two that looked likeliest to be, `vscode` and
-`jetbrains`, both run. And the push at `810c31d` came back green on all three by SHA, event and branch.
+`jetbrains`, both run. And the push at `ffe99fb` came back green on all three by SHA, event and branch.
 
 **One deliberate divergence, now printed on every run:** GitHub stops a job at its first failed step; this
 runs every step of the job. The jetbrains mutation showed why that matters — the build failed and the
@@ -2025,8 +2025,8 @@ URL change already made there.
 curl -fsSL https://raw.githubusercontent.com/tombaldwin/candor/2e8dbc7fb638eb3f94a0264b0ce50081b37d1b38/integrations/github/candor-sarif
 ```
 
-**That SHA is `6e61e0a`, 2026-07-09.** It predates BOTH ⟨0.32⟩ identity fixes — the one that stopped the
-reporter fingerprinting on the bare NAME (`b91e297`, 2026-08-24) and the one that stopped it
+**That SHA is `2e8dbc7`, 2026-07-09.** It predates BOTH ⟨0.32⟩ identity fixes — the one that stopped the
+reporter fingerprinting on the bare NAME (`c90c54d`, 2026-08-24) and the one that stopped it
 fingerprinting on ts's non-unique `hash` (2026-08-25). An adopter on the fallback path is running the
 exact reporter SPEC §2 ⟨0.32⟩ names as the consumer that "silently hides one finding behind another",
 downstream of a red gate where the reviewer never learns the second finding exists.
@@ -2197,8 +2197,8 @@ nothing. All of them looked like clean answers.
 ## ~~`[P1]` A POLICY SCOPE HAS NO WAY TO SAY "EXACTLY THIS SEGMENT"~~ **CLOSED 2026-08-26 — found stale, not in tonight's filing list**
 
 **FIXED four-way, same commit message across all four repos**: a trailing `::` now anchors a scope to
-an exact segment while a bare scope still matches by prefix — rust `a7f0113`, java `a2a5292`, ts
-`a2a5292`, swift `645d457`. **Pinned by conformance PART 64** (SPEC §6.2): asserts on rust (the only
+an exact segment while a bare scope still matches by prefix — rust `9ba8c65`, java `294b3e3`, ts
+`294b3e3`, swift `c7818bf`. **Pinned by conformance PART 64** (SPEC §6.2): asserts on rust (the only
 engine that can read the Rust fixture) with the control row (`dep::`, an exact scope that DOES exist,
 must still fire) proving the fix did not become "refuse every `::` scope"; the other three carry the
 identical matcher fixed in the identical commit and are recorded as unexercised-by-this-row rather than
@@ -2436,8 +2436,8 @@ way to hold it. A cfg-aware mode or a documented line would save the next person
 `java a=2 b-alone=0 a+b=2 amb=1/1 OK`, `ts a=2 b-alone=0 a+b=2 amb=1/1 OK`, `swift … OK`, matching
 rust's `amb-ctrl=1 amb-both=1 OK (an ambiguous callee contributes Unknown[dispatch], it does not
 vanish)` — all four now MATCH, where java/ts previously answered `a+b=0` (the false green: a sibling
-report turning a red verdict green). Commits: candor-rust `bc270ee` (the entry-contribution rule this
-section specifies); candor-java `199db54` + `a967893` (key→name map, then the hash-keyed merge);
+report turning a red verdict green). Commits: candor-rust `04368d7` (the entry-contribution rule this
+section specifies); candor-java `51d7a2e` + `b502110` (key→name map, then the hash-keyed merge);
 candor-ts `abd8c33` + `c3a4734` (same two-step recipe, unit identity then hash-keyed merge). This
 closes both this entry and the one below it (`THE FALSE GREEN IS LIVE IN java AND ts`). Neither was on
 tonight's filing list — found while building the priority order below and worth surfacing since it was
@@ -2549,7 +2549,7 @@ already closed when it was filed. Corrected 2026-08-28 by an agent told to attac
 
 Every literal statement above is TRUE and the conclusion drawn from them is FALSE. `main.swift:969-972`
 really does only touch the `note`, and no `platform-pruned` class really did exist. But a LATER, more
-general commit — **`ee49295` "B1 (swift): the scope, and the peek", 2026-08-16**, nine days after the
+general commit — **`b40a7ee` "B1 (swift): the scope, and the peek", 2026-08-16**, nine days after the
 cited code and **six days BEFORE the review that filed this** — added a before/after diff over
 `sourcePaths` around `--target` resolution that files EVERY removed file into `excludedFiles`,
 whatever the reason. Platform-pruned files were already being swept in, just labelled
@@ -2568,7 +2568,7 @@ delivering the property. This is the audit-boundary rule one level in: the bound
 NAME rather than a BEHAVIOUR. Ask what the report must CONTAIN, then find every route that puts it
 there.
 
-**What was genuinely wrong (smaller, real, fixed at candor-swift `328a67f`):** the shared class label.
+**What was genuinely wrong (smaller, real, fixed at candor-swift `3147e6f`):** the shared class label.
 `outside-the-target-closure`'s reason string ("production sources... an unscoped scan WOULD have
 judged") is only half-true of code dead on this platform in EVERY target's build, and SPEC §2 requires
 a class `reason` to say why the class exists in the engine's own terms. Split into its own
@@ -3569,7 +3569,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
 >   · `[P2]` ledger-mined classifier breadth — **CLOSED 2026-08-03**, all four batches (see body below).
 >   · `[P2]` `release.sh` should RENAME `## Unreleased` — **CLOSED**; `release-preflight.sh` [9] gates it
 >     and `_stage_changelogs.py` performs the rename. The entry read "verified — no such handling exists".
->   · `[P1]` the umbrella's per-verb capability table — **the actionable half SHIPPED 2026-08-04** (`431b82d`):
+>   · `[P1]` the umbrella's per-verb capability table — **the actionable half SHIPPED 2026-08-04** (`b4c256b`):
 >     the table, the refusal naming the engines that do implement a verb, and capability-aware `--help`.
 >     What is left is the optional-in-spec-vocabulary design question the entry itself gates on a customer.
 >   · `[P2]` privacy `Health`/`Motion` — **SHIPPED 2026-08-04 as `privacy/2`**, with read/write direction.
@@ -3591,7 +3591,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
 >     fixture), because the engine is `.mjs` and that needs `--allow-js` — 38 functions, none of them
 >     the engine, and a verdict that reads like an answer. The same shape as the axios finding closed
 >     the same day, wearing our own name.
->     **candor-swift: CORRECTED and also closed** (`af7de30`). My first reading — "no `.candor/policy`
+>     **candor-swift: CORRECTED and also closed** (`0c2444f`). My first reading — "no `.candor/policy`
 >     either, same gap" — was wrong: candor-swift already self-gated, two halves, the same split java uses.
 >     What it lacked was a DECLARED policy; the rule lived in a `printf` inside `ci.yml`, so
 >     `candor-swift .` in a checkout applied nothing and the boundary existed only in a step nobody
@@ -3601,7 +3601,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
 >     **All four engines now declare a tracked boundary.**
 >
 >     · ~~`[P3]` the remaining coarseness, swift only — half (1) excludes *all of* `main.swift`~~ —
->       **CLOSED 2026-08-13** (`023d1f0`), candor-ts's shape ported. The whole engine is now scanned
+>       **CLOSED 2026-08-13** (`002d0d2`), candor-ts's shape ported. The whole engine is now scanned
 >       with no file excluded, under `deny Net Db`, plus an assertion that the Exec/Ipc units are
 >       exactly the four declared ones. **The policy string got weaker and the gate got stronger** —
 >       a policy is only as strong as the scope it is actually evaluated over. MEASURED rather than
@@ -3613,7 +3613,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
 >       expected, which is exactly why nobody looked at it again — and it was also the only file where
 >       a new one could hide.
 >
->     · **SWEPT ALL FOUR ENGINES 2026-08-14 — the vein was in java too** (`e860460`). Its half (1)
+>     · **SWEPT ALL FOUR ENGINES 2026-08-14 — the vein was in java too** (`96401ac`). Its half (1)
 >       deleted the whole `io/poly/candor/verify` PACKAGE before scanning, so every class in it sat
 >       outside the Exec gate while half (2) asked only about Net/Db/Ipc. Ported to the same shape:
 >       whole tool under `deny Net Db Ipc`, Exec declared as exactly `Candor.main` +
@@ -3662,7 +3662,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
 
   **PHASE A — close what is live and wrong. No further release until A1–A6.** All from the max review of
   this session's work; most are defects the session itself introduced.
-  **A1–A8 DONE 2026-08-15** (umbrella `b927a41`, `e9d53c0`, `479a7c7`; spec `27fb3f0`). **A9 DONE** (candor-ts `8a30946`).
+  **A1–A8 DONE 2026-08-15** (umbrella `f9744f8`, `d097437`, `4865ee5`; spec `de4619f`). **A9 DONE** (candor-ts `8a30946`).
   Two defects surfaced only by fixing the harness, both now closed: a dead mentions-scan in `spec-bump.sh`
   printed its green "no remaining mentions" ABOVE the probe's ✘ (probe runs first and returns now), and
   the extractor written to replace the run-to-EOF awk range reintroduced run-to-EOF in its own END block
@@ -3741,7 +3741,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
       flag LATCHES, so a shutdown hook covers all ~148 `System.out` sites, and guarding them
       individually is how 147 would have stayed unguarded. Exit 0 kept (`| head` must not be a failure).
       Verified to fire on a bulk report into a closing pipe and stay silent on the same scan to a file.
-  · ~~**B0c**~~ **MOSTLY DONE 2026-08-16** (umbrella `2a5fdd8`, candor-rust, candor-ts).
+  · ~~**B0c**~~ **MOSTLY DONE 2026-08-16** (umbrella `120c678`, candor-rust, candor-ts).
     · **The stager guarded FIVE of the SEVEN repos it edits** — candor-spec and the umbrella, the two a
       release author is most likely to have open, were the two uncovered. Widened; the fixture now
       carries candor-spec as a REAL repo (it was a loose directory, so the changelog helper's
@@ -3818,7 +3818,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
       obvious fixture — `Command::new("curl")` / `execSync("curl http://…")` / `Runtime.exec("curl …")` —
       is classified Net AS WELL AS Exec, so the `deny Net` row matches legitimately and reads as a broken
       bound. An argument-free `ls` isolates it. Four times now the fixture could not test what it claimed.
-    · **THE CLAUSE AND THE PART ARE IN** (candor-spec `c12c349`): SPEC §2 carries `excluded`/`outOfScope`
+    · **THE CLAUSE AND THE PART ARE IN** (candor-spec `725061a`): SPEC §2 carries `excluded`/`outOfScope`
       + the never-a-second-path rule, and **PART 48** pins all four. Its rows are the BOUNDS, not the
       finding — policy-scoped, policy-bounded, verdict-unmoved, and the `[]` CONTROL — because a part
       asserting only "the warning fires" passes against an engine that reports every file it ever skipped.
@@ -4157,7 +4157,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
   on whether task submission gets its own reason class or rides an existing one, which is Tom's call and
   changes what four engines emit.)
 
-- **[MOSTLY SHIPPED 2026-08-04 `431b82d`; the remainder is customer-gated design — umbrella/spec
+- **[MOSTLY SHIPPED 2026-08-04 `b4c256b`; the remainder is customer-gated design — umbrella/spec
   convention, filed 2026-08-03] The umbrella has no notion of WHICH VERBS AN ENGINE
   IMPLEMENTS, and engine-specific verbs are unreachable through it.**
 
@@ -4340,7 +4340,7 @@ finding, and this is the shape (`only`'s prefix matcher, ⟨0.29⟩) that has al
   staged result would catch that class. The argument for doing it: these scripts now stand between a defect
   and a publish, which is exactly where an untested script is worst.
 
-- **[CLOSED 2026-08-14 `a21967e` — and the filing named the wrong FILE] Local clippy is weaker than CI's, so "clippy clean" locally is not evidence.**
+- **[CLOSED 2026-08-14 `6810417` — and the filing named the wrong FILE] Local clippy is weaker than CI's, so "clippy clean" locally is not evidence.**
   `clippy 0.1.98` on this machine exits 0 on two adjacent `#[test]`; CI's stable toolchain errors
   (`duplicate-macro-attributes`). That cost a CI round-trip on 2026-08-03 — and the same commit had a
   stranded `#[test]` that SILENTLY DISABLED a liveness test, which local `cargo test` also could not see
@@ -4808,7 +4808,7 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   is published naming the current verb. See `candor/docs/case-study-privacy-manifest.md` (draft, unpublished).
 
 - **[CLOSED 2026-08-03 — all four batches; see the body for what the source refuted] Ledger-mined classifier breadth** (data from the 2026-07-14 four-ecosystem sweep):
-  **BATCH 1 DONE 2026-08-03 (candor-rust `c9b6941`): crossterm + ratatui, both `Ipc`.** And the filing was
+  **BATCH 1 DONE 2026-08-03 (candor-rust `032b86b`): crossterm + ratatui, both `Ipc`.** And the filing was
   WRONG about ratatui: it said "mark reviewed-pure", but ratatui-0.29.0's `Terminal::draw`/`flush`/`clear`
   end in a backend flush and `backend/` writes to the terminal — marking the crate pure would have claimed
   purity over the one API that writes. Verified against the crate source in the local cargo registry, not
@@ -4821,8 +4821,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   **BATCHES 2–4 DONE 2026-08-03 — the item is CLOSED except for one crate.** rust: `REVIEWED_PURE_CRATES`
   (a NEW mechanism — `CALIBRATED_CRATES` requires a live rule, so a pure crate cannot go there) covering
   serde_json / serde_yml / toml / regex / sha2, each checked against its registry source where every
-  apparent I/O hit was a doc comment (`32cfb8c`); `tracing_subscriber` → Log + Env (`6916a24`). jvm: S3
-  transfers naming a local File → Fs co-emitted beside Net (`9122c64`); commons-io needed NOTHING, it
+  apparent I/O hit was a doc comment (`50a91d6`); `tracing_subscriber` → Log + Env (`4e2f5b2`). jvm: S3
+  transfers naming a local File → Fs co-emitted beside Net (`667c410`); commons-io needed NOTHING, it
   already carries the source/sink descriptor stance.
   **THREE OF THE FILING'S CLAIMS DID NOT SURVIVE READING THE SOURCE:** ratatui is not pure,
   tracing_subscriber has no Fs, and commons-io was already done. **`color_eyre` CLOSED 2026-08-03 by fetching and checking it: it is NOT pure** — reads
@@ -5437,7 +5437,7 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 - **[SPEC + PART LANDED 2026-08-10 — engines pending] A policy that yielded NO RULES is
   indistinguishable from a clean gate IN THE MACHINE CHANNEL, four-way.**
 
-  SPEC ⟨0.28⟩ `70620ef` + conformance PART 38 `aea9cfa` (reference-led, 12 SKIPs, suite OK). The rung:
+  SPEC ⟨0.28⟩ `480699a` + conformance PART 38 `7202b17` (reference-led, 12 SKIPs, suite OK). The rung:
   a CONFIGURED policy yielding zero rules refuses — exit 2 with the fail-closed document, the
   unreadable-policy posture, using the `unevaluated` whole-policy entry §3.1 already pins. Re-measured
   2026-08-10 four-way and on the `gate --report` VERB (the sibling route has it too). The line-level
@@ -5450,8 +5450,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
 
   **CLOSED FOUR-WAY 2026-08-10 — PART 38 is PASS × 12** (three forms × four engines) against fully
   committed state, suite `conformance: OK`, and the control row green everywhere. Scan route: rust
-  `960b879`, java `027aaa2`, ts `7d56df4`, swift `5552a36`. **`gate --report` VERB route**: java and ts
-  closed both in one commit; rust `d665be3` and swift `bffc868` followed. All unpushed.
+  `93b9bae`, java `5af0bb1`, ts `7d56df4`, swift `05522d5`. **`gate --report` VERB route**: java and ts
+  closed both in one commit; rust `1c269ca` and swift `c1bcca4` followed. All unpushed.
 
   **THE SIBLING-ROUTE HABIT RECURRED, IN THE SAME SESSION THAT WROTE THE SENTENCE.** I measured the verb
   route having this defect, put "Measured on the `gate --report` verb too — a route is not covered by its
@@ -5487,7 +5487,7 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   → `{totalUnknown:0}` — reporting NO BLIND SPOTS out of a report whose manifest names a file it could not
   read.** None hedges.
 
-  SPEC `2cea6fd`. **PART 39 pins it**: half (i) coverage travels (a hard FAIL — it is the live precedent
+  SPEC `88d67e1`. **PART 39 pins it**: half (i) coverage travels (a hard FAIL — it is the live precedent
   the new clause argues from) PASS four-way; half (ii) manifest travels, reference-led, SKIP four-way.
   Engine work is the open half, across ~8 verbs × 4 engines.
 
@@ -5637,8 +5637,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   that consumers already refuse to grant coverage from. No new consumer logic required.
 
   **STREAM FORM — CLOSED FOUR-WAY 2026-08-10.** PART 37 (b) went from SKIP×4 to PASS×4 on the same
-  full-suite `conformance: OK` run, one commit per engine (all unpushed): candor-rust `7e1d8cd`,
-  candor-java `b4cd5c5`, candor-ts `0e03f87`, candor-swift `1462bb2`. Each writes the ⟨0.21⟩ Row-1
+  full-suite `conformance: OK` run, one commit per engine (all unpushed): candor-rust `82836ce`,
+  candor-java `1cbbc4e`, candor-ts `0e03f87`, candor-swift `b7f50c4`. Each writes the ⟨0.21⟩ Row-1
   fail-closed report to stdout as its only content on any exit-2 when `--json` was requested and stdout
   isn't claimed by `--gate-json -`. Same-shape latch per language: rust `REPORT_STREAM_WRITTEN` /
   java `reportDocEmitted` + shutdown hook / ts `reportStreamWritten` module-scope (with a TDZ hoist fix)
@@ -5646,8 +5646,8 @@ enforces it → PR-native SARIF surfaces it in review → the live demo shows it
   every direct `exit(2)` site plus any shared refusal helper.
 
   **FILE SINK CLOSED FOUR-WAY 2026-08-10 — PART 37 is (a) PASS×4, (b) PASS×4, (c) PASS×3 + n/a.**
-  java `0526584` (`--json <file>`), rust `f439dea`+`35a7c92`+`df64922`, ts `1446a65`+`6493eec`, swift
-  `0952cf7`+`add5fa6`. PART 37 was also made surface-aware (`261a93a`) — it had probed `--json <file>`
+  java `64ce9aa` (`--json <file>`), rust `da41f81`+`8abea94`+`207f33b`, ts `1446a65`+`6493eec`, swift
+  `848eece`+`6bc4d63`. PART 37 was also made surface-aware (`14715e7`) — it had probed `--json <file>`
   on all four, which is a file sink only on java, so three engines were SKIPping a question nobody had
   asked them.
 
@@ -6038,7 +6038,7 @@ delta-framed**, not a single opaque headline number. Re-opened 2026-07-01 as an 
   The accumulated backlog was swept too — **48,556 directories older than 24h removed**, $TMPDIR from
   50,494 `candor-*` entries to 1,938 (today's runs, left alone).
 
-  **FINISHED the same day** (`345307d`, candor-swift `9a1e09f`). The "roughly 40 call sites spread
+  **FINISHED the same day** (`345307d`, candor-swift `8992cc8`). The "roughly 40 call sites spread
   across harnesses" estimate was wrong, and the CENSUS is what corrected it: every prefix that actually
   ACCUMULATED lived in `test.mjs` — `candor-ts-gate` (2,270), the five `candor-verify-*` seeds, `mutant`,
   `corrupt`, `cgcorrupt` (~140 each). `candor-mcp-*` and `candor-lsp-*` had **2 entries each**, which is
@@ -6467,18 +6467,18 @@ policy having been configured and honoured). Both read as "nothing excluded ⇒ 
 reasonable-sounding inference the SPEC text does not actually license (see the new `[P2]` entry below
 about why two independent engines made the identical wrong assumption).
 
-**FIXED:** candor-swift `5f5240b` drops the `!peekable.isEmpty` conjunct; candor-ts `a34b273` stops
+**FIXED:** candor-swift `d859a16` drops the `!peekable.isEmpty` conjunct; candor-ts `a34b273` stops
 conditioning the peek trigger on `excludedFiles.length` (the subprocess spawn itself stays conditioned
 on it, only the key-emission decision changed). **Pinned by conformance PART 71** (candor-spec
-`e1c359f`) — present-and-empty over a no-exclusion policy-scanned tree, plus the two controls (no
+`54bfd25`) — present-and-empty over a no-exclusion policy-scanned tree, plus the two controls (no
 policy at all; a policy the engine cannot read) that must still omit both keys. Falsified against the
-pre-fix worktrees (candor-swift `bf6fbd1`, candor-ts `f19aa66`): both SKIP there, both score on HEAD.
+pre-fix worktrees (candor-swift `cd30287`, candor-ts `f19aa66`): both SKIP there, both score on HEAD.
 
 ## ~~[P1] `whatif`'s MCP AND LSP SURFACES ARE UNTESTED IN ts~~ **CLOSED 2026-08-26**
 
 `ae70ce4` fixed the ⟨0.30⟩/⟨0.32⟩/⟨0.33⟩ `ok`-withdrawal on CLI + MCP `candor_whatif` + LSP
 `candor.whatif` — and added **zero** tests. **PART 70 pins the CLI only.** The MCP tool description now
-PROMISES "`ok` is ABSENT…", a contract claim no gate reads — the same shape candor-java's `0a5fc2f` just
+PROMISES "`ok` is ABSENT…", a contract claim no gate reads — the same shape candor-java's `0f6232a` just
 fixed for its jbang catalog.
 
 This is the exact condition that produced the day's biggest finding: ts's MCP and LSP `whatif` had
@@ -6505,7 +6505,7 @@ enumeration that comes back matches neither the requested list nor the default l
 
 Measured 2026-08-28: that invocation printed `ci-watch: OK — every workflow enumerated at every HEAD
 concluded success` over a 10-row list that **omitted candor-spec entirely**, while a concluded
-candor-rust row from the same early poll did survive. candor-spec's conformance at `8ced65e` was in
+candor-rust row from the same early poll did survive. candor-spec's conformance at `43dac17` was in
 fact `completed/success` (checked directly with `gh run list`), so nothing was missed in substance —
 but a fail-closed release gate printed OK over a repo it had stopped tracking, which is the failure
 direction the script exists to prevent.
@@ -6630,7 +6630,7 @@ lesson in CLAUDE.md is precisely that the audit scoped to its trigger missed nin
 
 ## ⟨0.34⟩ ITEM 1 — review findings, and a coordinator ruling that was wrong
 
-Fable review, 2026-08-28, against candor-rust `f10bb82` + candor-ts `9a8a5c7`. Core claims VERIFIED:
+Fable review, 2026-08-28, against candor-rust `a16afce` + candor-ts `9a8a5c7`. Core claims VERIFIED:
 message-only holds (no wire path carries the flag; no consumer parses the prose — checked across
 umbrella `bin/`, `integrations/`, `adopt/`), the universal quantifier's polarity is right, and no
 constructible path reaches a false all-clear. What follows is what it found wrong.
@@ -6805,7 +6805,7 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
    release talk — the index line is not enough.
 
 ### Ready to work, no ruling needed
-3. ~~**candor-spec: SOUNDNESS R64 + its conformance PART.**~~ **DONE — candor-spec `01c7fd5`, PART 82.**
+3. ~~**candor-spec: SOUNDNESS R64 + its conformance PART.**~~ **DONE — candor-spec `8107c80`, PART 82.**
    Shapes 1/2 independently re-verified in throwaway clones before writing; 4 cells reddened pre-fix,
    the open cell and both controls unmoved. R64 argued structurally ts-only (rust attribute-macro args
    are unevaluated token streams; swift's are compile-time AST; java requires compile-time constants,
@@ -6813,7 +6813,7 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
    shape 3 stays open with its now-MEASURED rationale (byte-identical on 2 of 3 real corpora, +52% rows
    on a real Angular app). Row should pin both fixed shapes, both over-charge controls, and shape 3 as a
    documented-open case — mirroring how PART 81 pinned R57.
-4. ~~**The four-way byte-equality blind spot.**~~ **DONE — candor-spec `01c7fd5`, PART 83.** Confirmed
+4. ~~**The four-way byte-equality blind spot.**~~ **DONE — candor-spec `8107c80`, PART 83.** Confirmed
    all four suites scope to "matches nothing"; measured the missing quadrant four-way and it diverges in
    ALL FOUR. The row RECORDS the current measured state (scan silent / report false-positive
    `zeroMatch`), paired with an effectful-sibling control proving the divergence stays confined to the
@@ -6822,7 +6822,7 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
    EVERY byte-equality test in the family (PART 32/36, java `GateReportVerbTest`, ts `POLICIES`, swift
    `testGateJsonIsByteEqualToTheScanRoute`) scopes to a name matching NOTHING ANYWHERE. Four independent
    suites, all testing absent-everywhere, none testing present-on-one-route-only.
-5. ~~**java `--policy` accept-and-drop.**~~ **DONE FOUR-WAY** — java `37c9b10`, rust `e4bc419`, ts
+5. ~~**java `--policy` accept-and-drop.**~~ **DONE FOUR-WAY** — java `dd92982`, rust `99370ec`, ts
    `2c2147e`; swift was already conformant. **Still owed:** the SPEC clause (§3.1 for the descriptive
    verbs, §3.2 for `rewire`) and a `verb_reject` conformance loop over the verbs × four engines,
    mirroring the existing `gains_reject` battery (~line 1995 of `conformance/run.sh`). Original text: Accepted on 11 descriptive verbs, never forwarded into
@@ -6831,7 +6831,7 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
 
 ### Lower, measured, safe to defer
 6. ~~R58 — java annotation-processor codegen, UNMEASURED.~~ **STALE WHEN WRITTEN — R58 was already
-   CLOSED at candor-java `802efe4`** ("R58: measure separate-file annotation-processor codegen — CLOSED
+   CLOSED at candor-java `07cfa35`** ("R58: measure separate-file annotation-processor codegen — CLOSED
    sound") with a pinned regression test. Independently re-confirmed 2026-08-28 against a real Dagger
    2.51.1 build: `Fs` propagated through every generated hop to `Main.main`, `deny Fs` fired exit 1
    naming the whole path, unrelated generated methods stayed pure. No gap, no over-charge.
@@ -6850,7 +6850,7 @@ Written down because it was being carried in conversation. Floor is **0.33 publi
 ## `--policy` accept-and-drop is THREE engines, not one — rust and ts still open
 
 The java finding swept four-way 2026-08-28 (live-reproduced against fresh builds, not read from source).
-**candor-java FIXED at `37c9b10`. candor-rust and candor-ts have the IDENTICAL defect and are OPEN.**
+**candor-java FIXED at `dd92982`. candor-rust and candor-ts have the IDENTICAL defect and are OPEN.**
 candor-swift was already conformant — its narrower exposed surface (`tour`/`path`/`gains`) rejects
 unrecognised flags via `fixDie`.
 
@@ -6904,7 +6904,7 @@ release gates, and any script whose green is read as evidence.
 **Candidate follow-up:** sweep `conformance/run.sh` for the nested-single-quote pattern generally. It has
 produced two instrument failures in a day, and the failure mode is silent-green, which is the worst kind.
 
-## The mutation gate — BUILT (candor-spec `73173de`), and independently falsified
+## The mutation gate — BUILT (candor-spec `3fb8e29`), and independently falsified
 
 Answers "a checker that cannot fail still prints a pass", measured twice on 2026-08-28.
 
@@ -6949,7 +6949,7 @@ it. Six selftest cases pin all three, one with a hang budget.
 The over-charge/gate-defeat lens. Every CONFIRMED item below was reproduced by running code in throwaway
 clones, not argued from a diff. **Ranked; the top three are release blockers.**
 
-### B4 — FIXED at candor-rust `79546f3`, and the OBVIOUS FIX WOULD HAVE FAILED
+### B4 — FIXED at candor-rust `a9ce6ff`, and the OBVIOUS FIX WOULD HAVE FAILED
 Coordinator-verified: mutating `async_nats` `Net`→`Log` now exits 101 naming every affected row.
 
 **The trap worth keeping.** `covered.tsv`'s existing effects column is NOT `classify()`'s answer — it is
@@ -6967,7 +6967,7 @@ the fix. Row set untouched; a residual for the weekly `coverage-gate-refresh`.
 
 ORIGINAL FINDING:
 `coverage_gate.rs` asserts `classify(krate, path).is_some()` and never checks the returned effect MATCHES
-the recorded one. Mutation run at candor-rust `e4bc419`: `async_nats`'s `connect`/`publish`/`subscribe`/
+the recorded one. Mutation run at candor-rust `99370ec`: `async_nats`'s `connect`/`publish`/`subscribe`/
 `request`/`flush` changed from `Some("Net")` to `Some("Log")` → `cargo test -p candor-classify --test
 coverage_gate` **still passed**. A `deny Net` gate would then wave through code opening a NATS connection.
 The docstring's claim that "a rule narrowed regresses" is FALSE for any narrowing that stays non-`None`.
@@ -7010,7 +7010,7 @@ anything but itself is not known to fire) — it caught a real bug in the first 
 caller; fixed by returning `FAIL:<message>` through the one channel that does survive the subshell, the
 captured stdout.
 
-**Found and fixed in passing**: today's earlier `--wait`-parsing fix (`b8c53a6`) moved flag parsing before
+**Found and fixed in passing**: today's earlier `--wait`-parsing fix (`21791fb`) moved flag parsing before
 `--selftest`'s dispatch but never taught that loop about `--selftest` itself, so `bash ci-watch.sh
 --selftest` had been exiting 64 ("unknown flag") since that commit landed — the gate's own diagnostic mode
 was unreachable, which is how the subshell bug above almost shipped unverified.
@@ -7038,7 +7038,7 @@ clean. `_ci_verdict.py` already prints `ERR` (never `OK`/`NONE`) on unparseable/
 `release-preflight.sh`'s [10] CI-gate — the section built around the identical `gh run list | _ci_verdict.py`
 shape — already routes that `ERR` into its own `bad "$r: could not read CI status — treat as NOT
 verified"` arm; also spot-checked its `grab()` version-parsing helper and the [11] conformance reuse-stamp
-logic (today's other change, `0567beb`) — both fail closed on an empty/failed lookup by construction, not
+logic (today's other change, `f8bd0f9`) — both fail closed on an empty/failed lookup by construction, not
 by luck. `release-verify.sh` was the most thorough of the four already: every `2>/dev/null` there is
 followed by an explicit compare-to-expected-value or explicit-emptiness check (`gh release view`'s own
 `info` being empty is its own named `bad` branch, not folded into "not a draft"). **No new fix needed in
@@ -7079,7 +7079,7 @@ variant (22 here vs 42 on Angular). **The over-charge measurement's corpus choic
 
 ### A4 — the swift platform-pruned fix is bounded to its own trigger; SwiftPM has the same hole, worse
 `swiftFileCompilesToNothing`/`platformExcludedFiles` live only in `xcodeTargetScope`. `PackageTargets.swift`
-(~528 lines) mentions neither "platform" nor `#if os`. Built at `328a67f` against a real SwiftPM package
+(~528 lines) mentions neither "platform" nor `#if os`. Built at `3147e6f` against a real SwiftPM package
 (`platforms: [.macOS(.v13), .iOS(.v16)]`) with a function wholly inside `#if os(watchOS)` doing
 `FileManager.createFile`: the provably-dead function is reported as a LIVE, undisclosed `Fs` effect — not
 excluded, not flagged. In the Xcode case the file at least reached `excluded[]` under a wrong reason; here
@@ -7102,7 +7102,7 @@ stated residual the way the no-lockfile case is.
 policy-derived field — `containment`'s `ambient` is the §6.1 cross-cutting classification, and
 `blindspots --class` selects on the report's own `reasonClass`. **The ruling holds.**
 
-## B3 closed (`98fe7df`) — and two coordinator errors it exposed
+## B3 closed (`9e0ca3b`) — and two coordinator errors it exposed
 
 **Three `gh` calls, not one.** Beyond B3's own trigger, the median lookup in `median_secs` also failed
 silently — an empty result gave `median=0`, indistinguishable from "no successful history yet", which
@@ -7115,7 +7115,7 @@ every call site invokes it inside `$(...)`, which forks a subshell — the flag 
 Fixed by returning `FAIL:<msg>` through stdout, the one channel that survives a subshell.
 
 ### Coordinator error 1 — my `--wait` fix broke `--selftest`, and hid it
-`b8c53a6` (this afternoon) moved argument parsing ahead of the `--selftest` dispatch and never taught the
+`21791fb` (this afternoon) moved argument parsing ahead of the `--selftest` dispatch and never taught the
 new loop about it, so `ci-watch.sh --selftest` exited 64 from that commit onward. **The gate's own
 diagnostic mode was unreachable, which is how the subshell bug nearly shipped unverified.** I verified
 that fix by running the tool, not its self-test — and a self-test that cannot be invoked is exactly the
@@ -7123,7 +7123,7 @@ silent-green shape this whole day has been about. **After changing argument pars
 script advertises, not the one you were fixing.**
 
 ### Coordinator error 2 — I edited BACKLOG.md while an agent owned this repo
-My B4 commit `b69e8ac` swept up that agent's uncommitted BACKLOG.md edit, so B3's write-up landed under a
+My B4 commit `65015e0` swept up that agent's uncommitted BACKLOG.md edit, so B3's write-up landed under a
 commit message about B4. Content is intact; attribution is wrong. **One owner per repo INCLUDES the
 coordinator.** I dispatched an agent to the umbrella and then kept committing to it — the same
 shared-file hazard that cost a dropped commit in candor-spec earlier in this project's history, and CLAUDE.md
@@ -7135,7 +7135,7 @@ same shape and are already fail-closed on empty/failed lookups — `release-pref
 `ERR` verdict into its own `could not read CI status — treat as NOT verified` arm. **B3 was specific to
 ci-watch, not family-wide.**
 
-## The ⟨0.29⟩ peek cross-file blind spot — WAS A CARDINAL SIN, closed at candor-swift `9496d73`
+## The ⟨0.29⟩ peek cross-file blind spot — WAS A CARDINAL SIN, closed at candor-swift `8852a1f`
 
 **Filed as a bounded residual, challenged by Tom, measured, and it was a false all-clear.** Recording the
 process failure because it is more reusable than the fix.
@@ -7181,7 +7181,7 @@ filed with good arguments on one day; both were real defects when measured.**
 
 ## OPEN DESIGN QUESTION — per-cfg-branch function identity (cross-engine)
 
-Surfaced 2026-08-29 by candor-rust `2e0521a`, **ruled ACCEPT-and-document there rather than patched**,
+Surfaced 2026-08-29 by candor-rust `db406cf`, **ruled ACCEPT-and-document there rather than patched**,
 because the correct fix is a cross-engine identity change, not a one-file edit.
 
 **The defect, reproduced:** two same-named functions under `#[cfg(target_os="macos")]` /
@@ -7217,7 +7217,7 @@ degrades trust in exactly the disclosure users are asked to read: someone who se
 
 ## OWED: `dispatch-widened` exclusion class has no SPEC clause and no conformance row
 
-candor-swift `7378f4f` (the peek CHA cardinal-sin fix) introduces a NEW exclusion class,
+candor-swift `793e796` (the peek CHA cardinal-sin fix) introduces a NEW exclusion class,
 `dispatch-widened`, emitted when a context function's effect set grows under the peek's union and the
 new effect cannot be attributed to exactly one excluded declaration. **Disclosing under a new class is
 the right behaviour** — the alternative was dropping the finding, which is the cardinal sin the commit
@@ -7250,7 +7250,7 @@ probably be designed together rather than as three separate rungs.
 
 ## FOUR-WAY CARDINAL SIN — a peek finding is scope-matched against the WRONG ENTITY
 
-Found 2026-08-29 by asking of rust/ts/java the question candor-swift's `7378f4f` answered for itself.
+Found 2026-08-29 by asking of rust/ts/java the question candor-swift's `793e796` answered for itself.
 **All three carry the same false all-clear, and for a SIMPLER reason than swift's.** EXECUTED fixtures in
 all three, each with a sound unscoped control.
 
@@ -7266,9 +7266,9 @@ Held constant per engine: same tree, same binary, same effect — only the polic
 
 | engine | status |
 |---|---|
-| swift | FIXED `7378f4f` (needed a CHA-union fix; its peek DOES re-analyse in-scope callers) |
-| rust | **FIXED `27f4beb`** — no re-analysis: cross-references each in-scope fn's dispatch SITES (a syntactic reachability fact, never an effect) against the peek's `type_to_traits`, then walks `rev_calls` for transitive ancestors. Widened past its trigger to `charge_stringify_bound`; 2 further CHA sites filed as an argued residual. |
-| java | **FIXED `a034371`** — both fixtures. Re-runs the SAME `runScan` over a union dir rather than hand-rolling a second dispatch resolver, which would have to reimplement bounded-CHA/sealed narrowing and would drift. Also fixed the ancillary classpath bug: `peeked:false`→`true` on a nested `build/classes` layout that likely made the source-peek arm INERT on ordinary repo-root scans. |
+| swift | FIXED `793e796` (needed a CHA-union fix; its peek DOES re-analyse in-scope callers) |
+| rust | **FIXED `84ccbf1`** — no re-analysis: cross-references each in-scope fn's dispatch SITES (a syntactic reachability fact, never an effect) against the peek's `type_to_traits`, then walks `rev_calls` for transitive ancestors. Widened past its trigger to `charge_stringify_bound`; 2 further CHA sites filed as an argued residual. |
+| java | **FIXED `7fe654f`** — both fixtures. Re-runs the SAME `runScan` over a union dir rather than hand-rolling a second dispatch resolver, which would have to reimplement bounded-CHA/sealed narrowing and would drift. Also fixed the ancillary classpath bug: `peeked:false`→`true` on a nested `build/classes` layout that likely made the source-peek arm INERT on ordinary repo-root scans. |
 | ts | **FIXED `8584572`** — records a syntactic `satisfies` annotation in the peek child, correlated against interfaces the primary already knows are dispatched into in-scope, recorded AT THE CHA SITE (reconstructing from the flat callgraph conflated real dispatch with a caller that merely also calls one implementer concretely — found and fixed in development). MCP/LSP inherit it: they read `outOfScope` from a written report and never recompute. |
 
 **Why swift is the odd one out:** its peek already unioned in-scope files, so its bug needed dispatch
@@ -7301,7 +7301,7 @@ failed today all hand-rolled a second implementation of something that already e
 
 **Owed alongside the three engine fixes:** a SPEC clause and a conformance PART. This is interchange
 behaviour, it is four-way, and `[[candor-034]]`'s own lesson is ROW BEFORE PORT. Note the fix will
-interact with `dispatch-widened` (candor-swift `7378f4f`, also unspec'd) — **design the two together.**
+interact with `dispatch-widened` (candor-swift `793e796`, also unspec'd) — **design the two together.**
 
 **Ancillary, lower severity, java only, reported not fixed:** the source-peek's compile classpath is the
 literal scan-root path rather than resolved per-package, so a repo-root scan with nested `build/classes`
@@ -7314,7 +7314,7 @@ scope bug above. Flagged as a question, not a finding.
 
 ## CLOSED FOUR-WAY: the peek scope-match cardinal sin
 
-swift `7378f4f`, rust `27f4beb`, java `a034371`, ts `8584572`. **Four engines, four genuinely different
+swift `793e796`, rust `84ccbf1`, java `7fe654f`, ts `8584572`. **Four engines, four genuinely different
 mechanisms, one property.** Still owed: the SPEC clause and conformance PART, written to the PROPERTY (a
 peek finding's scope test must consider every in-scope caller that reaches it) with the `dispatch-widened`
 fallback CONDITIONAL on attribution being genuinely ambiguous — swift, java and ts need that class; rust
@@ -7325,7 +7325,7 @@ shape in a `typestack/class-validator` clone (`ValidatorConstraintInterface`). T
 
 ## CARDINAL SIN in candor-agents' enforcement compiler — `deny Unknown` compiled to NOTHING
 
-Found 2026-08-29, first time this repo has ever been attacked. FIXED `69e9e98`.
+Found 2026-08-29, first time this repo has ever been attacked. FIXED `d61121d`.
 
     compile_guard("deny Unknown")      -> {'deny': [], 'warnings': [], 'notes': []}   TOTAL SILENCE
     compile_guard("deny Net Unknown")  -> {'deny': [], ...}   `Net` SILENTLY DROPPED TOO
@@ -7388,7 +7388,7 @@ nonzero exit; both published-artifact pins RESOLVE over the network to real corr
 200-with-empty-body) — the ARTIFACT, not the string, per the 0.24 lesson.
 
 **Stale entry corrected (rule 12):** the BACKLOG note citing `candor-sarif` fingerprinting on
-`fn|rule|effects` (dated 2026-08-22) was superseded by `94a3695`/`68cedf7` on 2026-08-25.
+`fn|rule|effects` (dated 2026-08-22) was superseded by `725fa31`/`a51acde` on 2026-08-25.
 
 ## The 9-item "accepted band" — CLEAN NEGATIVE, and my framing was WRONG
 
@@ -7398,7 +7398,7 @@ on a nine-item exemption is worth as much as a finding, and because I was wrong 
 
 **What I claimed:** "nobody has re-derived that band; it is accepted because it has always been accepted."
 **What git history shows:** re-derived TWICE. `a81de44` (2026-06-18) states in its own message, after review,
-*"callback band tolerates Unknown but never silent-pure."* And `2afef46` (2026-08-18, **eleven days ago**)
+*"callback band tolerates Unknown but never silent-pure."* And `4829e7a` (2026-08-18, **eleven days ago**)
 grew it 8→9 effects precisely because a parity sweep **caught a real cardinal sin**: `process.argv` /
 `CommandLine.arguments` / `ProcessHandle.Info.arguments()` read **pure** in ts/java/swift while rust already
 charged `Env` — fixed four-way with A/B verification quoted in the commit.
@@ -7446,7 +7446,7 @@ Owed: fixes in ts and swift; a SOUNDNESS entry; and only then a generator row.
 ## THE BIGGEST STRUCTURAL FINDING: 13 of 13 external conformance checkers could not fail
 
 Surveyed 2026-08-29. **Every standalone checker tested survived having its body replaced with
-`sys.exit(0)`.** 100%. Partially fixed at candor-spec `90cee30`.
+`sys.exit(0)`.** 100%. Partially fixed at candor-spec `02f27ca`.
 
 **Denominator: 85 addressable PARTs.** Mechanism split:
 
@@ -7489,7 +7489,7 @@ only the wrongness its author imagined, and four rounds have now measured that c
 
 ## THIRD instrument-that-cannot-fail: java's weekly soundness meta-gate went a quarter blind, silently
 
-Found 2026-08-29 alongside the record cardinal sin. FIXED at candor-java `3a84522`.
+Found 2026-08-29 alongside the record cardinal sin. FIXED at candor-java `4eac631`.
 
 `soundness/mutation_probe.sh` is the WEEKLY meta-check that the soundness battery still catches known bug
 classes — the instrument that verifies the instrument. A prior refactor (P7 decomposition) moved the
@@ -7514,7 +7514,7 @@ time.
 
 ## Java records: a component's effectful `equals`/`hashCode`/`toString` ran unattributed (CARDINAL SIN)
 
-FIXED at candor-java `3a84522`. A record's generated contract methods are a single `invokedynamic` into
+FIXED at candor-java `4eac631`. A record's generated contract methods are a single `invokedynamic` into
 `java.lang.runtime.ObjectMethods` (JEP 384); the per-component work happens inside the JDK bootstrap, never
 in bytecode the record owns. `handleInvokeDynamic` correctly skipped the bootstrap's `H_GETFIELD` handles
 (feeding one to `methodId` would crash the scan) **but never reentered the component's own contract method
@@ -7533,7 +7533,7 @@ JDK 21, only 17 present) were NOT run — pre-existing, not introduced.
 
 ## HOF fabrication CLOSED in both engines — the generator row is now UNBLOCKED
 
-ts `d5f6c0c`, swift `7a89dbc`. Both stopped unioning a shared HOF's effects onto every caller and now
+ts `d5f6c0c`, swift `ae3a7fd`. Both stopped unioning a shared HOF's effects onto every caller and now
 resolve per call site; unresolvable callbacks surface `Unknown`, never pure.
 
 **Real-world confirmation in both**: ts found a live instance in **lodash** (`_getAllKeys`/`_getAllKeysIn`
@@ -7570,9 +7570,9 @@ with nothing stating the boundary.**
 
 ## OWED: PART 79 has no fixture for the `dlsym`/`unsafeBitCast` FFI mechanism
 
-Found 2026-08-29 while closing candor-swift `ec3e50f`'s missing tests (now landed at `35cfc73`).
+Found 2026-08-29 while closing candor-swift `bcb4a4e`'s missing tests (now landed at `1e67426`).
 
-`ec3e50f` fixed THREE silent-pure FFI defects. **PART 79 pins mechanisms 1 and 3** — bodyless
+`bcb4a4e` fixed THREE silent-pure FFI defects. **PART 79 pins mechanisms 1 and 3** — bodyless
 `@_silgen_name`/`@_extern` linkage (`swift-defect-silgen`) and the raw-syscall allowlist
 (`swift-defect-rawc`) — cross-engine against candor-rust's equivalent seam. **It has NO fixture for
 mechanism 2**: a function pointer resolved via `dlsym` and invoked through `unsafeBitCast`.
@@ -7588,9 +7588,9 @@ Roughly thirty commits, each reverted in isolation with its own tests kept, acro
 
 | repo | protected | gaps |
 |---|---|---|
-| candor-rust | 9 of 10 | `dd90fae` — closed at `017a9f1` |
-| candor-java | 2 of 4 | `a034371`, `37c9b10` — closed at `26083ed` |
-| candor-swift | 10 of 11, plus the older `ec3e50f` | `7a89dbc`'s test could not discriminate (`cd465a5`); `ec3e50f` had none (`35cfc73`) |
+| candor-rust | 9 of 10 | `f5e7d14` — closed at `4135f0e` |
+| candor-java | 2 of 4 | `7fe654f`, `dd92982` — closed at `f514ea1` |
+| candor-swift | 10 of 11, plus the older `bcb4a4e` | `ae3a7fd`'s test could not discriminate (`897510a`); `bcb4a4e` had none (`1e67426`) |
 | candor-ts | all | — |
 | candor-agents | all | — |
 
@@ -7601,7 +7601,7 @@ amount of running the tests would have produced it.
 revert — one characterises an accepted unfixed residual, one is an over-charge control. **"Stayed green" is
 not automatically a gap.** An agent reporting "9 of 9 red" would have been wrong.
 
-**And the sharpest instance: `ec3e50f`'s tests actively CONCEALED the gap.** `native:dlopen` hits exist in
+**And the sharpest instance: `bcb4a4e`'s tests actively CONCEALED the gap.** `native:dlopen` hits exist in
 the test tree — they feed a prewritten report to a gate. Anyone grepping for coverage finds them and
 concludes the fix is protected. Nothing exercised the scan that PRODUCES the disclosure, which is what the
 commit fixed. **Evidence that reads as coverage without being it** — the same shape as a test named for a
@@ -7616,7 +7616,7 @@ R61, R62, R64 — spanning rust-scan, rust-deep, java, ts and swift.
 
 **Why that number must NOT be read as "the corpus is well covered":**
 1. The window swept (2026-08-26→28) sits immediately downstream of a pass already hunting this exact
-   failure mode. **R61's green is validating today's `35cfc73` fix, not independently discovering
+   failure mode. **R61's green is validating today's `1e67426` fix, not independently discovering
    soundness** — it was found unprotected hours earlier and fixed before this measurement ran.
 2. It is a three-day slice of a register spanning 2026-06-18 → now.
 3. **Nothing stayed green, so no judgement call arose** — unlike the same-day sweep, which found two tests
@@ -7639,11 +7639,11 @@ R61, R62, R64 — spanning rust-scan, rust-deep, java, ts and swift.
   surroundings); hand-reverted by locating the spots by CONTENT, not line number.
 - **R57 and R64 are coupled** — `b4c3a22` is a refactor built on `0a5d493`, so R57 cannot be reverted
   alone. Reverted together, with failures attributed by reading WHICH NAMED TESTS fired rather than assumed.
-- R58 excluded on purpose: SOUNDNESS.md marks it UNMEASURED, and it had already been closed at `802efe4`.
+- R58 excluded on purpose: SOUNDNESS.md marks it UNMEASURED, and it had already been closed at `07cfa35`.
 
 ## R32–R44 dispatch wave, candor-rust slice — 9 of 9 protected, six weeks on
 
-Revert-tested 2026-08-29 against SHA `defe53d8`, in a throwaway worktree. **9 of 9 rust fixes in the wave
+Revert-tested 2026-08-29 against SHA `658613e0`, in a throwaway worktree. **9 of 9 rust fixes in the wave
 go RED on revert** (R32, R36, R37, R37b, R40, R41, R42, R43, R44). No build failures — every revert was a
 true semantic edit, and the original code was still near-verbatim despite 7 weeks of churn, because these
 fixes are narrow `if`/match-arm insertions rather than restructurings.
@@ -7742,7 +7742,7 @@ Method is documented in `bin/AGENT-CORPUS-BRIEF.md` under **"THE ATTACKS THAT WO
   candor-swift sat red for 4 commits today while every push was reported green.
 
 ## WAVE 1 — the conformance measurement (the largest open unknown)
-Owner: candor-spec. Survey (`e1ce567`) found **86 parts: 5 gated, 13 standalone, 68 embedded**. Of the 68:
+Owner: candor-spec. Survey (`79b8698`) found **86 parts: 5 gated, 13 standalone, 68 embedded**. Of the 68:
 **15 confirmed defeatable, 46 UNRESOLVED, 7 inconclusive.**
 1. **Resolve the 46.** The mechanical neuter didn't apply — different `sys.exit` spellings, bash `[ ]`/`-eq`
    chains. Extend `mutation_poison_gen.py`'s classifier or neuter them by hand. **An unresolved part is not
@@ -7756,8 +7756,8 @@ Owner: candor-spec. Survey (`e1ce567`) found **86 parts: 5 gated, 13 standalone,
 ## WAVE 2 — revert-test TODAY'S fixes (highest yield per the cumulative evidence)
 Read-only, spans repos. Four sweeps measured: today's own commits **6 of ~30 unprotected**; 2026-08-26→28
 **11/11**; R32–R44 rust **9/9**; 2026-07 java/ts/swift **20/21**. **The gap is same-day work, not history.**
-~25 fixes have landed since that sweep ran (`defe53d`, `e43eec0`, `4f3f88b`, `58f79b1`, `35cfc73`,
-`cd465a5`, `59ed357`, `164a0e2`, `e1ce567`, …). Revert each; fix every gap found.
+~25 fixes have landed since that sweep ran (`658613e`, `dea71ef`, `8506e4f`, `8d8d4de`, `1e67426`,
+`897510a`, `59ed357`, `3edd90c`, `79b8698`, …). Revert each; fix every gap found.
 **Method:** test at the FIX COMMIT'S OWN SHA, not a moved HEAD — that gave 21/21 clean reverts where
 earlier sweeps hit constant drift. **Run everything CI runs**: java's R21 goes red only in `smoke.sh`;
 JUnit alone would have filed it wrongly.
@@ -7814,11 +7814,11 @@ Sequencing when the engines are free (they were agent-owned when this was decide
 
 Two attempts to land the same work, both failed, both caught by a gate rather than by review:
 
-1. `fa8e53a` — pushed, then reverted. `soundness/run.sh 60`: 60/0 at c04b28a, **50/10 at fa8e53a**;
+1. `9152498` — pushed, then reverted. `soundness/run.sh 60`: 60/0 at c04b28a, **50/10 at fa8e53a**;
    all ten failing seeds carry the form `vec_contains_eq`, every failure `pure/omitted` over a real
    effect. It reached main because I verified against the gate list in the AGENT'S REPORT (which
    named `soundness/run_drop.sh`) instead of the repo's own list, which also has `soundness/run.sh`.
-2. `558863a` — local, NOT pushed. Re-land with the padding defect fixed. **Fails the ui harness on
+2. `d3813f6` — local, NOT pushed. Re-land with the padding defect fixed. **Fails the ui harness on
    macOS.** MEASURED, same machine, clean build (`cargo clean -p candor`), strictly serial, only the
    commit differing: d073699 → ui_edition_2021 1/0 and ui 39/0; 558863a → ui_edition_2021 1 passed
    **17 failed**, ui 37 passed **2 failed**.
@@ -7875,11 +7875,11 @@ never from an inert filler; only the method's own parameters can take `()`.
 
 **Status: done.** Every finding below was taken by a single-owner agent, verified by ME against each
 repo's own `bin/gates.sh` list (not the agent's report), pushed, and confirmed by `ci-watch.sh`.
-Commits: swift `2f18c6d`+`ba76678`+`f2fee39`, java `b66384d`, ts `d6bda52`, agents `f02deac`,
-spec `6c6a3c5`, umbrella `2c505f2`→`ce296b0`.
+Commits: swift `4a5236b`+`97b922c`+`f420cd9`, java `521b561`, ts `d6bda52`, agents `16bd765`,
+spec `c798db0`, umbrella `b41a6f2`→`6fa48ad`.
 
 ## FOUR OF THE PANEL'S OWN CLAIMS DID NOT SURVIVE MEASUREMENT — do not re-derive them
-1. **The `bin/gates.sh` folded-block sin (HIGH) is FALSE at HEAD.** `c98cda7` did fix it; the finding
+1. **The `bin/gates.sh` folded-block sin (HIGH) is FALSE at HEAD.** `da7cba7` did fix it; the finding
    says it did not. Measured: `gates.sh` emits the BODY, `gate-run.sh` reports INCOMPLETE rc=2, no
    file named `-` is created. **But the panel's MECHANISM was real against the PRE-FIX binary, and my
    own refutation was itself too broad**: a `run: >` fixture already existed, so my "zero fixtures"
@@ -7887,7 +7887,7 @@ spec `6c6a3c5`, umbrella `2c505f2`→`ce296b0`.
    rc 1) while `>-` and `>+` are REDIRECTIONS (rc 0, `gate-run: OK`, a file created). The one variant
    that had a fixture was the only one that could not report green over an unrun gate.
 2. **Findings 13 and 14 do not reproduce.** §13 HAS the busy-guard (`release-test.sh:3281`, added by
-   `c98cda7` AFTER the panel measured) and it is load-bearing — deleting it reproduces the reported
+   `da7cba7` AFTER the panel measured) and it is load-bearing — deleting it reproduces the reported
    symptom exactly. And `pgrep -f "gradlew"` does NOT match the Gradle daemon: its command line is
    `GradleDaemon`/`gradle-daemon-main`, confirmed against five live Gradle JVMs.
 3. **The handoff's "candor-ts parity rows NEVER RUN IN CI" is FALSE.** `parsepolicy`/`whatif` rows are
@@ -8137,11 +8137,11 @@ behaviour ships unpinned — see the ⟨0.34⟩ ITEM 1 entry above, closed exact
 opened, twice):**
 
 1. **A SPEC clause.** Today SPEC.md §4 ⟨0.7⟩ *permits* exactly the disclosure this ruling now forbids.
-   The sentence (candor-spec HEAD `2cfd5da`, `SPEC.md` — currently around line 4353–4354, not the
+   The sentence (candor-spec HEAD `ed4a9d0`, `SPEC.md` — currently around line 4353–4354, not the
    4316–4321 this task was handed with: candor-spec moved under it between the ruling and this entry,
    the text itself is unchanged): *"Swift's syntactic model produces `native:` (`@_silgen_name`/`@_extern`
    C-symbol-linkage declarations, and an allowlisted set of raw C free-function calls — ⟨0.33⟩,
-   candor-swift `ec3e50f`) but no bare `reflect:`…"* — **this has to change with the ruling, or the spec
+   candor-swift `bcb4a4e`) but no bare `reflect:`…"* — **this has to change with the ruling, or the spec
    contradicts its own text**: as written it keeps licensing the disclosure the ruling just prohibited.
    Whether the clause also pulls in swift's `@_silgen_name`/`@_extern` bodyless-linkage disclosure (the
    OTHER half of that same sentence, R61's mechanism (2), sharing the identical

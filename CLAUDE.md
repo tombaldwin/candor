@@ -250,6 +250,24 @@ in one day. **The count is a function of HEAD, so print it:**
 
     bash bin/gates.sh <repo> | grep -c '^        '
 
+**WHEN AGENTS CANNOT RUN THE GATE LIST, THE COORDINATOR RUNS IT — BEFORE THE PUSH, NOT AFTER.** Measured
+2026-09-24 on a three-lane wave (candor-rust, candor-java, candor-swift in parallel). `gate-run.sh` is a
+shared instrument that a concurrent build makes lie, so all three agents were correctly told not to run
+it. I then ran FOUR-WAY CONFORMANCE before pushing and treated that as the gate. It is not: conformance
+is a CROSS-ENGINE DIFFERENTIAL and was never going to see a per-repo lint. candor-rust's CI went red on
+`cargo +stable clippy` — `expect_fun_call` on two lines of new test code.
+
+**And the agent's "clippy -D warnings passed" was TRUE.** This repo pins a NIGHTLY toolchain, so a bare
+`cargo clippy` runs the nightly's lint set; CI runs `+stable`. The lint fires on stable and not on the
+pin. Both forms are in `bin/gates.sh candor-rust`, so the repo's own list would have caught it — which
+is the whole point of the list being printed rather than remembered.
+
+So the wave shape is: agents run their OWN repo's suite → agents commit, DO NOT push → coordinator runs
+`gate-run.sh` for each changed repo SERIALLY → then conformance → then push. Running the three lists
+serially afterwards took minutes and came back 31/31, 10/10, 11/11; doing it before the push would have
+cost the same minutes and saved a red `main`. **Parallelism buys lanes and costs the one instrument that
+catches per-repo regressions; reinstate it at the join, not after the push.**
+
 **So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
 and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.
 

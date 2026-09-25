@@ -8,6 +8,139 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-25 — the CHAINED census arm: scan each library as a dependency of a generated consumer (SOUNDNESS R671/R672/R673)
+
+**`bin/corpus-chained.sh` + `bin/corpus-chained/ConsumerGen.java` + `bin/corpus-chained-judge.py` —
+the second arm SOUNDNESS R668 asked for.** Every census so far ([[R662]] rust, [[R665]] java) scanned
+its libraries STANDALONE, so it was structurally blind to the whole ⟨0.39⟩ chained-dispatch rung —
+which is what most of the last month of engine work was about. [[R595]] is the proof and it SHIPPED in
+0.39.2: adding a pure default to a library deleted a real `Fs` from *every consumer*. That defect
+cannot exist in a standalone scan, so the census measured R595 as "zero movement" and that said
+nothing at all about the fix.
+
+**The consumer is GENERATED, not hand-written.** At 452 artifacts a hand-written consumer is not an
+option and ⟨0.39⟩ obligation 3 is mechanical, so `ConsumerGen` reads each jar's public API by
+reflection — the JDK's own binary→source name mapping and its own erasure, never a reimplementation
+of either (brief §G) — and emits the two shapes the rung is about: a DISPATCH probe per public
+interface/abstract class that takes it and calls each declared member ([[R608]]/[[R530b]]), and a
+FIELD probe per public static non-final functional-interface field that reassigns it to an effectful
+implementor and then calls into the library ([[R595]]). **The consumer bytecode is built ONCE and
+shared by both arms**, so the only variable between them is the engine jar.
+
+**BOTH HALVES MOVE TOGETHER.** PRE = pre-engine library report + pre-engine consumer scan; POST =
+post + post. [[R608]]'s own row measured that the producer and consumer halves are not separable, and
+a fixed library report read by a varying consumer engine measures a mixed engine.
+
+**ABSENT IS NOT PURE, and it is in the judge before any number is quoted.** A generated probe with no
+consumer row is a POSITIVE PURITY CLAIM about a function the engine was handed, so the judge accounts
+for every probe in four states with ABSENT in its own column. [[R636]] is this exact trap one repo
+over — PART 92's `judge()` renders a missing entry as `eff=∅, unknown=False` and two arms pass
+unconditionally on it.
+
+### The measurement — candor-java, fix-only window `687157f..04eb782` (13 commits, ZERO rung)
+
+117 of 118 census jars generated a consumer; **112 entries carry one** (six declare no public abstract
+type and no reassignable functional field at all — `checker-qual`, `commons-csv`,
+`error_prone_annotations`, `jakarta.annotation-api`, `lombok`, and the R666-unfit `okio` — they are
+NAMED and dropped, not tolerated with `--allow-fail`). **9,671 probe files, 9,664 class files, 71,044
+call lines; 97 javac lines and 8 files dropped by the recovery loop.**
+
+                          CONSUMER (this arm)      STANDALONE (R665)
+      function                    139  (0.719%)          567  (0.0816%)
+      class                       139  [degenerate]      163
+      package                      54                      7
+      artifact                      3                      0
+      CONCRETE LOST                 1                      0
+      entries that moved     33 of 112              23 of 118
+
+**So the answer to R668's question is YES, at package scope and past it.** The same thirteen commits
+that move SEVEN package gates and ZERO artifact gates when the libraries are scanned standalone move
+**54 package gates and 3 artifact gates at the consumer** — and the function-scope RATE is 8.8× higher
+per analysed unit. Dependency-boundary soundness is a user-visible property, and the standalone census
+cannot see it. `class` is degenerate here by construction (one probe method per probe class) and is
+reported as such rather than quoted.
+
+**Attributed the same way R665's was, and to the same commit.** Bisected across the five engine jars
+spanning the window on four entries: **24 of 24 consumer flips land on `d17dc66` alone** — R530b, *a
+lambda was never an implementor*. `1d51e23`, `d6419ae`, `18752cb` and `04eb782` move nothing on those
+entries.
+
+**An honest negative on R595 itself.** The R595 SHAPE — a public static non-final field of functional
+type — occurs **5 times in 117 real libraries**, and none of the five moved across the window. R668
+said the census was blind to R595; that is true, and the chained arm adds the other half: the shape is
+also rare. The fix is real — the calibration below reproduces it — but no corpus of this size was ever
+going to price it.
+
+### What the arm found: SOUNDNESS R672
+
+**A whole-package Classifier rule REPLACES the report-chaining join, so a consumer's report contradicts
+the dependency report it was handed — silently.** The single CONCRETE-LOST row is
+`candorgen.org.eclipse.jgit.hooks.C_GitHook.dispatch`: PRE
+`['Clock','Env','Exec','Fs','Log','Net','Rand','Unknown']` with `unresolved: true`, POST `['Exec']`
+with `unresolved: false`. **The library's own published row for `org.eclipse.jgit.hooks.GitHook.call`
+is byte-identical in both arms** — eight effects, `unresolved: true` — so this is entirely the
+consumer-side join. Gated, calibrated in both directions: `deny Fs <qual>` PRE **1** → POST **0**;
+`deny Fs Unknown <qual>` also 1 → 0 (the disclosure goes too); `deny Net` 1 → 0; and the control
+`deny Exec <qual>` is **1 on both arms**, so the scan still judges the qual.
+
+Bisected to the span `mid(687157f)..1d51e23`, whose only `src/` commits are R498's two
+(`97212f3`/`f2749b1`), which charge `org.eclipse.jgit.hooks` WHOLE-PACKAGE. Widened past the trigger
+(brief §9) with a hand consumer: it is **not** dispatch-specific — a direct `PreCommitHook.call()` and
+a `Hooks.preCommit(r,o).call()` collapse identically, and `PrePushHook.setRefs` — which that commit's
+own message says is deliberately NOT carved out — goes `['Unknown']` → `['Exec']`. **f2749b1's own
+commit message says why nobody saw it: *"CORPUS REACH IS ZERO (only jgit's own jar references
+org/eclipse/jgit), so the A/B is SAFETY-ONLY."* A generated consumer references it.** Boundary stated:
+all 9,672 probe quals across 112 jars were checked, and jgit hooks is the only owner in this corpus
+with a whole-package rule whose dependency row is richer than the rule.
+
+### Calibration, in this commit (brief §1b)
+
+`corpus-chained.sh calibrate` builds two chained fixtures, each with a ONE-VARIABLE control, and
+refuses unless each reads PASS on PRE and FAIL on POST. **On the measurement's own jar pair**
+(`mid` = 687157f, candor-java 0.38.3 spec 0.39 -> `post` = 04eb782, 0.39.2):
+
+    == R595 — a consumer reassigns a library's public static callback field
+       library WITH default       PRE  exit=0 ROW inferred=[] unresolved=False
+       library WITH default       POST exit=1 ROW inferred=['Fs'] unresolved=False
+       control: NO default        PRE  exit=1 ROW inferred=['Unknown'] unresolved=True
+       control: NO default        POST exit=1 ROW inferred=['Fs','Unknown'] unresolved=True
+    == R530b — a consumer dispatches on a dependency's interface, holding no implementor
+       dep implementor: LAMBDA    PRE  exit=0 ROW inferred=[] unresolved=False
+       dep implementor: LAMBDA    POST exit=1 ROW inferred=['Net'] unresolved=False
+       control: ANON CLASS        PRE  exit=1 ROW inferred=['Net'] unresolved=False
+       control: ANON CLASS        POST exit=1 ROW inferred=['Net'] unresolved=False
+
+**And the RED, because a gate that has never failed has not been shown to be a gate.** Run with the
+two arms IDENTICAL it refuses, in both directions — `post,post`: *"FAIL — the PRE engine does not PASS
+this consumer; the arm cannot see R595"* and the same for R530b, exit **1**; `18752cb,18752cb` /
+`1d51e23,1d51e23`: *"FAIL — the POST engine does not FAIL this consumer"*, exit **1**. The ABSENT path
+is exercised too: with `pre` (0.34.0) as the R530b PRE the lambda arm reads `exit=0 ABSENT`, and the
+judge labels it ABSENT rather than folding it into pure.
+
+### The bucket-1 prediction, run against the real gate
+
+`corpus-chained.sh validate` is part of the instrument, because a bucket count is a PREDICTION about a
+gate and R665's own row ran the gate before quoting one. Two categories, the second being the control
+that makes the first mean anything:
+
+- **category 1** — a bare scoped `deny <E> <qual>` over a sampled bucket-1 qual: **12 of 12 moved
+  PRE 0 -> POST 1**, over amqp-client, assertj-core, ehcache, groovy, guava, hibernate-core,
+  jetty-server, maven-core, jgit, reactor-core and spring-web.
+- **category 2** — a sampled bucket-2 (disclosure-only) qual: the bare `deny Net <qual>` must NOT move
+  and `deny Net Unknown <qual>` must: **12 of 12** (`0 -> 0` bare, `0 -> 1` with `Unknown`), over
+  amqp-client, commons-lang3, junit-jupiter-api, kafka-clients, opencsv and spring-core. **0
+  mispredictions in 24.**
+
+The bare form is not cosmetic: where PRE already disclosed `Unknown`, `deny <E> Unknown` is red on BOTH
+arms and reports no flip at all, so the `Unknown`-inclusive form would have hidden most of the 139.
+
+**A premise correction worth recording.** `jars/pre.jar` is candor-java **0.34.0 (spec 0.34)** — the
+WIDE window's PRE, not the fix-only one; the fix-only PRE is `mid.jar` (0.38.3, spec 0.39 = 687157f).
+Calibrating against `pre.jar` would have shown R595 as `['Unknown']`/exit 1 on both arms and read as
+"the arm cannot see it". Run for completeness, the WIDE window (0.34.0 -> 0.39.2, SIX rungs) moves
+**2,863 function / 2,432 package / 52 artifact** at the consumer with **11 CONCRETE LOST** — reported
+as a separate arm, not merged with the fix-only figure.
+
 ## 2026-09-22 — the 0.39.2 family cut: both scoped pins cleared, and six tool defects (released 2026-09-22 as 0.39.2)
 
 **`ENGINE_PIN` moves to 0.39.2 and BOTH per-engine pins are CLEARED** (`bcb4330`, after the engines were published — a pin names a published artifact, never a promised one). `ENGINE_PIN_TS` and

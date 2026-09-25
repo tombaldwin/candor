@@ -102,6 +102,7 @@ run "test-candor-init-sh"   bash adopt/test-candor-init-sh.sh
 run "test-fingerprint"      bash fingerprint/test-fingerprint.sh
 run "candor.test"           bash bin/candor.test.sh
 run "corpus-ab.test"        bash bin/corpus-ab.test.sh
+run "corpus-ledger.test"    bash bin/corpus-ledger.test.sh
 run "ci-watch --selftest"   bash bin/ci-watch.sh --selftest
 run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'

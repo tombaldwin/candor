@@ -426,6 +426,98 @@ def refuse(lines):
 
 
 # ── main ──────────────────────────────────────────────────────────────────────────────────────────
+
+# ── VERDICT BUCKETS ───────────────────────────────────────────────────────────────────────────
+# SOUNDNESS R662/R664.  A CHANGED ROW IS NOT A CHANGED VERDICT, and conflating them is how a month
+# of engine work gets reported as user-visible when most of it is advisory.  This lives HERE rather
+# than in a scratchpad because R288: fifteen copies of an ad-hoc `ab.py` meant a defect found in one
+# was fixed in none.  The classifier below was written in a scratchpad, run once, and had TWO errors
+# caught by its own first gate-validation pass; both corrections are encoded as C1/C2 and both are
+# calibrated in --selftest.
+#
+# C1 — A row with `interfaceUnion: true` is FILTERED AT EVERY GATE'S INGRESS (candor-query gate.rs,
+#      load.rs, and candor-scan's own --policy: SOUNDNESS R511).  It is published, and it can never
+#      move a verdict at its own qual, so it is not a gain a gate user can see.
+# C2 — The key is (entry, pkg, fn, hash).  A NEW ROW DUPLICATING AN ALREADY-EFFECTFUL `fn` under a
+#      different hash is a new KEY but not a new verdict: the scoped gate was already red there.
+#      Integrated into this tool the test is exact — the PRE rows are already in hand, so unlike the
+#      scratchpad original it does not re-read reports from a guessed path.
+BUCKET_LABELS = [
+    ("1", "1 absent/pure -> CONCRETE effect (a scoped deny moves)"),
+    ("2", "2 absent/pure -> Unknown ONLY (disclosure; bare deny does not move)"),
+    ("3", "3 CONCRETE effect LOST (a regression; expect ~0)"),
+    ("4", "4 everything else (pure rows, other fields)"),
+]
+
+
+def _eff_of_values(vals):
+    """(concrete effects, has Unknown, is an interfaceUnion row) over a row-value multiset."""
+    concrete, unknown, union = set(), False, False
+    for v in vals:
+        try:
+            r = json.loads(v)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(r, dict):
+            continue
+        if r.get("interfaceUnion"):
+            union = True
+        for e in (r.get("inferred") or []):
+            if e == "Unknown":
+                unknown = True
+            else:
+                concrete.add(e)
+    return concrete, unknown, union
+
+
+def classify_verdicts(detail, pre_rows):
+    """Sort a diff into verdict buckets.  `pre_rows` is the (entry, pkg, row) stream of the PRE arm."""
+    pre_by_fn = collections.defaultdict(set)
+    for entry, _pkg, row in pre_rows:
+        for e in (row.get("inferred") or []):
+            if e != "Unknown":
+                pre_by_fn[(entry, row.get("fn"))].add(e)
+
+    counts, dropped = collections.Counter(), collections.Counter()
+    def cat1(key, pre, post):
+        entry, fn = key[0], key[2] if len(key) > 2 else key[-1]
+        if post[2]:
+            dropped["union row — no gate can address it at its own qual (C1)"] += 1
+            return
+        if (post[0] - pre[0]) <= pre_by_fn.get((entry, fn), set()):
+            dropped["duplicate of an already-red qual (C2)"] += 1
+            return
+        counts["1"] += 1
+    def cat2(key, post):
+        if post[2]:
+            dropped["union row — no gate can address it at its own qual (C1)"] += 1
+            return
+        counts["2"] += 1
+
+    for key, _n, vals in detail.get("added", []):
+        post = _eff_of_values(vals)
+        if post[0]:
+            cat1(key, (set(), False, False), post)
+        elif post[1]:
+            cat2(key, post)
+        else:
+            counts["4"] += 1
+    for key, _n, vals in detail.get("removed", []):
+        counts["3" if _eff_of_values(vals)[0] else "4"] += 1
+    for key, gone, came in detail.get("changed", []):
+        pre, post = _eff_of_values(gone), _eff_of_values(came)
+        P, Q = pre[0], post[0]
+        if Q - P:
+            cat1(key, pre, post)
+        elif P - Q:
+            counts["3"] += 1
+        elif not P and not Q and post[1] and not pre[1]:
+            cat2(key, post)
+        else:
+            counts["4"] += 1
+    return {"counts": dict(counts), "dropped": dict(dropped)}
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         prog="corpus-ab.py", add_help=True,
@@ -466,6 +558,9 @@ def build_parser():
                     help="compare the rest anyway when some entries have analyzed.count 0 (judged "
                          "nothing).  They are excluded from the diff and named on every run.")
     ap.add_argument("--out", help="write the full diff detail as JSON here")
+    ap.add_argument("--buckets", action="store_true",
+                    help="sort the diff into VERDICT buckets (R662/R664): a changed row is not a "
+                         "changed verdict. A bucket-1 count PREDICTS a scoped-gate flip; validate it.")
     ap.add_argument("--selftest", action="store_true", help="run the four calibration proofs and exit")
     return ap
 
@@ -706,6 +801,22 @@ def run(args):
         emit("  REACH: NOT MEASURED.  This run cannot tell \"0 changed because the change is inert\"")
         emit("  from \"0 changed because the corpus never reached it\".  Pass --mark to separate them.")
 
+    # ── VERDICT BUCKETS (--buckets) ──────────────────────────────────────────────────────────
+    if args.buckets:
+        emit()
+        emit("  VERDICT BUCKETS — a changed ROW is not a changed VERDICT.")
+        b = classify_verdicts(detail, pre_rows)
+        tot = max(1, len(post_rows))
+        for k, label in BUCKET_LABELS:
+            n = b["counts"].get(k, 0)
+            emit("    %-46s %6d   %.4f%% of %d post rows" % (label, n, 100.0 * n / tot, tot))
+        if b["dropped"]:
+            emit("    ── candidates DROPPED, and why a changed row is not a flip ──")
+            for k, n in sorted(b["dropped"].items(), key=lambda kv: -kv[1]):
+                emit("       %-43s %6d" % (k, n))
+        emit("    A bucket-1 count is a PREDICTION about a scoped gate, not a measurement of one.")
+        emit("    Validate it: run the real gate over a sample of bucket-1 quals on BOTH arms.")
+
     # ── write detail ──
     if args.out:
         with open(args.out, "w") as fh:
@@ -858,6 +969,43 @@ def selftest():
               for l in narrow.splitlines()), narrow)
 
     emit()
+    # ── [5] VERDICT BUCKETS (R662/R664) ──────────────────────────────────────────────────────
+    # The classifier this promotes had TWO errors on its first real run, BOTH caught by gate
+    # validation and NEITHER visible in its own output.  So both corrections are driven here, in
+    # the direction that would hide them: each case is a row the naive classifier calls a
+    # verdict change and which a real gate does NOT move.
+    emit()
+    emit("[5] VERDICT BUCKETS — a changed ROW is not a changed VERDICT.")
+    def _v(**kw):
+        return json.dumps(kw, sort_keys=True, separators=(",", ":"))
+    cases = [
+        ("a pure row gaining a CONCRETE effect is bucket 1",
+         {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Net"])]]]}, [], "1", 1),
+        ("C1: an interfaceUnion row gaining Net is NOT a flip",
+         {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Net"], interfaceUnion=True)]]]}, [], "1", 0),
+        ("C2: a duplicate of an already-red qual is NOT a flip",
+         {"added": [[["e", "p", "f", "h2"], 1, [_v(inferred=["Net"])]]]},
+         [("e", "p", {"fn": "f", "inferred": ["Net"]})], "1", 0),
+        ("…but the SAME qual gaining a DIFFERENT effect IS a flip",
+         {"added": [[["e", "p", "f", "h2"], 1, [_v(inferred=["Fs"])]]]},
+         [("e", "p", {"fn": "f", "inferred": ["Net"]})], "1", 1),
+        ("Unknown-only is bucket 2, never bucket 1",
+         {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Unknown"])]]]}, [], "2", 1),
+        ("…and the same row is NOT counted as a flip",
+         {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Unknown"])]]]}, [], "1", 0),
+        ("a LOST concrete effect is bucket 3",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Fs"])]]]}, [], "3", 1),
+        ("a pure row appearing is bucket 4, not 1 or 2",
+         {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=[])]]]}, [], "4", 1),
+    ]
+    for name, detail, pre_rows, bucket, want in cases:
+        got = classify_verdicts(detail, pre_rows)["counts"].get(bucket, 0)
+        if got == want:
+            emit("  ok   %s" % name)
+        else:
+            emit("  FAIL %s — bucket %s got %d want %d" % (name, bucket, got, want))
+            fails.append(name)
+
     emit("[4] VACUITY CONTROL — identical arms must return zero, so a zero means something.")
     same = [_fn("a", ["Fs"]), _fn("a", ["Fs"]), _fn("b", [], ["macro:y"])]
     e4 = mk("identical", same, list(same))

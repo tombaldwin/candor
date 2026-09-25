@@ -1,0 +1,140 @@
+# corpus-census-java.tsv — the PINNED java census roster.  SOUNDNESS R663.
+#
+# WHY THIS FILE EXISTS.  There was no standing java corpus.  `bin/corpus.sh` acquires FIVE jars, and
+# the register cites java measurements over 325, 371, 372 and 395 jars — runs whose rosters were
+# assembled ad hoc by individual agents and deleted with their scratchpads.  So every java figure in
+# the register rests on a corpus nobody can reconstruct, and R662's census (which priced what a month
+# of soundness work changes for a user) COULD NOT BE REPEATED for the reference engine at all.
+#
+# It was not a disk constraint: 58 GB were free when this was found.  Nothing owned the roster.
+#
+# THIS IS NOT THE ORACLE ROSTER.  corpus.sh's five jars are chosen for the SHAPES they expose — read
+# its comments, sqlite-jdbc is there because it is the only jar that reaches one serialization filter,
+# and dropping it "for being another database driver" would silently retire that check.  This file is
+# chosen for SCALE, so that a percentage has a denominator.  Both are needed and neither substitutes.
+#
+# EVERY LINE WAS VERIFIED BY ACQUISITION, NOT BY RECALL.  118 of 121 candidates resolved against
+# Maven Central on 2026-09-25; the sha1 in column 2 is Central's OWN `.jar.sha1` sidecar, fetched at
+# the same time.  Three candidates were dropped or corrected because they 404'd — `mysql-connector-java`
+# (now `com.mysql:mysql-connector-j`) and `org.jboss:jandex` (now `io.smallrye:jandex`) had both moved
+# groupId, which is exactly the rot a hand-written, unverified list accumulates silently.
+#
+# groupId:artifactId:version<TAB>sha1.  Acquire with: bash bin/corpus-census.sh java
+cglib:cglib:3.3.0	c956b9f9708af5901e9cf05701e9b2b1c25027cc
+ch.qos.logback:logback-classic:1.5.6	afc75d260d838a3bddfb8f207c2805ed7d1b34f9
+ch.qos.logback:logback-core:1.5.6	41cbe874701200c5624c19e0ab50d1b88dfcc77d
+com.auth0:java-jwt:4.4.0	0e02407d19971bfa241441212901dd327a37722b
+com.fasterxml.jackson.core:jackson-annotations:2.17.1	fca7ef6192c9ad05d07bc50da991bf937a84af3a
+com.fasterxml.jackson.core:jackson-core:2.17.1	5e52a11644cd59a28ef79f02bddc2cc3bab45edb
+com.fasterxml.jackson.core:jackson-databind:2.17.1	0524dcbcccdde7d45a679dfc333e4763feb09079
+com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.1	b4c7b8a9ea3f398116a75c146b982b22afebc4ee
+com.github.ben-manes.caffeine:caffeine:3.1.8	24795585df8afaf70a2cd534786904ea5889c047
+com.github.luben:zstd-jni:1.5.6-3	823b794106e4bcb80110f49408d1641231f25927
+com.google.code.findbugs:jsr305:3.0.2	25ea2e8b0c338a877313bd4672d3fe056ea78f0d
+com.google.code.gson:gson:2.11.0	527175ca6d81050b53bdd4c457a6d6e017626b0e
+com.google.errorprone:error_prone_annotations:2.28.0	59fc00087ce372de42e394d2c789295dff2d19f0
+com.google.guava:guava:33.2.1-jre	818e780da2c66c63bbb6480fef1f3855eeafa3e4
+com.google.inject:guice:7.0.0	ccc518677b9367d45f99dfa592c9b039f07687d3
+com.google.protobuf:protobuf-java:4.27.1	1e0a91cb54fe89b8c8b7b84ce4cbc72bc664c923
+com.h2database:h2:2.2.224	7bdade27d8cd197d9b5ce9dc251f41d2edc5f7ad
+com.itextpdf:itextpdf:5.5.13.3	5282897d446c3b736d63ef6e83043eb6f1943b4e
+com.jcraft:jsch:0.1.55	bbd40e5aa7aa3cfad5db34965456cee738a42a50
+com.mysql:mysql-connector-j:8.4.0	b1bc0f47bcad26ad5f9bceefb63fcb920d868fca
+com.opencsv:opencsv:5.9	284ea0b60a24b71a530100783185e7d547ab5339
+com.rabbitmq:amqp-client:5.21.0	070797e8a66e800391940edcf21f31423b9768f1
+com.squareup.okhttp3:okhttp:4.12.0	2f4525d4a200e97e1b87449c2cd9bd2e25b7e8cd
+com.squareup.okio:okio:3.9.0	52794254a1fa50d5801f490e105842a894fb918d
+com.squareup.retrofit2:retrofit:2.11.0	6ca8c6caf842271f3232e075519fe04081ef7069
+com.typesafe:config:1.4.3	b57e0fbdc7270d8ea59c1ba367457a5cc7ba0e98
+com.zaxxer:HikariCP:5.1.0	8c96e36c14461fc436bb02b264b96ef3ca5dca8c
+commons-cli:commons-cli:1.8.0	41a4bff12057eecb6daaf9c7f36c237815be3da1
+commons-codec:commons-codec:1.17.0	0dbe8eef6e14460e73da07f7b11bf994d6626355
+commons-io:commons-io:2.16.1	377d592e740dc77124e0901291dbfaa6810a200e
+commons-net:commons-net:3.11.1	f0689b01d2e3ef4b316bcc87360849a22f05d06d
+io.dropwizard.metrics:metrics-core:4.2.26	9cd762999669e726f694a3ac8f9d8a1400cdb332
+io.jsonwebtoken:jjwt-api:0.12.5	ea8243e36f16c2834ad69a048ed8a24aa9dd3e79
+io.lettuce:lettuce-core:6.3.2.RELEASE	29b2aac09256c5fc2e9e9ad1df41c65dad5e557a
+io.micrometer:micrometer-core:1.13.1	b00758ad616bd820d793f305215f0b80b9a08fd8
+io.netty:netty-buffer:4.1.111.Final	b54863f578939e135d3b3aea610284ae57c188cf
+io.netty:netty-codec-http:4.1.111.Final	c6ecbc452321e632bf3cea0f9758839b650455c7
+io.netty:netty-common:4.1.111.Final	58210befcb31adbcadd5724966a061444db91863
+io.netty:netty-handler:4.1.111.Final	2bc6a58ad2e9e279634b6e55022e8dcd3c175cc4
+io.netty:netty-transport:4.1.111.Final	24e97cf14ea9d80afe4c5ab69066b587fccc154a
+io.projectreactor:reactor-core:3.6.7	6d1918147645b5b8e577555a89ab271319f25d2f
+io.reactivex.rxjava3:rxjava:3.1.8	37f2ce0c5e45e2d59e8ad8ca574ea396df4dd339
+io.smallrye:jandex:3.2.0	f17ad860f62a08487b9edabde608f8ac55c62fa7
+jakarta.annotation:jakarta.annotation-api:3.0.0	54f928fadec906a99d558536756d171917b9d936
+javax.inject:javax.inject:1	6975da39a7040257bd51d21a231b76c915872d38
+joda-time:joda-time:2.12.7	d015b997eccd511e5567218a51651ff0625f6f25
+junit:junit:4.13.2	8ac9e16d933b6fb43bc7f576336b8f4d7eb5ba12
+net.java.dev.jna:jna-platform:5.14.0	28934d48aed814f11e4c584da55c49fa7032b31b
+net.java.dev.jna:jna:5.14.0	67bf3eaea4f0718cb376a181a629e5f88fa1c9dd
+net.sf.ehcache:ehcache:2.10.9.2	642832b8def8968295e9eedb41cd8fd625786561
+org.apache.ant:ant:1.10.14	1edce9bbfa60dfd51f010879c78f4421dafae7a7
+org.apache.commons:commons-collections4:4.4	62ebe7544cb7164d87e0637a2a6a2bdc981395e8
+org.apache.commons:commons-compress:1.26.2	eb1f823447af685208e684fce84783b43517960c
+org.apache.commons:commons-csv:1.11.0	8f2dc805097da534612128b7cdf491a5a76752bf
+org.apache.commons:commons-dbcp2:2.12.0	45698ece9fda230d0b1c96282c03ce1ebbd6c3ce
+org.apache.commons:commons-lang3:3.14.0	1ed471194b02f2c6cb734a0cd6f6f107c673afae
+org.apache.commons:commons-math3:3.6.1	e4ba98f1d4b3c80ec46392f25e094a6a2e58fcbf
+org.apache.commons:commons-pool2:2.12.0	458563f69fbdaebf7daadfe10dc3a22e42a7de50
+org.apache.commons:commons-text:1.12.0	66aa90dc099701c4d3b14bd256c328f592ccf0d6
+org.apache.curator:curator-framework:5.7.0	0b3a2c5191cb2aa609cc9bdd19701bdbd53ee627
+org.apache.groovy:groovy:4.0.21	6ff3635d098b128f899c064dbc17cc1fe0db9bdc
+org.apache.httpcomponents:httpclient:4.5.14	1194890e6f56ec29177673f2f12d0b8e627dec98
+org.apache.httpcomponents:httpcore:4.4.16	51cf043c87253c9f58b539c9f7e44c8894223850
+org.apache.kafka:kafka-clients:3.7.0	b8f9f75bc3edc06f842dd16071465544198bc045
+org.apache.logging.log4j:log4j-api:2.23.1	9c15c29c526d9c6783049c0a77722693c66706e1
+org.apache.logging.log4j:log4j-core:2.23.1	905802940e2c78042d75b837c136ac477d2b4e4d
+org.apache.maven:maven-core:3.9.7	b2fa3ac64ab934d15bc865b82836663847660fdd
+org.apache.mina:mina-core:2.2.3	2a978175e8775dd2e5bb2c66ce1a0ccef9f49385
+org.apache.pdfbox:pdfbox:3.0.2	52327f7106515024494a08850a629e50ac7a1b9b
+org.apache.poi:poi-ooxml:5.2.5	df9f2c52371eeba24db8ea8cafa77285c3cc0742
+org.apache.poi:poi:5.2.5	7e00f6b2f76375fe89022d5a7db8acb71cbd55f5
+org.apache.shiro:shiro-core:1.13.0	7e542e3d614b197bf10005e98e19f9f19cb943e7
+org.apache.sshd:sshd-core:2.12.1	5ebb807241b86743a89d19f07e8d9138feec42de
+org.apache.tomcat.embed:tomcat-embed-core:10.1.25	c1e5ee12f537e6b4fea2b98a7160dcf0db610561
+org.apache.velocity:velocity-engine-core:2.3	e2133b723d0e42be74880d34de6bf6538ea7f915
+org.apache.zookeeper:zookeeper:3.9.2	b6a8d8e3a4cf932cad92e5894c93724c73076333
+org.assertj:assertj-core:3.26.0	fc4a3d051da838946f9dffe725efbd06cd7d1eec
+org.bouncycastle:bcpkix-jdk18on:1.78.1	17b3541f736df97465f87d9f5b5dfa4991b37bb3
+org.bouncycastle:bcprov-jdk18on:1.78.1	39e9e45359e20998eb79c1828751f94a818d25f8
+org.checkerframework:checker-qual:3.44.0	e026b198319ea9dd3f221fab367d2099215079e5
+org.codehaus.groovy:groovy:3.0.21	f82650a717344fd094bfb72d6aadf3b8e19b0582
+org.codehaus.plexus:plexus-utils:3.5.1	c6bfb17c97ecc8863e88778ea301be742c62b06d
+org.eclipse.jetty:jetty-server:11.0.21	b79108d0351d60ee2be5d40a0d1917ab2f1aa6ad
+org.eclipse.jetty:jetty-util:11.0.21	fe5c0f51b46b2786daf858724ffed6a779c00287
+org.eclipse.jgit:org.eclipse.jgit:6.9.0.202403050737-r	e4da064611794c35cbf80a720a3f813285d5ccba
+org.ehcache:ehcache:3.10.8	f0d50ede46609db78413ca7f4250d348a597b101
+org.elasticsearch.client:elasticsearch-rest-client:8.14.0	4be97628a130f3107528ee4741a6ddd39b336b85
+org.freemarker:freemarker:2.3.32	8607259125d4fbe982754227ea4f75dd513c6d19
+org.hamcrest:hamcrest:2.2	1820c0968dba3a11a1b30669bb1f01978a91dedc
+org.hibernate.orm:hibernate-core:6.5.2.Final	e9e0cc47f6cd2b2553968aee66bd9e55e7485221
+org.javassist:javassist:3.30.2-GA	284580b5e42dfa1b8267058566435d9e93fae7f7
+org.jetbrains.kotlin:kotlin-stdlib:1.9.24	9928532f12c66ad816a625b3f9984f8368ca6d2b
+org.jsoup:jsoup:1.17.2	1e75b08d7019546a954f1e359477f916f537a34d
+org.junit.jupiter:junit-jupiter-api:5.10.2	fb55d6e2bce173f35fd28422e7975539621055ef
+org.junit.jupiter:junit-jupiter-engine:5.10.2	f1f8fe97bd58e85569205f071274d459c2c4f8cd
+org.lz4:lz4-java:1.8.0	4b986a99445e49ea5fbf5d149c4b63f6ed6c6780
+org.mockito:mockito-core:5.12.0	22f8bbaf478e6789164787fa411a3b5ed986e110
+org.mongodb:mongodb-driver-sync:5.1.0	f068e1ac6e95e725b9aa87468cb9ffe13872a60d
+org.ow2.asm:asm-analysis:9.7	e4a258b7eb96107106c0599f0061cfc1832fe07a
+org.ow2.asm:asm-commons:9.7	e86dda4696d3c185fcc95d8d311904e7ce38a53f
+org.ow2.asm:asm-tree:9.7	e446a17b175bfb733b87c5c2560ccb4e57d69f1a
+org.ow2.asm:asm:9.7	073d7b3086e14beb604ced229c302feff6449723
+org.postgresql:postgresql:42.7.3	24f3e9f7231428cd20eb4dde00dd3fce44e05464
+org.projectlombok:lombok:1.18.32	17d46b3e205515e1e8efd3ee4d57ce8018914163
+org.quartz-scheduler:quartz:2.5.0	f5f0e256f6c82299e0bccbf559a8ca38bd8c187b
+org.scala-lang:scala-library:2.13.14	f8b4afe89abe48ca670f620c7da89b71f93e6546
+org.slf4j:slf4j-api:2.0.13	80229737f704b121a318bba5d5deacbcf395bc77
+org.springframework:spring-beans:6.1.10	a49252929fb2918f73eb7659ef98dff7306a7c2c
+org.springframework:spring-context:6.1.10	6f869ea35a26028f3bfbfb52c72ef2b077fbb6e5
+org.springframework:spring-core:6.1.10	eaf5b1f3e3bb5aa8b45ab255cf3270c1c4578f1d
+org.springframework:spring-jdbc:6.1.10	bba7d7de1d944443bd9e45d0ebcbbb6ec6864be0
+org.springframework:spring-web:6.1.10	876a856af61ef5712fb9a3013b798aa2b4a9475e
+org.testng:testng:7.10.2	30742acada21960d4333a4204039fbdc6a92083a
+org.tukaani:xz:1.9	1ea4bec1a921180164852c65006d928617bd2caf
+org.xerial.snappy:snappy-java:1.1.10.5	ac605269f3598506196e469f1fb0d7ed5c55059e
+org.xerial:sqlite-jdbc:3.46.0.0	aa79a7b3fd17b70ca7cb4cc894d5c8488c60aabe
+org.yaml:snakeyaml:2.2	3af797a25458550a16bf89acc8e4ab2b7f2bfce0
+redis.clients:jedis:5.1.3	cb51c3627858db65a389f35952912539ce984696

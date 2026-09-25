@@ -50,7 +50,21 @@ if [ "$ARM" = "java" ]; then
     f="$DEST/$a-$v.jar"
     if [ -f "$f" ]; then
       actual="$(shasum -a 1 "$f" 2>/dev/null | cut -d' ' -f1)"
-      if [ "$actual" = "$sha" ]; then have=$((have + 1)); continue; fi
+      if [ "$actual" = "$sha" ]; then
+        # SHA1 PROVES INTEGRITY, NOT FITNESS — SOUNDNESS R666, found on this roster's FIRST use.
+        # `com.squareup.okio:okio:3.9.0` verified, downloaded and sha1-matched PERFECTLY, and holds
+        # ZERO `.class` files: it is the Kotlin Multiplatform *metadata* artifact. Every engine
+        # refused it at exit 2, so it contributed nothing to the denominator and the census silently
+        # compared 117 of 118. A coordinate can be real, current, popular and still be a BOM, a
+        # `-sources`, or a `-metadata` jar. That is the R242 hollow-corpus class one layer up,
+        # defeated by an entry that is not corrupt at all — so integrity is checked above and
+        # FITNESS is checked here, and an unfit jar counts as BAD rather than present.
+        if [ "$(unzip -l "$f" 2>/dev/null | grep -c '\.class$')" -eq 0 ]; then
+          echo "  UNFIT $a-$v.jar — sha1 correct, ZERO .class files (BOM/-sources/-metadata?)"
+          bad=$((bad + 1)); continue
+        fi
+        have=$((have + 1)); continue
+      fi
       echo "  CORRUPT $a-$v.jar — sha1 $actual != roster $sha"
       bad=$((bad + 1)); [ "$MODE" = "--check" ] && continue; rm -f "$f"
     fi
@@ -58,8 +72,11 @@ if [ "$ARM" = "java" ]; then
     url="$M/$(echo "$g" | tr '.' '/')/$a/$v/$a-$v.jar"
     if curl -fsSL --max-time 120 -o "$f" "$url"; then
       actual="$(shasum -a 1 "$f" 2>/dev/null | cut -d' ' -f1)"
-      if [ "$actual" = "$sha" ]; then got=$((got + 1))
-      else echo "  SHA MISMATCH $a-$v.jar — got $actual want $sha"; rm -f "$f"; bad=$((bad + 1)); fi
+      if [ "$actual" != "$sha" ]; then
+        echo "  SHA MISMATCH $a-$v.jar — got $actual want $sha"; rm -f "$f"; bad=$((bad + 1))
+      elif [ "$(unzip -l "$f" 2>/dev/null | grep -c '\.class$')" -eq 0 ]; then
+        echo "  UNFIT $a-$v.jar — sha1 correct, ZERO .class files (R666)"; bad=$((bad + 1))
+      else got=$((got + 1)); fi
     else
       echo "  MISS $coord"; miss=$((miss + 1))
     fi

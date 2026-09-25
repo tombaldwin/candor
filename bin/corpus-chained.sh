@@ -80,9 +80,15 @@ build_one() {
   # THE RECOVERY LOOP.  A generated call can still be rejected — an inaccessible return type, an
   # overload javac resolves differently under a raw receiver.  One bad CALL must cost one call, not
   # the type and not the entry, so failing LINES are commented out and the file is retried; only a
-  # file that still fails is dropped, and both counts land in the manifest.  Silently dropping them
-  # would move the denominator in the flattering direction and say nothing.
-  local round=0 dropped=0 lines=0
+  # file that still fails is dropped, and both counts land in `recovery.txt`, which
+  # `corpus-chained-judge.py` reads (:95) and folds into the run's own accounting.  Silently dropping
+  # them would move the denominator in the flattering direction and say nothing.
+  #
+  # The counts are kept by the PYTHON block below, not by shell locals: an earlier cut declared
+  # `dropped` and `lines` here and never assigned them, so shellcheck called them unused and was
+  # right — the shell copy would have read 0 forever while `recovery.txt` held the real figures. A
+  # second, always-zero copy of a number this run depends on is worse than no copy.
+  local round=0
   while :; do
     javac -nowarn -proc:none -Xmaxerrs 100000 -cp "$jar:$cp" -d "$d/cls" "@$d/files.txt" \
       >"$d/javac.$round.log" 2>&1 && break

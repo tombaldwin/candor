@@ -19,6 +19,13 @@
 # (now `com.mysql:mysql-connector-j`) and `org.jboss:jandex` (now `io.smallrye:jandex`) had both moved
 # groupId, which is exactly the rot a hand-written, unverified list accumulates silently.
 #
+# A JAR THAT RESOLVES IS NOT A JAR THAT CONTAINS CLASSES — found on this roster's FIRST use, 2026-09-25.
+# `com.squareup.okio:okio:3.9.0` verified, downloaded and sha1-matched perfectly, and holds ZERO `.class`
+# files: it is the Kotlin **Multiplatform metadata** artifact, and every engine build correctly refuses it
+# at exit 2.  The JVM artifact is `okio-jvm`.  So sha1 verification proves INTEGRITY, not FITNESS, and a
+# Maven coordinate can be real, current, popular and still contribute nothing to a denominator.
+# Corrected here; the same shape to watch for is any `-metadata`, BOM or `-sources` coordinate.
+#
 # groupId:artifactId:version<TAB>sha1.  Acquire with: bash bin/corpus-census.sh java
 cglib:cglib:3.3.0	c956b9f9708af5901e9cf05701e9b2b1c25027cc
 ch.qos.logback:logback-classic:1.5.6	afc75d260d838a3bddfb8f207c2805ed7d1b34f9
@@ -43,7 +50,7 @@ com.mysql:mysql-connector-j:8.4.0	b1bc0f47bcad26ad5f9bceefb63fcb920d868fca
 com.opencsv:opencsv:5.9	284ea0b60a24b71a530100783185e7d547ab5339
 com.rabbitmq:amqp-client:5.21.0	070797e8a66e800391940edcf21f31423b9768f1
 com.squareup.okhttp3:okhttp:4.12.0	2f4525d4a200e97e1b87449c2cd9bd2e25b7e8cd
-com.squareup.okio:okio:3.9.0	52794254a1fa50d5801f490e105842a894fb918d
+com.squareup.okio:okio-jvm:3.9.0	eaa4f7858a1e80908b1a2e861e662edd7c6cbbb5
 com.squareup.retrofit2:retrofit:2.11.0	6ca8c6caf842271f3232e075519fe04081ef7069
 com.typesafe:config:1.4.3	b57e0fbdc7270d8ea59c1ba367457a5cc7ba0e98
 com.zaxxer:HikariCP:5.1.0	8c96e36c14461fc436bb02b264b96ef3ca5dca8c

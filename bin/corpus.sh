@@ -76,7 +76,51 @@ SRC="$HOME_DIR/src"; JARS="$HOME_DIR/jars"; OUT="$HOME_DIR/out"; LOG="$HOME_DIR/
 # that silently creates `$CORPUS_HOME` is that habit in miniature.
 [ "${1:-}" = "--hollow-check" ] || mkdir -p "$SRC" "$JARS" "$OUT" "$LOG"
 findings=0
-finding() { echo "  FINDING: $*"; findings=$((findings+1)); }
+known_hits=0
+KNOWN_SEEN=""
+
+# THE KNOWN-FINDINGS LEDGER, AND WHY IT IS NOT AN ALLOWLIST.
+#
+# WHY THIS EXISTS, measured 2026-09-25. This workflow had been RED FOR THREE DAYS — 2026-09-22,
+# 09-23 and today — on two findings that are already FILED AND OPEN in the register (R543/R576,
+# R578). Nobody looked, including me, and I spent that same period pushing to six repos and reading
+# `ci-watch` after every wave. A scheduled run that is permanently red teaches exactly one lesson,
+# and it is the wrong one: the ledger exists so that a NEW finding is visible against a quiet
+# background instead of being the third line of a red that everyone has stopped reading.
+#
+# THE RULE IS THE CONFORMANCE XFAIL LEDGER'S, BORROWED WHOLE (R475): **EVERY ENTRY NAMES A ROW, AND AN
+# ENTRY THAT STOPS REPRODUCING IS A FAILURE.** A known finding that disappears means either the row was
+# closed and this ledger was not updated, or the ORACLE stopped asking the question — and the second is
+# the one that costs, because it is silent and it looks like progress. That is the same reason a
+# PASSING xfail is a failure in `conformance/run.sh`, and it is the only thing that keeps a ledger from
+# degenerating into a list of things nobody has to think about again.
+#
+# WHAT AN ENTRY MAY NOT DO: it may not name a finding that is not in the register. The row is the
+# entry's justification, not a cross-reference — if there is no row, the honest state is a red build.
+KNOWN_FINDINGS='R576|honesty: rust.serde|de::Visitor::visit_char
+R578|honesty: swift.swift-argument-parser|GenerateManual.generatePages'
+
+finding() {
+  _text="$*"; _row=""
+  while IFS='|' read -r _r _scope _sym; do
+    [ -n "$_r" ] || continue
+    # BOTH substrings must match. Keying on the symbol alone would swallow a DIFFERENT defect that
+    # happens to surface at the same function, which is the failure mode an allowlist is prone to and
+    # the reason this is two fields rather than one.
+    case "$_text" in *"$_scope"*) case "$_text" in *"$_sym"*) _row="$_r" ;; esac ;; esac
+    [ -n "$_row" ] && break
+  done <<KNOWN_EOF
+$KNOWN_FINDINGS
+KNOWN_EOF
+  if [ -n "$_row" ]; then
+    echo "  KNOWN ($_row): $_text"
+    KNOWN_SEEN="$KNOWN_SEEN $_row"
+    known_hits=$((known_hits+1))
+  else
+    echo "  FINDING: $_text"
+    findings=$((findings+1))
+  fi
+}
 
 # A DIRECTORY IS NOT A CHECKOUT, AND AN EXISTING FILE IS NOT A JAR — SOUNDNESS R242.
 #
@@ -654,7 +698,24 @@ if [ "${1:-}" != "--oracles-only" ]; then
 fi
 echo "[oracles]"; oracles
 echo
-if [ "$findings" -eq 0 ]; then echo "corpus: OK — no findings"; exit 0; fi
+
+# A KNOWN FINDING THAT STOPPED REPRODUCING IS A FAILURE, NOT A QUIET WIN — see the ledger's header.
+_stale=""
+while IFS='|' read -r _r _scope _sym; do
+  [ -n "$_r" ] || continue
+  case " $KNOWN_SEEN " in *" $_r "*) ;; *) _stale="$_stale $_r" ;; esac
+done <<KNOWN_EOF
+$KNOWN_FINDINGS
+KNOWN_EOF
+if [ -n "$_stale" ]; then
+  echo "corpus: LEDGER STALE — known finding(s) did not reproduce:$_stale"
+  echo "  Either the row was closed and this ledger was not updated, or the ORACLE STOPPED ASKING."
+  echo "  The second is the one that costs: it is silent, and it looks like progress. Same rule as a"
+  echo "  PASSING xfail in conformance/run.sh. Resolve it by reading the row, not by deleting the entry."
+  exit 1
+fi
+[ "$known_hits" -gt 0 ] && echo "corpus: $known_hits known finding(s), each naming an OPEN row — not a pass, a filed defect."
+if [ "$findings" -eq 0 ]; then echo "corpus: OK — no NEW findings"; exit 0; fi
 echo "corpus: $findings FINDING(S) — a finding is a candidate cardinal sin; trace each to ground truth"
 echo "  (a corpus finding has been wrong before: reduce every mechanism story to a FIXTURE before filing)"
 exit 1

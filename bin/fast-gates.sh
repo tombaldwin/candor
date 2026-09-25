@@ -54,8 +54,20 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HERE" || exit 2
 
-# THE DISK CHECK IS FIRST AND IT LATCHES, for the reason in the header: this file exists BECAUSE a
-# gate filled the disk, and a full disk makes every result below meaningless in the OK direction.
+# THE DISK CHECK IS FIRST, for the reason in the header: this file exists BECAUSE a gate filled the
+# disk, and a full disk makes every result below meaningless in the OK direction.
+#
+# IT DOES NOT LATCH, AND THE FIRST VERSION OF THIS COMMENT SAID IT DID — corrected 2026-09-25 by an
+# adversarial review, as SOUNDNESS R644. It runs `disk-guard.sh` ONCE, AS A SUBPROCESS, and never
+# again; there is nothing to latch, because `CANDOR_DISK_BROKE` lives in the guard's own process and
+# dies with it. `gate-run.sh:85` SOURCES the guard and calls `disk_guard_check` after every gate —
+# this file borrowed the word without the mechanism.
+#
+# CLAUDE.md names precisely this blind spot: "the dangerous case is the MID-RUN crossing, not the
+# start … a startup-only check is blind to precisely the case that bites". The residual risk here is
+# small — ~50s, no engine build, nothing that can consume 28 GB — which is the ONLY reason this is a
+# corrected sentence rather than a corrected script. It is the SECOND false safety claim in this
+# file's comments in two days, and both were in the sentence that made the diff look finished.
 if ! bash "$HERE/bin/disk-guard.sh" >/dev/null 2>&1; then
   echo "fast-gates: REFUSING — bin/disk-guard.sh is unhappy. A full disk fakes a FAIL and fakes an"
   echo "  empty result, and says neither. Reclaim space, then re-run."

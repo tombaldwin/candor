@@ -17,6 +17,21 @@ Two jobs `bin/corpus-ab.py` deliberately does not do:
        class     a (entry, enclosing class) that gains any concrete effect
        package   summed NEW (package, effect) pairs, package by longest declared prefix
        artifact  NEW (entry, effect) pairs
+
+THE RUST HALF (`--coverage-rs` / `--report-rs`, SOUNDNESS R673(a)) answers the same two questions for
+`bin/corpus-chained-rs.sh`.  It is a SECOND SCOPE LADDER, not a second judge: the probe accounting, the
+ABSENT column and the lost-effect audit are the same code.  Only the scope rungs differ, because a rust
+report has no `packages` key and a rust qual is a `::` path:
+
+       function  the whole qual
+       parent    the qual minus its last segment       (R664's "parent type or module")
+       module    the qual's FIRST segment              (R664's "top-level module")
+       crate     NEW (entry, effect) pairs
+
+A rust consumer report also REPUBLISHES rows it read off the wire — `tower_service#Service::call` shows
+up in a consumer's own report.  Those are not the consumer's units, so a row is counted only when its
+`hash` names the report's own package, and the count of rows dropped by that rule is printed rather than
+assumed to be zero.
 """
 import collections
 import glob
@@ -225,9 +240,216 @@ def report(out, work, entries):
     return 0
 
 
+# ── THE RUST LADDER ───────────────────────────────────────────────────────────────────────────────
+def rs_index(doc):
+    """(effects by fn, effects by parent, effects by top-level segment, effects at entry, present,
+    foreign_rows_dropped)."""
+    pkg = doc.get("package") or ""
+    byfn = collections.defaultdict(set)
+    bypar = collections.defaultdict(set)
+    bymod = collections.defaultdict(set)
+    byent = set()
+    present = set()
+    foreign = 0
+    for r in doc.get("functions", []):
+        fn = r.get("fn")
+        if r.get("interfaceUnion"):
+            continue          # C1/R660: filtered at every gate's ingress, so it moves no verdict
+        h = r.get("hash") or ""
+        if h and pkg and not h.startswith(pkg + "#"):
+            # A row the consumer read off the wire and republished.  Not a unit of this crate, so not
+            # a thing any policy scoped to this crate addresses.
+            foreign += 1
+            continue
+        present.add(fn)
+        eff = {e for e in (r.get("inferred") or []) if e != "Unknown"}
+        if not eff:
+            continue
+        segs = (fn or "").split("::")
+        byfn[fn] |= eff
+        bypar["::".join(segs[:-1]) or "(crate)"] |= eff
+        bymod[segs[0] if len(segs) > 1 else "(crate)"] |= eff
+        byent |= eff
+    return byfn, bypar, bymod, byent, present, foreign
+
+
+def rs_manifests(work, entries, variant):
+    """probe quals per entry name, from the generator's own manifest (empty for `standalone`)."""
+    out = {}
+    for line in open(entries):
+        entry = line.split("\t")[0].strip()
+        if not entry:
+            continue
+        name = os.path.basename(entry)
+        mf = os.path.join(work, "gen", "%s.%s.json" % (name, variant))
+        if variant in ("noimpl", "impl") and os.path.exists(mf):
+            try:
+                out[name] = json.load(open(mf))
+            except ValueError:
+                out[name] = {}
+        else:
+            out[name] = {}
+    return out
+
+
+def coverage_rs(work, entries):
+    tot = collections.Counter()
+    skips = collections.Counter()
+    n = 0
+    for variant in ("noimpl", "impl"):
+        mans = rs_manifests(work, entries, variant)
+        for name, d in mans.items():
+            if not d:
+                continue
+            tot["consumers_%s" % variant] += 1
+            tot["probes_%s" % variant] += d.get("probes", 0)
+            tot["probes_before_cap_%s" % variant] += d.get("probes_before_cap", 0)
+            tot["modules_%s" % variant] += d.get("consumer_modules", 0)
+            tot["implementors_%s" % variant] += d.get("implementors", 0)
+            if variant == "noimpl":
+                for k in ("public_traits", "public_fns", "public_inherent"):
+                    tot[k] += d.get(k, 0)
+                for k, v in (d.get("skips") or {}).items():
+                    skips[k] += v
+    for line in open(entries):
+        if line.strip():
+            n += 1
+    print("== consumer BUILD coverage, rust (%d entries)" % n)
+    for k in sorted(tot):
+        print("   %-28s %d" % (k, tot[k]))
+    print("   generator skips (a skip is a probe NOT written; it is not a clean result):")
+    for k, v in sorted(skips.items(), key=lambda kv: -kv[1]):
+        print("      %-70s %d" % (k[:70], v))
+    return tot
+
+
+def report_rs(out, work, entries, variant):
+    pre_d, post_d = os.path.join(out, "rep-pre"), os.path.join(out, "rep-post")
+    PRE, POST = load_arm(pre_d), load_arm(post_d)
+    names = sorted(set(PRE) & set(POST))
+    if not names:
+        print("corpus-chained-judge: NO ENTRY has both arms — nothing to compare.")
+        return 3
+    mans = rs_manifests(work, entries, variant)
+
+    move = collections.Counter()
+    per_entry_moved = []
+    fnflip = parflip = modflip = entflip = 0
+    fnlost = 0
+    analyzed = 0
+    probes_total = 0
+    reach_rows = 0
+    foreign_dropped = 0
+    lost_detail, gain_detail, unk_detail = [], [], []
+
+    for name in names:
+        a, b = PRE[name], POST[name]
+        ia, ib = rs_index(a), rs_index(b)
+        foreign_dropped += ia[5] + ib[5]
+        analyzed += (b.get("analyzed") or {}).get("count") or 0
+        quals = list((mans.get(name, {}).get("quals") or {}).keys())
+        probes_total += len(quals)
+
+        def unk(doc):
+            pkg = doc.get("package") or ""
+            return {r.get("fn") for r in doc.get("functions", [])
+                    if "Unknown" in (r.get("inferred") or []) and not r.get("interfaceUnion")
+                    and (not r.get("hash") or not pkg or (r.get("hash") or "").startswith(pkg + "#"))}
+        pre_unk, post_unk = unk(a), unk(b)
+
+        def st(idx, u, q):
+            byfn, _p, _m, _e, present, _f = idx
+            if q not in present:
+                return "ABSENT"
+            if byfn.get(q):
+                return "CONCRETE"
+            return "UNKNOWN" if q in u else "PURE"
+
+        for q in quals:
+            sa, sb = st(ia, pre_unk, q), st(ib, post_unk, q)
+            move[(sa, sb)] += 1
+            if sa != "ABSENT" or sb != "ABSENT":
+                reach_rows += 1
+            if sa in ("ABSENT", "PURE") and sb == "UNKNOWN":
+                unk_detail.append((name, q))
+
+        f = 0
+        for fn, eff in ib[0].items():
+            new = eff - ia[0].get(fn, set())
+            if new:
+                f += 1
+                gain_detail.append((name, fn, sorted(new)))
+        lost = 0
+        for fn, eff in ia[0].items():
+            gone = eff - ib[0].get(fn, set())
+            if gone:
+                lost += 1
+                lost_detail.append((name, fn, sorted(gone)))
+        pa = sum(len(eff - ia[1].get(k, set())) for k, eff in ib[1].items())
+        mo = sum(len(eff - ia[2].get(k, set())) for k, eff in ib[2].items())
+        e = len(ib[3] - ia[3])
+        fnflip += f; parflip += pa; modflip += mo; entflip += e; fnlost += lost
+        if f or pa or mo or e or lost:
+            per_entry_moved.append((name, f, pa, mo, e, lost))
+
+    label = {"noimpl": "CHAINED consumer (no implementor supplied)",
+             "impl": "CHAINED consumer (an effectful implementor of every public trait)",
+             "standalone": "STANDALONE library scan"}.get(variant, variant)
+    print("== %s — rust, %d entries with both arms" % (label, len(names)))
+    print("   analysed units (POST, summed analyzed.count): %d" % analyzed)
+    print("   rows dropped as REPUBLISHED-FROM-THE-WIRE (hash names another package): %d" % foreign_dropped)
+    print()
+    if variant != "standalone":
+        print("== generated probes: PRE state -> POST state   (ABSENT is its own column, never 'pure')")
+        print("   %d probe quals over %d entries; %d produced a row in at least one arm (REACH)"
+              % (probes_total, len(names), reach_rows))
+        order = ["ABSENT", "PURE", "UNKNOWN", "CONCRETE"]
+        print("   %-10s %s" % ("PRE\\POST", "".join("%12s" % o for o in order)))
+        for sa in order:
+            print("   %-10s %s" % (sa, "".join("%12d" % move.get((sa, sb), 0) for sb in order)))
+        changed = sum(v for (x, y), v in move.items() if x != y)
+        print("   probes whose state CHANGED: %d" % changed)
+        print("   probes ABSENT in BOTH arms: %d  (a positive purity claim about a function the engine"
+              % move.get(("ABSENT", "ABSENT"), 0))
+        print("      was handed, in both arms — not a pass, and not movement)")
+        print()
+    print("== scope sensitivity (newly-red, PRE -> POST)")
+    pct = (lambda v: "   (%.4f%% of %d analysed)" % (100.0 * v / analyzed, analyzed)) if analyzed else (lambda v: "")
+    print("   FUNCTION  quals gaining a concrete effect          : %d%s" % (fnflip, pct(fnflip)))
+    print("   PARENT    new (qual-minus-last-segment, effect)    : %d" % parflip)
+    print("   MODULE    new (top-level segment, effect) pairs    : %d" % modflip)
+    print("   CRATE     new (entry, effect) pairs                : %d" % entflip)
+    print("   LOST      quals losing a concrete effect (expect ~0): %d" % fnlost)
+    print("   entries with any movement: %d of %d" % (len(per_entry_moved), len(names)))
+    for row in sorted(per_entry_moved, key=lambda x: -x[1])[:20]:
+        print("      %-40s fn=%-5d par=%-4d mod=%-4d crate=%d lost=%d" % row)
+    if variant == "impl":
+        print("   NOT QUOTABLE AT MODULE OR CRATE SCOPE: this variant plants an effectful implementor in")
+        print("      the consumer, so the crate already carries that effect on BOTH arms.  Quote FUNCTION")
+        print("      scope and the probe table from this variant; quote scope from `noimpl`.")
+    if lost_detail:
+        print("   LOST detail (every one, no sampling — E1: the removals are the claim under test):")
+        for row in lost_detail[:80]:
+            print("      %-34s %-58s %s" % row)
+    json.dump({"variant": variant, "entries": len(names), "analyzed": analyzed,
+               "probes": probes_total, "reach_rows": reach_rows,
+               "foreign_dropped": foreign_dropped,
+               "move": {"%s->%s" % k: v for k, v in move.items()},
+               "scope": {"function": fnflip, "parent": parflip, "module": modflip,
+                         "crate": entflip, "lost": fnlost},
+               "per_entry": per_entry_moved, "lost_detail": lost_detail,
+               "unk_detail": unk_detail,
+               "gain_detail": gain_detail[:20000]},
+              open(os.path.join(out, "judge.json"), "w"), indent=1)
+    return 0
+
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--coverage":
         coverage(sys.argv[2], sys.argv[3]); sys.exit(0)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--coverage-rs":
+        coverage_rs(sys.argv[2], sys.argv[3]); sys.exit(0)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--report-rs":
+        sys.exit(report_rs(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--report":
         sys.exit(report(sys.argv[2], sys.argv[3], sys.argv[4]))
     print(__doc__)

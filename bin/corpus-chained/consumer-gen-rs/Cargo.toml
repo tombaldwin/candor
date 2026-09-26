@@ -1,0 +1,17 @@
+[package]
+name = "consumer-gen-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# THE AUTHORITY FOR "WHAT IS THIS CRATE'S PUBLIC API" IS THE RUST PARSER, NOT A REGEX (brief §G).
+# candor-scan itself reads rust with `syn`, so the generator reads it with `syn` too — a probe the
+# generator could only have written by mis-parsing is a probe that measures the generator.
+[dependencies]
+syn = { version = "2", features = ["full", "parsing", "printing", "extra-traits", "visit", "clone-impls"] }
+proc-macro2 = "1"
+quote = "1"
+toml = "1"
+
+[profile.release]
+debug = false

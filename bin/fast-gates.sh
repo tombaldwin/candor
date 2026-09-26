@@ -57,18 +57,23 @@ cd "$HERE" || exit 2
 # THE DISK CHECK IS FIRST, for the reason in the header: this file exists BECAUSE a gate filled the
 # disk, and a full disk makes every result below meaningless in the OK direction.
 #
-# IT DOES NOT LATCH, AND THE FIRST VERSION OF THIS COMMENT SAID IT DID — corrected 2026-09-25 by an
-# adversarial review, as SOUNDNESS R644. It runs `disk-guard.sh` ONCE, AS A SUBPROCESS, and never
-# again; there is nothing to latch, because `CANDOR_DISK_BROKE` lives in the guard's own process and
-# dies with it. `gate-run.sh:85` SOURCES the guard and calls `disk_guard_check` after every gate —
-# this file borrowed the word without the mechanism.
+# IT NOW LATCHES, AND FOR TWO DAYS THE COMMENT SAYING SO WAS FALSE. SOUNDNESS R644: the first version
+# ran `disk-guard.sh` ONCE, AS A SUBPROCESS, and never again — there was nothing to latch, because
+# `CANDOR_DISK_BROKE` lives in the guard's own process and dies with it. The comment was then corrected
+# to admit that (the honest move, and still only a comment), and this is the mechanism it was admitting
+# to not having: the guard is SOURCED, exactly as `gate-run.sh:85` does it, and `disk_guard_check` runs
+# after EVERY gate.
 #
-# CLAUDE.md names precisely this blind spot: "the dangerous case is the MID-RUN crossing, not the
-# start … a startup-only check is blind to precisely the case that bites". The residual risk here is
-# small — ~50s, no engine build, nothing that can consume 28 GB — which is the ONLY reason this is a
-# corrected sentence rather than a corrected script. It is the SECOND false safety claim in this
-# file's comments in two days, and both were in the sentence that made the diff look finished.
-if ! bash "$HERE/bin/disk-guard.sh" >/dev/null 2>&1; then
+# WHY THE MECHANISM AND NOT THE SENTENCE. CLAUDE.md names this blind spot: "the dangerous case is the
+# MID-RUN crossing, not the start … a startup-only check is blind to precisely the case that bites."
+# The residual risk in a ~50s tier is small, which is why a corrected sentence was defensible — but the
+# crossing does not need this script to be the thing that fills the disk. A concurrent agent's rust
+# build or Docker leg is GB each, and half of this tier's gates run node, python and shellcheck over
+# trees that another wave is writing to. A gate that goes red at second 40 because the volume filled at
+# second 20 is a FALSE FAIL, and this file exists because that failure is indistinguishable from a real
+# one. Sourcing the guard costs one line.
+. "$HERE/bin/disk-guard.sh"
+if ! disk_guard_check "before the first gate"; then
   echo "fast-gates: REFUSING — bin/disk-guard.sh is unhappy. A full disk fakes a FAIL and fakes an"
   echo "  empty result, and says neither. Reclaim space, then re-run."
   bash "$HERE/bin/disk-guard.sh"
@@ -89,6 +94,10 @@ run() {
     printf '%s\n' "$out" | sed 's/^/      /' | head -20
     fail=1
   fi
+  # AFTER EVERY GATE, and the latch is why the ORDER of these two lines does not matter: once
+  # `disk_guard_check` has seen a breach it stays broken for the rest of the run, so the verdict below
+  # can name the gate it first crossed at rather than the one that happened to be running last.
+  disk_guard_check "$label" || true
 }
 
 echo "fast-gates — no engine build, no IDE, no npm. NOT a substitute for gate-run.sh before a release."
@@ -109,10 +118,24 @@ run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'
 run "workflow-check"        bash bin/workflow-check.sh candor
 
 # AN EMPTY RUN IS NOT A PASS. Same fail-closed shape as gate-run.sh's zero-gate guard and the spec's
-# `soundness-status.py` refusal: if the list above ever stops executing — a rename, a bad `cd`, a
-# `set -e` added at the top — silence must not read as success.
+# `soundness-status.py` refusal: if the list above ever stops executing — a rename, a bad `cd`, the
+# `run` helper losing its name — silence must not read as success.
+#
+# ONE OF THE THREE TRIGGERS THIS COMMENT USED TO NAME COULD NEVER FIRE, and it was measured rather than
+# reasoned about (SOUNDNESS R644): "a `set -e` added at the top" cannot reach this guard, because under
+# `set -e` the first failing gate aborts the script before the check below is read. A trigger list is a
+# claim about reachability, so it gets the same treatment as any other comment asserting a property.
 if [ "$ran" -eq 0 ]; then
   echo "fast-gates: REFUSING — zero gates executed. Silence is not success."
+  exit 2
+fi
+
+# THE DISK VERDICT OUTRANKS BOTH OF THE OTHERS, deliberately — CLAUDE.md: "a FAIL after the crossing is
+# not a finding", and neither is a PASS. A run that crossed the floor put rows from both sides of the
+# line in one list and does not otherwise say which is which.
+if disk_guard_verdict_note; then
+  echo "fast-gates: INCOMPLETE — $ran gate(s) ran, and the disk crossed the floor DURING the run."
+  echo "  Neither the greens nor the reds above are evidence. Reclaim space and re-run."
   exit 2
 fi
 

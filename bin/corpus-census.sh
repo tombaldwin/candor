@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # corpus-census.sh — acquire a PINNED census corpus.  SOUNDNESS R663.
 #
-#     bash bin/corpus-census.sh java     # 118 Maven artifacts, sha1-verified against the roster
-#     bash bin/corpus-census.sh rust     # 1,626 crates at pinned versions
+#     bash bin/corpus-census.sh java     # every jar in bin/corpus-census-java.tsv, sha1-verified
+#     bash bin/corpus-census.sh rust     # every crate in bin/corpus-census-rust.tsv, at its pinned version
 #     bash bin/corpus-census.sh <arm> --check    # report what is missing; acquire nothing
+#
+# THE SIZE IS NOT WRITTEN HERE, ON PURPOSE. These lines said "118 Maven artifacts" while the java
+# roster held 452 — a count copied into a comment on the day the roster was created and stale by the
+# time it grew, which is the same failure CLAUDE.md records for the gate count ("the count is a
+# function of HEAD, so print it"). The run prints `roster N` from the file itself; for the number
+# without acquiring anything:  awk 'NF && $0 !~ /^#/' bin/corpus-census-<arm>.tsv | wc -l
 #
 # WHY THIS EXISTS, and why it is separate from `corpus.sh`.  R662 priced what a month of soundness
 # work changes for a user of a gate, over "1,626 crates" — which were not a corpus but whatever cargo

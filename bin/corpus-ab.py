@@ -115,6 +115,7 @@ import argparse
 import collections
 import concurrent.futures as cf
 import glob
+import hashlib
 import json
 import os
 import shlex
@@ -360,6 +361,198 @@ def run_arm(template, entry, timeout, env_extra, outdir_glob="*.json",
             os.rmdir(outdir)
 
 
+# ── DOES THIS RUN'S TWO ARMS ACTUALLY DIFFER?  SOUNDNESS R691 ─────────────────────────────────────
+# `cargo build --release` returned exit 0 in 0.02s WITHOUT REBUILDING, because both arms shared one
+# `CARGO_TARGET_DIR`, so a differential's PRE and POST were THE SAME BINARY.  Every figure it produced
+# would have been a self-comparison — ADDED 0 / REMOVED 0 / CHANGED 0, indistinguishable from a change
+# that is correctly inert.  It was caught by `shasum` on the two binaries and NOT by the exit code,
+# which was 0 and honest.  That is the R242 class at the BINARY: the family has now paid for it three
+# times — a hollow corpus, a hollow jar (okio, correct sha1, zero `.class` files), and a hollow ARM.
+#
+# THE RULE R691 EARNS: every differential must PROVE ITS ARMS DIFFER before it reports a number, and
+# the proof must be on the ARTEFACT rather than on a command's exit code.  So this hashes the file
+# CONTENT of every path-shaped token in each template and compares.
+#
+# IT REFUSES ONLY WHEN THE TWO ARMS ARE INDISTINGUISHABLE — same residual argv, same binary content,
+# same per-arm env.  That bound is deliberate and it is what keeps the check from firing on the
+# legitimate same-binary A/B: `--policy A` vs `--policy B`, a feature flag, or `--mark-env` setting a
+# probe variable on one arm only, are all real differentials over one binary and all keep their
+# residual argv (or their env) DIFFERENT.  A check that refused those would be turned off, and then it
+# would not be a check.
+#
+# AND WHEN IT CANNOT LOOK, IT SAYS SO (§H).  A template that hides its binary inside a `bash -c`
+# string, or names it through `$PATH`, yields no file to hash; the run then prints that it did NOT
+# prove its arms differ rather than printing nothing, because silence here reads as a clean check.
+def arm_identity(template):
+    """(sorted content hashes of the path-shaped tokens, residual argv with those tokens masked)."""
+    try:
+        argv = shlex.split(template)
+    except ValueError:
+        return (), (template,)
+    hashes, residual = [], []
+    for tok in argv:
+        masked = tok
+        # A token may itself be a small script (`bash -c 'PRE/bin {entry} --json'`), so look at every
+        # whitespace-separated piece of it and not only at the token as a whole.
+        for piece in tok.split():
+            if not piece or piece.startswith("-"):
+                continue
+            path = os.path.expanduser(piece)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "rb") as fh:
+                    h = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                continue
+            hashes.append(h)
+            masked = masked.replace(piece, "<FILE:%s>" % h[:12])
+        residual.append(masked)
+    return tuple(sorted(hashes)), tuple(residual)
+
+
+def arms_are_indistinguishable(pre_cmd, post_cmd, mark_env, mark_arm):
+    """(verdict, note).  verdict is True only when NOTHING separates the two arms."""
+    pre_h, pre_r = arm_identity(pre_cmd)
+    post_h, post_r = arm_identity(post_cmd)
+    env_differs = bool(mark_env) and mark_arm in ("pre", "post")
+    if not pre_h and not post_h:
+        return False, ("arm identity: NOT PROVEN — no path-shaped token in either --pre-cmd/--post-cmd "
+                       "resolved to a file, so this run did not check that its arms differ (R691).")
+    if pre_h == post_h and pre_r == post_r and not env_differs:
+        return True, "arm identity: the two arms are byte-identical commands over byte-identical files."
+    if pre_h == post_h and pre_h:
+        return False, ("arm identity: both arms name the SAME file content (%s…) and differ only in "
+                       "their arguments or env — a one-binary differential, which is legitimate."
+                       % pre_h[0][:12])
+    return False, ("arm identity: the arms' binaries differ (%s… vs %s…), proven by content hash."
+                   % ((pre_h[0][:12] if pre_h else "none"), (post_h[0][:12] if post_h else "none")))
+
+
+# ── WHAT DID THIS DIFF LOSE?  SOUNDNESS R701 ──────────────────────────────────────────────────────
+# A removal audit read `detail["changed"]` with the WRONG RECORD SHAPE — records are `[key, PRE, POST]`
+# and it read them as `[key, values]`, so the `post` half was empty, every loss test was skipped, and
+# it printed a confident `0 losses`.  Minutes later the SAME lane's corrected audit found a real
+# 91-row regression (a ⟨0.39⟩ `dispatchesOn` key silently dropped on `swift-nio`).  An audit that
+# cannot see a loss reports exactly what a clean fix reports, so the record-shape assumption belongs
+# in ONE place, written once and calibrated once — which is R288's argument, applied to the second
+# ad-hoc instrument in a week.
+#
+# WHY IT IS NOT `--buckets`.  Bucket 3 counts a lost CONCRETE EFFECT: it reads `inferred` and nothing
+# else.  The loss that was nearly missed was a `dispatchesOn` KEY — a field a gate does not read but
+# ⟨0.39⟩ obligation 3 joins on — so the bucket ladder was structurally blind to it.  This audit is
+# per FIELD, every field, and it names the quals.
+def losses_audit(detail, sample=6):
+    """Per-field value losses over a diff detail.  Refuses a record shape it does not understand."""
+    lost = collections.Counter()
+    where = collections.defaultdict(list)
+    seen = {"changed": 0, "removed": 0}
+    shape_errors = []
+
+    def fields_of(values):
+        """field -> multiset of json-encoded values, over a row-value multiset."""
+        out = collections.defaultdict(collections.Counter)
+        for v in values:
+            try:
+                row = json.loads(v)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(row, dict):
+                continue
+            for k, val in row.items():
+                out[k][json.dumps(val, sort_keys=True)] += 1
+        return out
+
+    for rec in detail.get("changed", []):
+        # THE ASSERTION THE AD-HOC AUDIT DID NOT MAKE.  `[key, gone, came]` — three elements.  Read as
+        # two, `came` is never bound, every comparison is against nothing, and the audit prints 0.
+        if not isinstance(rec, (list, tuple)) or len(rec) != 3:
+            shape_errors.append("changed record has %s element(s), want 3 ([key, PRE, POST])"
+                                % (len(rec) if isinstance(rec, (list, tuple)) else type(rec).__name__))
+            continue
+        seen["changed"] += 1
+        key, gone, came = rec
+        pre_f, post_f = fields_of(gone), fields_of(came)
+        for field, pre_vals in pre_f.items():
+            missing = pre_vals - post_f.get(field, collections.Counter())
+            if missing:
+                lost[field] += sum(missing.values())
+                where[field].append((key, sorted(missing.elements())[:1]))
+
+    for rec in detail.get("removed", []):
+        if not isinstance(rec, (list, tuple)) or len(rec) != 3:
+            shape_errors.append("removed record has %s element(s), want 3 ([key, count, values])"
+                                % (len(rec) if isinstance(rec, (list, tuple)) else type(rec).__name__))
+            continue
+        seen["removed"] += 1
+        key, _n, values = rec
+        for field, pre_vals in fields_of(values).items():
+            lost[field] += sum(pre_vals.values())
+            where[field].append((key, ["<row removed>"]))
+
+    return {"lost": dict(lost), "seen": seen, "shape_errors": shape_errors,
+            "where": {k: v[:sample] for k, v in where.items()}}
+
+
+# ── A SWIFTPM ENTRY WHOSE DEPENDENCIES ARE NOT RESOLVED CANNOT CHAIN.  SOUNDNESS R700 ─────────────
+# candor-swift's `dependencyModulePackages` reads the CONSUMER'S OWN `.build/checkouts` to map module ->
+# package, so without them `chainedPkgs` is empty and the join never runs at all.  A chained A/B over an
+# unresolved package therefore measures TWO UNCHAINED SCANS: the lane's first run came back
+# BYTE-IDENTICAL, 555 rows, same `coverage.uncovered` — and after `swift package resolve`, 319 of 569
+# rows differed with 251 probe hits.  R700 asked for a refusal in "the swift equivalent of
+# corpus-chained-rs.sh"; there is no such script — the swift chained arm is driven through THIS tool —
+# so the diagnosis belongs here, next to the zero-reach refusal that is the only reason R700 was caught.
+#
+# IT ADVISES AND DOES NOT REFUSE, and the direction matters: for a STANDALONE swift A/B an unresolved
+# package is perfectly normal (the deps are invisible and candor says so), so refusing would break the
+# commonest swift run to protect the rarer chained one.  It is printed on every run that has one, and it
+# is REPEATED inside the exit-4 blocks, because "0 changed, 0 reach" is exactly the shape this produces
+# and a refusal that does not name the likeliest cause sends the reader hunting.
+#
+# THE TEST IS DELIBERATELY TWO-SIDED, and its failure direction is a printed line rather than a wrong
+# verdict: `Package.resolved` holding pins is SwiftPM's own record that dependencies exist (the
+# authority, §G), and a `.package(` in the manifest is the weaker textual signal kept for a tree that
+# has never resolved at all and so has no `Package.resolved`.
+def swift_unresolved_entries(entries):
+    """Entries that are SwiftPM packages with dependencies DECLARED and NOT checked out."""
+    out = []
+    for e in entries:
+        manifest = os.path.join(e, "Package.swift")
+        if not os.path.isfile(manifest):
+            continue
+        if os.path.isdir(os.path.join(e, ".build", "checkouts")):
+            continue
+        declared = False
+        resolved = os.path.join(e, "Package.resolved")
+        if os.path.isfile(resolved):
+            try:
+                doc = json.loads(open(resolved).read())
+                pins = doc.get("pins") or (doc.get("object") or {}).get("pins") or []
+                declared = bool(pins)
+            except (ValueError, OSError):
+                declared = False
+        if not declared:
+            try:
+                declared = ".package(" in open(manifest, errors="replace").read()
+            except OSError:
+                declared = False
+        if declared:
+            out.append(e)
+    return out
+
+
+def swift_unresolved_note(unfit, total):
+    return [
+        "%d of %d entr%s a SwiftPM package with dependencies DECLARED and NOT RESOLVED (no"
+        % (len(unfit), total, "y is" if len(unfit) == 1 else "ies are"),
+        "`.build/checkouts`).  SOUNDNESS R700: candor-swift maps module -> package out of that",
+        "directory, so a CHAINED arm cannot chain there and chained vs unchained comes back",
+        "BYTE-IDENTICAL — 555 rows, same coverage, 0 reach.  Run `swift package resolve` in each",
+        "tree first if this run is meant to be chained.  Harmless for a standalone A/B.",
+    ] + ["    %s" % e for e in unfit[:6]] + (
+        ["    … and %d more" % (len(unfit) - 6)] if len(unfit) > 6 else [])
+
+
 def one_entry(job):
     entry, pre_cmd, post_cmd, timeout, marks, mark_env, mark_arm, oglob, oexcl = job
     label = os.path.basename(entry.rstrip("/")) or entry
@@ -558,6 +751,12 @@ def build_parser():
                     help="compare the rest anyway when some entries have analyzed.count 0 (judged "
                          "nothing).  They are excluded from the diff and named on every run.")
     ap.add_argument("--out", help="write the full diff detail as JSON here")
+    ap.add_argument("--allow-identical-arms", action="store_true",
+                    help="acknowledge in writing that both arms are the SAME command over the SAME "
+                         "bytes (R691); without it such a run REFUSES rather than self-comparing")
+    ap.add_argument("--losses", action="store_true",
+                    help="audit what the diff LOST, per field (R701): values present in the PRE arm "
+                         "and absent from the POST one, plus every removed row")
     ap.add_argument("--buckets", action="store_true",
                     help="sort the diff into VERDICT buckets (R662/R664): a changed row is not a "
                          "changed verdict. A bucket-1 count PREDICTS a scoped-gate flip; validate it.")
@@ -592,6 +791,9 @@ def run(args):
 
     # ── gather both arms ──
     results = []
+    swift_unfit = []
+    arm_identity_note = ("arm identity: pair mode — two captured reports, so there is no command to "
+                         "hash; the arms are whatever produced those files.")
     if args.pre_json or args.post_json:
         if not (args.pre_json and args.post_json):
             emit("corpus-ab: pair mode needs BOTH --pre-json and --post-json")
@@ -612,6 +814,26 @@ def run(args):
         if not entries:
             return refuse(["The entry set is EMPTY.  Nothing was scanned, so nothing was compared.",
                            "Check --entries-dir / --entry / --entries-file."])
+        # BEFORE A SINGLE ENTRY IS SCANNED — R691.  Two arms that are the same thing cost hours and
+        # then report a zero that reads like a safe change.
+        same_arms, arm_note = arms_are_indistinguishable(args.pre_cmd, args.post_cmd,
+                                                         mark_env, args.mark_arm)
+        if same_arms and not args.allow_identical_arms:
+            return refuse([
+                arm_note,
+                "",
+                "THIS IS A SELF-COMPARISON.  It would print ADDED 0 / REMOVED 0 / CHANGED 0 — which is",
+                "character-for-character what a correct, safely-inert change prints.  SOUNDNESS R691:",
+                "a shared CARGO_TARGET_DIR made `cargo build --release` exit 0 in 0.02s without",
+                "rebuilding, so a differential's PRE and POST were one binary.  The exit code was 0 and",
+                "honest; only the content hash could tell.",
+                "",
+                "Rebuild the arms into SEPARATE target dirs and check `shasum` on the two binaries — or,",
+                "if you meant to compare one binary with itself, pass --allow-identical-arms and say so",
+                "in the row.",
+            ])
+        arm_identity_note = arm_note
+        swift_unfit = swift_unresolved_entries(entries)
         oexcl = tuple(x.strip() for x in args.outdir_exclude.split(",") if x.strip())
         jobs = [(e, args.pre_cmd, args.post_cmd, args.timeout,
                  tuple(args.mark), mark_env, args.mark_arm, args.outdir_glob, oexcl)
@@ -714,6 +936,15 @@ def run(args):
     emit()
     emit("corpus-ab  entries %d compared / %d given   rows  pre %d  post %d"
          % (len(good), len(results), len(pre_rows), len(post_rows)))
+    # PRINTED ON EVERY RUN, INCLUDING WHEN IT PASSES — R691.  "The arms differ" is a claim this tool
+    # makes, so it says on what evidence, and says NOT PROVEN when it could not look (§H).
+    emit("  " + arm_identity_note)
+    if args.allow_identical_arms:
+        emit("  --allow-identical-arms: a self-comparison was ACKNOWLEDGED.  Every number below is a "
+             "diff of one artefact against itself.")
+    if swift_unfit:
+        for line in swift_unresolved_note(swift_unfit, len(results)):
+            emit("  " + line)
     if allpure:
         emit("  %d entr%s judged units and reported NO rows (the legitimate all-pure kind, SPEC ⟨0.24⟩)"
              % (len(allpure), "y" if len(allpure) == 1 else "ies"))
@@ -817,6 +1048,30 @@ def run(args):
         emit("    A bucket-1 count is a PREDICTION about a scoped gate, not a measurement of one.")
         emit("    Validate it: run the real gate over a sample of bucket-1 quals on BOTH arms.")
 
+    # ── WHAT DID IT LOSE (--losses) ───────────────────────────────────────────────────────────
+    if args.losses:
+        emit()
+        emit("  LOSS AUDIT — §E1: the REMOVALS are the claim under test, and a lost KEY is not a lost")
+        emit("  effect.  Every field, not just `inferred`.")
+        la = losses_audit(detail)
+        emit("    records audited: %d changed, %d removed" % (la["seen"]["changed"], la["seen"]["removed"]))
+        if la["shape_errors"]:
+            # A shape this audit does not understand is REPORTED, never skipped: skipping is what
+            # printed `0 losses` over a real 91-row regression (R701).
+            emit("    RECORD SHAPE NOT UNDERSTOOD — this audit could not look at %d record(s):"
+                 % len(la["shape_errors"]))
+            for e in la["shape_errors"][:4]:
+                emit("      %s" % e)
+            emit("    A loss audit that cannot read its input prints the same thing as a clean fix.")
+        if not la["lost"]:
+            emit("    NO field lost a value in any compared row.")
+        for field, n in sorted(la["lost"].items(), key=lambda kv: -kv[1]):
+            emit("    %-16s %6d value(s) lost" % (field, n))
+            for key, vals in la["where"].get(field, []):
+                emit("        %s  %s" % (" / ".join(str(x) for x in key), (vals or [""])[0][:70]))
+        emit("    Audit the loss set in FULL and ground-truth it from the SOURCE, never from candor's")
+        emit("    own report: a wrong removal and a right one are the same bytes.")
+
     # ── write detail ──
     if args.out:
         with open(args.out, "w") as fh:
@@ -839,6 +1094,10 @@ def run(args):
         emit("A/B is SAFETY-ONLY and its diff says nothing about the change.  Measured four times on")
         emit("2026-09-01 (R79/R85/R87/R92): full A/B, byte-identical, zero instances of the shape.")
         emit("Write that down in the row NOW, then re-run with --allow-zero-reach.")
+        if swift_unfit:
+            emit("")
+            for line in swift_unresolved_note(swift_unfit, len(results)):
+                emit(line)
         emit("=" * 96)
         return 4
     if empty and not args.mark and not args.allow_zero_reach:
@@ -848,6 +1107,10 @@ def run(args):
         emit("least informative number available, and it is indistinguishable from having measured")
         emit("nothing.  Instrument the branch you changed, pass --mark, and re-run — or pass")
         emit("--allow-zero-reach to record deliberately that you did not.")
+        if swift_unfit:
+            emit("")
+            for line in swift_unresolved_note(swift_unfit, len(results)):
+                emit(line)
         emit("=" * 96)
         return 4
     return 0
@@ -1040,6 +1303,115 @@ def selftest():
     open(os.path.join(e6, "post.json"), "w").write("not json at all")
     rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", e6])
     check("an unreadable report exits 3", rc == 3 and "unreadable" in out, out)
+
+    emit()
+    emit("[8] R691 — TWO ARMS THAT ARE ONE ARM.  A differential over one binary prints exactly what a")
+    emit("    safely-inert change prints, and only the CONTENT HASH can tell.")
+    binA = os.path.join(tmp, "engine-pre"); binB = os.path.join(tmp, "engine-post")
+    binC = os.path.join(tmp, "engine-other")
+    open(binA, "w").write("#!/bin/sh\ncat \"$1/pre.json\"\n")
+    open(binB, "w").write("#!/bin/sh\ncat \"$1/pre.json\"\n")          # SAME bytes, different path
+    open(binC, "w").write("#!/bin/sh\ncat \"$1/post.json\"\n")         # different bytes
+    for b in (binA, binB, binC):
+        os.chmod(b, 0o755)
+    rc, out = go(["--pre-cmd", "sh %s {entry}" % binA, "--post-cmd", "sh %s {entry}" % binB,
+                  "--entry", e1, "--allow-zero-reach"])
+    check("identical-content arms REFUSE at exit 3", rc == 3, out)
+    check("…naming the mechanism rather than the symptom", "SELF-COMPARISON" in out and "R691" in out, out)
+    check("…and printing NO diff", "HEADLINE" not in out, out)
+    rc, out = go(["--pre-cmd", "sh %s {entry}" % binA, "--post-cmd", "sh %s {entry}" % binB,
+                  "--entry", e1, "--allow-zero-reach", "--allow-identical-arms"])
+    check("--allow-identical-arms proceeds and SAYS it is a self-comparison",
+          rc == 0 and "ACKNOWLEDGED" in out, out)
+    rc, out = go(["--pre-cmd", "sh %s {entry}" % binA, "--post-cmd", "sh %s {entry}" % binC,
+                  "--entry", e1, "--allow-zero-reach"])
+    check("arms that genuinely differ run, and say so by hash",
+          rc == 0 and "binaries differ" in out, out)
+    # THE OVER-REFUSAL CONTROL, in both of its shapes.  A one-binary A/B is a real differential when
+    # the flags or the env differ, and a check that refused those would be turned off within a day.
+    rc, out = go(["--pre-cmd", "sh %s {entry}" % binA, "--post-cmd", "sh %s {entry} --wide" % binA,
+                  "--entry", e1, "--allow-zero-reach"])
+    check("CONTROL: same binary, DIFFERENT flags is not refused", rc == 0, out)
+    check("…and is named as a one-binary differential", "one-binary differential" in out, out)
+    rc, out = go(["--pre-cmd", "sh %s {entry}" % binA, "--post-cmd", "sh %s {entry}" % binA,
+                  "--entry", e1, "--mark-env", "PROBE=1", "--mark-arm", "post", "--allow-zero-reach"])
+    check("CONTROL: same binary, env on ONE arm only is not refused as a self-comparison",
+          rc != 3 and "SELF-COMPARISON" not in out, out)
+    rc, out = go(["--pre-cmd", "bash -c 'cat {entry}/pre.json'",
+                  "--post-cmd", "bash -c 'cat {entry}/post.json'", "--entry", e1, "--allow-zero-reach"])
+    check("when no token resolves to a file it says NOT PROVEN, never nothing (§H)",
+          rc == 0 and "NOT PROVEN" in out, out)
+
+    emit()
+    emit("[9] R701 — A LOSS AUDIT THAT CANNOT SEE A LOSS PRINTS WHAT A CLEAN FIX PRINTS.  `changed`")
+    emit("    records are [key, PRE, POST]; read as [key, values] every loss test is skipped.")
+    def _v2(**kw):
+        return json.dumps(kw, sort_keys=True, separators=(",", ":"))
+    # (a) the exact shape of the near-miss: a ⟨0.39⟩ `dispatchesOn` key dropped while `inferred` holds.
+    d_lost = {"changed": [[["e", "p", "EventLoopPromise.fail", "h1"],
+                           [_v2(inferred=["Fs"], dispatchesOn=["Backend.size"])],
+                           [_v2(inferred=["Fs"])]]]}
+    la = losses_audit(d_lost)
+    check("a dropped `dispatchesOn` key is counted as a loss",
+          la["lost"].get("dispatchesOn") == 1, json.dumps(la))
+    check("…and `inferred`, which did not move, is NOT counted", "inferred" not in la["lost"], json.dumps(la))
+    check("…and the qual is named, not just tallied",
+          any("EventLoopPromise.fail" in " / ".join(str(x) for x in k)
+              for k, _ in la["where"]["dispatchesOn"]), json.dumps(la))
+    # (b) the direction that must stay quiet: a field GAINED is not a loss.
+    d_gain = {"changed": [[["e", "p", "f", "h1"], [_v2(inferred=["Fs"])],
+                           [_v2(inferred=["Fs"], dispatchesOn=["X.y"])]]]}
+    check("CONTROL: a field GAINED is not reported as lost", not losses_audit(d_gain)["lost"],
+          json.dumps(losses_audit(d_gain)))
+    # (c) a removed row loses everything it carried.
+    d_rm = {"removed": [[["e", "p", "f", "h1"], 1, [_v2(inferred=["Net"])]]]}
+    check("a REMOVED row counts as a loss on every field it carried",
+          losses_audit(d_rm)["lost"].get("inferred") == 1, json.dumps(losses_audit(d_rm)))
+    # (d) THE CALIBRATION THAT MATTERS — the wrong record shape must be REPORTED, not skipped.  This is
+    #     the defect itself: feed the audit R701's misread record and it must refuse to call it clean.
+    d_bad = {"changed": [[["e", "p", "f", "h1"], [_v2(inferred=["Fs"], dispatchesOn=["X.y"])]]]}
+    la_bad = losses_audit(d_bad)
+    check("a 2-element `changed` record is REPORTED as unreadable, never silently skipped",
+          bool(la_bad["shape_errors"]) and la_bad["seen"]["changed"] == 0, json.dumps(la_bad))
+    check("…and `0 losses` is therefore never printed over a record it could not read",
+          not la_bad["lost"] and bool(la_bad["shape_errors"]), json.dumps(la_bad))
+    # (e) end to end, through the real diff machinery rather than a hand-built detail.
+    e9 = mk("lossrun", [_fn("f", ["Fs"]), _fn("g", ["Net"])], [_fn("f", ["Fs"])])
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", e9, "--losses", "--allow-zero-reach"])
+    check("--losses over a real run names the lost field and the count",
+          rc == 0 and "LOSS AUDIT" in out and "inferred" in out.split("LOSS AUDIT")[1], out)
+
+    emit()
+    emit("[10] R700 — A SWIFTPM ENTRY WITH NO `.build/checkouts` CANNOT CHAIN, and a chained A/B over")
+    emit("     one measures two unchained scans: byte-identical, 0 reach, which reads as inert.")
+    def _spm(name, manifest, resolved=None, checkouts=False):
+        d = mk(name, [_fn("f", ["Fs"])], [_fn("f", ["Fs"])])
+        open(os.path.join(d, "Package.swift"), "w").write(manifest)
+        if resolved is not None:
+            open(os.path.join(d, "Package.resolved"), "w").write(resolved)
+        if checkouts:
+            os.makedirs(os.path.join(d, ".build", "checkouts"), exist_ok=True)
+        return d
+    dep_manifest = 'let package = Package(name: "x", dependencies: [.package(url: "u", from: "1.0.0")])\n'
+    unresolved = _spm("spm-unresolved", dep_manifest)
+    pinned = _spm("spm-pinned", 'let package = Package(name: "x")\n',
+                  resolved=json.dumps({"pins": [{"identity": "nio"}]}))
+    ok_checkouts = _spm("spm-resolved", dep_manifest, checkouts=True)
+    nodeps = _spm("spm-nodeps", 'let package = Package(name: "x", targets: [])\n')
+    plain = mk("not-spm", [_fn("f", ["Fs"])], [_fn("f", ["Fs"])])
+    check("an unresolved SwiftPM tree is named", swift_unresolved_entries([unresolved]) == [unresolved])
+    check("…and so is one whose Package.resolved holds pins (SwiftPM's own record, §G)",
+          swift_unresolved_entries([pinned]) == [pinned])
+    check("CONTROL: a tree WITH .build/checkouts is not named",
+          swift_unresolved_entries([ok_checkouts]) == [])
+    check("CONTROL: a SwiftPM tree with NO dependencies is not named",
+          swift_unresolved_entries([nodeps]) == [])
+    check("CONTROL: a non-SwiftPM entry is not named", swift_unresolved_entries([plain]) == [])
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", unresolved])
+    check("the exit-4 refusal REPEATS the diagnosis, where the reader is looking",
+          rc == 4 and "R700" in out.split("=" * 96)[-2], out)
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", unresolved, "--allow-zero-reach"])
+    check("…and it is ADVISORY: a standalone swift A/B still runs", rc == 0 and "R700" in out, out)
 
     emit()
     emit("[7] all four engines' report shapes parse.")

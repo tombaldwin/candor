@@ -32,6 +32,26 @@
 # dry-run mode or stubs, and neither exists yet. Eight of the nine defects above are on this side of that
 # line; the ninth (the double tag) is checked here at the argument level only.
 set -uo pipefail
+
+# ── hasin: grep a VARIABLE without a pipe ─────────────────────────────────────────────────────────
+# SOUNDNESS R707/R708. Every assertion here used to pipe a printf of a variable into grep, under the
+# `pipefail` above. `grep -q` exits the instant it matches and stops reading; on a haystack bigger
+# than the pipe buffer the writer then dies of SIGPIPE, and pipefail surfaces that as the PIPELINE's
+# status — so an assertion could fail BECAUSE its needle was found early. That is what reddened
+# candor-java's `main` at `a75cdbd`, where CI logged a printf broken-pipe error immediately before
+# `FAIL ... missing: spec 0.39` over a README that plainly contains it.
+#
+# TWO REPAIRS WERE TRIED AND MEASURED BEFORE THIS ONE, and both are worth recording:
+#   1. Rewriting each site into an inline herestring. It BROKE SIX LINES, because `&&`, `;` and `||`
+#      inside quoted grep patterns read as trailing shell clauses and the herestring landed
+#      mid-pattern. The static linter caught ONE of the six; a quote-balance audit caught five more.
+#   2. Guarding the writer with `|| :`. MEASURED INERT: the left side of a pipe is a subshell, the
+#      writer is KILLED BY SIGPIPE, and the `||` never runs, so the status stays 141.
+#
+# So the pattern must travel as ARGUMENTS, never as text a regex reparses. `hasin` takes the haystack
+# first and hands everything after it to grep untouched. Do not re-inline these.
+hasin() { local _h="$1"; shift; grep "$@" <<<"$_h"; }
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UMBRELLA="$(cd "$HERE/.." && pwd)"
 FIX="$(mktemp -d)"
@@ -79,7 +99,7 @@ note_skip(){ printf '  \033[33m•\033[0m SKIPPED: %s\n' "$*"; skipped=$((skippe
 # AND A READING RULE THAT FALLS OUT OF IT: a run on a busy machine silently yields FEWER assertions
 # (448 vs 474). Assertion counts are comparable across runs only when the machine is quiet — the
 # count itself is the tell that a run was partial.
-probe_refused(){ printf '%s' "$1" | grep -qE 'a conformance run is IN FLIGHT|a build is running \('; }
+probe_refused(){ hasin "$1" -qE 'a conformance run is IN FLIGHT|a build is running \('; }
 
 # ---------------------------------------------------------------------------------------------------
 # The fixture: six stub repos carrying exactly the sites the stager edits, at 0.25.0.
@@ -368,10 +388,10 @@ extract_die "$_probe" 'no such line' >/dev/null 2>&1 \
 # This one ends in the RIGHT place but has an intermediate line ending in a quote on the way.
 printf 'die "opens here\n  a line ending in a quoted \\"word\\"\n  and the real end is here"\nafter=1\n' > "$_probe"
 _early="$(extract_die "$_probe" 'die "opens')"
-printf '%s' "$_early" | grep -q 'the real end is here' \
+hasin "$_early" -q 'the real end is here' \
   && ok "…and it does not stop early on a continuation line that ends in a quote" \
   || bad "extract_die stopped at an intermediate quote — the block is TRUNCATED, and the render row will blame backticks"
-printf '%s' "$_early" | grep -q 'after=1' \
+hasin "$_early" -q 'after=1' \
   && bad "extract_die ran PAST the closing quote into the following script" \
   || ok "…and it stops at the closing quote, not after it"
 rm -f "$_probe"
@@ -429,7 +449,7 @@ rs0_run() { CANDOR_ROOT="$RS0" bash "$RS0/candor/bin/release.sh" 0.32 0.32.2 2>&
 # turning section 2's real assertion red for a reason that had nothing to do with either check — the
 # exact "a fix that reddens ordinary runs" shape this project's own review process exists to catch.
 rs0out="$(rs0_run)"
-printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+hasin "$rs0out" -q "all mains clean + pushed" \
   && ok "CONTROL: with every repo present and clean, step 0 passes" \
   || { bad "CONTROL setup is broken — step 0 does not pass on an all-clean fixture, so the row below proves nothing"; printf '%s\n' "$rs0out" | tail -6; }
 rm -rf "$RS0/candor-java"
@@ -446,13 +466,13 @@ rs0out="$(rs0_run)"; rs0rc=$?
 [ "$rs0rc" != 0 ] \
   && ok "a repo missing entirely makes release.sh step 0 die, not pass" \
   || bad "release.sh exited 0 with candor-java's directory deleted — THE NINTH FALSE GREEN IS BACK"
-printf '%s' "$rs0out" | grep -q "cargo publish" \
+hasin "$rs0out" -q "cargo publish" \
   && bad "release.sh got as far as \`cargo publish\` with a repo missing — step 0 did not stop it, so the exit code above is about something else" \
   || ok "…and dies AT step 0: the run never reaches \`cargo publish\`, which is what makes the row above attributable"
-printf '%s' "$rs0out" | grep -q "candor-java is not a git checkout at" \
+hasin "$rs0out" -q "candor-java is not a git checkout at" \
   && ok "…and names the repo and says why, rather than dying on an unrelated later step" \
-  || bad "step 0 did not name the missing repo — '$(printf '%s' "$rs0out" | grep -m1 '✘')'"
-printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+  || bad "step 0 did not name the missing repo — '$(hasin "$rs0out" -m1 '✘')'"
+hasin "$rs0out" -q "all mains clean + pushed" \
   && bad "release.sh still printed \"all mains clean + pushed\" with a repo missing — the false claim survives" \
   || ok "…and does not also claim \"all mains clean + pushed\""
 
@@ -473,9 +493,9 @@ rm -rf "$RS0/candor-java"
 git -C "$RS0/candor-spec" worktree add -q --detach "$RS0/candor-java" >/dev/null 2>&1
 if [ -f "$RS0/candor-java/.git" ]; then
   rs0out="$(rs0_run)"
-  printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+  hasin "$rs0out" -q "all mains clean + pushed" \
     && ok "a repo checked out as a git WORKTREE passes step 0 (its \`.git\` is a FILE, so \`-d\` said no)" \
-    || bad "step 0 rejected a legitimate git worktree — '$(printf '%s' "$rs0out" | grep -m1 'not a git')'"
+    || bad "step 0 rejected a legitimate git worktree — '$(hasin "$rs0out" -m1 'not a git')'"
   git -C "$RS0/candor-spec" worktree remove --force "$RS0/candor-java" >/dev/null 2>&1
 else
   note_skip "1d worktree row — \`git worktree add\` did not produce a \`.git\` FILE here, so the fixture cannot distinguish the two guard forms and the row would be vacuous"
@@ -485,10 +505,10 @@ fi
 # --porcelain` fails to stderr and prints nothing, byte-identical to "no changes".
 rm -rf "$RS0/candor-java"; mkdir -p "$RS0/candor-java"; printf 'x\n' > "$RS0/candor-java/README.md"
 rs0out="$(rs0_run)"; rs0rc=$?
-[ "$rs0rc" != 0 ] && printf '%s' "$rs0out" | grep -q "candor-java is not a git checkout at" \
+[ "$rs0rc" != 0 ] && hasin "$rs0out" -q "candor-java is not a git checkout at" \
   && ok "a directory that is NOT a checkout dies at step 0 and is named, exactly as a missing one is" \
   || bad "a present-but-unversioned directory did not die at step 0 (rc=$rs0rc) — 'no changes' from a tree git cannot read read as clean"
-printf '%s' "$rs0out" | grep -q "all mains clean + pushed" \
+hasin "$rs0out" -q "all mains clean + pushed" \
   && bad "release.sh claimed \"all mains clean + pushed\" over a directory git cannot read" \
   || ok "…and does not claim the mains were clean"
 rm -rf "$RS0"
@@ -525,12 +545,12 @@ st0_run() { CANDOR_ROOT="$ST0" bash "$ST0/candor/bin/release-stage.sh" 0.26.0 2>
 # shape this file has been bitten by. So both arms assert on the DIAGNOSTIC, and the control asserts
 # its ABSENCE.
 st0out="$(st0_run)"
-printf '%s' "$st0out" | grep -q "is not a git checkout" \
+hasin "$st0out" -q "is not a git checkout" \
   && bad "CONTROL is broken: the step-0 guard fires on an all-checkout fixture, so the row below proves nothing" \
   || ok "CONTROL: with every repo a real checkout, release-stage's step 0 says nothing about checkouts"
 rm -rf "$ST0/candor-java"; mkdir -p "$ST0/candor-java"; printf 'x\n' > "$ST0/candor-java/README.md"
 st0out="$(st0_run)"
-printf '%s' "$st0out" | grep -q "candor-java at .* is not a git checkout" \
+hasin "$st0out" -q "candor-java at .* is not a git checkout" \
   && ok "a present-but-unversioned directory is refused by release-stage.sh, not staged into" \
   || bad "release-stage.sh staged into a directory git cannot read — its 'no changes' read as clean: $(printf '%s' "$st0out" | head -3)"
 rm -rf "$ST0"
@@ -546,14 +566,14 @@ rm -rf "$CL0/candor-ts"
 git -C "$CL0/candor-spec" worktree add -q --detach "$CL0/candor-ts" >/dev/null 2>&1
 if [ -f "$CL0/candor-ts/.git" ]; then
   clout="$(CANDOR_ROOT="$CL0" bash "$UMBRELLA/bin/changelog-lag.sh" 2>&1)"
-  printf '%s' "$clout" | grep -q "candor-ts .*not a git checkout" \
+  hasin "$clout" -q "candor-ts .*not a git checkout" \
     && bad "changelog-lag.sh calls a git WORKTREE 'not a git checkout' and counts it as lag" \
     || ok "changelog-lag.sh reads a git WORKTREE as the checkout it is (its \`.git\` is a FILE)"
   # THE OVER-CHARGE CONTROL: the branch must still fire for a directory that really is not a checkout,
   # or the row above is satisfied by a guard that was simply deleted.
   rm -rf "$CL0/candor-swift"; mkdir -p "$CL0/candor-swift"
   clout="$(CANDOR_ROOT="$CL0" bash "$UMBRELLA/bin/changelog-lag.sh" 2>&1)"
-  printf '%s' "$clout" | grep -q "candor-swift .*not a git checkout" \
+  hasin "$clout" -q "candor-swift .*not a git checkout" \
     && ok "…and still refuses a directory that genuinely is not one (the guard was widened, not deleted)" \
     || bad "the not-a-checkout branch no longer fires at all — the row above is vacuous"
 else
@@ -634,10 +654,10 @@ for r in candor-java candor-spec candor; do
   dout="$(CANDOR_ROOT="$FIX" bash "$FIX/candor/bin/release-stage.sh" 0.27.0 2>&1)"; drc=$?
   if [ "$drc" = 0 ]; then
     bad "staged over a dirty $r — that repo is edited by this script and unguarded"
-  elif printf '%s' "$dout" | grep -q "$r has uncommitted changes"; then
+  elif hasin "$dout" -q "$r has uncommitted changes"; then
     ok "refuses a dirty tree in $r, BY NAME (the guard covers it)"
   else
-    bad "the run failed on a dirty $r but not via the guard — '$(printf '%s' "$dout" | grep -m1 '✘' | cut -c1-70)'"
+    bad "the run failed on a dirty $r but not via the guard — '$(hasin "$dout" -m1 '✘' | cut -c1-70)'"
   fi
   ( cd "$FIX/$r" && git checkout -- CHANGELOG.md 2>/dev/null ) || sed -i.bak '$ d' "$FIX/$r/CHANGELOG.md"
 done
@@ -878,15 +898,15 @@ printf '# CL\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\n%s\n' "$PREVMARK"
 printf '# CL\n\n## Unreleased\n\n## [0.32.1] — 2026-08-25\n\nreal notes already written.\n' > "$SW/candor-spec/CHANGELOG.md"
 printf '# CL — umbrella\n\ndated, most recent first.\n\n## 2026-08-25 — the floor cut (released 2026-08-25 as 0.32.0)\n\n%s\n' "$PREVMARK" > "$SW/candor/CHANGELOG.md"
 sout="$(ROOT="$SW" VER=0.32.1 DATE=2026-08-25 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
-printf '%s' "$sout" | grep -q '^STUB candor-rust:' \
+hasin "$sout" -q '^STUB candor-rust:' \
   && ok "an empty \`## Unreleased\` becomes a \`## [0.32.1]\` build-bump entry" \
   || { bad "the empty section was skipped — the state that republished stale notes"; printf '%s\n' "$sout" | head -4; }
-printf '%s' "$sout" | grep -q '^SAME candor-spec:' \
+hasin "$sout" -q '^SAME candor-spec:' \
   && ok "…but NOT when that version already has a section of its own (no stub over real notes)" \
-  || { bad "the stager stubbed a version that already had its notes"; printf '%s' "$sout" | grep candor-spec; }
-printf '%s' "$sout" | grep -q '^STUB candor:' \
+  || { bad "the stager stubbed a version that already had its notes"; hasin "$sout" candor-spec; }
+hasin "$sout" -q '^STUB candor:' \
   && ok "…and the umbrella's dated changelog gets a stamped dated section" \
-  || { bad "the umbrella was left with only the PREVIOUS release's dated section"; printf '%s' "$sout" | grep '^\w* candor:'; }
+  || { bad "the umbrella was left with only the PREVIOUS release's dated section"; hasin "$sout" '^\w* candor:'; }
 grep -q '^## Unreleased$' "$SW/candor-rust/CHANGELOG.md" \
   && ok "…and a fresh empty \`## Unreleased\` is still opened above it" || bad "no fresh Unreleased after a stub"
 # THE POSTCONDITION, ASSERTED THROUGH THE PUBLISHER. This is the row that ties the two halves together:
@@ -901,8 +921,8 @@ for r in candor-rust candor-spec candor; do
 done
 # CONTROL: staging is a NO-OP on the second run. A stub that re-stubbed would grow a section per run.
 sout2="$(ROOT="$SW" VER=0.32.1 DATE=2026-08-25 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
-printf '%s' "$sout2" | grep -q '^STUB' \
-  && { bad "re-running the stager stubbed again — the file grows a section per run"; printf '%s' "$sout2" | grep '^STUB'; } \
+hasin "$sout2" -q '^STUB' \
+  && { bad "re-running the stager stubbed again — the file grows a section per run"; hasin "$sout2" '^STUB'; } \
   || ok "CONTROL: re-running the stager stubs nothing (it is a no-op, as its header promises)"
 is "…and the umbrella has exactly one 0.32.1 dated section" '1' \
    "$(grep -c 'as 0.32.1)' "$SW/candor/CHANGELOG.md" | tr -d ' ')"
@@ -1009,9 +1029,9 @@ chmod +x "$PFW/bin/gh"
 r1out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_CAPTURE="$PFW/edit-body-1.md" \
         CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.32 0.32.1 --only candor-spec 2>&1)"; r1rc=$?
 [ "$r1rc" = 0 ] && ok "the wired run exits 0" || { bad "the wired run exited $r1rc"; printf '%s\n' "$r1out" | tail -20; }
-printf '%s' "$r1out" | grep -q 'candor-spec v0.32 already released' \
+hasin "$r1out" -q 'candor-spec v0.32 already released' \
   && ok "…the coarser-tag skip still fires exactly as before" || bad "the skip branch did not fire"
-printf '%s' "$r1out" | grep -q 'candor-spec v0.32 floor notes refreshed with the 0.32.1 patch-cycle section' \
+hasin "$r1out" -q 'candor-spec v0.32 floor notes refreshed with the 0.32.1 patch-cycle section' \
   && ok "…and release.sh calls publish-floor-notes.sh RIGHT THERE, unprompted" \
   || bad "release.sh did not report refreshing the floor notes after the skip"
 [ -s "$PFW/edit.log" ] && ok "…gh release edit actually ran" || bad "gh release edit was never invoked"
@@ -1030,7 +1050,7 @@ printf '# Changelog\n\n## Unreleased\n\n## 0.33 — current floor\n\nfirst cut o
 r2out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_CAPTURE="$PFW/edit-body-2.md" \
         CANDOR_ROOT="$RFX" bash "$RFX/candor/bin/release.sh" 0.33 0.33.0 --only candor-spec 2>&1)"; r2rc=$?
 [ "$r2rc" = 0 ] && ok "CONTROL: a new-rung cut still exits 0" || bad "CONTROL: a new-rung cut exited $r2rc"
-printf '%s' "$r2out" | grep -q 'STUB-CREATE.*v0.33' \
+hasin "$r2out" -q 'STUB-CREATE.*v0.33' \
   && ok "CONTROL: …the new tag takes the ordinary CREATE branch" || bad "CONTROL: the new rung did not create a release"
 [ -s "$PFW/edit.log" ] \
   && { bad "CONTROL: gh release edit ran for a NEW contract rung — the skip-only gate is not fenced"; cat "$PFW/edit.log"; } \
@@ -1058,12 +1078,12 @@ r4out="$(PATH="$PFW/bin:$PATH" GH_EDIT_LOG="$PFW/edit.log" GH_EDIT_RC=1 GH_EDIT_
 [ "$r4rc" = 0 ] \
   && ok "a gh failure here does NOT abort the release (exit 0 — left no worse than not running it)" \
   || { bad "a gh release edit failure aborted the whole release — got exit $r4rc"; printf '%s\n' "$r4out" | tail -20; }
-printf '%s' "$r4out" | grep -q 'publish-floor-notes.sh failed (exit 1)' \
+hasin "$r4out" -q 'publish-floor-notes.sh failed (exit 1)' \
   && ok "…the failure is reported, not swallowed" || bad "no diagnostic for the gh failure"
-printf '%s' "$r4out" | grep -qF "bash $RFX/candor-spec/scripts/publish-floor-notes.sh" \
+hasin "$r4out" -qF "bash $RFX/candor-spec/scripts/publish-floor-notes.sh" \
   && ok "…with the exact manual re-run in the message (the script is idempotent — safe to retry by hand)" \
   || bad "no manual remedy printed for the failure"
-printf '%s' "$r4out" | grep -q 'STUB verify' \
+hasin "$r4out" -q 'STUB verify' \
   && ok "…and the release still reaches step 8 (release-verify) — the failure did not stop the ladder" \
   || bad "the release stopped after the gh failure instead of continuing"
 
@@ -1136,7 +1156,7 @@ UCR="$UCW/tap-remote-1.git"; UCL="$UCW/tap-local-1"; uctap "$UCR" "$UCL"
 ucout1="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.1 2>&1)"; ucrc1=$?
 [ "$ucrc1" = 0 ] && ok "CONTROL: no-contention tap push succeeds (exit 0)" \
                   || { bad "CONTROL: no-contention tap push failed — got exit $ucrc1"; printf '%s\n' "$ucout1"; }
-printf '%s' "$ucout1" | grep -qiE 'rejected|retrying' \
+hasin "$ucout1" -qiE 'rejected|retrying' \
   && bad "CONTROL: the no-contention path printed retry text — behaviour changed on the common case" \
   || ok "CONTROL: …and the no-contention path is silent about retries, same as before this fix"
 
@@ -1149,7 +1169,7 @@ printf 'class Ebman < Formula\n  url "x"\nend\n' > "$UCO/Formula/ebman.rb"
 ucout2="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.2 2>&1)"; ucrc2=$?
 [ "$ucrc2" = 0 ] && ok "a push rejected by an unrelated formula rebases cleanly and still succeeds" \
                   || { bad "a cleanly-rebasable rejection was not recovered — got exit $ucrc2"; printf '%s\n' "$ucout2"; }
-printf '%s' "$ucout2" | grep -q 'tap push rejected (attempt 1/5)' \
+hasin "$ucout2" -q 'tap push rejected (attempt 1/5)' \
   && ok "…and the retry is reported, not silent" || bad "no retry was attempted/reported for the rejection"
 UCC="$(mktemp -d)"; git clone -q "$UCR" "$UCC"
 [ -f "$UCC/Formula/ebman.rb" ] && ok "…the unrelated formula (ebman) is still on the tap" \
@@ -1167,13 +1187,13 @@ perl -0pi -e 's{url "[^"]*"}{url "https://example.com/someone-elses-edit.tar.gz"
 ucout3="$(PATH="$UCW/bin:$PATH" CANDOR_TAP="$UCL" bash "$UCU/scripts/update-candor.sh" v9.9.3 2>&1)"; ucrc3=$?
 [ "$ucrc3" = 1 ] && ok "a REAL conflict on Formula/candor.rb fails loudly (exit 1), not a silent retry loop" \
                   || bad "a genuine conflict did not fail as expected — got exit $ucrc3"
-printf '%s' "$ucout3" | grep -q 'REAL conflict' \
+hasin "$ucout3" -q 'REAL conflict' \
   && ok "…and names it as a real conflict, distinct from the retriable race" \
   || bad "no distinct diagnostic for a real conflict — indistinguishable from the retriable case"
-printf '%s' "$ucout3" | grep -q 'resolve by hand' \
+hasin "$ucout3" -q 'resolve by hand' \
   && ok "…with a remedy, not a dead end" || bad "a real conflict gave no remedy"
 # THE OVER-CHARGE CHECK: it must not have retried five times against an unresolvable conflict.
-printf '%s' "$ucout3" | grep -qF 'attempt 5/5' \
+hasin "$ucout3" -qF 'attempt 5/5' \
   && bad "a real conflict was retried to exhaustion instead of failing on the first rebase conflict" \
   || ok "…and it failed on the FIRST conflict rather than burning through all 5 attempts"
 # THE LOCAL REPO MUST BE LEFT CLEAN, not mid-rebase — `git rebase --abort` must actually have run.
@@ -1225,7 +1245,7 @@ rtw_run() { # $1=work dir  $2=tag — calls the REAL rs_tag_and_push from inside
 D="$RTW/a"; rtw_repo "$D"
 ( cd "$D" && git tag v9.1.0 && git push -q origin v9.1.0 ) >/dev/null
 outA="$(rtw_run "$D" v9.1.0 2>&1)"
-printf '%s' "$outA" | grep -q '^RC=3$' \
+hasin "$outA" -q '^RC=3$' \
   && ok "CONTROL A: a tag already on origin is recognised as done (RC=3), not re-pushed" \
   || { bad "a tag already on origin was not recognised as done"; printf '%s\n' "$outA"; }
 
@@ -1236,7 +1256,7 @@ D="$RTW/b"; rtw_repo "$D"
   && ok "[fixture] origin does NOT have v9.2.0 yet — this is the defect's exact starting shape" \
   || bad "[fixture] origin already has the tag — this row would prove nothing"
 outB="$(rtw_run "$D" v9.2.0 2>&1)"
-printf '%s' "$outB" | grep -q '^RC=0$' \
+hasin "$outB" -q '^RC=0$' \
   && ok "a tag local-but-not-remote is pushed (RC=0) — THE DEFECT'S FIX" \
   || { bad "a local-only tag was not pushed"; printf '%s\n' "$outB"; }
 [ "$(git --git-dir="${D}-origin.git" tag -l)" = "v9.2.0" ] \
@@ -1248,10 +1268,10 @@ D="$RTW/c"; rtw_repo "$D"
 ( cd "$D" && git tag v9.3.0 ) >/dev/null
 ( cd "$D" && git remote set-url origin "$RTW/does-not-exist.git" )   # simulates auth/network failure
 outC="$(rtw_run "$D" v9.3.0 2>&1)"
-printf '%s' "$outC" | grep -q '^RC=1$' \
+hasin "$outC" -q '^RC=1$' \
   && ok "a genuine push failure returns 1 — not silently swallowed, not retried" \
   || { bad "a genuine push failure did not report RC=1"; printf '%s\n' "$outC"; }
-printf '%s' "$outC" | grep -qi 'not retried automatically' \
+hasin "$outC" -qi 'not retried automatically' \
   && ok "…and the diagnostic explains why (distinct from the tap's own contention-retry)" \
   || bad "no diagnostic explaining that this path does not retry"
 ( cd "$D" && git tag -l ) | grep -q v9.3.0 \
@@ -1262,7 +1282,7 @@ printf '%s' "$outC" | grep -qi 'not retried automatically' \
 # code at the top of this run (see the bare `bash -c` reproduction in the task's own investigation).
 ( cd "$D" && git remote set-url origin "${D}-origin.git" )
 outC2="$(rtw_run "$D" v9.3.0 2>&1)"
-printf '%s' "$outC2" | grep -q '^RC=0$' \
+hasin "$outC2" -q '^RC=0$' \
   && ok "…and once access is fixed, the VERY NEXT run retries the same tag and succeeds" \
   || { bad "a rerun after fixing access did not retry the push"; printf '%s\n' "$outC2"; }
 git --git-dir="${D}-origin.git" tag -l | grep -q v9.3.0 \
@@ -1271,7 +1291,7 @@ git --git-dir="${D}-origin.git" tag -l | grep -q v9.3.0 \
 # --- CONTROL D: the no-failure path behaves identically to before --------------------------------------
 D="$RTW/d"; rtw_repo "$D"
 outD="$(rtw_run "$D" v9.4.0 2>&1)"
-printf '%s' "$outD" | grep -q '^RC=0$' \
+hasin "$outD" -q '^RC=0$' \
   && ok "CONTROL D: a brand-new tag with no prior attempt is created + pushed in one call (unchanged)" \
   || { bad "the ordinary no-failure path regressed"; printf '%s\n' "$outD"; }
 git --git-dir="${D}-origin.git" tag -l | grep -q v9.4.0 \
@@ -1437,7 +1457,7 @@ sb2() { CANDOR_ROOT="$SB" bash "$1" 0.30 --decls-only 2>&1; }
 SBSH="$UMBRELLA/bin/spec-bump.sh"
 sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
 out3="$(sb2 "$SBSH")"
-printf '%s' "$out3" | grep -q 'lingering.md' \
+hasin "$out3" -q 'lingering.md' \
   && ok "step 3 REPORTS a mention the bump left behind (reached under --decls-only)" \
   || bad "step 3 did not report a lingering 0.27 mention — the triage step is still unreachable"
 # THE PROBE'S TEETH: break the scan in a COPY so it cannot match, and require the run to fail.
@@ -1470,12 +1490,12 @@ bash -n "$BROKE" 2>/dev/null || bad "the broken copy does not even parse — the
 if ! cmp -s "$SBSH" "$BROKE"; then
   out4="$(sb2 "$BROKE")"; rc4=$?
   # …and prove the run REACHED step 3, so neither row below can be satisfied by an early refusal.
-  printf '%s' "$out4" | grep -q 'remaining mentions of' \
+  hasin "$out4" -q 'remaining mentions of' \
     || bad "the broken copy never reached step 3 — both teeth rows below are measuring something else"
-  { [ "$rc4" != 0 ] && printf '%s' "$out4" | grep -q 'the SCAN is broken'; } \
+  { [ "$rc4" != 0 ] && hasin "$out4" -q 'the SCAN is broken'; } \
     && ok "…and the liveness probe FAILS the run when the scan cannot match (teeth)" \
     || bad "a spec-bump whose mentions scan matches nothing still exited $rc4 — the probe is asleep"
-  printf '%s' "$out4" | grep -q 'no remaining mentions' \
+  hasin "$out4" -q 'no remaining mentions' \
     && bad "the dead scan still printed a green 'no remaining mentions' ALONGSIDE the probe's ✘" \
     || ok "…and does not also print the reassuring green line"
 else
@@ -1492,12 +1512,12 @@ fi
 # the CONDITION being tested, not a defect in the fixture) and the run reaches step 3 with rc=1.
 sbfix; printf 'the engine declares spec 0.27 here\n' > "$SB/candor-rust/lingering.md"; sbcommit
 mainout="$(CANDOR_ROOT="$SB" bash "$SBSH" 0.30 2>&1)"
-printf '%s' "$mainout" | grep -q 'lingering.md' \
+hasin "$mainout" -q 'lingering.md' \
   && ok "step 3 still lists a mention when the SUITES failed (the main path, rc=1)" \
   || bad "a red suite silenced step 3's triage list — the probe flag is sharing rc again"
-printf '%s' "$mainout" | grep -q 'suites failed' \
+hasin "$mainout" -q 'suites failed' \
   && ok "…and the summary names the SUITES as what failed" \
-  || bad "the summary mislabelled a suite failure: $(printf '%s' "$mainout" | grep -c 'spec-bump:') summary line(s)"
+  || bad "the summary mislabelled a suite failure: $(hasin "$mainout" -c 'spec-bump:') summary line(s)"
 
 say "5b. spec-bump.sh steps 1b/1c — the DOC literals and the deliberate pins"
 # WHY THESE ROWS EXIST. Measured on the ⟨0.32⟩ bump: step 1 moved seven declarations and the version was
@@ -1563,10 +1583,10 @@ grep -q 'declaredSpec(), "0.27"' "$SB/candor-swift/Tests/CandorCoreTests/AgentsD
 is "1c does NOT rewrite the deliberate pins (their teeth are the point)" '' "$canary_untouched"
 canary_named=""
 for lbl in 'rust floor pin' 'rust envelope' 'swift floor pin'; do
-  printf '%s' "$bumpout" | grep -q "$lbl" || canary_named="$canary_named [$lbl]"
+  hasin "$bumpout" -q "$lbl" || canary_named="$canary_named [$lbl]"
 done
 is "1c NAMES every deliberate pin up front, with its before→after" '' "$canary_named"
-printf '%s' "$bumpout" | grep -q 'assert_eq!(SPEC_VERSION, "0.27")  →  assert_eq!(SPEC_VERSION, "0.28")' \
+hasin "$bumpout" -q 'assert_eq!(SPEC_VERSION, "0.27")  →  assert_eq!(SPEC_VERSION, "0.28")' \
   && ok "…and prints the exact edit, so it is a hand-edit LIST and not a hint" \
   || bad "1c named a pin without printing the substitution to make"
 
@@ -1591,7 +1611,7 @@ CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only >/dev/null 2>&1 \
   || ok "a broken mirror fails the run"
 sbfix; mkb candor-swift/Tests/CandorCoreTests/AgentsDocDriftTests.swift 'the pin was refactored away'; sbcommit
 canout="$(CANDOR_ROOT="$SB" bash "$SBSH" 0.28 --decls-only 2>&1)"; canrc=$?
-{ [ "$canrc" != 0 ] && printf '%s' "$canout" | grep -q 'not pinning the floor'; } \
+{ [ "$canrc" != 0 ] && hasin "$canout" -q 'not pinning the floor'; } \
   && ok "a canary that cannot be LOCATED fails the run (a missing pin reads exactly like a satisfied one)" \
   || bad "a vanished deliberate pin exited $canrc without a word — the acknowledgement is gone and nothing said so"
 rm -rf "$SB"
@@ -1628,7 +1648,7 @@ jobs:
 EOF
 git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf -q
 red7b="$(t7brun)"
-printf '%s' "$red7b" | grep -q 'two-job.yml:plugin-verifier' \
+hasin "$red7b" -q 'two-job.yml:plugin-verifier' \
   && ok "[7b] catches the job WITHOUT a timeout even though its sibling job in the same file has one" \
   || bad "[7b] missed a bare job beside a timed one — the per-file blind spot is back: $red7b"
 
@@ -1647,7 +1667,7 @@ jobs:
 EOF
 git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf2 -q
 green7b="$(t7brun)"
-printf '%s' "$green7b" | grep -q 'every job in every workflow' \
+hasin "$green7b" -q 'every job in every workflow' \
   && ok "[7b] GREEN once every job in the file declares a timeout" \
   || bad "[7b] still red after both jobs got a timeout: $green7b"
 
@@ -1661,7 +1681,7 @@ jobs:
 EOF
 git -C "$T7B/candor" add -A; git -C "$T7B/candor" -c user.email=t@e -c user.name=t commit -qm wf3 -q
 ctrl7b="$(t7brun)"
-printf '%s' "$ctrl7b" | grep -q 'reusable.yml' \
+hasin "$ctrl7b" -q 'reusable.yml' \
   && bad "[7b] flagged a reusable-workflow call job, which cannot carry timeout-minutes at all: $ctrl7b" \
   || ok "[7b] CONTROL: a reusable-workflow call job is exempt, not flagged"
 rm -rf "$T7B"
@@ -1699,10 +1719,10 @@ pfrun() { # $1 = the runs JSON
 # "✔ all N repos green on HEAD" underneath it — the failed-AND-green contradiction the same hunk's
 # comment claims to have removed, reintroduced from the other side by the fix for it.
 pending="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":null,\"status\":\"in_progress\",\"workflowName\":\"ci\"}]")"
-printf '%s' "$pending" | grep -q "CI still unfinished" \
+hasin "$pending" -q "CI still unfinished" \
   && ok "[10] reports a repo whose CI is still running" \
-  || bad "[10] did not report an in_progress run: $(printf '%s' "$pending" | grep -c '')-line output"
-printf '%s' "$pending" | grep -q "repos green on HEAD" \
+  || bad "[10] did not report an in_progress run: $(hasin "$pending" -c '')-line output"
+hasin "$pending" -q "repos green on HEAD" \
   && bad "[10] printed the all-green summary BESIDE a ✘ — failed AND green in one run" \
   || ok "…and does NOT also print the all-green summary (the verdict is not self-contradictory)"
 # …and a real failure standing beside a pending one must still reach the operator. It used to be
@@ -1711,15 +1731,15 @@ both="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"
 # `build:failure`, not `build` — the bare word appears elsewhere in preflight's output (workflow names,
 # prose), so the loose pattern passed against a version that printed only "CI still unfinished". A row
 # whose pattern is satisfied by unrelated text is not asserting the thing its label claims.
-printf '%s' "$both" | grep -q "build:failure" \
+hasin "$both" -q "build:failure" \
   && ok "[10] names a REAL failure standing beside a still-running job" \
   || bad "[10] reported only the pending run; the 'build:failure' never reached the operator"
 # THE CONTROL: an all-green repo must produce the green summary and no ✘ from [10].
 green="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\"}]")"
-printf '%s' "$green" | grep -q "repos green on HEAD" \
+hasin "$green" -q "repos green on HEAD" \
   && ok "[10] CONTROL: a green repo still gets the all-green summary" \
   || bad "[10] refuses even a passing repo — the rows above would pass against a check that always fails"
-printf '%s' "$green" | grep -q "CI still unfinished" \
+hasin "$green" -q "CI still unfinished" \
   && bad "[10] CONTROL: reported a completed success as unfinished" \
   || ok "[10] CONTROL: …and no spurious unfinished line"
 
@@ -1734,10 +1754,10 @@ printf '%s' "$green" | grep -q "CI still unfinished" \
 # Distinct timestamps: two `ci` runs, no tie. The genuinely latest one (listed first, per gh's contract)
 # is green; a stale duplicate behind it failed. The stale one must not resurrect a red verdict.
 distinct="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
-printf '%s' "$distinct" | grep -q "repos green on HEAD" \
+hasin "$distinct" -q "repos green on HEAD" \
   && ok "[10] dedupe: distinct timestamps — the latest (listed-first) run wins over a stale duplicate" \
   || bad "[10] dedupe: a stale duplicate behind the real latest run poisoned the verdict"
-printf '%s' "$distinct" | grep -q "ci:failure" \
+hasin "$distinct" -q "ci:failure" \
   && bad "[10] dedupe: the stale duplicate's failure leaked into the verdict" \
   || ok "[10] dedupe: …and the stale duplicate's failure did not leak through"
 
@@ -1763,10 +1783,10 @@ printf '%s' "$distinct" | grep -q "ci:failure" \
 # than the failure) is the control that keeps a genuine supersede green — without it, "tie loses" would
 # be indistinguishable from "worst wins", which would block every legitimate re-run at an unmoved sha.
 tie1="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$tie1" | grep -q "repos green on HEAD" \
+hasin "$tie1" -q "repos green on HEAD" \
   && bad "[10] dedupe: same-second tie reported GREEN — a failure sharing the winner's whole second was masked. This is R352, and it is release gate [10]: the check that authorises publishing." \
   || ok "[10] dedupe: same-second tie, failure-first order — the tie is reported RED"
-printf '%s' "$tie1" | grep -q "ci:failure" \
+hasin "$tie1" -q "ci:failure" \
   && ok "[10] dedupe: …and the failure is NAMED, not merely counted" \
   || bad "[10] dedupe: the tie was red but the failure was not named — a verdict with no cause"
 # Same-second tie, order 2: the SAME two facts, objects swapped. Must report RED in this order too —
@@ -1774,26 +1794,26 @@ printf '%s' "$tie1" | grep -q "ci:failure" \
 # This is the assertion that makes tie1 worth having: a rule that only fires in one listed order is the
 # original 2026-08-26 defect wearing a different hat.
 tie2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$tie2" | grep -q "repos green on HEAD" \
+hasin "$tie2" -q "repos green on HEAD" \
   && bad "[10] dedupe: swapped order reported GREEN while failure-first reported RED — the verdict depends on gh's incidental array order, which is the 2026-08-26 defect exactly" \
   || ok "[10] dedupe: same-second tie, swapped order — still RED, so the rule is order-independent"
-printf '%s' "$tie2" | grep -q "ci:failure" \
+hasin "$tie2" -q "ci:failure" \
   && ok "[10] dedupe: …and the failure is NAMED in this order too" \
   || bad "[10] dedupe: swapped order was red but did not name the failure"
 # CONTROL: a same-second tie where NEITHER run succeeded must still fail — success-wins must not
 # become "any duplicate wins". Order-independence checked both ways, same as tie1/tie2 above.
 tie3a="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$tie3a" | grep -q "repos green on HEAD" \
+hasin "$tie3a" -q "repos green on HEAD" \
   && bad "[10] dedupe CONTROL: a tie with NO successful run reported green (failure-first order)" \
   || ok "[10] dedupe CONTROL: a tie with no successful run still fails (failure-first order)"
 tie3b="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$tie3b" | grep -q "repos green on HEAD" \
+hasin "$tie3b" -q "repos green on HEAD" \
   && bad "[10] dedupe CONTROL: a tie with NO successful run reported green (cancelled-first order)" \
   || ok "[10] dedupe CONTROL: a tie with no successful run still fails (cancelled-first order)"
 
 # CONTROL: distinct workflow NAMES (no duplicates at all) must not be merged or dropped by the dedupe.
 multi="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"nightly\"}]")"
-printf '%s' "$multi" | grep -q "repos green on HEAD" \
+hasin "$multi" -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: two distinct workflows, both green, stays green" \
   || bad "[10] dedupe CONTROL: distinct (non-duplicate) workflow names broke the verdict"
 
@@ -1807,28 +1827,28 @@ printf '%s' "$multi" | grep -q "repos green on HEAD" \
 #
 # Both directions, both listed orders, because order-dependence is the original 2026-08-26 defect.
 skipA="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$skipA" | grep -q "ci:failure" \
+hasin "$skipA" -q "ci:failure" \
   && ok "[10] a same-second \`skipped\` does not mask its failure twin (failure listed first)" \
   || bad "[10] a tied \`skipped\` MASKED a failure in the publish gate — R356's defect"
 skipB="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:32:15Z\"}]")"
-printf '%s' "$skipB" | grep -q "ci:failure" \
+hasin "$skipB" -q "ci:failure" \
   && ok "[10] …and in the swapped order, so the tie rule is not order-dependent" \
   || bad "[10] swapping the tied objects flipped the verdict — the 2026-08-26 defect returned"
 # RECENCY, not a tie: a NEWER `skipped` must not outrank an older failure. `cancelled` never could;
 # `skipped` could until R360, and both twins mean the same thing — no judgement was reached.
 skipR="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
-printf '%s' "$skipR" | grep -q "ci:failure" \
+hasin "$skipR" -q "ci:failure" \
   && ok "[10] a NEWER \`skipped\` does not supersede an older failure (R360)" \
   || bad "[10] a newer \`skipped\` won its group by recency and masked a failure — R352's class, one door over"
 # CONTROL — a lone `skipped` is a legitimate green. Without this the two rows above are satisfied by
 # "skipped is always BAD", which would turn every conditionally-skipped workflow red.
 skipOK="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"skipped\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-26T21:35:00Z\"}]")"
-printf '%s' "$skipOK" | grep -q "repos green on HEAD" \
+hasin "$skipOK" -q "repos green on HEAD" \
   && ok "[10] CONTROL: a lone \`skipped\` run is still green" \
   || bad "[10] a lone \`skipped\` was reported red — the fix over-reached into every conditional workflow"
 # CONTROL — a falsey workflowDatabaseId must still keep DISTINCT workflow names apart (R356(b)).
 nullid="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":null,\"createdAt\":\"2026-08-26T21:35:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"native\",\"workflowDatabaseId\":null,\"createdAt\":\"2026-08-26T21:30:00Z\"}]")"
-printf '%s' "$nullid" | grep -q "native:failure" \
+hasin "$nullid" -q "native:failure" \
   && ok "[10] a null workflowDatabaseId does not merge two DIFFERENT workflows (R356)" \
   || bad "[10] null ids merged unrelated workflows and dropped a failure — the 2026-08-29 defect"
 
@@ -1840,16 +1860,16 @@ printf '%s' "$nullid" | grep -q "native:failure" \
 # workflowDatabaseId, one success one failure, printed OK". Same shape here, id-keyed dedupe must NOT
 # merge them.
 idsplit="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":222}]")"
-printf '%s' "$idsplit" | grep -q "ci:failure" \
+hasin "$idsplit" -q "ci:failure" \
   && ok "[10] dedupe: two FILES sharing workflowName 'ci' but distinct workflowDatabaseId — the failure is not merged away" \
   || bad "[10] dedupe: a second file's genuine failure was dropped as a same-NAME 'duplicate' (the fifth false green is back)"
-printf '%s' "$idsplit" | grep -q "repos green on HEAD" \
+hasin "$idsplit" -q "repos green on HEAD" \
   && bad "[10] dedupe: printed the all-green summary over a distinct-id failure sharing a display name" \
   || ok "[10] dedupe: …and no all-green summary alongside it"
 # OVER-CHARGE CONTROL: a genuine RERUN of the SAME file (same workflowDatabaseId, two rows from retries)
 # must still dedupe to its latest (listed-first) result — the id-keyed fix must not simply stop deduping.
 idsame="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-30T10:05:00Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"failure\",\"status\":\"completed\",\"workflowName\":\"ci\",\"workflowDatabaseId\":111,\"createdAt\":\"2026-08-30T10:00:00Z\"}]")"
-printf '%s' "$idsame" | grep -q "repos green on HEAD" \
+hasin "$idsame" -q "repos green on HEAD" \
   && ok "[10] dedupe CONTROL: same workflowDatabaseId (a genuine rerun) still collapses to its latest (listed-first) result" \
   || bad "[10] dedupe CONTROL: id-keyed dedupe stopped collapsing genuine reruns of the same workflow"
 
@@ -1859,16 +1879,16 @@ printf '%s' "$idsame" | grep -q "repos green on HEAD" \
 # preflight whose repos were all actually green; a re-run of the cancelled twin cleared it. This is the
 # real shape, id-keyed (not the workflowName-keyed tie1/tie2 above) and named after the actual workflow.
 oracle="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"}]")"
-printf '%s' "$oracle" | grep -q "repos green on HEAD" \
+hasin "$oracle" -q "repos green on HEAD" \
   && ok "[10] dedupe: the measured bug — success/cancelled twins, same id, same second — now reports green" \
   || bad "[10] dedupe: the measured bug is back — a cancelled twin outvoted its successful sibling"
-printf '%s' "$oracle" | grep -q "realworld-oracle-deep:cancelled" \
+hasin "$oracle" -q "realworld-oracle-deep:cancelled" \
   && bad "[10] dedupe: the cancelled twin's status leaked into the verdict beside its success sibling" \
   || ok "[10] dedupe: …and the cancelled twin does not leak through"
 # …and the SAME pair with the success listed first must report identically — the fix must not depend on
 # which of the tied twins gh happens to list first.
 oracle2="$(pfrun "[{\"headSha\":\"$PFSHA\",\"conclusion\":\"success\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"},{\"headSha\":\"$PFSHA\",\"conclusion\":\"cancelled\",\"status\":\"completed\",\"workflowName\":\"realworld-oracle-deep\",\"workflowDatabaseId\":555,\"createdAt\":\"2026-09-03T09:14:02Z\"}]")"
-printf '%s' "$oracle2" | grep -q "repos green on HEAD" \
+hasin "$oracle2" -q "repos green on HEAD" \
   && ok "[10] dedupe: the measured bug, success listed first — still green" \
   || bad "[10] dedupe: the measured bug, success listed first — did not report green"
 rm -rf "$PF"
@@ -1938,17 +1958,17 @@ nonerun() { GH_RUNS="$1" PATH="$N/bin:$PATH" CANDOR_ROOT="$N/root" CI_NO_WAIT=1 
 # and this branch is what answers. "nightly-bump" is freshest and green; "ci" is the real gate and is
 # the one that failed, earlier.
 mixed="$(nonerun '[{"headSha":"aaa1111aaa1111aaa1111aaa1111aaa1111aaaa","conclusion":"success","status":"completed","workflowName":"nightly-bump","createdAt":"2026-08-26T10:00:00Z"},{"headSha":"bbb2222bbb2222bbb2222bbb2222bbb2222bbbb","conclusion":"failure","status":"completed","workflowName":"ci","createdAt":"2026-08-26T08:00:00Z"}]')"
-printf '%s' "$mixed" | grep -q "ci:failure" \
+hasin "$mixed" -q "ci:failure" \
   && ok "[10] NONE branch: a stale failing workflow is NOT masked by an unrelated fresher green one" \
   || bad "[10] NONE branch: the real gate's failure did not surface — false clear reproduced: $mixed"
-printf '%s' "$mixed" | grep -q "repos green on HEAD" \
+hasin "$mixed" -q "repos green on HEAD" \
   && bad "[10] NONE branch: printed the all-green summary over a genuinely failing workflow" \
   || ok "[10] NONE branch: …and no all-green summary alongside the failure"
 
 # CONTROL: every workflow this repo has actually completed is green — must still pass and inform, not
 # gate. This is the ordinary docs-only-commit shape and must read exactly as it always has.
 allgreen="$(nonerun '[{"headSha":"aaa1111aaa1111aaa1111aaa1111aaa1111aaaa","conclusion":"success","status":"completed","workflowName":"nightly-bump","createdAt":"2026-08-26T10:00:00Z"},{"headSha":"bbb2222bbb2222bbb2222bbb2222bbb2222bbbb","conclusion":"success","status":"completed","workflowName":"ci","createdAt":"2026-08-26T08:00:00Z"}]')"
-printf '%s' "$allgreen" | grep -q "last known CI state (aaa1111) is green across every workflow" \
+hasin "$allgreen" -q "last known CI state (aaa1111) is green across every workflow" \
   && ok "[10] NONE branch CONTROL: every workflow actually green — informational pass, names the anchor sha" \
   || bad "[10] NONE branch CONTROL: an all-green repo did not pass cleanly: $allgreen"
 
@@ -1960,10 +1980,10 @@ printf '%s' "$allgreen" | grep -q "last known CI state (aaa1111) is green across
 # `--limit 30` cutoff a SHARED page would apply, but still reachable by ci_all_workflows_latest()'s
 # PER-WORKFLOW `--workflow <id> --limit 1` query, which never shares a page with the chatty sibling at all.
 crowded="$(nonerun "$(jq -n '[range(0;40) | {headSha: ("chatty-" + (.|tostring)), conclusion: "success", status: "completed", workflowName: "chatty", createdAt: "2026-08-30T10:00:00Z"}] + [{headSha: "quiet-1", conclusion: "failure", status: "completed", workflowName: "ci", createdAt: "2026-08-30T09:00:00Z"}]')")"
-printf '%s' "$crowded" | grep -q "ci:failure" \
+hasin "$crowded" -q "ci:failure" \
   && ok "[10] NONE branch: a quiet workflow's failure survives a 41-row page a chatty sibling fills (the eighth false green is back if this fails)" \
   || bad "[10] NONE branch: a chatty sibling's 40 runs buried the quiet workflow's real failure — THE EIGHTH FALSE GREEN IS BACK"
-printf '%s' "$crowded" | grep -q "repos green on HEAD" \
+hasin "$crowded" -q "repos green on HEAD" \
   && bad "[10] NONE branch: printed the all-green summary over a page-buried failure" \
   || ok "[10] NONE branch: …and no all-green summary alongside it"
 rm -rf "$N"
@@ -2000,7 +2020,7 @@ pcrun() { PATH="$PC/bin:$PATH" CANDOR_ROOT="$PC/root" CI_NO_WAIT=1 PINS_ADVISORY
 
 # A CLEAN tree: the suite runs and the stamp is recorded.
 out="$(pcrun)"
-printf '%s' "$out" | grep -q "conformance OK" && [ -f "$STAMPF" ] \
+hasin "$out" -q "conformance OK" && [ -f "$STAMPF" ] \
   && ok "[11] a green run over a CLEAN tree records the reuse stamp" \
   || bad "[11] no stamp after a green run over a clean tree"
 # …and the next run REUSES it. Without this the dirty-tree row below cannot mean anything: a stamp that
@@ -2014,7 +2034,7 @@ printf '%s' "$(pcrun)" | grep -q "conformance REUSED" \
 # dirty tree. Two different red states, one of which is not the subject.
 printf 'uncommitted\n' >> "$PC/root/candor-spec/conformance/README.md"
 dout="$(pcrun)"
-printf '%s' "$dout" | grep -q "not recording a reuse stamp" \
+hasin "$dout" -q "not recording a reuse stamp" \
   && ok "[11] a run covering UNCOMMITTED changes does not record a stamp, and says so" \
   || bad "[11] silently stamped a dirty tree — reuse would assert a green for a state never tested"
 [ -f "$STAMPF" ] \
@@ -2071,18 +2091,18 @@ printf 'ENGINE_PIN="0.33.0"\n' > "$PV/root/candor/bin/candor"
 pvrun() { GH_DRAFT="$1" GH_FAIL="${2:-}" PATH="$PV/bin:$PATH" CANDOR_ROOT="$PV/root" \
             bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-spec 2>&1; }
 green="$(pvrun false)"
-printf '%s' "$green" | grep -q "✔ candor-spec v0.33" \
+hasin "$green" -q "✔ candor-spec v0.33" \
   && ok "an ordinary (non-draft) release passes" || bad "a normal release was not confirmed — control is broken"
-printf '%s' "$green" | grep -q "release-verify: OK" \
+hasin "$green" -q "release-verify: OK" \
   && ok "…and the run as a whole reports OK" || bad "a clean release did not report OK"
 red="$(pvrun true)"
-printf '%s' "$red" | grep -q "candor-spec: v0.33 is a DRAFT release" \
+hasin "$red" -q "candor-spec: v0.33 is a DRAFT release" \
   && ok "CONTROL: a draft release is caught and NAMED, not conflated with a missing one" \
   || bad "a draft release passed release-verify — the exact 0.33.0 candor-swift failure would reach this check green"
-printf '%s' "$red" | grep -q "gh release edit v0.33 -R tombaldwin/candor-spec --draft=false" \
+hasin "$red" -q "gh release edit v0.33 -R tombaldwin/candor-spec --draft=false" \
   && ok "…and the remedy is the exact command to run, with the right repo and tag" \
   || bad "the draft diagnostic has no actionable remedy"
-printf '%s' "$red" | grep -q "release-verify: 1 check(s) FAILED" \
+hasin "$red" -q "release-verify: 1 check(s) FAILED" \
   && ok "…and the run as a whole is RED, not a note beside a green verdict" \
   || bad "a draft release did not fail the run"
 
@@ -2092,23 +2112,23 @@ printf '%s' "$red" | grep -q "release-verify: 1 check(s) FAILED" \
 # draft". Proven here by making the gh call fail OUTRIGHT (exit 1, no output) rather than by disagreeing
 # about a value — the shape a real 409/403 takes.
 failed="$(pvrun false 1)"
-printf '%s' "$failed" | grep -q "release-verify: OK" \
+hasin "$failed" -q "release-verify: OK" \
   && bad "[gh releases] a FAILED gh call was read as a confirmed non-draft release — the exact defect" \
   || ok "a gh call that fails outright does NOT silently pass as a confirmed non-draft"
-printf '%s' "$failed" | grep -q "could not read release info for v0.33" \
+hasin "$failed" -q "could not read release info for v0.33" \
   && ok "…and says WHY: the call itself failed, not that anything was confirmed" \
   || bad "a failed gh call produced no diagnostic naming the cause"
-printf '%s' "$failed" | grep -q "release-verify: 1 check(s) FAILED" \
+hasin "$failed" -q "release-verify: 1 check(s) FAILED" \
   && ok "…and the run as a whole is RED over the failed call, not a note beside a green verdict" \
   || bad "a failed gh call did not fail the run"
 
 # THE THIRD STATE: the call SUCCEEDS (tagName matches) but isDraft itself resolves to neither true nor
 # false — kept distinct from "the call failed outright" above, so the diagnostic names the right cause.
 unreadable="$(pvrun bogus)"
-printf '%s' "$unreadable" | grep -q "release-verify: OK" \
+hasin "$unreadable" -q "release-verify: OK" \
   && bad "an unreadable isDraft value was read as a confirmed non-draft release" \
   || ok "an unreadable isDraft value does NOT silently pass as a confirmed non-draft"
-printf '%s' "$unreadable" | grep -q "draft status is UNREADABLE" \
+hasin "$unreadable" -q "draft status is UNREADABLE" \
   && ok "…and is named as UNREADABLE, distinct from a failed call or a real draft" \
   || bad "an unreadable isDraft value produced no distinct diagnostic"
 rm -rf "$PV"
@@ -2180,10 +2200,10 @@ printf '%s' "$(pjrun)" | grep -q "release-verify: OK — spec 0.33 / v0.33.0 is 
 # ENGINE_PIN_TS left BEHIND at a three-minor-old version — the version `candor update` actually installs.
 pjcandor "0.30.0"
 tsout="$(pjrun)"
-printf '%s' "$tsout" | grep -q "release-verify: OK" \
+hasin "$tsout" -q "release-verify: OK" \
   && bad "a candor-ts pin left BEHIND the release read as \"live everywhere\" — the false green" \
   || ok "a stale, BEHIND candor-ts pin fails the family-wide form"
-printf '%s' "$tsout" | grep -q "pins ts BEHIND this release — it is 0.30.0, not 0.33.0" \
+hasin "$tsout" -q "pins ts BEHIND this release — it is 0.30.0, not 0.33.0" \
   && ok "…and names the engine, the pin's value and what it would still fetch" \
   || bad "a failing ts pin produced no actionable diagnostic"
 
@@ -2195,10 +2215,10 @@ for kv in "ENGINE_PIN_RUST:rust" "ENGINE_PIN_SWIFT:swift"; do
     echo 'ENGINE_PIN_RUST=""'; echo 'ENGINE_PIN_SWIFT=""'; } \
     | sed "s/^$var=\"\"/$var=\"0.30.0\"/" > "$PJ/root/candor/bin/candor"
   eout="$(pjrun)"
-  printf '%s' "$eout" | grep -q "release-verify: OK" \
+  hasin "$eout" -q "release-verify: OK" \
     && bad "a $key pin left BEHIND the release read as \"live everywhere\"" \
     || ok "a stale, BEHIND $key pin fails the family-wide form too"
-  printf '%s' "$eout" | grep -q "pins $key BEHIND this release — it is 0.30.0, not 0.33.0" \
+  hasin "$eout" -q "pins $key BEHIND this release — it is 0.30.0, not 0.33.0" \
     || bad "a failing $key pin produced no actionable diagnostic"
 done
 
@@ -2210,11 +2230,11 @@ done
 printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.34.0"\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' \
   > "$PJ/root/candor/bin/candor"
 aheadout="$(pjrun)"
-printf '%s' "$aheadout" | grep -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywhere" \
+hasin "$aheadout" -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywhere" \
   && ok "CONTROL: a java pin AHEAD of the release (an in-flight one-engine patch) still reports OK" \
   || { bad "an AHEAD java pin failed the family-wide form — the false-red this fix also closes"
-       printf '%s' "$aheadout" | grep -E '✘'; }
-printf '%s' "$aheadout" | grep -q "pins java SEPARATELY at 0.34.0" \
+       hasin "$aheadout" -E '✘'; }
+hasin "$aheadout" -q "pins java SEPARATELY at 0.34.0" \
   && ok "…and the divergence is still DISCLOSED, just not failed" \
   || bad "an ahead java pin vanished silently instead of being disclosed"
 
@@ -2223,7 +2243,7 @@ printf '%s' "$aheadout" | grep -q "pins java SEPARATELY at 0.34.0" \
 printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.30.0"\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' \
   > "$PJ/root/candor/bin/candor"
 jbehindout="$(pjrun)"
-printf '%s' "$jbehindout" | grep -q "release-verify: OK" \
+hasin "$jbehindout" -q "release-verify: OK" \
   && bad "a java pin BEHIND the release read as \"live everywhere\"" \
   || ok "a stale, BEHIND java pin still fails the family-wide form"
 
@@ -2232,10 +2252,10 @@ printf '%s' "$jbehindout" | grep -q "release-verify: OK" \
 pjcandor "0.30.0"
 scopedout="$(PJ_VER=0.33.0 PJ_SPEC=0.33 PATH="$PJ/bin:$PATH" CANDOR_ROOT="$PJ/root" \
              bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-spec 2>&1)"
-printf '%s' "$scopedout" | grep -q "release-verify: OK" \
+hasin "$scopedout" -q "release-verify: OK" \
   && ok "CONTROL: the SAME stale ts pin does not fail a SCOPED run — it is not that run's question" \
   || bad "a scoped run failed over a fact the family form alone is answerable for"
-printf '%s' "$scopedout" | grep -q "pins ts SEPARATELY at 0.30.0" \
+hasin "$scopedout" -q "pins ts SEPARATELY at 0.30.0" \
   && ok "…and is still disclosed, so an operator reading the scoped output is not blind to it" \
   || bad "a diverged pin vanished entirely under a scoped run"
 rm -rf "$PJ"
@@ -2272,14 +2292,14 @@ chmod +x "$NV"/bin/*
 nvrun() { NPM_VER="$1" PATH="$NV/bin:$PATH" CANDOR_ROOT="$NV/root" \
             bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-ts 2>&1; }
 ctl="$(nvrun 0.33.0)"
-printf '%s' "$ctl" | grep -q "release-verify: OK" \
+hasin "$ctl" -q "release-verify: OK" \
   && ok "CONTROL: npm genuinely serving 0.33.0 passes, so the row below measures the mismatch" \
   || { bad "[fixture] the clean npm baseline did not pass; the row below would prove nothing"; printf '%s\n' "$ctl" | tail -6; }
 red="$(nvrun 0.30.5)"
-printf '%s' "$red" | grep -q "candor-ts: npm version '0.30.5' != 0.33.0" \
+hasin "$red" -q "candor-ts: npm version '0.30.5' != 0.33.0" \
   && ok "[npm] a stale registry version is caught and named, not averaged into a pass" \
   || bad "[npm] deleted: npm serving a version other than the one just cut passed silently"
-printf '%s' "$red" | grep -q "release-verify: OK" \
+hasin "$red" -q "release-verify: OK" \
   && bad "[npm] a version mismatch on the registry still reported the run OK overall" \
   || ok "…and the run as a whole is FAILED, not a note beside a green verdict"
 rm -rf "$NV"
@@ -2309,23 +2329,23 @@ adrun() { PATH="$AD/bin:$PATH" CANDOR_ROOT="$AD/root" \
             bash "$UMBRELLA/bin/release-verify.sh" 0.33 0.33.0 --only candor-java,candor-agents 2>&1; }
 adfiles 0.33.0 0.33.0
 ctl="$(adrun)"
-printf '%s' "$ctl" | grep -q "candor/adopt/candor.yml pins 0.33.0" \
+hasin "$ctl" -q "candor/adopt/candor.yml pins 0.33.0" \
   && ok "CONTROL: candor.yml's CANDOR_JAVA_VERSION genuinely at 0.33.0 is confirmed, not silent" \
   || { bad "[fixture] the clean adopt/ baseline did not confirm candor.yml; the row below proves nothing"; printf '%s\n' "$ctl" | tail -10; }
-printf '%s' "$ctl" | grep -q "candor/adopt/candor-digest.yml pins 0.33.0" \
+hasin "$ctl" -q "candor/adopt/candor-digest.yml pins 0.33.0" \
   && ok "CONTROL: candor-digest.yml's candor-agents@v genuinely at 0.33.0 is confirmed too" \
   || bad "[fixture] the clean adopt/ baseline did not confirm candor-digest.yml"
 adfiles 0.32.0 0.33.0
 red="$(adrun)"
-printf '%s' "$red" | grep -q "candor/adopt/candor.yml pins 0.32.0, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.32.0" \
+hasin "$red" -q "candor/adopt/candor.yml pins 0.32.0, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.32.0" \
   && ok "[adopt java] a stale CANDOR_JAVA_VERSION is caught and named, not left for the next \`candor init\` to discover" \
   || bad "[adopt java] deleted: candor.yml left at the prior java version passed silently"
 adfiles 0.33.0 0.31.5
 red2="$(adrun)"
-printf '%s' "$red2" | grep -q "candor/adopt/candor-digest.yml pins 0.31.5, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.31.5" \
+hasin "$red2" -q "candor/adopt/candor-digest.yml pins 0.31.5, not 0.33.0 — every repo that ran \`candor init\` keeps installing 0.31.5" \
   && ok "[adopt agents] a stale candor-agents@v pin is caught and named" \
   || bad "[adopt agents] deleted: candor-digest.yml left at the prior agents version passed silently"
-printf '%s' "$red2" | grep -q "release-verify: OK" \
+hasin "$red2" -q "release-verify: OK" \
   && bad "[adopt agents] a stale consumer-facing pin still reported the run OK overall" \
   || ok "…and the run as a whole is FAILED over a pin nothing else in this file checks"
 rm -rf "$AD"
@@ -2356,16 +2376,16 @@ jvrun() { PATH="$JV/bin:$PATH" CANDOR_ROOT="$JV/root" \
 printf '{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v0.33.0/candor-java-0.33.0-all.jar"}' \
   > "$JV/root/candor-java/jbang-catalog.json"
 ctl="$(jvrun)"
-printf '%s' "$ctl" | grep -q "release-verify: OK" \
+hasin "$ctl" -q "release-verify: OK" \
   && ok "CONTROL: jbang-catalog.json genuinely at v0.33.0 passes" \
   || { bad "[fixture] the clean jbang baseline did not pass; the row below proves nothing"; printf '%s\n' "$ctl" | tail -12; }
 printf '{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v0.32.1/candor-java-0.32.1-all.jar"}' \
   > "$JV/root/candor-java/jbang-catalog.json"
 red="$(jvrun)"
-printf '%s' "$red" | grep -q "pin names a different version than v0.33.0" \
+hasin "$red" -q "pin names a different version than v0.33.0" \
   && ok "[artifact ver] jbang-catalog.json left at the prior release is caught, even though ENGINE_PIN_JAVA itself moved" \
   || bad "[artifact ver] deleted: a stale jbang-catalog.json URL passed silently while the pin looked fine"
-printf '%s' "$red" | grep -q "release-verify: OK" \
+hasin "$red" -q "release-verify: OK" \
   && bad "[artifact ver] a version-mismatched pinned URL still reported the run OK overall" \
   || ok "…and the run as a whole is FAILED"
 rm -rf "$JV"
@@ -2410,7 +2430,7 @@ ufrun() { UF_VER=0.20.5 UF_SPEC=0.20 PATH="$UF/bin:$PATH" CANDOR_ROOT="$UF/root"
 # ordinary way and the emptiness guard must NOT fire.
 printf 'ENGINE_PIN="0.20.5"\n' > "$UF/root/candor/bin/candor"
 ctl="$(ufrun)"
-printf '%s' "$ctl" | grep -q "no pinned download URLs found" \
+hasin "$ctl" -q "no pinned download URLs found" \
   && bad "[fixture] the CONTROL (no diverged pin) already reports no URLs found — the row below proves nothing" \
   || ok "CONTROL: with ENGINE_PIN_JAVA unset, java's assets land in urls[] the ordinary way"
 # THE DEFECT: ENGINE_PIN_JAVA diverges (AHEAD — a disclosed, not-failed state per 7e), which routes java's
@@ -2418,10 +2438,10 @@ printf '%s' "$ctl" | grep -q "no pinned download URLs found" \
 # VER by design. urls[] is now empty while EXPECT_URLS is 1.
 printf 'ENGINE_PIN="0.20.5"\nENGINE_PIN_JAVA="0.21.0"\n' > "$UF/root/candor/bin/candor"
 red="$(ufrun)"
-printf '%s' "$red" | grep -q "no pinned download URLs found" \
+hasin "$red" -q "no pinned download URLs found" \
   && ok "[empty urls] a diverged java pin emptying urls[] is caught, not silently passed as nothing to check" \
   || bad "[empty urls] deleted: EXPECT_URLS=1 with zero resolvable urls passed as if nothing needed checking"
-printf '%s' "$red" | grep -q "release-verify: OK" \
+hasin "$red" -q "release-verify: OK" \
   && bad "[empty urls] an empty, expected-nonempty urls[] still reported the run OK overall" \
   || ok "…and the run as a whole is FAILED, not a quiet pass over nothing checked"
 rm -rf "$UF"
@@ -2452,15 +2472,15 @@ printf 'v2\n' > "$CL/candor-ts/scan.mjs";  clcommit candor-ts   "root .mjs chang
 printf 'v2\n' >> "$CL/candor-spec/SPEC.md"; clcommit candor-spec "the contract changed"
 out="$(clrun candor-ts candor-spec)"; rc=$?
 [ "$rc" = 1 ] && ok "a shipped change with no changelog line FAILS" || bad "a lagging changelog exited $rc, not 1"
-printf '%s' "$out" | grep -q 'root .mjs changed' \
+hasin "$out" -q 'root .mjs changed' \
   && ok "root-level source is SEEN (the shape an allowlist skipped silently)" \
   || bad "a repo whose source is at the root was not measured"
-printf '%s' "$out" | grep -q 'the contract changed' \
+hasin "$out" -q 'the contract changed' \
   && ok "SPEC.md is SEEN despite the prose exclusion" \
   || bad "candor-spec's own product was excluded as prose"
 # An empty commit list under a ✘ means the PATHSPEC is wrong, not that the tree is fine — and both
 # earlier versions of the list printed exactly that, invisibly, because the tree was green.
-printf '%s' "$out" | grep -q 'the CHECK is wrong here' \
+hasin "$out" -q 'the CHECK is wrong here' \
   && bad "a ✘ named no commits — triage is an investigation again" || ok "every ✘ names its commits"
 
 printf '\n## [0.1.1]\n- it changed\n' >> "$CL/candor-ts/CHANGELOG.md";  clcommit candor-ts   "note it"
@@ -2738,21 +2758,21 @@ grep -qE '^## Unreleased$' "$CSF/candor-rust/CHANGELOG.md" \
 csfix "$CSF"
 pfout="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
         bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$pfout" | grep -q "release-preflight: OK" \
+hasin "$pfout" -q "release-preflight: OK" \
   && ok "[scoped] a java-only 0.32.1 passes preflight while the family stays at 0.32.0" \
-  || { bad "a correct java-only cut did not pass preflight"; printf '%s' "$pfout" | grep '✘' | head -4; }
-printf '%s' "$pfout" | grep -q "SCOPED CUT: candor-java only" \
+  || { bad "a correct java-only cut did not pass preflight"; hasin "$pfout" '✘' | head -4; }
+hasin "$pfout" -q "SCOPED CUT: candor-java only" \
   && ok "…and the verdict says which set it judged (an OK over one repo is not the family's OK)" \
   || bad "the scoped verdict is worded like the family-wide one"
-printf '%s' "$pfout" | grep -q "jetbrains jvm" \
+hasin "$pfout" -q "jetbrains jvm" \
   && ok "[3] still asks for the java-owned pins" || bad "[3] stopped asking for a pin this cut moves"
-printf '%s' "$pfout" | grep -qE "⊘ (vscode ts|jetbrains ts)" \
+hasin "$pfout" -qE "⊘ (vscode ts|jetbrains ts)" \
   && ok "…and reports the candor-ts pins OUT OF SCOPE rather than demanding a version ts never published" \
   || bad "[3] still demands a pin naming an engine this cut does not publish"
-printf '%s' "$pfout" | grep -q "⊘ engine pin" \
+hasin "$pfout" -q "⊘ engine pin" \
   && ok "…and says ENGINE_PIN is the one pin no subset can move" \
   || bad "[3] did not report ENGINE_PIN as unmovable by a scoped cut"
-printf '%s' "$pfout" | grep -q "conformance OK" \
+hasin "$pfout" -q "conformance OK" \
   && ok "[11] four-way conformance still RUNS for a one-engine patch (the floor claim is cross-engine)" \
   || bad "[11] was scoped away — the cheapest release became the least checked"
 # THE CONTROL FOR EVERY ROW ABOVE: the same invocation must still go RED on the things it exists to
@@ -2761,14 +2781,14 @@ csfix "$CSF"
 printf 'version = "0.32.0"\n' > "$CSF/candor-java/build.gradle.kts"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "gradle version is 0.32.0, not 0.32.1" \
+hasin "$red" -q "gradle version is 0.32.0, not 0.32.1" \
   && ok "CONTROL: a scoped cut still FAILS when java's own version lagged" \
   || bad "[7] passed a java cut whose gradle version is not the version being cut"
 csfix "$CSF"
 rm -f "$CSF/candor-java/build/libs/candor-java-0.32.1-all.jar"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "is NOT built" \
+hasin "$red" -q "is NOT built" \
   && ok "CONTROL: …and when the jar release.sh uploads was never built" \
   || bad "[7] passed a java cut with no jar — release.sh would die after the earlier steps"
 # CONTROL FOR [9b]: the check that stands between an empty `## Unreleased` and a release carrying the
@@ -2779,18 +2799,18 @@ csfix "$CSF"
 printf '# Changelog\n\n## Unreleased\n\n## [0.32.0] — 2026-08-25\n\nthe floor cut.\n' > "$CSF/candor-java/CHANGELOG.md"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q 'has no `## \[0.32.1\]` section' \
+hasin "$red" -q 'has no `## \[0.32.1\]` section' \
   && ok "CONTROL: …and when the version being cut has no notes of its own (an empty \`## Unreleased\`)" \
   || { bad "[9b] passed a cut that would publish the PREVIOUS version's notes under the new tag"
-       printf '%s' "$red" | grep -E '^\s*(✔|✘) \[?9' | head -3; }
-printf '%s' "$red" | grep -q '\[9\] ' && printf '%s' "$red" | grep -q 'no CHANGELOG has content stranded' \
+       hasin "$red" -E '^\s*(✔|✘) \[?9' | head -3; }
+hasin "$red" -q '\[9\] ' && hasin "$red" -q 'no CHANGELOG has content stranded' \
   && ok "…and [9] still calls that same tree CLEAN, which is why [9b] had to exist" \
   || bad "[9] no longer passes the empty-section tree — this control has stopped showing why [9b] is separate"
 csfix "$CSF"
 printf '#!/usr/bin/env bash\nexit 1\n' > "$CSF/candor-spec/conformance/run.sh"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "conformance FAILED" \
+hasin "$red" -q "conformance FAILED" \
   && ok "CONTROL: …and when four-way conformance is RED, even though only one engine is moving" \
   || bad "a scoped cut published over a red conformance suite"
 
@@ -2801,9 +2821,9 @@ cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 relout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
+hasin "$relout" -q "STUB-CREATE.*-R tombaldwin/candor-java" \
   && ok "[scoped] release.sh cuts the candor-java release" || bad "release.sh did not cut the one repo in the cut"
-printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-rust" \
+hasin "$relout" -q "STUB-CREATE.*-R tombaldwin/candor-rust" \
   && bad "release.sh cut candor-rust for a java-only patch" \
   || ok "…and cuts NO release for a repo outside the cut"
 # THE FILE `gh release create -F` IS ACTUALLY HANDED, end to end. Every other row about notes reads a
@@ -2815,21 +2835,21 @@ printf '%s' "$relout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-rust" \
 grep -q "the floor cut" "/tmp/rel-body-candor-java.md" 2>/dev/null \
   && bad "the body carries 0.32.0's notes — the republish defect, at the artifact" \
   || ok "…and carries nothing from the 0.32.0 section below it"
-printf '%s' "$relout" | grep -q "STUB cargo publish" \
+hasin "$relout" -q "STUB cargo publish" \
   && bad "release.sh published crates for a cut that does not include candor-rust" \
   || ok "…and publishes no crate"
-printf '%s' "$relout" | grep -q "STUB-PUSH.*v0.32.1" \
+hasin "$relout" -q "STUB-PUSH.*v0.32.1" \
   && bad "release.sh pushed a tag (npm/umbrella) for a java-only cut" \
   || ok "…and pushes no npm or umbrella tag"
-printf '%s' "$relout" | grep -q "the umbrella is not in this cut" \
+hasin "$relout" -q "the umbrella is not in this cut" \
   && ok "…and says the umbrella and ENGINE_PIN stay on the family line" \
   || bad "release.sh did not state the umbrella limit of a scoped cut"
-printf '%s' "$relout" | grep -q "candor/integrations/jetbrains/gradle.properties  candorJavaVersion" \
+hasin "$relout" -q "candor/integrations/jetbrains/gradle.properties  candorJavaVersion" \
   && ok "…and step 6 lists exactly the pins this cut moves" || bad "step 6's pin list is not scoped to the cut"
 # THE INSTRUCTION LINES, NOT THE WORD. A bare `candorTsVersion` also appears in step 6's own SKIP
 # message ("…and neither candorTsVersion pin moves"), which is the opposite of what this row is about —
 # so the loose pattern reported a correct run as a defect. Anchor on the `    · <file>` list entry.
-printf '%s' "$relout" | grep -qE '^ +· candor/integrations/(vscode|jetbrains)/[a-z.]+ +candorTsVersion' \
+hasin "$relout" -qE '^ +· candor/integrations/(vscode|jetbrains)/[a-z.]+ +candorTsVersion' \
   && bad "step 6 told the operator to bump a candor-ts pin in a java-only cut — a pin naming a release nobody made" \
   || ok "…and does not name a pin for an engine this cut never published"
 # --- …AND THE ONE-ENGINE PATCH THAT REACHES THE FRONT DOOR ------------------------------------------
@@ -2850,21 +2870,21 @@ perl -pi -e 's/^UMBRELLA_VERSION="0.32.0"/UMBRELLA_VERSION="0.32.1"/' "$CSF/cand
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 juout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
-printf '%s' "$juout" | grep -q "STUB-CREATE.*-R tombaldwin/candor" \
+hasin "$juout" -q "STUB-CREATE.*-R tombaldwin/candor" \
   && ok "[java+umbrella] the umbrella release IS cut for a one-engine patch" \
   || { bad "the umbrella was still refused for a scoped cut that legitimately moves the front door"
-       printf '%s' "$juout" | grep -E '✘' | head -4; }
-printf '%s' "$juout" | grep -q "ENGINE_PIN mismatch" \
+       hasin "$juout" -E '✘' | head -4; }
+hasin "$juout" -q "ENGINE_PIN mismatch" \
   && bad "the step-7 guard fired on a correctly-pinned java patch" \
   || ok "…and the step-7 pin guard passes, because every pin names a release this cut publishes"
-printf '%s' "$juout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-ts" \
+hasin "$juout" -q "STUB-CREATE.*-R tombaldwin/candor-ts" \
   && bad "a java+umbrella cut published candor-ts" || ok "…and still publishes no other engine"
 is "…and the FAMILY line is untouched by the patch" '0.32.0' \
    "$(sed -n 's/^ENGINE_PIN="\([^"]*\)".*/\1/p' "$CSF/candor/bin/candor")"
-printf '%s' "$juout" | grep -qE '^ +· candor/bin/candor +ENGINE_PIN_JAVA="0.32.1"' \
+hasin "$juout" -qE '^ +· candor/bin/candor +ENGINE_PIN_JAVA="0.32.1"' \
   && ok "…and step 6 tells the operator to move exactly ENGINE_PIN_JAVA" \
-  || { bad "step 6 did not name the per-engine pin this cut has to move"; printf '%s' "$juout" | grep -A6 '6. cross-repo pins' | head -8; }
-printf '%s' "$juout" | grep -qE '^ +· candor/bin/candor +ENGINE_PIN_(TS|RUST|SWIFT)=' \
+  || { bad "step 6 did not name the per-engine pin this cut has to move"; hasin "$juout" -A6 '6. cross-repo pins' | head -8; }
+hasin "$juout" -qE '^ +· candor/bin/candor +ENGINE_PIN_(TS|RUST|SWIFT)=' \
   && bad "step 6 told the operator to move a pin for an engine this cut never published" \
   || ok "…and names no other engine's front-door pin"
 
@@ -2878,10 +2898,10 @@ printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only pat
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 lagout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
-printf '%s' "$lagout" | grep -q "java is pinned to 0.32.0, not 0.32.1" \
+hasin "$lagout" -q "java is pinned to 0.32.0, not 0.32.1" \
   && ok "CONTROL: …and the same cut REFUSES while ENGINE_PIN_JAVA still follows the family line" \
   || bad "the umbrella was cut with a front door that installs the engine this patch replaced"
-printf '%s' "$lagout" | grep -qE "(ts|rust|swift) is pinned to" \
+hasin "$lagout" -qE "(ts|rust|swift) is pinned to" \
   && bad "the guard demanded a pin move for an engine this cut does not publish" \
   || ok "…and demands nothing of the three engines it is not publishing"
 
@@ -2897,7 +2917,7 @@ printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only pat
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 ghostout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
-printf '%s' "$ghostout" | grep -q "ts is pinned to 0.32.1, but candor-ts is NOT in this cut" \
+hasin "$ghostout" -q "ts is pinned to 0.32.1, but candor-ts is NOT in this cut" \
   && ok "CONTROL: …and a pin naming a release this cut never published is REFUSED" \
   || bad "the front door was allowed to name candor-ts@0.32.1, a release nobody made"
 
@@ -2908,10 +2928,10 @@ perl -pi -e 's/^UMBRELLA_VERSION="0.32.0"/UMBRELLA_VERSION="0.32.1"/' "$CSF/cand
 printf '# Changelog — candor (umbrella)\n\n## 2026-08-25 — the java-only patch (released 2026-08-25 as 0.32.1)\n\nnotes.\n' > "$CSF/candor/CHANGELOG.md"
 pfj="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java,candor 2>&1)"
-printf '%s' "$pfj" | grep -q "engine pin java: 0.32.1" \
+hasin "$pfj" -q "engine pin java: 0.32.1" \
   && ok "[3] reports the per-engine front-door pin for the engine being cut" \
-  || { bad "[3] never asked what \`candor update\` would fetch for java"; printf '%s' "$pfj" | grep -i "engine pin" | head -4; }
-printf '%s' "$pfj" | grep -qE "engine pin (ts|rust|swift): 0.32.0 \(follows the family line" \
+  || { bad "[3] never asked what \`candor update\` would fetch for java"; hasin "$pfj" -i "engine pin" | head -4; }
+hasin "$pfj" -qE "engine pin (ts|rust|swift): 0.32.0 \(follows the family line" \
   && ok "…and says the other three follow the family line rather than demanding a version they never cut" \
   || bad "[3] mis-scoped the per-engine pins of the engines this cut does not publish"
 # CONTROL: the same preflight must go RED when the pin lags. PINS_ADVISORY is deliberately NOT set —
@@ -2924,11 +2944,11 @@ pfr="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
 # THE VERDICT, NOT THE SENTENCE. The first version of this row grepped the message text — which `bad`
 # and `note` print identically — so downgrading the check from a failure to a remark left the row GREEN.
 # Found by mutating the arm it covers. Assert the ✘ marker AND that the run does not certify itself.
-printf '%s' "$pfr" | grep -q "✘ engine pin java: 0.32.0, not 0.32.1" \
+hasin "$pfr" -q "✘ engine pin java: 0.32.0, not 0.32.1" \
   && ok "CONTROL: [3] fails when the front door still installs the engine this patch replaces" \
   || { bad "[3] passed a java patch whose front door names the previous release"
-       printf '%s' "$pfr" | grep -i "engine pin java" | head -2; }
-printf '%s' "$pfr" | grep -q "release-preflight: OK" \
+       hasin "$pfr" -i "engine pin java" | head -2; }
+hasin "$pfr" -q "release-preflight: OK" \
   && bad "[3] noted the lagging front-door pin and then certified the cut anyway" \
   || ok "…and the run as a whole is RED, not a remark inside a green verdict"
 
@@ -2940,17 +2960,17 @@ cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 famout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 2>&1)"
-printf '%s' "$famout" | grep -q "java is pinned to 0.32.0, not 0.32.1" \
+hasin "$famout" -q "java is pinned to 0.32.0, not 0.32.1" \
   && ok "CONTROL: family-wide, the step-7 ENGINE_PIN guard still refuses a lagging pin" \
   || bad "the ENGINE_PIN guard was disarmed by the cut-set change"
 # …for EVERY engine, not just the first one it happens to name. A guard that reports one engine and
 # stops would let a family cut move three pins and publish the fourth's front door on the old line.
 for _e in ts rust swift; do
-  printf '%s' "$famout" | grep -q "$_e is pinned to 0.32.0, not 0.32.1" \
+  hasin "$famout" -q "$_e is pinned to 0.32.0, not 0.32.1" \
     && ok "CONTROL: …and names $_e too (the rule is over all four engines)" \
     || bad "the step-7 pin guard did not report $_e"
 done
-printf '%s' "$famout" | grep -q "STUB cargo publish" \
+hasin "$famout" -q "STUB cargo publish" \
   && ok "CONTROL: …and a family-wide cut still publishes the crates" \
   || bad "the default cut stopped publishing crates — the subset scoping leaked into the family form"
 
@@ -2965,7 +2985,7 @@ cp "$CS/bin/release-verify-stub.sh" "$CSF/candor/bin/release-verify.sh"
 ( cd "$CSF/candor" && /usr/bin/git add -A && /usr/bin/git -c user.email=t@e -c user.name=t commit -qm s \
   && /usr/bin/git push -q origin HEAD ) >/dev/null 2>&1
 vout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.sh" 0.32 0.32.1 --only candor-java 2>&1)"; vrc=$?
-printf '%s' "$vout" | grep -qE 'STUB verify 0\.32 0\.32\.1 --only candor-java$' \
+hasin "$vout" -qE 'STUB verify 0\.32 0\.32\.1 --only candor-java$' \
   && ok "release.sh's final step runs release-verify, SCOPED to exactly what this cut published" \
   || { bad "release.sh did not invoke release-verify with the cut's own --only scope"; printf '%s' "$vout" | tail -6; }
 [ "$vrc" = 0 ] \
@@ -2984,13 +3004,13 @@ fvout="$(PATH="$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin/release.s
 [ "$fvrc" = 9 ] \
   && ok "CONTROL: release.sh exits with release-verify's OWN code (9), not a generic 1" \
   || bad "release.sh did not preserve release-verify's exit code — got $fvrc, expected 9"
-printf '%s' "$fvout" | grep -q "candor-swift v0.32.1 is a DRAFT release" \
+hasin "$fvout" -q "candor-swift v0.32.1 is a DRAFT release" \
   && ok "…and release-verify's own diagnostic reaches the operator" \
   || bad "release-verify's failure detail was swallowed"
-printf '%s' "$fvout" | grep -q "release-verify FAILED (exit 9)" \
+hasin "$fvout" -q "release-verify FAILED (exit 9)" \
   && ok "…and release.sh names the failure loudly instead of dying silently" \
   || bad "release.sh's own failure line did not fire"
-printf '%s' "$fvout" | grep -q "STUB-CREATE.*-R tombaldwin/candor-java" \
+hasin "$fvout" -q "STUB-CREATE.*-R tombaldwin/candor-java" \
   && ok "…and the publish itself still happened before verify ran (verify is the LAST step, not a gate before publishing)" \
   || bad "release.sh did not publish before running verify — the step ordering regressed"
 
@@ -3024,10 +3044,10 @@ ghfail="$(PATH="$GHF/bin:$CS/bin:$PATH" CANDOR_ROOT="$CSF" bash "$CSF/candor/bin
 [ "$ghfailrc" != 0 ] \
   && ok "a gh release create failure makes release.sh exit non-zero — not silently continuing" \
   || { bad "release.sh exited 0 despite gh release create failing — the swallowed-failure shape is back"; printf '%s\n' "$ghfail" | tail -6; }
-printf '%s' "$ghfail" | grep -q "gh release create failed or a partial upload" \
+hasin "$ghfail" -q "gh release create failed or a partial upload" \
   && ok "…and names the failure explicitly, rather than falling through to the next step" \
   || bad "no diagnostic for the gh release create failure"
-printf '%s' "$ghfail" | grep -q "gh release upload v0.32.1 .* -R tombaldwin/candor-java --clobber" \
+hasin "$ghfail" -q "gh release upload v0.32.1 .* -R tombaldwin/candor-java --clobber" \
   && ok "…and the remedy (\`gh release upload\`) is IN the die message, not left for the operator to guess" \
   || bad "the gh release upload remedy is missing from the die message"
 rm -rf "$GHF"
@@ -3050,13 +3070,13 @@ csfix "$CSF"
 perl -pi -e 's/const SPEC_VERSION = "0\.32"/const SPEC_VERSION = "0.31"/' "$CSF/candor-ts/query.mjs"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "engines DISAGREE on the declared spec" \
+hasin "$red" -q "engines DISAGREE on the declared spec" \
   && ok "[1] a candor-ts spec one rung behind every other engine is caught, not averaged away" \
   || bad "[1] deleted: a genuine cross-engine spec split passed silently — 0.23->0.24's own failure shape"
 csfix "$CSF"
 ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$ctl" | grep -q "all declare spec 0.32" \
+hasin "$ctl" -q "all declare spec 0.32" \
   && ok "CONTROL: …and the untouched fixture agrees, so the row above is measuring the split, not noise" \
   || bad "[1] CONTROL is broken — the clean fixture does not even print the agreement line"
 
@@ -3065,13 +3085,13 @@ csfix "$CSF"
 printf '\n# legacy: spec 0.31 support was dropped here\n' >> "$CSF/candor-agents/pyproject.toml"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "leftover 'spec 0.31' in shipped source" \
+hasin "$red" -q "leftover 'spec 0.31' in shipped source" \
   && ok "[2] a bump-miss-shaped 'spec 0.31' string in shipped source is caught" \
   || bad "[2] deleted: the exact bump-miss signature this check exists for passed silently"
 csfix "$CSF"
 ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$ctl" | grep -q "no leftover 'spec 0.31' strings" \
+hasin "$ctl" -q "no leftover 'spec 0.31' strings" \
   && ok "CONTROL: …and the untouched fixture has none — the row above measures the injected string" \
   || bad "[2] CONTROL is broken — the clean fixture already reports a leftover"
 
@@ -3080,7 +3100,7 @@ csfix "$CSF"
 printf '\n// legacy: obj?.["spec"] as? String == "0.31"\n' >> "$CSF/candor-ts/scan.mjs"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "bare-literal spec assertion at the prior floor" \
+hasin "$red" -q "bare-literal spec assertion at the prior floor" \
   && ok "[2b] a bare-literal \"spec\"/\"0.31\" pair (the [2] regex cannot see) is caught" \
   || bad "[2b] deleted: the literal-assertion bump-miss shape passed silently"
 
@@ -3092,12 +3112,12 @@ printf '%s' "$red" | grep -q "bare-literal spec assertion at the prior floor" \
 csfix "$CSF"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "adopt java.*pin does not reference 0.32.1" \
+hasin "$red" -q "adopt java.*pin does not reference 0.32.1" \
   && ok "[3] STRICT mode fails a java-owned pin that was never moved to the version being cut" \
   || bad "[3] deleted: a stale cross-repo pin passed in the exact mode an operator runs by hand"
 ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$ctl" | grep -q "pin does not reference" \
+hasin "$ctl" -q "pin does not reference" \
   && bad "CONTROL: PINS_ADVISORY=1 should downgrade the same unmoved pin to advisory, not fail it" \
   || ok "CONTROL: …and PINS_ADVISORY=1 downgrades the identical state to advisory, as release.sh step 0 needs"
 
@@ -3112,14 +3132,14 @@ csfix "$CSF"
 perl -pi -e 's/"version": "0\.32\.0"/"version": "0.32.1"/' "$CSF/candor-ts/package.json"
 ctl4="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-ts 2>&1)"
-printf '%s' "$ctl4" | grep -q "a build version.*!= requested 0.32.1" \
+hasin "$ctl4" -q "a build version.*!= requested 0.32.1" \
   && { bad "[4] CONTROL: the fixture already fails [4] with nothing injected — the row below cannot attribute anything"; \
        printf '%s\n' "$ctl4" | grep -i 'build version' | head -3; } \
   || ok "[4] CONTROL: with candor-ts's manifest AT the version being cut, [4] passes"
 perl -pi -e 's/"version": "0\.32\.1"/"version": "0.32.9"/' "$CSF/candor-ts/package.json"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-ts 2>&1)"
-printf '%s' "$red" | grep -q "a build version.*!= requested 0.32.1" \
+hasin "$red" -q "a build version.*!= requested 0.32.1" \
   && ok "[4] candor-ts's own package.json left at the wrong version fails, not just release-stage's edit" \
   || bad "[4] deleted: a hand-maintained build constant disagreeing with the cut passed silently"
 
@@ -3129,7 +3149,7 @@ printf '# Changelog\n\n## Unreleased\n\n## [0.31.5] - 2026-07-01\n\nold notes, n
   > "$CSF/candor-agents/CHANGELOG.md"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "candor-agents CHANGELOG.md has no 0.32 entry" \
+hasin "$red" -q "candor-agents CHANGELOG.md has no 0.32 entry" \
   && ok "[5] a CHANGELOG that never mentions the floor fails, even for a repo outside the cut" \
   || bad "[5] deleted: a changelog describing a different release entirely passed silently"
 
@@ -3142,7 +3162,7 @@ candor-classify = { path = "../candor-classify", version = "0.32.0" }
 EOF
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-rust 2>&1)"
-printf '%s' "$red" | grep -q "requires a candor sibling at 0.32.0, not 0.32.1" \
+hasin "$red" -q "requires a candor sibling at 0.32.0, not 0.32.1" \
   && ok "[6] a sibling dep left at the prior version is caught (cargo publish dies mid-sequence otherwise)" \
   || bad "[6] deleted: the exact 0.25 failure shape (a stale intra-workspace dep) passed silently"
 
@@ -3151,7 +3171,7 @@ csfix "$CSF"
 perl -pi -e 's/"candor-agents:v\$VER" //' "$CSF/candor/bin/release-verify.sh"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "publisher and verifier disagree" \
+hasin "$red" -q "publisher and verifier disagree" \
   && ok "[8] release.sh publishing a repo release-verify.sh never checks is caught" \
   || bad "[8] deleted: the publisher/verifier repo-list split (the 4-vs-7 defect) passed silently"
 
@@ -3160,7 +3180,7 @@ csfix "$CSF"
 perl -pi -e 's/candor-agents //' "$CSF/candor/bin/changelog-lag.sh"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "changelog-lag \[5b\] checks a DIFFERENT set" \
+hasin "$red" -q "changelog-lag \[5b\] checks a DIFFERENT set" \
   && ok "[8] changelog-lag.sh silently dropping a repo release.sh still cuts is caught" \
   || bad "[8] deleted: an eighth-family-repo-shaped drop from changelog-lag's list passed silently"
 
@@ -3170,13 +3190,13 @@ printf '**Version 0.32**\n⟨0.32⟩ a rung marker.\n⟨0.33⟩ a rung ahead of 
   > "$CSF/candor-spec/SPEC.md"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$red" | grep -q "SPEC.md declares Version 0.32 but describes ⟨0.33⟩" \
+hasin "$red" -q "SPEC.md declares Version 0.32 but describes ⟨0.33⟩" \
   && ok "[12] a spec rung ahead of its own declared version is caught (a routine cut would ship it)" \
   || bad "[12] deleted: the ⟨0.31⟩-shaped near-miss (text ahead of its number) passed silently"
 csfix "$CSF"
 ctl="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
-printf '%s' "$ctl" | grep -q "highest rung ⟨0.32⟩ is within the declared 0.32" \
+hasin "$ctl" -q "highest rung ⟨0.32⟩ is within the declared 0.32" \
   && ok "CONTROL: …and the untouched fixture's rung matches its version, so the row above measures the gap" \
   || bad "[12] CONTROL is broken — the clean fixture does not even print the within-floor line"
 
@@ -3207,7 +3227,7 @@ rh_run() { CANDOR_ROOT="$RH" bash "$RH/bin/release-rehearsal.sh" 0.32 0.32.2 2>&
 # NAMED $rhout/$rhrc, not the ambient $out/$rc this file reuses across sections — see the identical note
 # on section 1d above, which is where reusing those names actually broke an unrelated later row.
 rhout="$(rh_run)"; rhrc=$?
-[ "$rhrc" = 0 ] && printf '%s' "$rhout" | grep -q "no problems found in 4 arm(s)" \
+[ "$rhrc" = 0 ] && hasin "$rhout" -q "no problems found in 4 arm(s)" \
   && ok "CONTROL: with every repo present, clean and pushed, the rehearsal is green" \
   || { bad "CONTROL setup is broken — the all-clean fixture is not green, so the row below proves nothing"; printf '%s\n' "$rhout" | tail -15; }
 rm -rf "$RH/candor-java"
@@ -3215,12 +3235,12 @@ rhout="$(rh_run)"; rhrc=$?
 [ "$rhrc" != 0 ] \
   && ok "a repo missing entirely makes the rehearsal exit non-zero, not \"no problems found\"" \
   || bad "release-rehearsal exited 0 with candor-java's directory deleted — THE NINTH FALSE GREEN IS BACK"
-printf '%s' "$rhout" | grep -q "all 7 repo(s) clean and pushed" \
+hasin "$rhout" -q "all 7 repo(s) clean and pushed" \
   && bad "the summary still claims \"all 7 repo(s) clean and pushed\" with one of the seven missing" \
   || ok "…and does not also claim all 7 repos were clean and pushed"
-printf '%s' "$rhout" | grep -q '\[1\] candor-java: not a git repo at' \
+hasin "$rhout" -q '\[1\] candor-java: not a git repo at' \
   && ok "…and the missing repo is named as a PROBLEM in the summary, not just an informational line" \
-  || bad "the missing repo did not reach the problem list — '$(printf '%s' "$rhout" | grep -m1 'candor-java')'"
+  || bad "the missing repo did not reach the problem list — '$(hasin "$rhout" -m1 'candor-java')'"
 rm -rf "$RH"
 
 say "11. verify-local.sh — the CANDOR_ROOT injection and the pass/fail signal itself"
@@ -3243,7 +3263,7 @@ normtime() { printf '%s' "$1" | sed -E 's/\(([0-9]+)s\)/(Ns)/g'; }
 vlpy 0
 green1="$(vlrun)"; greenrc1=$?
 [ "$greenrc1" = 0 ] && ok "an all-green fixture exits 0" || bad "an all-green fixture exited $greenrc1"
-printf '%s' "$green1" | grep -q "verify-local: OK" \
+hasin "$green1" -q "verify-local: OK" \
   && ok "…and prints the OK verdict" || bad "an all-green fixture did not print the OK verdict"
 green2="$(vlrun)"
 [ "$(normtime "$green1")" = "$(normtime "$green2")" ] \
@@ -3256,10 +3276,10 @@ red="$(vlrun)"; redrc=$?
 [ "$redrc" != 0 ] \
   && ok "a failing engine step makes verify-local.sh exit non-zero" \
   || bad "a failing python3 test.py step still exited 0 — the ONE pass/fail line is broken"
-printf '%s' "$red" | grep -qE "candor-agents.*python3 test\.py.*✘ FAILED" \
+hasin "$red" -qE "candor-agents.*python3 test\.py.*✘ FAILED" \
   && ok "…and NAMES the failing step (repo + label), not just a bare non-zero exit" \
-  || bad "a failing step's identity did not reach the output — '$(printf '%s' "$red" | grep -m1 candor-agents)'"
-printf '%s' "$red" | grep -q "verify-local: FAILED" \
+  || bad "a failing step's identity did not reach the output — '$(hasin "$red" -m1 candor-agents)'"
+hasin "$red" -q "verify-local: FAILED" \
   && ok "…and prints the FAILED verdict, not OK beside a nonzero exit" \
   || bad "a failing run printed something other than the FAILED verdict"
 
@@ -3275,7 +3295,7 @@ slow="$(vlrun)"; slowrc=$?
 [ "$slowrc" != 0 ] \
   && ok "a step that fails AFTER a delay is still caught — \`wait\` closes the race before the verdict" \
   || bad "a slow-failing step raced past the pass/fail check and exited 0 — the \`wait\` guard is not doing its job"
-printf '%s' "$slow" | grep -q "verify-local: FAILED" \
+hasin "$slow" -q "verify-local: FAILED" \
   && ok "…and the verdict itself reflects it, not just the exit code" \
   || bad "a slow-failing step's FAILED verdict did not print"
 rm -rf "$VL"
@@ -3298,7 +3318,7 @@ badname="$(CANDOR_ROOT="$VE" bash "$UMBRELLA/bin/verify-local.sh" candor-rustt 2
 [ "$badrc" = 2 ] \
   && ok "an unrecognised engine name is a usage error (exit 2), not a silent no-op — and not the NOTHING RAN exit 1" \
   || bad "verify-local.sh 'candor-rustt' (typo) did not produce the usage exit 2 (rc=$badrc); a non-zero from the NOTHING RAN guard is a different check answering"
-printf '%s' "$badname" | grep -q "is not a candor engine" \
+hasin "$badname" -q "is not a candor engine" \
   && ok "…and says WHY, rather than leaving the operator to guess" \
   || bad "no diagnostic for the unrecognised engine name"
 
@@ -3306,10 +3326,10 @@ missing="$(CANDOR_ROOT="$VE" bash "$UMBRELLA/bin/verify-local.sh" candor-agents 
 [ "$missingrc" != 0 ] \
   && ok "a recognised engine name whose directory is not checked out is a FAILURE, not a quiet OK" \
   || bad "verify-local.sh ran zero steps for a missing candor-agents/ and still exited 0"
-printf '%s' "$missing" | grep -q "NOTHING RAN" \
+hasin "$missing" -q "NOTHING RAN" \
   && ok "…and says so explicitly, distinct from every-step-passed" \
   || bad "a zero-step run produced no NOTHING RAN diagnostic"
-printf '%s' "$missing" | grep -q "verify-local: OK" \
+hasin "$missing" -q "verify-local: OK" \
   && bad "a zero-step run printed the OK verdict" \
   || ok "…and the OK verdict never prints over zero steps"
 rm -rf "$VE"
@@ -3345,7 +3365,7 @@ EOF
 uvwf "exit 0"
 uvout="$(bash "$UV/bin/verify-umbrella.sh" --all 2>&1)"; uvrc=$?
 [ "$uvrc" = 0 ] && ok "an all-green workflow exits 0" || { bad "an all-green workflow exited $uvrc"; printf '%s\n' "$uvout" | tail -6; }
-printf '%s' "$uvout" | grep -q "verify-umbrella: OK" \
+hasin "$uvout" -q "verify-umbrella: OK" \
   && ok "…and prints the OK verdict" || bad "an all-green run did not print the OK verdict"
 
 uvwf 'echo boom; exit 1'
@@ -3353,9 +3373,9 @@ uvout="$(bash "$UV/bin/verify-umbrella.sh" --all 2>&1)"; uvrc=$?
 [ "$uvrc" != 0 ] \
   && ok "a failing workflow step makes verify-umbrella.sh exit non-zero" \
   || bad "a failing step still exited 0 — verify-umbrella's own pass/fail signal is broken"
-printf '%s' "$uvout" | grep -q "verify-umbrella: FAILED" \
+hasin "$uvout" -q "verify-umbrella: FAILED" \
   && ok "…and prints the FAILED verdict" || bad "a failing run did not print the FAILED verdict"
-printf '%s' "$uvout" | grep -q "boom" \
+hasin "$uvout" -q "boom" \
   && ok "…and the failing step's own output reaches the report" || bad "the failing step's output did not reach the report"
 rm -rf "$UV"
 
@@ -3406,16 +3426,16 @@ out2="$(bash "$UV2/tool/verify-umbrella.sh" 2>&1)"; rc2=$?
 # A step's own stdout ("echo ALWAYS_RAN") is only printed in the report when it FAILS (run_step keeps a
 # passing step's output out of the ledger) — so the evidence a step actually ran is its ROW, a job label
 # beside a ✔ mark, not its echoed text.
-printf '%s' "$out2" | grep -qE "the unfiltered step.*✔" \
+hasin "$out2" -qE "the unfiltered step.*✔" \
   && ok "a workflow with NO path filter runs on a docs-only commit" \
   || bad "an unfiltered workflow did not run on a docs-only commit: $out2"
-printf '%s' "$out2" | grep -qE "the filtered step.*✔" \
+hasin "$out2" -qE "the filtered step.*✔" \
   && bad "a path-filtered workflow ran on a commit touching none of its paths — the skip machinery let a should-not-run step through" \
   || ok "a path-filtered workflow correctly did NOT run on a commit outside its paths"
-printf '%s' "$out2" | grep -q 'GitHub would not trigger `Filtered`' \
+hasin "$out2" -q 'GitHub would not trigger `Filtered`' \
   && ok "…and the skip carries its OWN reason, not a bare absence" \
   || bad "the filtered-out step's reason did not appear in the DID NOT RUN list: $out2"
-[ "$rc2" = 0 ] && printf '%s' "$out2" | grep -q "verify-umbrella: OK" \
+[ "$rc2" = 0 ] && hasin "$out2" -q "verify-umbrella: OK" \
   && ok "one required step ran, one path-filtered step skipped — still an honest OK" \
   || bad "a legitimate mixed ran/skipped outcome did not print OK (rc=$rc2): $out2"
 
@@ -3423,7 +3443,7 @@ printf '%s' "$out2" | grep -q 'GitHub would not trigger `Filtered`' \
 printf 'a\n' > "$UV2/bin/a.sh"
 ( cd "$UV2" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "touch bin/a.sh" )
 out2b="$(bash "$UV2/tool/verify-umbrella.sh" 2>&1)"
-printf '%s' "$out2b" | grep -qE "the filtered step.*✔" \
+hasin "$out2b" -qE "the filtered step.*✔" \
   && ok "…and once a commit DOES touch bin/**, the same path-filtered workflow runs" \
   || bad "a workflow whose path filter the commit actually matches was still skipped: $out2b"
 rm -rf "$UV2"
@@ -3463,10 +3483,10 @@ printf 'b\n' > "$UV3/README.md"
 ( cd "$UV3" && git add -A && git -c user.email=t@e -c user.name=t commit -qm "docs only, the tip" )
 
 out3="$(bash "$UV3/tool/verify-umbrella.sh" 2>&1)"
-printf '%s' "$out3" | grep -qE "the step.*✔" \
+hasin "$out3" -qE "the step.*✔" \
   && ok "a path-filtered workflow runs when an EARLIER commit in the push range touched its paths, even though the TIP alone does not" \
   || bad "the multi-commit range union is broken: an in-range commit touching bin/ did not make the workflow required — $out3"
-printf '%s' "$out3" | grep -q "the 2 commit(s) in" \
+hasin "$out3" -q "the 2 commit(s) in" \
   && ok "…and the report names the whole range, not just the tip" \
   || bad "the range description did not name the 2-commit union: $out3"
 rm -rf "$UV3"
@@ -3504,10 +3524,10 @@ out4="$(bash "$UV4/tool/verify-umbrella.sh" 2>&1)"; rc4=$?
 [ "$rc4" = 2 ] \
   && ok "a broken wf-expected.py (the selection helper) aborts the whole run, exit 2" \
   || bad "a failing selection helper did not abort (rc=$rc4) — its failure could be silently swallowed into 'nothing required': $out4"
-printf '%s' "$out4" | grep -q "the selection cannot be trusted" \
+hasin "$out4" -q "the selection cannot be trusted" \
   && ok "…and says the selection itself is untrustworthy, not just \"something failed\"" \
   || bad "no diagnostic naming the broken selector: $out4"
-printf '%s' "$out4" | grep -q "verify-umbrella: OK" \
+hasin "$out4" -q "verify-umbrella: OK" \
   && bad "a broken selector still printed the OK verdict" \
   || ok "…and never reaches the OK verdict over an untrustworthy selection"
 rm -rf "$UV4"
@@ -3557,7 +3577,7 @@ else
 [ "$ctlrc" = 2 ] \
   && ok "control and subject producing IDENTICAL output is REFUSED (exit 2), not reported as a finding" \
   || bad "control==subject was not refused (exit $ctlrc) — the differ-check is not doing its job"
-printf '%s' "$ctl" | grep -q "CONTROL AND SUBJECT AGREE" \
+hasin "$ctl" -q "CONTROL AND SUBJECT AGREE" \
   && ok "…and says why: the probe is presumed BROKEN, not that the two arms agree meaningfully" \
   || bad "no diagnostic for an agreeing control/subject pair"
 fi
@@ -3565,20 +3585,20 @@ diff="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&
 [ "$diffrc" = 0 ] \
   && ok "control and subject producing DIFFERENT output is accepted, not refused" \
   || bad "a genuinely discriminating control/subject pair was refused (exit $diffrc)"
-printf '%s' "$diff" | grep -q "control and subject DIFFER" \
+hasin "$diff" -q "control and subject DIFFER" \
   && ok "…and says the probe discriminates" || bad "no confirmation that the probe discriminates"
 
 conc="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" --concluded DONE -- bash -c 'echo DONE; exit 7' 2>&1)"; concrc=$?
 [ "$concrc" = 7 ] \
   && ok "--concluded forwards the SUBJECT's own exit code when its marker printed" \
   || bad "--concluded did not forward exit 7 (got $concrc)"
-printf '%s' "$conc" | grep -q "concluded (marker 'DONE' present)" \
+hasin "$conc" -q "concluded (marker 'DONE' present)" \
   && ok "…and says the output IS a verdict" || bad "no 'concluded' confirmation for a marker that printed"
 noconc="$(CANDOR_ROOT="$PR" bash "$UMBRELLA/bin/probe.sh" --concluded DONE -- bash -c 'echo partial; exit 1' 2>&1)"; noconcrc=$?
 [ "$noconcrc" = 4 ] \
   && ok "a command that dies before printing its own marker is DID-NOT-CONCLUDE (exit 4), not read as a real result" \
   || bad "a command that never reached its marker was not flagged DID NOT CONCLUDE (got $noconcrc)"
-printf '%s' "$noconc" | grep -q "DID NOT CONCLUDE" \
+hasin "$noconc" -q "DID NOT CONCLUDE" \
   && ok "…and says its rows above the stop are real but its absence of rows means nothing" \
   || bad "no DID NOT CONCLUDE diagnostic for a command that died mid-run"
 rm -rf "$PR"
@@ -3612,13 +3632,13 @@ else
 clean="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; cleanrc=$?
 [ "$cleanrc" = 0 ] && ok "a clean tree with nothing running is not flagged" \
   || bad "a clean tree was refused (rc=$cleanrc): $clean"
-printf '%s' "$clean" | grep -q "dirty tree" \
+hasin "$clean" -q "dirty tree" \
   && bad "a clean tree was reported dirty" || ok "…and prints no dirty-tree note"
 
 # An UNTRACKED-only file must NOT count as dirty — quiet_tree_check greps OUT `^?? ` lines on purpose.
 printf 'scratch\n' > "$PR2/candor-rust/untracked.tmp"
 untracked="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"
-printf '%s' "$untracked" | grep -q "dirty tree" \
+hasin "$untracked" -q "dirty tree" \
   && bad "an UNTRACKED file was reported as a dirty tree" \
   || ok "an untracked file alone does not trip the dirty-tree note"
 rm -f "$PR2/candor-rust/untracked.tmp"
@@ -3626,7 +3646,7 @@ rm -f "$PR2/candor-rust/untracked.tmp"
 # A MODIFIED TRACKED file must be named, and must NOT be fatal — you may be probing your own edit.
 printf 'fn main(){ changed(); }\n' > "$PR2/candor-rust/lib.rs"
 dirty="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- printf Y 2>&1)"; dirtyrc=$?
-printf '%s' "$dirty" | grep -q "dirty tree(s):.*candor-rust" \
+hasin "$dirty" -q "dirty tree(s):.*candor-rust" \
   && ok "a modified TRACKED file is named in the dirty-tree note" \
   || bad "a dirty tracked file did not produce the dirty-tree note: $dirty"
 [ "$dirtyrc" = 0 ] && ok "…and a dirty tree is a NOTE, not a refusal" \
@@ -3673,7 +3693,7 @@ if [ "$attribrc" != 0 ]; then
 else
 [ "$inflightrc" = 2 ] && ok "a conformance run IN FLIGHT refuses the probe outright" \
   || bad "a live conformance run did not refuse the probe (rc=$inflightrc): $inflight"
-printf '%s' "$inflight" | grep -q "conformance run is IN FLIGHT" \
+hasin "$inflight" -q "conformance run is IN FLIGHT" \
   && ok "…and says why" || bad "no IN FLIGHT diagnostic: $inflight"
 fi
 rm -rf "$PR2/candor-spec"
@@ -3693,7 +3713,7 @@ else
   || bad "a live 'cargo build' process did not refuse the probe (rc=$buildingrc): $building"
 # NAMES THE PATTERN, not just "a build". The loose grep let another agent's `swift build` satisfy a row
 # headed `cargo build` — R442's tell, and the reason the row could pass with no fixture at all.
-printf '%s' "$building" | grep -q "a build is running (cargo build)" \
+hasin "$building" -q "a build is running (cargo build)" \
   && ok "…and says which" || bad "no 'cargo build' diagnostic (a different pattern would be the wrong cause): $building"
 fi
 
@@ -3704,7 +3724,7 @@ touch -t 202601010000 "$PR2/candor-rust/lib.rs"
 stale="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-rust/binary" 2>&1)"; stalerc=$?
 [ "$stalerc" = 3 ] && ok "a binary OLDER than the newest source exits 3 (STALE)" \
   || bad "a stale binary did not produce exit 3 (rc=$stalerc): $stale"
-printf '%s' "$stale" | grep -q "STALE: this binary is OLDER THAN THE SOURCE" \
+hasin "$stale" -q "STALE: this binary is OLDER THAN THE SOURCE" \
   && ok "…and names it as such, on the row" || bad "no STALE diagnostic for an old binary: $stale"
 
 # CONTROL: a binary NEWER than every source file must not be flagged.
@@ -3712,7 +3732,7 @@ touch -t 202601020000 "$PR2/candor-rust/binary"
 fresh="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-rust/binary" 2>&1)"; freshrc=$?
 [ "$freshrc" = 0 ] && ok "a binary newer than every source file is not flagged stale" \
   || bad "a fresh binary was flagged stale (rc=$freshrc): $fresh"
-printf '%s' "$fresh" | grep -q "STALE" \
+hasin "$fresh" -q "STALE" \
   && bad "a fresh binary printed a STALE diagnostic anyway" || ok "…and prints no STALE line"
 
 # The .build/release NOTE — a distinct binary from the one the suite actually builds and uses.
@@ -3723,7 +3743,7 @@ printf '#!/bin/bash\necho ran\n' > "$PR2/candor-swift/.build/release/candor-swif
 chmod +x "$PR2/candor-swift/.build/release/candor-swift"
 touch -t 202601020000 "$PR2/candor-swift/.build/release/candor-swift"
 rel="$(CANDOR_ROOT="$PR2" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PR2/candor-swift/.build/release/candor-swift" 2>&1)"
-printf '%s' "$rel" | grep -q "conformance builds and uses .build/debug/" \
+hasin "$rel" -q "conformance builds and uses .build/debug/" \
   && ok "probing a .build/release binary is told conformance uses the OTHER one" \
   || bad "no .build/debug NOTE for a .build/release subject: $rel"
 rm -rf "$PR2"
@@ -3772,9 +3792,9 @@ first cut.
 out="$(cdrun)"; rc=$?
 [ "$rc" = 1 ] && ok "TWO Unreleased sections above the first release FAIL" \
   || bad "two Unreleased sections passed (rc=$rc): $out"
-printf '%s' "$out" | grep -q '2 `## Unreleased` sections' \
+hasin "$out" -q '2 `## Unreleased` sections' \
   && ok "…and the count is named" || bad "the duplicate count did not appear: $out"
-printf '%s' "$out" | grep -q "the stager renames only the FIRST" \
+hasin "$out" -q "the stager renames only the FIRST" \
   && ok "…with the mechanism, not just a bare complaint" || bad "no explanation of WHY this matters: $out"
 
 # An OLD, historical '## [Unreleased] ...' heading sitting BELOW an already-numbered release (settled
@@ -3833,10 +3853,10 @@ out="$(glist candor-old)"; rc=$?
 out="$(grun candor-old)"; rc=$?
 [ "$rc" = 2 ] && ok "…and gate-run.sh propagates that: a gate LIST that could not be produced is exit 2" \
   || bad "gate-run.sh did not propagate a failing gates.sh (rc=$rc): $out"
-printf '%s' "$out" | grep -q "gate LIST could not be produced" \
+hasin "$out" -q "gate LIST could not be produced" \
   && ok "…and says the list is the thing that failed, not the gates" \
   || bad "no diagnostic naming the LIST as the failure: $out"
-printf '%s' "$out" | grep -q "OK — every gate ran and passed" \
+hasin "$out" -q "OK — every gate ran and passed" \
   && bad "gate-run.sh printed the OK verdict over a repo whose gate list it could not read" \
   || ok "…and never reaches the OK verdict over an unreadable gate list"
 
@@ -3845,7 +3865,7 @@ mkdir -p "$GR/candor-agents"
 out="$(grun candor-agents)"; rc=$?
 [ "$rc" = 2 ] && ok "a repo with NO workflows is INCOMPLETE (exit 2), not OK over an empty gate set" \
   || bad "an empty gate set did not produce exit 2 (rc=$rc): $out"
-printf '%s' "$out" | grep -q "OK — every gate ran and passed" \
+hasin "$out" -q "OK — every gate ran and passed" \
   && bad "zero gates read as 'every gate ran and passed'" || ok "…and does not claim every gate passed"
 
 # THE CONTROL FOR ALL OF THE ABOVE. A tool that never says OK would pass every row so far while being
@@ -3874,7 +3894,7 @@ YML
 out="$(grun candor-agents)"; rc=$?
 [ "$rc" = 1 ] && ok "one failing gate among passing ones exits 1" \
   || bad "a failing gate did not reach the exit code (rc=$rc): $out"
-printf '%s' "$out" | grep -q "gate-run: OK" \
+hasin "$out" -q "gate-run: OK" \
   && bad "a failing gate still printed OK" || ok "…and prints NOT GREEN, never OK"
 
 # A GATE THAT READS STDIN MUST NOT EAT THE GATE LIST. The loop reads its list on stdin, so without a
@@ -3892,9 +3912,9 @@ jobs:
         run: true
 YML
 out="$(grun candor-agents)"; rc=$?
-printf '%s' "$out" | grep -q "3 gate(s) run" \
+hasin "$out" -q "3 gate(s) run" \
   && ok "a gate that reads stdin does not swallow the gates below it (all 3 still run)" \
-  || bad "a stdin-reading gate narrowed the run: $(printf '%s' "$out" | grep 'gate(s) run')"
+  || bad "a stdin-reading gate narrowed the run: $(hasin "$out" 'gate(s) run')"
 [ "$rc" = 0 ] && ok "…and the run still concludes normally" || bad "stdin fixture did not conclude (rc=$rc): $out"
 
 # `working-directory:` IS PART OF THE COMMAND. Dropped, both candor-spec and the umbrella were
@@ -3909,7 +3929,7 @@ jobs:
         run: test -f marker.txt
 YML
 out="$(glist candor-agents)"
-printf '%s' "$out" | grep -q "cd sub && test -f marker.txt" \
+hasin "$out" -q "cd sub && test -f marker.txt" \
   && ok "gates.sh prints a step's working-directory as an executable \`cd X && …\` prefix" \
   || bad "the working-directory was dropped from the printed gate line: $out"
 out="$(grun candor-agents)"; rc=$?
@@ -3928,10 +3948,10 @@ jobs:
         run: true
 YML
 out="$(grun candor-agents)"; rc=$?
-printf '%s' "$out" | grep -q 'GitHub \${{ }} expression' \
+hasin "$out" -q 'GitHub \${{ }} expression' \
   && ok "an unexpanded GitHub expression is SKIPped and named, not run" \
   || bad "the \${{ }} step was not named as unrunnable: $out"
-printf '%s' "$out" | grep -q "FAIL" \
+hasin "$out" -q "FAIL" \
   && bad "an unexpandable GitHub expression was reported as a FAILING gate" \
   || ok "…and is not miscounted as a failure"
 [ "$rc" = 2 ] && ok "…and a skipped gate makes the verdict INCOMPLETE (exit 2), never OK" \
@@ -3950,9 +3970,9 @@ jobs:
           exit 7
 YML
 out="$(grun candor-agents)"; rc=$?
-printf '%s' "$out" | grep -q "0 gate(s) run, 0 ok, 0 failed, 0 skipped, 2 block line(s)" \
+hasin "$out" -q "0 gate(s) run, 0 ok, 0 failed, 0 skipped, 2 block line(s)" \
   && ok "a multi-line block step contributes block lines, never executed gates" \
-  || bad "block-form accounting is wrong: $(printf '%s' "$out" | grep 'gate(s) run')"
+  || bad "block-form accounting is wrong: $(hasin "$out" 'gate(s) run')"
 [ "$rc" = 2 ] && ok "…and block lines nobody ran make the verdict INCOMPLETE, not OK" \
   || bad "unrun block lines did not produce INCOMPLETE (rc=$rc): $out"
 
@@ -3972,16 +3992,16 @@ jobs:
         run: true
 YML
 out="$(glist candor-agents)"
-printf '%s' "$out" | grep -qx '        >' \
+hasin "$out" -qx '        >' \
   && bad "a folded 'run: >' step is printed as a gate whose command is the literal '>'" \
   || ok "a folded 'run: >' step is not printed as a bare '>' gate"
-printf '%s' "$out" | grep -q '~ echo one &&' \
+hasin "$out" -q '~ echo one &&' \
   && ok "…and its body is kept, marked as block lines to read rather than run" \
   || bad "the folded step's body vanished from the list entirely: $out"
 out="$(grun candor-agents)"; rc=$?
-printf '%s' "$out" | grep -q "1 gate(s) run, 1 ok, 0 failed, 0 skipped, 2 block line(s)" \
+hasin "$out" -q "1 gate(s) run, 1 ok, 0 failed, 0 skipped, 2 block line(s)" \
   && ok "…and gate-run.sh counts it as 2 block lines beside the 1 real gate" \
-  || bad "folded-step accounting is wrong: $(printf '%s' "$out" | grep 'gate(s) run')"
+  || bad "folded-step accounting is wrong: $(hasin "$out" 'gate(s) run')"
 
 # …AND EVERY CHOMPING FORM OF IT, because the one that was covered is the only one that was LOUD.
 # YAML's folded scalar takes an optional chomping indicator, so a step may be written `>`, `>-` or
@@ -4017,17 +4037,17 @@ jobs:
           bash soundness/run.sh 60
 YML
   out="$(glist candor-agents)"
-  printf '%s' "$out" | grep -q '~ bash soundness/run.sh 60' \
+  hasin "$out" -q '~ bash soundness/run.sh 60' \
     && ok "gates.sh keeps the BODY of a \`run: $ind\` step, as a block line to read" \
     || bad "the body of a \`run: $ind\` step vanished from the list entirely: $out"
-  printf '%s' "$out" | grep -qx "        $ind" \
+  hasin "$out" -qx "        $ind" \
     && bad "\`run: $ind\` printed the INDICATOR itself as a runnable gate command" \
     || ok "…and never prints \`$ind\` at the 8-space column, where gate-run.sh would eval it"
   out="$(grun candor-agents)"; rc=$?
   [ "$rc" != 0 ] \
     && ok "…so gate-run.sh over a \`$ind\` step does not exit 0 (rc=$rc — the body is unrun, and says so)" \
     || bad "gate-run.sh exited 0 over a \`run: $ind\` step whose body nothing ran"
-  printf '%s' "$out" | grep -q "gate-run: OK" \
+  hasin "$out" -q "gate-run: OK" \
     && bad "gate-run.sh printed the OK verdict over an unrun \`run: $ind\` body" \
     || ok "…and never reaches the OK verdict"
 done
@@ -4085,25 +4105,25 @@ jobs:
         run: exit 3
 YML
 out="$(glist candor-agents)"
-printf '%s' "$out" | grep -qx '        true' \
+hasin "$out" -qx '        true' \
   && ok "a workflow NAMED release-* is printed when its own \`on:\` says push/pull_request" \
   || bad "a push-triggered workflow was excluded by its NAME — the gate list is short: $out"
-printf '%s' "$out" | grep -q 'publish.yml (on: .*tags only.* — not a pre-push gate;' \
+hasin "$out" -q 'publish.yml (on: .*tags only.* — not a pre-push gate;' \
   && ok "…and a \`push: tags:\` workflow is excluded, NAMED, with the triggers it was judged on" \
-  || bad "a tag-only workflow was not excluded-and-named: $(printf '%s' "$out" | grep publish)"
-printf '%s' "$out" | grep -q 'weekly.yml (on: schedule.* — not a pre-push gate;' \
+  || bad "a tag-only workflow was not excluded-and-named: $(hasin "$out" publish)"
+hasin "$out" -q 'weekly.yml (on: schedule.* — not a pre-push gate;' \
   && ok "…and so is a schedule-only one" || bad "a schedule-only workflow was not excluded-and-named: $out"
-printf '%s' "$out" | grep -qx '        exit 3' \
+hasin "$out" -qx '        exit 3' \
   && bad "a step from an excluded workflow still reached the gate list" \
   || ok "…and no step from either excluded workflow reached the gate list"
 # EXCLUDING IS NARROWING, SO IT MUST BE COUNTED. A per-workflow parenthetical scrolls past; the total
 # at the bottom is where a wrong `on:` parse shows up as a number instead of as an absence.
-printf '%s' "$out" | grep -q '2 workflow(s) excluded above as not-pre-push' \
+hasin "$out" -q '2 workflow(s) excluded above as not-pre-push' \
   && ok "…and the count of exclusions is printed at the bottom, beside the verdict" \
   || bad "exclusions were not counted in the trailer: $(printf '%s' "$out" | tail -2)"
-printf '%s' "$out" | grep -q '2 run step(s) behind this line' \
+hasin "$out" -q '2 run step(s) behind this line' \
   && ok "…each naming how many run steps it stands in front of, so \"excluded\" cannot read as \"empty\"" \
-  || bad "an exclusion line does not say how many steps are behind it: $(printf '%s' "$out" | grep publish)"
+  || bad "an exclusion line does not say how many steps are behind it: $(hasin "$out" publish)"
 # AND THE FAIL-SAFE DIRECTION. An `on:` shape the parse cannot read must OVER-PRINT, never drop: this
 # file's own rule is that a clever parser silently dropping a step is the failure it exists to prevent.
 cat > "$GR/candor-agents/.github/workflows/odd.yml" <<'YML'
@@ -4115,7 +4135,7 @@ jobs:
         run: echo ODD_KEPT
 YML
 out="$(glist candor-agents)"
-printf '%s' "$out" | grep -q 'echo ODD_KEPT' \
+hasin "$out" -q 'echo ODD_KEPT' \
   && ok "an inline/quoted \`on:\` the classifier cannot decompose is PRINTED, not dropped" \
   || bad "an unparseable \`on:\` block silently dropped the workflow's steps: $out"
 rm -f "$GR/candor-agents/.github/workflows/release-things.yml" \
@@ -4136,9 +4156,9 @@ YML
 out="$(grun candor-agents --dryrun)"; rc=$?
 [ "$rc" = 2 ] && ok "a mistyped --dryrun is a usage error, not a live run of every gate" \
   || bad "an unknown second argument was accepted (rc=$rc): $out"
-printf '%s' "$out" | grep -q "unknown argument '--dryrun'" \
+hasin "$out" -q "unknown argument '--dryrun'" \
   && ok "…and names the argument it did not understand" || bad "no usage diagnostic: $out"
-printf '%s' "$out" | grep -q "gate(s) run" \
+hasin "$out" -q "gate(s) run" \
   && bad "a mistyped flag still ran the gates" || ok "…and no gate ran under it"
 rm -rf "$GR"
 
@@ -4175,9 +4195,9 @@ base="$(CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/ro
 if probe_refused "$base"; then
   note_skip "probe.sh refused before rendering provenance (the native-date control) — $(printf '%s' "$base" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-120)"
 else
-printf '%s' "$base" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+hasin "$base" -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
   && ok "provenance renders both timestamps on this platform's own date(1)" \
-  || bad "a timestamp did not render on the native date(1): $(printf '%s' "$base" | grep built)"
+  || bad "a timestamp did not render on the native date(1): $(hasin "$base" built)"
 fi
 
 # THE OTHER FLAVOUR. A GNU-shaped `date`: `-r` wants a FILE, `-d @EPOCH` renders an epoch.
@@ -4205,7 +4225,7 @@ if probe_refused "$gnu"; then
   # never ran, so this is UNRUN, not FAILED — and the reason is quoted rather than left to be guessed.
   note_skip "probe.sh refused before rendering provenance — $(printf '%s' "$gnu" | tr '\n' ' ' | sed 's/  */ /g' | cut -c1-120)"
 else
-  printf '%s' "$gnu" | grep -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+  hasin "$gnu" -qE 'built [0-9]{2}:[0-9]{2}:[0-9]{2} · newest source [0-9]{2}:[0-9]{2}:[0-9]{2}' \
     && ok "…and on a GNU-shaped date(1), where \`date -r EPOCH\` is a file lookup that fails" \
     || { bad "provenance timestamps went blank under a GNU-shaped date"; printf '%s\n' "$gnu" | sed 's/^/        /'; }
 fi
@@ -4221,7 +4241,7 @@ exit 1
 SHIM
 chmod +x "$PB/shim/stat"
 noread="$(PATH="$PB/shim:$PATH" CANDOR_ROOT="$PB/root" bash "$UMBRELLA/bin/probe.sh" printf X -- "$PB/root/candor-rust/binary" 2>&1)"
-printf '%s' "$noread" | grep -q "staleness NOT checked" \
+hasin "$noread" -q "staleness NOT checked" \
   && ok "an unreadable mtime prints the loud NOTE (the \`|| return 0\` that skipped it is gone)" \
   || bad "a failing stat returned silently — a silent 'fresh' is how the Linux bug survived: $noread"
 rm -rf "$PB"
@@ -4253,16 +4273,16 @@ chmod +x "$DG/root/candor-rust/ci/a.sh" "$DG/root/candor-rust/ci/b.sh"
 # THE CONTROL COMES FIRST, deliberately. A guard that withholds every verdict would pass every row
 # below it while having deleted the tool. This arm proves a real failure is still reported as one.
 dg_ctl="$(CANDOR_ROOT="$DG/root" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_ctl_rc=$?
-[ "$dg_ctl_rc" -eq 1 ] && printf '%s' "$dg_ctl" | grep -q 'NOT GREEN' \
+[ "$dg_ctl_rc" -eq 1 ] && hasin "$dg_ctl" -q 'NOT GREEN' \
   && ok "healthy disk: a genuinely failing gate is still NOT GREEN (rc=1) — the control" \
   || bad "the over-charge control broke: a real FAIL no longer reports as one (rc=$dg_ctl_rc)"
 
 # Breached BEFORE the first gate: refuse to start, and say it is not a verdict about the repo.
 dg_pre="$(CANDOR_DISK_FAKE_FREE_MB=100 CANDOR_ROOT="$DG/root" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_pre_rc=$?
-[ "$dg_pre_rc" -eq 2 ] && printf '%s' "$dg_pre" | grep -q 'REFUSING TO START' \
+[ "$dg_pre_rc" -eq 2 ] && hasin "$dg_pre" -q 'REFUSING TO START' \
   && ok "below the floor at the start: REFUSING TO START, rc=2" \
   || bad "a run started with no disk to trust it (rc=$dg_pre_rc)"
-printf '%s' "$dg_pre" | grep -q 'not a verdict about' \
+hasin "$dg_pre" -q 'not a verdict about' \
   && ok "…and names itself as not a verdict about the repo, so it cannot be read as a red repo" \
   || bad "the refusal did not distinguish itself from a failing repo"
 
@@ -4272,10 +4292,10 @@ dg_mid="$(CANDOR_DISK_FAKE_FREE_MB=9999,100 CANDOR_ROOT="$DG/root" bash "$UMBREL
 [ "$dg_mid_rc" -eq 2 ] \
   && ok "crossed MID-RUN: rc=2, not the rc=1 the identical failing gate produces when healthy" \
   || bad "a mid-run crossing did not withhold the verdict (rc=$dg_mid_rc)"
-printf '%s' "$dg_mid" | grep -q 'NOT findings until re-measured' \
+hasin "$dg_mid" -q 'NOT findings until re-measured' \
   && ok "…and says the FAIL rows are NOT findings — the whole point, or ENOSPC gets filed as a bug" \
   || bad "a FAIL row under a crossed floor was left readable as a finding"
-printf '%s' "$dg_mid" | grep -q 'first seen at: bash ci/a.sh' \
+hasin "$dg_mid" -q 'first seen at: bash ci/a.sh' \
   && ok "…and names the gate it first crossed at, so the trustworthy prefix is identifiable" \
   || bad "the crossing point was not named; the table cannot be split into before and after"
 # SOUNDNESS R364 — `grep -qv PATTERN` IS NOT "the output lacks PATTERN". It succeeds whenever ANY
@@ -4284,7 +4304,7 @@ printf '%s' "$dg_mid" | grep -q 'first seen at: bash ci/a.sh' \
 # the other is the `WARN candor` one below. Negate the whole-output match in the SHELL instead.
 # A trap for anyone re-checking: on this machine `grep` is a ugrep shim that returns 1 for the same
 # `-qv` input and makes the control look sound — the defect is only visible through /usr/bin/grep.
-if printf '%s' "$dg_mid" | grep -q 'NOT GREEN'; then
+if hasin "$dg_mid" -q 'NOT GREEN'; then
   bad "a disk failure was attributed to the repo under test"
 else
   ok "…and does NOT print NOT GREEN, which would attribute the failure to the repo"
@@ -4319,13 +4339,13 @@ jobs:
 YAML
 printf '#!/bin/sh\nexit 0\n' > "$DG/nb/candor-rust/ci/a.sh"; chmod +x "$DG/nb/candor-rust/ci/a.sh"
 dg_nb="$(CANDOR_ROOT="$DG/nb" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_nb_rc=$?
-printf '%s' "$dg_nb" | grep -q 'SKIP.*is not installed here' \
+hasin "$dg_nb" -q 'SKIP.*is not installed here' \
   && ok "an absent interpreter is SKIPPED and named, not reported as a failing gate" \
   || bad "a gate that could not run was reported as one that failed"
 [ "$dg_nb_rc" -eq 2 ] \
   && ok "…and a skip still makes the verdict INCOMPLETE (rc=2) — unrunnable is still unrun" \
   || bad "an absent interpreter did not withhold the verdict (rc=$dg_nb_rc)"
-printf '%s' "$dg_nb" | grep -q '1 gate(s) run' \
+hasin "$dg_nb" -q '1 gate(s) run' \
   && ok "…and the present gate beside it still ran" \
   || bad "the skip swallowed its neighbour"
 # THE OVER-CHARGE CONTROL FOR THE SKIP: a path this repo owns must NOT be excused. `./gradlew` or
@@ -4342,7 +4362,7 @@ jobs:
         run: ./ci/does-not-exist.sh
 YAML
 dg_own="$(CANDOR_ROOT="$DG/own" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; dg_own_rc=$?
-[ "$dg_own_rc" -eq 1 ] && printf '%s' "$dg_own" | grep -q 'FAIL' \
+[ "$dg_own_rc" -eq 1 ] && hasin "$dg_own" -q 'FAIL' \
   && ok "a MISSING SCRIPT THIS REPO OWNS still FAILS — the skip does not excuse our own paths" \
   || bad "the not-installed skip swallowed a missing script the repo owns (rc=$dg_own_rc)"
 
@@ -4371,10 +4391,10 @@ PATH="$gm_shim:$PATH" mktemp -t no-x-here >/dev/null 2>&1 \
   && bad "the GNU mktemp shim did not reject a template without XXXXXX — the row below proves nothing" \
   || ok "the GNU mktemp shim is the mktemp that ran (it rejects a bare -t prefix)"
 gm_out="$(PATH="$gm_shim:$PATH" CANDOR_ROOT="$DG/nb" bash "$UMBRELLA/bin/gates.sh" candor-rust 2>&1)"; gm_rc=$?
-[ "$gm_rc" -eq 0 ] && ! printf '%s' "$gm_out" | grep -q "too few X's" \
+[ "$gm_rc" -eq 0 ] && ! hasin "$gm_out" -q "too few X's" \
   && ok "gates.sh runs under GNU mktemp semantics — the -t PREFIX form is gone" \
   || bad "gates.sh still dies under GNU mktemp: $(printf '%s' "$gm_out" | head -1)"
-printf '%s' "$gm_out" | grep -q 'bash ci/a.sh' \
+hasin "$gm_out" -q 'bash ci/a.sh' \
   && ok "…and still prints the gate list, so the classifier actually ran on the GNU flavour" \
   || bad "gates.sh survived GNU mktemp but produced no gate list — dead in a quieter way"
 
@@ -4398,20 +4418,20 @@ printf '#!/bin/sh\necho "soundness oracle: needs Linux + strace (got Darwin) —
 printf '#!/bin/sh\necho "skipping seed 3"\necho "40 passed, 0 failed"\nexit 0\n' > "$DG/ss/candor-rust/ci/mid.sh"
 chmod +x "$DG/ss/candor-rust/ci/skip.sh" "$DG/ss/candor-rust/ci/mid.sh"
 ss_out="$(CANDOR_ROOT="$DG/ss" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; ss_rc=$?
-printf '%s' "$ss_out" | grep -q 'SELFSKIP' \
+hasin "$ss_out" -q 'SELFSKIP' \
   && ok "a gate that exits 0 while its last line says it skipped is SELFSKIP, not OK" \
   || bad "a self-skipping gate was counted as passed — the exact thing 'SKIPPED IS NOT PASSED' forbids"
 [ "$ss_rc" -eq 2 ] \
   && ok "…and it makes the verdict INCOMPLETE (rc=2), never OK" \
   || bad "a self-skipping gate did not withhold the verdict (rc=$ss_rc)"
-printf '%s' "$ss_out" | grep -q 'its own last line says it did not run' \
+hasin "$ss_out" -q 'its own last line says it did not run' \
   && ok "…and QUOTES the line, so the claim can be checked rather than trusted" \
   || bad "the SELFSKIP row did not show its evidence"
 # THE OVER-CHARGE CONTROL: matching 'skipping' ANYWHERE would turn ordinary gates into skips, and a
 # tool that is permanently INCOMPLETE is a red nobody reads. Only the LAST non-empty line counts.
-printf '%s' "$ss_out" | grep -qE '(OK|ok)[[:space:]]+bash ci/mid.sh|1 ok' \
+hasin "$ss_out" -qE '(OK|ok)[[:space:]]+bash ci/mid.sh|1 ok' \
   && ok "a gate that says 'skipping' mid-run but ends on a pass line stays OK — the control" \
-  || bad "the self-skip match swallowed a genuinely passing gate: $(printf '%s' "$ss_out" | grep 'mid.sh')"
+  || bad "the self-skip match swallowed a genuinely passing gate: $(hasin "$ss_out" 'mid.sh')"
 
 # THE FRONT-LOADED SKIP SPELLING. Section 16's first cut matched only the SUFFIX style found in the
 # soundness scripts, and missed EIGHT real exit points — seven in this repo, one in candor-rust — all
@@ -4447,18 +4467,18 @@ printf '#!/bin/sh\necho "40 passed, 0 failed, 3 skipped"\nexit 0\n' > "$DG/fl/ca
 printf '#!/bin/sh\necho "pf-realcrate: python3 not found — cannot read candor'"'"'s report; skipping."\nexit 0\n' > "$DG/fl/candor-rust/ci/f4.sh"
 chmod +x "$DG/fl/candor-rust/ci/f1.sh" "$DG/fl/candor-rust/ci/f2.sh" "$DG/fl/candor-rust/ci/f3.sh" "$DG/fl/candor-rust/ci/f4.sh"
 fl_out="$(CANDOR_ROOT="$DG/fl" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"
-printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f1.sh' \
+hasin "$fl_out" -q 'SELFSKIP.*f1.sh' \
   && ok "a FRONT-LOADED \`SKIP: <reason>\` is caught (8 real instances missed by the suffix-only match)" \
   || bad "the front-loaded SKIP spelling still reports as a passing gate"
-printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f2.sh' \
+hasin "$fl_out" -q 'SELFSKIP.*f2.sh' \
   && ok "…and the suffix spelling still is, so widening the match did not lose the original" \
   || bad "adding the front-loaded arm broke the suffix arm"
 # THE OVER-CHARGE CONTROL, and it is not hypothetical: a bare `\bSKIPPED$` arm matched this line
 # under grep -i and downgraded a genuine full pass. Caught by this fixture, not by review.
-printf '%s' "$fl_out" | grep -qE '\bOK[^m]*m? *bash ci/f3.sh|1 ok' \
+hasin "$fl_out" -qE '\bOK[^m]*m? *bash ci/f3.sh|1 ok' \
   && ok "…and a summary ENDING '3 skipped' is still a PASS — the match needs structure, not the word" \
   || bad "a genuine pass whose summary ends in a skip count was downgraded to SELFSKIP"
-printf '%s' "$fl_out" | grep -q 'SELFSKIP.*f4.sh' \
+hasin "$fl_out" -q 'SELFSKIP.*f4.sh' \
   && ok "a semicolon-delimited second clause (… — cannot read candor's report; skipping.) is caught — 2 live gates evaded arm 1's dash/colon set and reported OK" \
   || bad "the semicolon-delimited skip spelling still reports as a passing gate — run_pf.sh and swift realworld/run.sh both self-skip this way"
 
@@ -4504,10 +4524,10 @@ printf '#!/bin/sh\necho "oracle: needs Linux + strace (got Darwin)"\nexit 3\n' >
 printf '#!/bin/sh\necho "assertion failed"\nexit 1\n' > "$DG/e3/candor-rust/ci/fail.sh"
 chmod +x "$DG/e3/candor-rust/ci/s3.sh" "$DG/e3/candor-rust/ci/fail.sh"
 e3_out="$(CANDOR_ROOT="$DG/e3" bash "$UMBRELLA/bin/gate-run.sh" candor-rust 2>&1)"; e3_rc=$?
-printf '%s' "$e3_out" | grep -q 'SELFSKIP.*s3.sh' \
+hasin "$e3_out" -q 'SELFSKIP.*s3.sh' \
   && ok "a gate exiting 3 is SELFSKIP — the convention, not a prose match" \
   || bad "exit 3 was not read as a self-skip: it would report FAIL over a gate that chose not to run"
-printf '%s' "$e3_out" | grep -q 'FAIL.*fail.sh' \
+hasin "$e3_out" -q 'FAIL.*fail.sh' \
   && ok "…and a genuine exit 1 beside it still FAILS — the control" \
   || bad "the exit-3 arm swallowed a real failure"
 [ "$e3_rc" -eq 1 ] \
@@ -4530,10 +4550,10 @@ body
 body
 MD
 sg_out="$(ROOT="$sg" VER=0.99.0 DATE=2026-08-31 python3 "$UMBRELLA/bin/_stage_changelogs.py" 2>&1)"
-printf '%s' "$sg_out" | grep -q 'WARN candor: 3 dated heading(s) carry' \
+hasin "$sg_out" -q 'WARN candor: 3 dated heading(s) carry' \
   && ok "the stager NAMES markers it could not match, rather than counting only what it stamped" \
   || bad "a malformed \`(unreleased)\` marker is silently unstamped: $(printf '%s' "$sg_out" | head -1)"
-printf '%s' "$sg_out" | grep -q 'STILL LABELLED unreleased' \
+hasin "$sg_out" -q 'STILL LABELLED unreleased' \
   && ok "…and says what happens if it ships — the consequence, not just the count" \
   || bad "the warning did not state the consequence"
 # CONTROL: a changelog whose markers are ALL well-formed must not warn.
@@ -4544,7 +4564,7 @@ sg2_out="$(ROOT="$sg2" VER=0.99.0 DATE=2026-08-31 python3 "$UMBRELLA/bin/_stage_
 # This one mattered more: on a changelog that DOES warn, the stager emits `WARN candor: …` followed by
 # `OK candor: …`, so the second line lacks the string, `-qv` exits 0, and the control asserting the
 # warning "stays quiet" passed over a warning.
-if printf '%s' "$sg2_out" | grep -q 'WARN candor'; then
+if hasin "$sg2_out" -q 'WARN candor'; then
   bad "the warning fires on a correct changelog"
 else
   ok "…and stays quiet when every marker is well formed — the control"
@@ -4594,13 +4614,13 @@ wd_out="$(CANDOR_ROOT="$DG/wd" bash "$UMBRELLA/bin/gate-run.sh" candor-spec 2>&1
 # LOG FILE, never to this output, so the obvious spelling of this check passes with or without the fix.
 # Measured at 0 occurrences in $wd_out on a deliberately un-fixed tool — a vacuous control, caught the
 # same way R374 and R377 were, by running the assertion against a tool that ought to fail it.
-printf '%s' "$wd_out" | grep -qF 'cd candor-spec && ' \
+hasin "$wd_out" -qF 'cd candor-spec && ' \
   && bad "a gate under the repo's OWN checkout path still double-cd's — R389 regressed" \
   || ok "a working-directory: naming the repo itself does not become <repo>/<repo>"
-printf '%s' "$wd_out" | grep -qE 'OK .*scripts/selfdir\.sh' \
+hasin "$wd_out" -qE 'OK .*scripts/selfdir\.sh' \
   && ok "…and that gate actually RAN (OK), rather than being skipped into silence" \
   || bad "the self-named gate did not run — stripping the prefix must leave a runnable command"
-printf '%s' "$wd_out" | grep -qE 'OK .*cd sub && bash real\.sh' \
+hasin "$wd_out" -qE 'OK .*cd sub && bash real\.sh' \
   && ok "CONTROL: a REAL subdirectory cd survives untouched and still runs there" \
   || bad "the subdirectory prefix was stripped too — gates would run from the wrong directory"
 

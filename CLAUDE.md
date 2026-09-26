@@ -72,6 +72,29 @@ not commits* — applies to the coordinator unchanged, and I am the one most lik
 am "only" editing a register while someone else's suite runs. **While `conformance/run.sh` is in flight,
 candor-spec is as read-only as any engine.**
 
+**AND "NO LANE OWNS IT" IS NOT "SAFE TO EDIT" — a third instance, 2026-09-26.** I started
+`gate-run.sh candor-spec`, whose list CONTAINS `conformance/run.sh`, and then — because no agent owned
+candor-rust — edited `candor-rust/tests/integration.sh`, committed it, and amended the commit. The suite
+came back with every assertion OK and then **refused to call it a measurement**, naming the before and
+after shas:
+
+    conformance: AN ENGINE TREE MOVED WHILE THIS SUITE RAN — the result is NOT a measurement.
+      < candor-rust 2504c6a…  M tests/integration.sh;   > candor-rust 72c7efd…
+
+**The reasoning that failed is worth writing down, because it felt careful at the time:** I checked that
+no agent owned candor-rust, which is the ownership rule, and concluded the tree was mine to edit. But
+conformance does not read OWNERSHIP, it reads TREES — so the freeze is not "the repo a lane owns", it is
+**every engine tree, for the whole duration of any conformance, including one running inside another
+repo's gate list.** A gate list is not obviously a conformance run from the outside, which is exactly why
+this was easy to miss: I was watching for `conformance/run.sh` in my own command, and it was three levels
+down in someone else's.
+
+Also note what it cost: nothing but time, because the guard states the contamination instead of reporting
+a verdict. That guard has now earned itself three times in one session — a litter verdict from an edited
+register, a DIRTY-tree note, and this. **And read its last line before re-running: *do not re-run until
+the other owner is done — re-running into the same edit reproduces the contamination.* When the other
+owner is you, that means finish and commit everything first, then run it once.**
+
 Worth noting what made this cheap: the serial re-run. The temptation was to explain the red away as my own
 edit and move on — which was even TRUE — but the file's own rule is *do not explain a FAIL by concurrency
 until you have failed to reproduce it serially*. The clean re-run cost sixteen minutes and turned a

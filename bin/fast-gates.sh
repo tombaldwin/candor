@@ -141,10 +141,36 @@ if disk_guard_verdict_note; then
   exit 2
 fi
 
+# THE `bin/**` WARNING BELONGS IN THE OUTPUT, NOT ONLY IN THE HEADER. Measured 2026-09-27: this file's
+# header has said since the day it was written that it is NOT sufficient for a `bin/**` change — "for a
+# `bin/**` edit, CI runs strictly MORE than this does" — and I pushed a `bin/**` change on the strength
+# of a green run here anyway, because what I read was the CLOSING LINE ("named at the top of this
+# file") and not the top of the file. CI then went red on `release-scripts` over a real defect in that
+# change: `-d "$d/.git"` as a checkout test, which is FALSE for a git worktree.
+#
+# The header was right, in the right place, and unread — which is this family's own
+# documented-limitation shape. So the warning now fires where the reader already is, and it names the
+# one command that would have caught it. Deliberately NOT a failure: making the cheap tier red on a
+# `bin/**` edit would destroy the affordable path it exists to provide, and a rule with no affordable
+# path gets broken.
+touched_bin=""
+if git -C "$HERE" diff --name-only HEAD 2>/dev/null | grep -q '^bin/' \
+   || git -C "$HERE" diff --name-only --cached HEAD 2>/dev/null | grep -q '^bin/' \
+   || git -C "$HERE" diff --name-only 'HEAD~1..HEAD' 2>/dev/null | grep -q '^bin/'; then
+  touched_bin=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "fast-gates: OK — $ran gate(s), none of which builds an engine, an IDE or an npm tree."
   echo "  Five heavier gates were NOT run; they are named at the top of this file. Before a release,"
   echo "  run \`bash bin/gate-run.sh candor\`."
+  if [ -n "$touched_bin" ]; then
+    echo
+    echo "  ⚠ THIS CHANGE TOUCHES bin/** AND THIS RUN IS NOT SUFFICIENT FOR IT."
+    echo "    Three umbrella workflows filter on bin/** — integrations, release-scripts, shell-lint —"
+    echo "    and release-scripts runs \`bash bin/release-test.sh\`, which this tier omits. It takes"
+    echo "    ~130s locally. Run it before pushing:  bash bin/release-test.sh"
+  fi
   exit 0
 fi
 echo "fast-gates: FAILED — $ran gate(s) run, at least one red."

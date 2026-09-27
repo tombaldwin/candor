@@ -115,6 +115,8 @@ run "corpus-ledger.test"    bash bin/corpus-ledger.test.sh
 run "ci-watch --selftest"   bash bin/ci-watch.sh --selftest
 run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'
+run "ts-fitness-pin"        bash bin/ts-fitness-pin.sh
+run "ts-fitness-pin --selftest" bash bin/ts-fitness-pin.sh --selftest
 run "workflow-check"        bash bin/workflow-check.sh candor
 
 # AN EMPTY RUN IS NOT A PASS. Same fail-closed shape as gate-run.sh's zero-gate guard and the spec's

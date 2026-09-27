@@ -3,7 +3,9 @@
 #
 #     bash bin/corpus-census.sh java     # every jar in bin/corpus-census-java.tsv, sha1-verified
 #     bash bin/corpus-census.sh rust     # every crate in bin/corpus-census-rust.tsv, at its pinned version
+#     bash bin/corpus-census.sh ts       # every repo in bin/corpus-census-ts.tsv, at its pinned COMMIT
 #     bash bin/corpus-census.sh <arm> --check    # report what is missing; acquire nothing
+#     bash bin/corpus-census.sh ts --measure     # …and ASK THE ENGINE what it analyses (R744)
 #
 # THE SIZE IS NOT WRITTEN HERE, ON PURPOSE. These lines said "118 Maven artifacts" while the java
 # roster held 452 — a count copied into a comment on the day the roster was created and stale by the
@@ -28,11 +30,14 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARM="${1:-}"; MODE="${2:-}"
+# --measure is the ts arm's engine-run fitness pass (R744). Treated as a checking mode everywhere a
+# mode is tested, so it never acquires.
+[ "$MODE" = "--measure" ] && [ "$ARM" != "ts" ] && { echo "corpus-census: --measure is the ts arm only"; exit 2; }
 HOME_DIR="${CANDOR_CENSUS_HOME:-$HOME/.candor/census}"
 
 case "$ARM" in
-  java|rust) ;;
-  *) echo "usage: corpus-census.sh java|rust [--check]"; exit 2 ;;
+  java|rust|ts) ;;
+  *) echo "usage: corpus-census.sh java|rust|ts [--check]"; exit 2 ;;
 esac
 ROSTER="$HERE/bin/corpus-census-$ARM.tsv"
 [ -f "$ROSTER" ] || { echo "corpus-census: REFUSING — no roster at $ROSTER"; exit 2; }
@@ -44,7 +49,7 @@ if ! bash "$HERE/bin/disk-guard.sh" >/dev/null 2>&1; then
 fi
 
 DEST="$HOME_DIR/$ARM"
-[ "$MODE" = "--check" ] || mkdir -p "$DEST"
+case "$MODE" in --check|--measure) ;; *) mkdir -p "$DEST" ;; esac
 want=0; have=0; got=0; miss=0; bad=0
 
 if [ "$ARM" = "java" ]; then
@@ -87,6 +92,89 @@ if [ "$ARM" = "java" ]; then
       echo "  MISS $coord"; miss=$((miss + 1))
     fi
   done < "$ROSTER"
+elif [ "$ARM" = "ts" ]; then
+  # TS: the roster pins REPOSITORIES at a COMMIT, not npm packages, and the roster header records the
+  # measurement that decided it — 4 of 5 widely-used npm tarballs ship ZERO non-declaration TypeScript.
+  #
+  # THE TAG IS HOW WE FETCH; THE SHA IS WHAT WE VERIFY.  A shallow clone of a tag is cheap, and a tag
+  # can be force-moved, so `rev-parse HEAD` must equal the pinned sha or the entry is BAD rather than
+  # present.  That is this arm's sha1.
+  #
+  # AND FITNESS IS CHECKED SEPARATELY, because integrity does not imply analysable content — R666, the
+  # 16 jars with a correct sha1 and no `.class` files.  The rule is candor-ts's OWN (`scan.mjs:1496`):
+  # `/\.[mc]?tsx?$/` and NOT `.d.ts`.  It is a copy, and the copy is PINNED rather than trusted:
+  # `ci/ts-fitness-pin.sh` fails if that predicate changes in candor-ts without this one changing too.
+  while IFS=$'\t' read -r repo tag sha target want_src want_an want_rows; do
+    case "$repo" in ''|\#*) continue ;; esac
+    want=$((want + 1))
+    name="${repo##*/}"
+    d="$DEST/$name"
+    fit() { find "$1" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) \
+              -not -name '*.d.ts' -not -path '*/node_modules/*' 2>/dev/null | wc -l | tr -d ' '; }
+    if [ -d "$d/.git" ]; then
+      actual="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
+      if [ "$actual" != "$sha" ]; then
+        echo "  BAD  $repo — HEAD $actual, roster pins $sha"; bad=$((bad + 1)); continue
+      fi
+      n="$(fit "$d")"
+      if [ "$n" -lt 5 ]; then
+        echo "  UNFIT $repo at the pinned sha — $n analysable .ts file(s), fewer than the 5-file floor"
+        bad=$((bad + 1)); continue
+      fi
+      if [ "$n" != "$want_src" ]; then
+        echo "  NOTE $repo — $n analysable .ts files, roster recorded $want_src at this sha"
+      fi
+      # --measure: ASK THE ENGINE. This is the only check that catches the R744 class — a repository
+      # whose on-disk `.ts` count is healthy while candor-ts analyses almost nothing, because file
+      # selection runs through the TypeScript project rather than the filesystem. Three of the first
+      # thirty entries were that shape (execa 119 files -> 1 unit; apollo-server 110 -> 0, refused).
+      if [ "$MODE" = "--measure" ]; then
+        tdir="$d"; [ "$target" != "." ] && tdir="$d/$target"
+        if [ ! -d "$tdir" ]; then
+          echo "  BAD  $repo — target '$target' does not exist at the pinned sha"; bad=$((bad + 1)); continue
+        fi
+        node "$HERE/../candor-ts/scan.mjs" "$tdir" --out "$DEST/.m-$name" >/dev/null 2>&1
+        if [ ! -f "$DEST/.m-$name.json" ]; then
+          echo "  BAD  $repo — candor-ts wrote no report for target '$target'"; bad=$((bad + 1)); continue
+        fi
+        measured="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print((d.get('analyzed') or {}).get('count') or 0, len(d.get('functions') or []))" "$DEST/.m-$name.json" 2>/dev/null)"
+        got_an="${measured%% *}"; got_rows="${measured##* }"
+        rm -f "$DEST/.m-$name.json" "$DEST/.m-$name.callgraph.json"
+        # A COLLAPSE, not a wobble. The roster's number is the denominator every percentage divides by,
+        # so the floor is generous on drift and unforgiving on a collapse to nothing.
+        if [ "${got_an:-0}" -lt $(( want_an / 2 )) ] || [ "${got_an:-0}" -lt 20 ]; then
+          echo "  BAD  $repo — candor-ts analysed ${got_an:-0} units, roster records $want_an. A"
+          echo "       collapsed entry contributes nothing while still counting toward the roster size,"
+          echo "       which moves every percentage the flattering way and says nothing about it."
+          bad=$((bad + 1)); continue
+        fi
+        [ "${got_an:-0}" != "$want_an" ] && \
+          echo "  NOTE $repo — analysed ${got_an:-0}, roster records $want_an (within the drift floor)"
+        # ROWS are what an A/B actually diffs, so a roster that records units and not rows would let the
+        # denominator hold while the thing being compared moved underneath it.
+        [ "${got_rows:-0}" != "$want_rows" ] && \
+          echo "  NOTE $repo — ${got_rows:-0} rows, roster records $want_rows"
+      fi
+      have=$((have + 1)); continue
+    fi
+    case "$MODE" in --check|--measure) echo "  MISS $repo@$tag"; miss=$((miss + 1)); continue ;; esac
+    rm -rf "$d"
+    if ! git clone -q --depth 1 --branch "$tag" "https://github.com/$repo" "$d" 2>/dev/null; then
+      echo "  MISS $repo@$tag (clone failed)"; miss=$((miss + 1)); continue
+    fi
+    actual="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
+    if [ "$actual" != "$sha" ]; then
+      echo "  BAD  $repo@$tag — clone gave $actual, roster pins $sha.  A MOVED TAG is exactly what this"
+      echo "       check exists for; do not edit the roster to match, work out which commit is right."
+      bad=$((bad + 1)); rm -rf "$d"; continue
+    fi
+    n="$(fit "$d")"
+    if [ "$n" -lt 5 ]; then
+      echo "  UNFIT $repo@$tag — sha correct, $n analysable .ts file(s) (R666's shape in TypeScript)"
+      bad=$((bad + 1)); rm -rf "$d"; continue
+    fi
+    got=$((got + 1))
+  done < "$ROSTER"
 else
   # Rust: the pinned crates come from the local cargo registry cache if present, and are otherwise
   # fetched as .crate tarballs from static.crates.io and unpacked.  A crate DIRECTORY that exists and
@@ -122,7 +210,7 @@ echo "  corpus at $DEST"
 # A CENSUS OVER A PARTIAL CORPUS IS NOT THE CENSUS THE ROSTER NAMES, and the difference is invisible
 # in the output: a smaller denominator moves every percentage in the flattering direction.
 present=$((have + got))
-if [ "$MODE" = "--check" ]; then
+if [ "$MODE" = "--check" ] || [ "$MODE" = "--measure" ]; then
   [ "$miss" -eq 0 ] && [ "$bad" -eq 0 ] && { echo "  COMPLETE."; exit 0; }
   echo "  INCOMPLETE — $miss missing, $bad corrupt/hollow.  Run without --check to acquire."; exit 1
 fi

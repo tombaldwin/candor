@@ -111,8 +111,11 @@ elif [ "$ARM" = "ts" ]; then
     d="$DEST/$name"
     fit() { find "$1" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) \
               -not -name '*.d.ts' -not -path '*/node_modules/*' 2>/dev/null | wc -l | tr -d ' '; }
-    if [ -d "$d/.git" ]; then
-      actual="$(git -C "$d" rev-parse HEAD 2>/dev/null)"
+    # ASK GIT, NOT THE FILESYSTEM. `-d "$d/.git"` is false for a git WORKTREE, where `.git` is a FILE —
+    # so the first cut of this arm would have read a worktree as absent and re-cloned over it. The
+    # umbrella's release-test has a standing assertion against that spelling and it caught this on the
+    # first CI run after the push; `rev-parse` is the authority and answers for every layout.
+    if actual="$(git -C "$d" rev-parse HEAD 2>/dev/null)" && [ -n "$actual" ]; then
       if [ "$actual" != "$sha" ]; then
         echo "  BAD  $repo — HEAD $actual, roster pins $sha"; bad=$((bad + 1)); continue
       fi

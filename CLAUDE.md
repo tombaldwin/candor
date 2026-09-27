@@ -9,6 +9,7 @@ Hand every agent the relevant brief, and tell it to attack the premise:
 
 - **Corpus / bug-hunting work** → `bin/AGENT-CORPUS-BRIEF.md`
 - **Release work** → `bin/AGENT-RELEASE-BRIEF.md`
+- **Re-verifying OPEN SOUNDNESS rows** → `bin/AGENT-SWEEP-BRIEF.md` (pair it with the corpus brief's §F1)
 
 And in the prompt, always:
 
@@ -42,6 +43,90 @@ a `.d.ts` hypothesis that was inverted; a suggestion to narrow a blocklist that 
 union-vs-winner-take-all framing that was wrong for that case. None was caught by the coordinator
 re-checking its own reasoning. The instruction converts the coordinator's least reliable habit into
 someone else's job, which is the only reason it works.
+
+**AND DO NOT BRIEF THE REMEDY — NAME THE DEFECT AND LET THE LANE DESIGN THE FIX. 8 FOR 8 REFUSED,
+2026-09-27.** Across three sweep lanes I briefed eight specific remedies alongside the rows. Every one was
+refused by the lane, and every refusal was right: R213's guard already excludes the case; R190(c) had been
+DECLINED in writing months earlier; a hedge was proposed twice for a population 27.7% of which was
+RESOLVABLE (a resolution beats a hedge — see below); "REMOVED must be 0" was applied to a change that was a
+resolution, where REMOVED > 0 is the point; and a per-module index was **wrong in sign**.
+
+This is the "attack the premise" paragraph's own finding one level up, and the numbers say the same thing
+more sharply: when the coordinator supplies the MECHANISM it is wrong about a third of the time, and when
+it supplies the FIX it was wrong eight times out of eight. The reason is structural rather than careless —
+**a remedy is a claim about code the coordinator has not read**, made from a row that summarises it. So
+brief the defect, the reproduction and the row ID; brief the CONSTRAINTS (what must not regress, what
+instrument to use); do not brief the diff. A lane that has to design the fix reads the code first, which is
+the step the coordinator skipped.
+
+**THE COROLLARY: PREFER A RESOLUTION TO A HEDGE, AND SAY WHICH ONE YOU ARE ASKING FOR.** A hedge adds
+`Unknown` and discloses that the engine does not know; a resolution restores the real effect and CLOSES the
+gate. They are priced by opposite rules — the disclosure-cost bands below apply to a hedge and are
+meaningless for a resolution, whose REMOVED count is expected to be non-zero. Two of the eight refusals
+were a hedge proposed where a resolution existed, and a lane measured **27.7%** of one such population as
+resolvable. **A guard can SUPPRESS but it cannot SUPPLY** — that sentence decided which of two candidate
+areas was worth building.
+
+**THE CORPUS A/B CANNOT FIND A SILENT UNDER-REPORT. STOP USING IT AS THE SAFETY ARGUMENT.** This is
+SOUNDNESS R216 as a structural fact: a cardinal sin is an ABSENCE from `functions[]`, and an absence
+produces no diff, so the A/B is blind to precisely the class this family exists to minimise. It is strong
+at the opposite thing — catching FABRICATIONS, where a row appears that should not — and that is what it
+should be run for.
+
+Measured twice, in the same subsystem. **R749 was DECLINED at zero measured loss**: the A/B over the corpus
+was clean, and the change was still wrong, because the corpus did not contain the shape and a unit test
+pinning a measured sin outranks a corpus that lacks it. *"I could have landed it and the A/B would have
+looked clean"* is the whole finding. And on the drop-glue spine, the corpus A/B caught **zero of six**
+silence regressions that later rows had to find by hand.
+
+So the evidence a sin-closing change needs is: **a one-variable fixture with EXECUTED ground truth** (run
+the program, observe the effect, then compare the report), **and the gate flip** — `deny <E> <scope>` going
+from exit 0 to exit 1 over code that really does the thing. The corpus A/B rides alongside as the
+fabrication control. Quote both, and say which claim each supports.
+
+**GO AT VEINS, NOT ROWS — MEASURE THE SUBSYSTEM BEFORE PICKING A ROW.** Measured 2026-09-27 on rust's
+drop-glue spine: 29 closed rows and 15 open. Pulling the 29 showed they are not 29 independent bugs but
+roughly **six chains**, each row filed from the previous row's fix — R173→R194→R199→R203→R204→R205→R210→R229
+is eight rows of one model; R719→R722 is the same rule in three copies; and R209(b)'s fix produced R303,
+which FABRICATED, which produced R304. `candor-allowlist-chain` in memory is the same shape: *each fix's own
+fixture was the boundary of the next defect.*
+
+A chain of eight is a sign the model is wrong, not that eight things are broken. So before opening a row,
+count the subsystem's closed rows and ask the lane the structural question first — **"is this a pile of
+special cases that wants restructuring instead?"** — as an ANALYSIS task with an explicit hypothesis to
+break, not a fix task. Fixing the ninth special case is the expensive way to discover the answer.
+
+**RE-VERIFY A ROW AGAINST HEAD BEFORE FIXING IT; ~1 IN 5 HAS A WRONG MECHANISM.** Three engine sweeps over
+58 open rows (2026-09-27, `bin/AGENT-SWEEP-BRIEF.md`) converted "probable" to "firm" and found that about a
+fifth of first-week rows described the wrong mechanism — **always toward a plausible half-fix**, which is
+the direction that costs most, because the fix lands, the suite is green, and the sin survives. The row's
+FINDING was usually real; its explanation was not. A row is a snapshot, and the older it is the more it is a
+lead rather than a spec.
+
+**AND BEFORE ESCALATING, CHECK WHETHER THE CLAUSE YOU ARE INVOKING COULD CHANGE THE ANSWER.** Two
+escalations on 2026-09-27 dissolved on re-derivation, both mine, and neither needed Tom. R750 was sent up
+under the "new instrument" clause at **0.067%** — 23× under the lower band, where no instrument error of
+that size reaches the decision. R732's cost figure **counted declarations and was wrong by ~59×**, and its
+benefit had never been measured at all: gate flips on its named cases are **zero**. The discipline is the
+one the bands already state — quote the absolute count, and measure the GATE FLIPS, which are the
+user-visible cost — applied to the escalation itself before spending someone's judgement on it.
+
+**AND READ THE ROW, NOT THE `inferred` COLUMN.** Two severity claims were wrong on 2026-09-27 from reading
+a report column instead of the row it summarises: `filetime`, and the cap-primitives case, which is
+disclosed in BOTH arms so `deny Unknown` and `deny Fs Unknown` never move. A column tells you what the
+engine printed; only the row says whether a gate could see it.
+
+**WHEN A CHANGE HAS REMOVED > 0, PARTITION THE REMOVED ROWS BEFORE CALLING IT A RESOLUTION.** The technique
+that worked, and the trap in it. Partition by what the PRE row carried — concrete effects / `['Unknown']`
+only / `invisible` only / nothing — then transitively classify the `Unknown` ones into **C1** resolved to
+genuinely pure, **C2** resolved but reaching a non-analysed leaf, **C3** hedge gone and nothing replacing
+it. C3 is the cardinal sin; C1 is the fix working. The `--out` call-graph sidecar is the channel that
+answers this, because **it holds every unit including the pure ones**, so it can say what a row absent from
+`functions[]` resolved TO — which `functions[]` by construction cannot.
+
+The trap, and it is the same vacuity shape as everywhere else in this file: **"C3 is empty" is evidence only
+once the classifier has been PROVEN able to find a C3.** Seed one and require it to fire, or the clean
+partition is arithmetic rather than a measurement.
 
 ## Two rules that recur
 

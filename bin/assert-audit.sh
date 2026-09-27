@@ -104,7 +104,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # Narrowing to `authority (over|on what)` would re-introduce the remembered-sentence brittleness that
 # R336 retired, and the costs are not symmetric — this false positive asks for one fixture that is not
 # needed, while the blindness it replaces let a false safety assertion ship and become R434.
-ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume|add|introduce|capture|record|widen|broaden)(e?s)? (no|nothing)|(sole|only) authority|cannot (introduce|add|capture|widen|escape|leak|reach)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
+ASSERT_RE='correctly pure|(is|are|be|stays?|remains?|reads?) pure|verified still|deterministic recomputation|(touch|open|perform|draw|consume|add|introduce|capture|record|widen|broaden)(e?s)? (no|nothing)|(sole|only) authority|cannot (introduce|add|capture|widen|escape|leak|reach|change|affect|alter|break)|no round-?trip|no I/O|proven|guaranteed|cannot happen|can not happen|can never|never happens|impossible|inert|already (works|handled|covered|checked)|by construction|safe because|no need to check|trivially (true|safe|pure)'
 
 # SOUNDNESS R339 — THE STRUCTURAL ARM, because the VOCABULARY ARM HAS NOW MISSED THREE TIMES and the
 # third miss retired the approach rather than the wording. R332 added this project's dialect after the
@@ -289,7 +289,34 @@ selftest() {
   if [ "$rc" -ne 1 ]; then echo "  ✘ a REAL rule change rode in beside a version bump and was excused (rc=$rc) — the narrowing overshot"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ …and a real rule riding beside a version bump still FAILS — the narrowing is per-LINE"; fi
 
-  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 11 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
+  # SOUNDNESS R221 — the `cannot change / cannot affect` family. Measured MISSED at HEAD before the fix:
+  # ASSERT_RE carried `cannot happen` and `can never` and nothing for these. The row's own instance was a
+  # real one — "cannot change any run that does not already crash", written by an agent about its own diff.
+  printf 'int h(){return 2;}\n// this cannot change any run that does not already crash\n' > "$tmp/c.c"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm twelve
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ]; then echo "  ✘ 'cannot change any run…' with no test did not FAIL (rc=$rc) — R221"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ R221: 'cannot change' / 'cannot affect' is a safety assertion and needs a test"; fi
+
+  # SOUNDNESS R293 — a SELFTEST landing in the range is coverage even though no PATH looks like a test.
+  printf 'int k(){return 3;}\n// this is PROVEN inert\n' > "$tmp/d.py"
+  mkdir -p "$tmp/.github/workflows"
+  printf 'jobs:\n  t:\n    steps:\n      - run: python3 d.py --selftest\n' > "$tmp/.github/workflows/ci.yml"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm thirteen
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "  ✘ an assertion beside an added --selftest INVOCATION was failed (rc=$rc) — R293"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ R293: a --selftest landing in the range counts, read from the DIFF rather than a path"; fi
+
+  # …AND THE BOUND, which is the half that matters: widening what counts as COVERAGE is the direction that
+  # can produce a FALSE PASS, so a line that merely MENTIONS a selftest in prose must NOT count. A comment
+  # claiming a selftest exists is precisely the sentence this tool was built to distrust.
+  printf 'int m(){return 4;}\n// this is PROVEN safe\n// see --selftest for the calibration\n' > "$tmp/e.c"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm fourteen
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ]; then echo "  ✘ a COMMENT mentioning --selftest was credited as coverage (rc=$rc) — the R293 bound overshot"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and a comment that merely MENTIONS --selftest is NOT coverage — the bound holds"; fi
+
+  if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 14 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
   else echo; echo "assert-audit selftest: FAILED — $fails case(s)"; return 1; fi
 }
 
@@ -323,6 +350,22 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   # ADDED lines only, and never the diff's own +++ header.
   hits="$(printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' | grep -iE "$ASSERT_RE" || true)"
   testfiles="$(git -C "$d" diff --name-only "$range" 2>/dev/null | grep -E "$TEST_RE" || true)"
+
+  # SOUNDNESS R293 — A SELFTEST LANDING IN THE RANGE IS COVERAGE, WHATEVER ITS PATH. `TEST_RE` is a PATH
+  # heuristic, and this family's newer instruments carry their calibration INSIDE the tool (`--selftest`)
+  # plus a workflow step that runs it — so a commit adding `bin/corpus-ab.py` with the whole calibration
+  # in it was failed for having no test, which is the identical shape the 2026-09-02 `eval/` widening was
+  # written for, one spelling over.
+  #
+  # THIS WIDENS WHAT COUNTS AS COVERAGE, WHICH IS THE DIRECTION THAT CAN PRODUCE A FALSE PASS, so it is
+  # bounded on purpose: the evidence is an ADDED line that DEFINES or INVOKES a selftest, read from the
+  # DIFF rather than from a filename — strictly better evidence than a path — and a line that merely
+  # MENTIONS `--selftest` in prose does not count. A comment claiming a selftest exists is exactly the
+  # sentence this tool exists to distrust.
+  selftests="$(printf '%s\n' "$diff" | grep -E '^\+' | grep -vE '^\+\+\+' \
+    | grep -vE '^\+[[:space:]]*(#|//|\*|--[^-])' \
+    | grep -E -- '(--selftest|def[[:space:]]+selftest|selftest\(\)[[:space:]]*\{|selftest[[:space:]]*=)' \
+    || true)"
 
   # The STRUCTURAL arm (R339). A changed effect RULE is an assertion whether or not the diff says so.
   # Non-comment, non-blank ADDED lines only, inside a rule file: documenting a rule claims nothing new.
@@ -361,7 +404,7 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
           print l
         }' || true)"
 
-  if [ -z "$hits" ] && [ -n "$rulelines" ] && [ -z "$testfiles" ]; then
+  if [ -z "$hits" ] && [ -n "$rulelines" ] && [ -z "$testfiles" ] && [ -z "$selftests" ]; then
     n="$(printf '%s\n' "$rulelines" | grep -c .)"
     echo "assert-audit: $n added line(s) change an effect-classification RULE, and NO test file changed"
     echo "  anywhere in this range. A changed rule IS an assertion about what candor believes an effect"
@@ -390,9 +433,15 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   echo "  diff to review, because the logic gets read and the assertion gets believed:"
   printf '%s\n' "$hits" | sed 's/^+/    /' | cut -c1-160
   echo
-  if [ -n "$testfiles" ]; then
-    echo "  Test files also changed in this range:"
-    printf '%s\n' "$testfiles" | sed 's/^/    /'
+  if [ -n "$testfiles" ] || [ -n "$selftests" ]; then
+    if [ -n "$testfiles" ]; then
+      echo "  Test files also changed in this range:"
+      printf '%s\n' "$testfiles" | sed 's/^/    /'
+    fi
+    if [ -n "$selftests" ]; then
+      echo "  A SELFTEST lands in this range (R293 — coverage read from the diff, not from a path):"
+      printf '%s\n' "$selftests" | sed 's/^+/    /' | cut -c1-140 | head -8
+    fi
     echo
     echo "assert-audit: OK — assertions are present AND this range changes tests. THIS TOOL CANNOT TELL"
     echo "  you whether those tests actually exercise those assertions; that judgement is still yours."

@@ -496,6 +496,27 @@ stated as part of the ruling and are the reason it is not arithmetic:
 Had this existed this morning, R533 would have asked about ONE engine instead of four: java 0.87%,
 swift 0 and ts 0 are all below the lower band; only rust's measured 1.71% is in it.
 
+**AND THE RULING PRICES ADDING `Unknown`, NOT REMOVING IT — I APPLIED IT THE WRONG WAY TWICE.** Measured
+2026-09-28, SOUNDNESS R765. Every calibration point above is a disclosure-ADDING change: R452 shipped at
+1.44%, the in-crate hedge declined at 2.60%, R190(c) declined at 7.02%. A change that REMOVES an `Unknown` —
+resolving a hedge, publishing a pure-only union entry, killing an over-charge — turns a red `deny E Unknown`
+GREEN, and asking "what percentage does it cost?" is the wrong question about it. Producer-side row growth is
+wire bytes, not gate flips, and the ruling's own load-bearing clause is that gate flips are the user-visible
+cost.
+
+**The bar for the removing direction already exists and is not a percentage:**
+`feedback-fabrication-fixes-cause-misses` — 4 defects in 5 fabrication-fixes, 2 of them cardinal sins,
+because killing an over-charge is exactly where silent under-reports get introduced. Its bar is **every
+REMOVED row traced to a proven-pure body, and the second fixture written FIRST.** The live example is R764:
+publishing pure-only union entries makes a `crossDeps` lookup HIT, which short-circuits before the owner's
+ledger and **deletes an unchained owner's `invisible` disclosure** — a silence a percentage would never have
+surfaced, and one `SPEC.md:4385` already forbids in its own words (*a mechanism that makes reports better
+must not make silence cheaper*).
+
+So: **say which direction the change runs before quoting a band at it.** Adding disclosure is priced by reach
+against the bands. Removing it is priced by accounting for every removal, plus a fixture for the disclosure
+the removal might delete.
+
 ## The standing checks
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway

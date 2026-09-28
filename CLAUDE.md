@@ -59,6 +59,30 @@ brief the defect, the reproduction and the row ID; brief the CONSTRAINTS (what m
 instrument to use); do not brief the diff. A lane that has to design the fix reads the code first, which is
 the step the coordinator skipped.
 
+**AND DO NOT BRIEF THE NUMBER EITHER — BRIEF THE PROPERTY AND LET THE LANE DERIVE THE THRESHOLD. THREE
+WRONG NUMBERS IN ONE SESSION, 2026-09-28.** The remedy rule above generalises: anything quantitative the
+coordinator supplies from outside the code is a claim about code it has not read, and an acceptance
+THRESHOLD is the most dangerous kind, because a lane can hit it and still be wrong — or miss it and be
+right.
+
+- **"0 unjudged"** as R761's acceptance test. The true answer was **20 to 5**, and the five that remain are
+  genuine refusals (two `#![cfg(windows)]` crates with zero analysed units on macOS, two `macro_rules!`-only
+  crates with no function bodies). **A target of 0 was reachable only by BREAKING R242's guard** — the
+  threshold pointed at the defect.
+- **"`deny Fs <enclosing>` still exits 0"** as R756's half-fix discriminator. It does fire, via §3.3 prefix
+  matching on `<enclosing>::{closure#0}`. The real discriminator was one hop further out, at the CALLER.
+- **"146 sites across 60 crates"** as R189's reach, which ordered the whole drop-glue queue. The probe
+  counted the wrong conjunction; measured with the fix in hand the payoff-bearing population was **zero**
+  (R766).
+
+Each was stated as a measurement and each was a guess with a number attached, which is worse than a guess,
+because it reads as already-verified and nobody re-derives it. So: brief **what must be true** — *the
+residue must be explained, not merely small*; *the gate must flip on code that really performs the effect,
+and say which scope you checked*; *the reach probe must count the conjunction the FIX needs* — and require
+the lane to report the number it measured **and whether the criterion was the right one**. All three lanes
+this session volunteered the correction when asked that way; none would have if handed the figure as a bar
+to clear.
+
 **THE COROLLARY: PREFER A RESOLUTION TO A HEDGE, AND SAY WHICH ONE YOU ARE ASKING FOR.** A hedge adds
 `Unknown` and discloses that the engine does not know; a resolution restores the real effect and CLOSES the
 gate. They are priced by opposite rules — the disclosure-cost bands below apply to a hedge and are

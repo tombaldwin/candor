@@ -50,7 +50,7 @@ fi
 
 DEST="$HOME_DIR/$ARM"
 case "$MODE" in --check|--measure) ;; *) mkdir -p "$DEST" ;; esac
-want=0; have=0; got=0; miss=0; bad=0
+want=0; have=0; got=0; miss=0; bad=0; deps_have=0; foreign_total=0
 
 if [ "$ARM" = "java" ]; then
   M=https://repo1.maven.org/maven2
@@ -104,7 +104,10 @@ elif [ "$ARM" = "ts" ]; then
   # 16 jars with a correct sha1 and no `.class` files.  The rule is candor-ts's OWN (`scan.mjs:1496`):
   # `/\.[mc]?tsx?$/` and NOT `.d.ts`.  It is a copy, and the copy is PINNED rather than trusted:
   # `ci/ts-fitness-pin.sh` fails if that predicate changes in candor-ts without this one changing too.
-  while IFS=$'\t' read -r repo tag sha target want_src want_an want_rows; do
+  # Columns 8 and 9 are the DEPENDENCY state and the foreign-arm reach the engine measured in it
+  # (R767). They are read here rather than ignored because a roster that cannot say which of its
+  # entries can resolve a dependency-owned abstraction lets a foreign-arm ZERO be quoted as safety.
+  while IFS=$'\t' read -r repo tag sha target want_src want_an want_rows want_deps want_foreign; do
     case "$repo" in ''|\#*) continue ;; esac
     want=$((want + 1))
     name="${repo##*/}"
@@ -127,6 +130,23 @@ elif [ "$ARM" = "ts" ]; then
       if [ "$n" != "$want_src" ]; then
         echo "  NOTE $repo — $n analysable .ts files, roster recorded $want_src at this sha"
       fi
+      # ⟨SOUNDNESS R767⟩ THE ROSTER MAY NOT CLAIM A RESOLVABILITY THE CORPUS DOES NOT HAVE. With no
+      # `node_modules` on disk the engine minted ZERO foreign dispatch keys across all 28 entries —
+      # not because the ecosystem lacks the shape, but because a dependency-owned abstraction needs
+      # the dependency's typings present. An entry whose column 8 names an install and whose tree has
+      # none is the R242 hollow-corpus shape one level out: it still counts toward the roster, and
+      # every foreign-arm figure over it reads as a safely-inert zero. So it is BAD, not a NOTE.
+      tdeps="$d"; [ "$target" != "." ] && [ -d "$d/$target/node_modules" ] && tdeps="$d/$target"
+      if [ "${want_deps:--}" != "-" ] && [ ! -d "$tdeps/node_modules" ]; then
+        echo "  BAD  $repo — roster records deps installed ($want_deps) and there is no node_modules."
+        echo "       A foreign-arm reach taken here is UNMEASURED, not zero (R767). Install with"
+        echo "       \`$want_deps\` --ignore-scripts, or set columns 8 and 9 back to '-'."
+        bad=$((bad + 1)); continue
+      fi
+      if [ "${want_deps:--}" = "-" ] && [ -d "$tdeps/node_modules" ]; then
+        echo "  NOTE $repo — node_modules present but the roster records none; columns 6/7 were"
+        echo "       recorded in the OTHER dependency state and will not match (R767)."
+      fi
       # --measure: ASK THE ENGINE. This is the only check that catches the R744 class — a repository
       # whose on-disk `.ts` count is healthy while candor-ts analyses almost nothing, because file
       # selection runs through the TypeScript project rather than the filesystem. Three of the first
@@ -140,9 +160,25 @@ elif [ "$ARM" = "ts" ]; then
         if [ ! -f "$DEST/.m-$name.json" ]; then
           echo "  BAD  $repo — candor-ts wrote no report for target '$target'"; bad=$((bad + 1)); continue
         fi
-        measured="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print((d.get('analyzed') or {}).get('count') or 0, len(d.get('functions') or []))" "$DEST/.m-$name.json" 2>/dev/null)"
-        got_an="${measured%% *}"; got_rows="${measured##* }"
-        rm -f "$DEST/.m-$name.json" "$DEST/.m-$name.callgraph.json"
+        # Column 9 is re-derived HERE rather than trusted: the DISTINCT `dispatchesOn` keys whose
+        # namespace is neither the scanned package nor a node platform module — `isPublishableForeignIface`'s
+        # own boundary, spelled against the report so this script needs nothing from the engine's internals.
+        measured="$(python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+own = d.get('package')
+NODE = {'events','stream','fs','path','http','https','util','buffer','crypto','net','tls','zlib','url','os',
+        'child_process','process','timers','worker_threads','assert','dns','readline','tty','vm'}
+keys = {k for f in (d.get('functions') or []) for k in (f.get('dispatchesOn') or [])
+        if '#' in k and k.split('#')[0] not in NODE and k.split('#')[0] != own and not k.startswith('<')}
+print((d.get('analyzed') or {}).get('count') or 0, len(d.get('functions') or []), len(keys))
+" "$DEST/.m-$name.json" 2>/dev/null)"
+        set -- $measured
+        got_an="${1:-0}"; got_rows="${2:-0}"; got_foreign="${3:-0}"
+        # EVERY sidecar, not the two that were named: the engine writes `.hierarchy.json` and
+        # `.locs.json` beside the report, and naming files individually left 56 of them in the corpus
+        # home across one run of this arm — litter from the check that exists to catch litter.
+        rm -f "$DEST/.m-$name".*
         # A COLLAPSE, not a wobble. The roster's number is the denominator every percentage divides by,
         # so the floor is generous on drift and unforgiving on a collapse to nothing.
         if [ "${got_an:-0}" -lt $(( want_an / 2 )) ] || [ "${got_an:-0}" -lt 20 ]; then
@@ -157,7 +193,20 @@ elif [ "$ARM" = "ts" ]; then
         # denominator hold while the thing being compared moved underneath it.
         [ "${got_rows:-0}" != "$want_rows" ] && \
           echo "  NOTE $repo — ${got_rows:-0} rows, roster records $want_rows"
+        # A COLLAPSE of the foreign arm, judged the same way as a collapsed analysed count and for the
+        # same reason: zero is what an UNREACHED branch and a SAFE one both print. Only a roster entry
+        # that recorded a non-zero reach can fail this — which is the point of recording it.
+        if [ "${want_foreign:--}" != "-" ] && [ "${want_foreign:-0}" -gt 0 ] && [ "${got_foreign:-0}" -eq 0 ]; then
+          echo "  BAD  $repo — 0 foreign dispatch keys, roster records $want_foreign. The foreign arm"
+          echo "       collapsed: the dependency typings are gone or no longer resolve, and every"
+          echo "       ⟨0.39⟩ foreign figure over this entry is now UNMEASURED rather than zero (R767)."
+          bad=$((bad + 1)); continue
+        fi
+        [ "${want_foreign:--}" != "-" ] && [ "${got_foreign:-0}" != "$want_foreign" ] && \
+          echo "  NOTE $repo — ${got_foreign:-0} foreign dispatch keys, roster records $want_foreign"
+        foreign_total=$((foreign_total + ${got_foreign:-0}))
       fi
+      [ "${want_deps:--}" != "-" ] && deps_have=$((deps_have + 1))
       have=$((have + 1)); continue
     fi
     case "$MODE" in --check|--measure) echo "  MISS $repo@$tag"; miss=$((miss + 1)); continue ;; esac
@@ -209,6 +258,14 @@ fi
 
 echo
 echo "corpus-census $ARM: roster $want, already present $have, acquired $got, missing $miss, bad $bad"
+# PRINTED EVERY RUN, NOT ONLY WHEN IT IS BAD: R767 was not an entry going wrong, it was 28 entries
+# being silently unable to answer a question the register was quoting them for. A reader who cannot
+# see how much of the roster can resolve a dependency will quote its zeros.
+if [ "$ARM" = "ts" ]; then
+  echo "  dependency-resolvable: $deps_have of $want entries (column 8).  A foreign-arm figure over"
+  echo "  an entry whose column 8 is '-' is UNMEASURED, not zero — SOUNDNESS R767."
+  [ "$MODE" = "--measure" ] && echo "  foreign dispatch keys measured this run: $foreign_total"
+fi
 echo "  corpus at $DEST"
 # A CENSUS OVER A PARTIAL CORPUS IS NOT THE CENSUS THE ROSTER NAMES, and the difference is invisible
 # in the output: a smaller denominator moves every percentage in the flattering direction.

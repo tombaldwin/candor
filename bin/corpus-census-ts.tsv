@@ -1,5 +1,15 @@
 # corpus-census-ts.tsv — the PINNED TypeScript census roster.  SOUNDNESS R663 / R744.
 #
+# ⚠ THIS ROSTER CANNOT EXERCISE ⟨0.39⟩'s FOREIGN ARM AT ALL — SOUNDNESS R767, measured 2026-09-28.
+# NONE of the 28 entries has `node_modules` installed (`ls -d ~/.candor/census/ts/*/node_modules`
+# matches nothing), and a dependency-OWNED abstraction needs the dep's typings on disk with
+# `projectFiles.has()` FALSE.  So a reach or A/B figure of ~0 for anything on the foreign path —
+# R512, R524's foreign half, R521, R613 — is a statement about THIS ROSTER, not about the
+# ecosystem, and must be reported as UNMEASURED rather than as safe.  The shape is not exotic:
+# 175 local `interface X extends <imported>` across 15 entries, 1,229 `interface X extends`
+# declarations across 22.  Installing one entry (unstorage, 721 packages) still measured zero.
+# This is the hollow-corpus hazard with a different cause and the same flattering output.
+#
 #	<owner/repo>	<tag>	<commit sha>	<target subpath>	<.ts files on disk>	<analysed units>	<rows>
 #
 # GIT-PINNED, AND THAT IS A MEASUREMENT RATHER THAN A PREFERENCE.  The obvious shape was an npm

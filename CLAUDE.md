@@ -537,9 +537,21 @@ ledger and **deletes an unchained owner's `invisible` disclosure** — a silence
 surfaced, and one `SPEC.md:4385` already forbids in its own words (*a mechanism that makes reports better
 must not make silence cheaper*).
 
-So: **say which direction the change runs before quoting a band at it.** Adding disclosure is priced by reach
-against the bands. Removing it is priced by accounting for every removal, plus a fixture for the disclosure
-the removal might delete.
+**AND THERE IS A THIRD DIRECTION, measured 2026-09-28 (SOUNDNESS R798) by a lane that said so rather than
+reporting a number that satisfied the band: a change that adds a CONCRETE EFFECT or an `incomplete`
+marker, not an `Unknown`.** The swift masking derivation added ZERO `Unknown` rows — bucket 2 was 0 —
+and added 2 concrete-effect rows plus 2 `incomplete` markers out of 28,804, i.e. **0.0069%, three orders
+of magnitude below the lower band. That makes the band NON-DISCRIMINATING rather than satisfied**, and
+`incomplete` is a STRONGER signal than `Unknown` for an `allow`-style gate, so the proxy is not
+measuring that change's cost at all. Adding a concrete effect is a RESOLUTION — the engine now knows
+something it did not — and the right test is **is every new charge genuine**, answered there by
+ground-truthing all 7 changed rows from source and auditing 2 of 2 new markers as real unresolved
+locators with 0 over-marks.
+
+So: **say which of the THREE directions the change runs in before quoting any band at it.** Adding
+`Unknown` is priced by reach against the bands. Removing it is priced by accounting for every removal,
+plus a fixture for the disclosure the removal might delete. Adding a concrete effect or an `incomplete`
+is priced by auditing every new charge.
 
 ## The standing checks
 

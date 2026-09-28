@@ -1,16 +1,62 @@
-# corpus-census-ts.tsv — the PINNED TypeScript census roster.  SOUNDNESS R663 / R744.
+# corpus-census-ts.tsv — the PINNED TypeScript census roster.  SOUNDNESS R663 / R744 / R767.
 #
-# ⚠ THIS ROSTER CANNOT EXERCISE ⟨0.39⟩'s FOREIGN ARM AT ALL — SOUNDNESS R767, measured 2026-09-28.
-# NONE of the 28 entries has `node_modules` installed (`ls -d ~/.candor/census/ts/*/node_modules`
-# matches nothing), and a dependency-OWNED abstraction needs the dep's typings on disk with
-# `projectFiles.has()` FALSE.  So a reach or A/B figure of ~0 for anything on the foreign path —
-# R512, R524's foreign half, R521, R613 — is a statement about THIS ROSTER, not about the
-# ecosystem, and must be reported as UNMEASURED rather than as safe.  The shape is not exotic:
-# 175 local `interface X extends <imported>` across 15 entries, 1,229 `interface X extends`
-# declarations across 22.  Installing one entry (unstorage, 721 packages) still measured zero.
-# This is the hollow-corpus hazard with a different cause and the same flattering output.
+# THE FOREIGN ARM IS NOW MEASURABLE ON 8 OF THE 28 ENTRIES, AND WAS UNMEASURABLE ON ALL 28 BEFORE —
+# SOUNDNESS R767, closed by installing dependencies rather than by any scan change.  With NO
+# `node_modules` anywhere in the roster the engine minted, over all 28 entries, **0 dispatch keys
+# naming a dependency-owned abstraction, 0 R521 hand-off registrations and 0 supertypes resolved
+# into a dependency** — against 34,273 LOCAL dispatch charges in the same runs.  The foreign arm was not
+# rare here; it was absent by construction, and a reach of 0 over this roster was a statement about
+# the roster.  With dependencies installed on 8 entries (13,826 of the roster's 39,396 analysed
+# units) the same engine mints **1,629 foreign dispatch charges over 121 distinct dependency-owned
+# keys, on 6 of those 8 entries**, plus 10 R521 hand-off registrations on 2 of them.
 #
-#	<owner/repo>	<tag>	<commit sha>	<target subpath>	<.ts files on disk>	<analysed units>	<rows>
+# SO THE HONEST HEADLINE IS NOT "THE FOREIGN ARM IS RARE".  It is: the foreign arm is ORDINARY in
+# real TypeScript and was invisible to this roster.  Any R512 / R524-foreign / R521 / R613 figure
+# taken over an entry whose column 8 reads `-` is still UNMEASURED, not safe.
+#
+# COLUMN 8 IS THE DEPENDENCY STATE AND COLUMN 9 IS THE FOREIGN-ARM DENOMINATOR — the same division
+# of labour as columns 5 and 6, one level out.  Column 8 says HOW the deps were installed (what it
+# would take to reproduce); column 9 is what the ENGINE actually resolved, and only column 9 licenses
+# a foreign-arm number.  The two come apart, measured on this very roster: **rxjs has 632 packages
+# installed and a foreign reach of 0**, because its 27 `class X implements <@angular/core iface>`
+# sites live in `docs_app/`, a sub-project with its OWN package.json that a root install never
+# touches.  `ioredis` is the same shape for a different reason — 414 packages, every foreign
+# supertype resolved, and not one dispatch through a dependency-owned interface.  A test for
+# `node_modules/` on disk would have called both dependency-resolvable and been wrong.
+#
+# COLUMNS 6 AND 7 ARE RECORDED IN THE DEPENDENCY STATE OF COLUMN 8, AND THEY MOVE WITH IT.  Measured
+# on the 8: rows 2091 -> 1789 (nest, -14%), 54 -> 81 (vscode-languageserver-node, +50%), 209 -> 199
+# (apollo-server), and nest's ANALYSED count moved 5427 -> 5448 as well.  Both directions occur, so
+# an entry re-measured in the other dependency state will NOTE against this file rather than agree.
+# That is why column 8 is beside them and not in a separate note.
+#
+# WHAT THE INSTALLS COST AND WHAT THEY REFUSED, because "install the deps" is not one operation:
+#   npm-ci       rxjs, apollo-server, vscode-languageserver-node, node-slack-sdk, ioredis — the
+#                lockfile installs exactly and is not rewritten, so the pinned tree stays clean and
+#                the entry REPRODUCES.
+#   npm-install  socket.io — `npm ci` REFUSED at the pinned sha (`Missing: puppeteer-core@24.43.1
+#                from lock file`): the committed lockfile is out of sync with the committed
+#                package.json.  A fresh resolve installed it and rewrote package-lock.json, so this
+#                entry does not reproduce byte-for-byte.
+#   npm-legacy   nest — `npm install` REFUSED with ERESOLVE (@apollo/server 5.5.1 against the root's
+#                graphql 17.0.2 through @nestjs/graphql); installed with `--legacy-peer-deps`, which
+#                is a different resolution from the one the repo's CI uses.
+#   pnpm-frozen  typeorm — npm refuses this repo OUTRIGHT: `devEngines.packageManager` names pnpm
+#                with `onFail: error`, so `npm ci` and `npm install` both exit EBADDEVENGINES.
+#                Installed with `pnpm install --ignore-scripts --frozen-lockfile`.
+# Every install ran with `--ignore-scripts`: these are third-party packages acquired to be ANALYSED,
+# never to be run.  The pinned sha moved on none of them (`rev-parse HEAD` re-checked after each).
+#
+# AND A PNPM-INSTALLED TREE MINTS ITS FOREIGN KEYS UNDER THE PACKAGE NAME `.pnpm` — which is why
+# typeorm's 10 keys are recorded and simultaneously not usable.  candor-ts's `declModule` takes the
+# FIRST `node_modules/<seg>/` on a declaration's path, and pnpm's real path is
+# `node_modules/.pnpm/yargs@17.7.2/node_modules/yargs/…`, so every dependency in the tree collapses
+# into one namespace.  Held constant against npm on identical sources and identical versions:
+# `yargs#Argv.option` under npm, `.pnpm#Argv.option` under pnpm.  Filed for candor-ts, not fixable
+# here.  12 of the 28 entries carry a pnpm lockfile, so this is the majority installer in the
+# roster, not a corner.
+#
+#	<owner/repo>	<tag>	<commit sha>	<target subpath>	<.ts files on disk>	<analysed units>	<rows>	<deps>	<foreign keys>
 #
 # GIT-PINNED, AND THAT IS A MEASUREMENT RATHER THAN A PREFERENCE.  The obvious shape was an npm
 # roster matching java's Maven arm.  Measured 2026-09-27 over five widely-depended-upon packages at
@@ -43,32 +89,64 @@
 #
 # Do not add a line without running the engine over it.  `bash bin/corpus-census.sh ts --check`
 # verifies sha and structural fitness; `--measure` re-runs the engine and refuses when an entry's
-# analysed count collapses, which is the only check that would have caught the three above.
-ReactiveX/rxjs	7.8.2	e5351d02e225e275ac0e497c7b66eaa5f0c88791	.	757	1603	1063
-apollographql/apollo-server	@apollo/server@5.5.1	4f154060bbe57d3bd612cb09ab63467f319d4ba5	packages/server	110	377	209
-colinhacks/zod	v4.6.5	59bbc03e10c636b9eb3c393dfeb552819774ec21	.	515	2356	1441
-drizzle-team/drizzle-orm	drizzle-kit@0.31.11	15454dbe49d827c6081f3d0231e2e7985e517295	.	940	5316	3111
-honojs/hono	v4.13.9	7c3b0df96dbf3e767968ff5afe4c0d999257b8ee	.	388	963	412
-immerjs/immer	v11.1.18	b00474e3755954f6b27a392dcb4bce97254c100c	.	28	53	15
-isaacs/node-glob	v13.0.6	e80cb38ae60d6cbff9e75f39032a994858994d35	.	46	96	60
-kelektiv/node-uuid	v14.0.2	fd59f0277549d22cc7ec00a7b3b5c9bccb4d3c1d	.	37	66	12
-microsoft/vscode-languageserver-node	release/client/10.1.2	4cd3a5a875858ad09810ef7d558561f68103fd0d	.	185	106	54
-nestjs/nest	v12.1.0	6739656fa3e8c98bd55883f0363a2254e6412232	.	1992	5427	2091
-pnpm/pnpm	v12.6.0	a959dceda501e552dbb03bbab19ab5e060718fde	.	1648	4984	3133
-redis/ioredis	v6.0.0	8ed2946504a36ae9b1e186b9dccc56afcd046d78	.	394	503	297
-rollup/rollup	v4.63.5	3722484c33c58b3ab0cbbfcca09b8f267d420329	.	341	2114	1320
-sequelize/sequelize	v6.37.8	cb7f99ad05de56137672ab95586359ff6ceba004	.	72	402	291
-sindresorhus/got	v16.0.0	64f21e2a4797b8c56493143e416508893983063f	.	77	495	244
-slackapi/node-slack-sdk	@slack/socket-mode@3.0.1	e0fa7455eedf8db98990c98ea6aa151a8b9f0597	.	594	761	190
-socketio/socket.io	socket.io@4.8.4	c239eb5d8945cee40a696a26e4aca00016f9565f	.	179	1007	661
-statelyai/xstate	xstate@5.33.2	fbee62e7c1586315ed478c2fedf530d7e0ff5a3e	.	406	856	555
-steveukx/git-js	@simple-git/argv-parser@2.0.1	3ef5293ca8a57a02e0bf09aa49e486042db168e4	.	289	648	318
-trpc/trpc	v11.19.0	fcc6bca0ece2762e393e6d8c8527bbaa17a878d2	.	953	1553	1029
-typeorm/typeorm	1.1.1	3ecf2c8dfccd02dd77f593fd7aa478c25ea9d428	.	3592	4021	2609
-typestack/class-validator	v0.15.1	2e1a5c27dbd65b80e27fe96b49bd6e6641fa3603	.	176	520	407
-unjs/citty	v0.2.2	9cb0edcc55c133ea04d3cbb350284a9a3548946e	.	23	53	23
-unjs/consola	v3.4.2	2cfcfc08275d7d2777c11310c9c2deab2a872c41	.	43	98	43
-unjs/ofetch	v1.5.1	d61b2fcf7755ece3fa89b2eaa0415d1d1638216e	.	11	25	6
-unjs/unstorage	v1.17.5	e2febded37759ec796e7d0233d4eb68c92423cc2	.	84	461	385
-vitest-dev/vitest	v5.0.2	428e2e5043c64635b6b157358bde2fdeaa7b6b3a	.	2036	4262	2899
-yargs/yargs	v18.2.0	e49b60aa1ab2bfe061a9ecd5d61f4c5130fe3e14	.	25	249	129
+# analysed count collapses, which is the only check that would have caught the three above.#
+# COLUMN 8 / COLUMN 9, AND THE CHECKS THEY BUY.  `corpus-census.sh ts --check` reads column 8 against
+# the disk: an entry that CLAIMS a dependency state and has no `node_modules` is BAD, because that is
+# exactly the R767 shape — a roster asserting a resolvability the corpus does not have, whose
+# foreign-arm figures then read as safely-inert zeros.  `--measure` re-derives column 9 from the
+# report and treats a COLLAPSE to 0 as BAD for the same reason it treats a collapsed analysed count
+# as BAD: the entry still counts toward the roster while contributing nothing, and the percentage
+# moves the flattering way in silence.
+#
+# HOW COLUMN 9 IS DERIVED, so it can be recomputed rather than trusted: the DISTINCT `dispatchesOn`
+# keys in the report whose namespace (the part before the `#`) is neither the scanned package itself
+# nor a node platform module — the same boundary `isPublishableForeignIface` draws in candor-ts.
+# Distinct keys rather than charges: the key is the join surface ⟨0.39⟩ obligation 3 names, and the
+# charge count varies with call sites while the surface does not.
+#
+# WHAT COLUMN 9 DELIBERATELY DOES NOT COUNT, because the detector for it could not be calibrated:
+# the UNION rows a local implementor publishes.  Measured on three probes (a @types-typed dependency
+# and an own-typings one, by the direct `implements` path and by R521's hand-off, the reach probe
+# confirming `R521-REACH nominal unstorage#Driver` fired), those rows are published under a BARE
+# `Iface.member` key — `Driver.hasItem`, not `unstorage#Driver.hasItem` — which is byte-identical to
+# the key a LOCAL interface of the same name gets, and the roster's own entries hold 744 such rows
+# with no dependencies installed at all.  So union rows cannot be split into local and foreign by key
+# shape, and a count of them would have been a number that could not fail.  The consumer-side keys in
+# column 9 CAN be split, which is why they are what the column records.
+#
+# NOT INSTALLED, AND WHY IT IS NOT AN OVERSIGHT: the other 20 entries stay at `-` deliberately.  The
+# 8 were chosen because their source dispatches through abstractions a DEPENDENCY owns — measured
+# before installing, by resolving each `interface X extends <imported>` / `class X implements
+# <imported>` back to the import that introduced it and dropping self-references, tsconfig path
+# aliases (drizzle's 124 `~/…` are all local) and workspace siblings that a `paths` mapping makes
+# local anyway (nest maps `@nestjs/common` -> `./packages/common`, so its 86 `implements CanActivate`
+# sites are LOCAL and its real foreign reach is fastify and rxjs).  Cost, for whoever extends this:
+# ~3.0 GB of disk (df around each install) and between 333 and 1,590 packages per entry.
+ReactiveX/rxjs	7.8.2	e5351d02e225e275ac0e497c7b66eaa5f0c88791	.	757	1603	1061	npm-ci	0
+apollographql/apollo-server	@apollo/server@5.5.1	4f154060bbe57d3bd612cb09ab63467f319d4ba5	packages/server	110	377	199	npm-ci	12
+colinhacks/zod	v4.6.5	59bbc03e10c636b9eb3c393dfeb552819774ec21	.	515	2356	1441	-	-
+drizzle-team/drizzle-orm	drizzle-kit@0.31.11	15454dbe49d827c6081f3d0231e2e7985e517295	.	940	5316	3111	-	-
+honojs/hono	v4.13.9	7c3b0df96dbf3e767968ff5afe4c0d999257b8ee	.	388	963	412	-	-
+immerjs/immer	v11.1.18	b00474e3755954f6b27a392dcb4bce97254c100c	.	28	53	15	-	-
+isaacs/node-glob	v13.0.6	e80cb38ae60d6cbff9e75f39032a994858994d35	.	46	96	60	-	-
+kelektiv/node-uuid	v14.0.2	fd59f0277549d22cc7ec00a7b3b5c9bccb4d3c1d	.	37	66	12	-	-
+microsoft/vscode-languageserver-node	release/client/10.1.2	4cd3a5a875858ad09810ef7d558561f68103fd0d	.	185	106	81	npm-ci	28
+nestjs/nest	v12.1.0	6739656fa3e8c98bd55883f0363a2254e6412232	.	1992	5448	1789	npm-legacy	26
+pnpm/pnpm	v12.6.0	a959dceda501e552dbb03bbab19ab5e060718fde	.	1648	4984	3133	-	-
+redis/ioredis	v6.0.0	8ed2946504a36ae9b1e186b9dccc56afcd046d78	.	394	503	293	npm-ci	0
+rollup/rollup	v4.63.5	3722484c33c58b3ab0cbbfcca09b8f267d420329	.	341	2114	1320	-	-
+sequelize/sequelize	v6.37.8	cb7f99ad05de56137672ab95586359ff6ceba004	.	72	402	291	-	-
+sindresorhus/got	v16.0.0	64f21e2a4797b8c56493143e416508893983063f	.	77	495	244	-	-
+slackapi/node-slack-sdk	@slack/socket-mode@3.0.1	e0fa7455eedf8db98990c98ea6aa151a8b9f0597	.	594	761	191	npm-ci	28
+socketio/socket.io	socket.io@4.8.4	c239eb5d8945cee40a696a26e4aca00016f9565f	.	179	1007	668	npm-install	17
+statelyai/xstate	xstate@5.33.2	fbee62e7c1586315ed478c2fedf530d7e0ff5a3e	.	406	856	555	-	-
+steveukx/git-js	@simple-git/argv-parser@2.0.1	3ef5293ca8a57a02e0bf09aa49e486042db168e4	.	289	648	318	-	-
+trpc/trpc	v11.19.0	fcc6bca0ece2762e393e6d8c8527bbaa17a878d2	.	953	1553	1029	-	-
+typeorm/typeorm	1.1.1	3ecf2c8dfccd02dd77f593fd7aa478c25ea9d428	.	3592	4021	2612	pnpm-frozen	10
+typestack/class-validator	v0.15.1	2e1a5c27dbd65b80e27fe96b49bd6e6641fa3603	.	176	520	407	-	-
+unjs/citty	v0.2.2	9cb0edcc55c133ea04d3cbb350284a9a3548946e	.	23	53	23	-	-
+unjs/consola	v3.4.2	2cfcfc08275d7d2777c11310c9c2deab2a872c41	.	43	98	43	-	-
+unjs/ofetch	v1.5.1	d61b2fcf7755ece3fa89b2eaa0415d1d1638216e	.	11	25	6	-	-
+unjs/unstorage	v1.17.5	e2febded37759ec796e7d0233d4eb68c92423cc2	.	84	461	385	-	-
+vitest-dev/vitest	v5.0.2	428e2e5043c64635b6b157358bde2fdeaa7b6b3a	.	2036	4262	2899	-	-
+yargs/yargs	v18.2.0	e49b60aa1ab2bfe061a9ecd5d61f4c5130fe3e14	.	25	249	129	-	-

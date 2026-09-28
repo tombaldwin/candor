@@ -52,6 +52,35 @@
 # more coverage than the local gate list gives — it is the same check, not a different one.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+bin_warn_state() {  # <dirty> <staged> <last-commit> <upstream-name> <ahead-count>  -> WARN|QUIET
+  [ "$1" = "1" ] || [ "$2" = "1" ] && { echo WARN; return; }
+  [ "$3" = "1" ] || { echo QUIET; return; }
+  [ -n "$4" ] || { echo WARN; return; }            # no upstream — cannot tell, so warn
+  case "$5" in ''|*[!0-9]*) echo WARN ;; 0) echo QUIET ;; *) echo WARN ;; esac
+}
+
+if [ "${1:-}" = "--selftest" ]; then
+  bad=0
+  chk() {  # <want> <label> <args...>
+    want="$1"; label="$2"; shift 2
+    got="$(bin_warn_state "$@")"
+    if [ "$got" = "$want" ]; then echo "  ok   $label -> $got"
+    else echo "  FAIL $label -> $got, want $want"; bad=$((bad + 1)); fi
+  }
+  chk WARN  "an uncommitted bin/ edit warns"                 1 0 0 origin/main 0
+  chk WARN  "a STAGED bin/ edit warns"                       0 1 0 origin/main 0
+  chk QUIET "no bin/ anywhere is quiet"                      0 0 0 origin/main 0
+  chk WARN  "an UNPUSHED bin/ commit warns"                  0 0 1 origin/main 2
+  chk QUIET "a PUSHED bin/ commit is quiet (the wolf case)"  0 0 1 origin/main 0
+  chk WARN  "NO UPSTREAM warns — R544, cannot tell"          0 0 1 ""          0
+  chk WARN  "an UNREADABLE ahead-count warns, not silences"  0 0 1 origin/main ""
+  chk WARN  "a non-numeric ahead-count warns"                0 0 1 origin/main "fatal:"
+  chk WARN  "dirty beats a pushed last commit"               1 0 1 origin/main 0
+  echo "fast-gates --selftest: $([ "$bad" -eq 0 ] && echo OK || echo "FAILED ($bad)")"
+  exit "$([ "$bad" -eq 0 ] && echo 0 || echo 1)"
+fi
+
 cd "$HERE" || exit 2
 
 # THE DISK CHECK IS FIRST, for the reason in the header: this file exists BECAUSE a gate filled the
@@ -117,6 +146,11 @@ run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'
 run "ts-fitness-pin"        bash bin/ts-fitness-pin.sh
 run "ts-fitness-pin --selftest" bash bin/ts-fitness-pin.sh --selftest
+# This file gating ITSELF is not circular: `--selftest` short-circuits before the gate list, so the
+# subprocess runs nine pure-function cases and exits. It is here because the bin/** predicate it
+# checks had NO test until it cried wolf, and an untested predicate inside a warning about untested
+# changes is the shape this register keeps finding.
+run "fast-gates --selftest" bash bin/fast-gates.sh --selftest
 run "workflow-check"        bash bin/workflow-check.sh candor
 
 # AN EMPTY RUN IS NOT A PASS. Same fail-closed shape as gate-run.sh's zero-gate guard and the spec's
@@ -153,12 +187,30 @@ fi
 # one command that would have caught it. Deliberately NOT a failure: making the cheap tier red on a
 # `bin/**` edit would destroy the affordable path it exists to provide, and a rule with no affordable
 # path gets broken.
+# AND IT MUST NOT CRY WOLF, measured 2026-09-28. The third clause below read `HEAD~1..HEAD`
+# unconditionally, so after any `bin/**` commit the warning kept firing on EVERY later run — including
+# after the change had been pushed and CI had already run the gate it names. I hit that one turn after
+# editing this warning into existence: a BACKLOG.md-only edit printed "THIS CHANGE TOUCHES bin/**",
+# over a bin/ commit whose `release-test.sh` had already passed AND been pushed.
+#
+# That matters more than the noise: this warning exists because a HEADER saying the same thing went
+# unread for weeks. A warning that fires when there is nothing to do is on exactly that road, and the
+# register is full of guards that were true and therefore ignored. So the last-commit clause now asks
+# whether the commit has REACHED CI, i.e. whether HEAD is ahead of its upstream.
+#
+# FAIL-SAFE IS TO WARN. R544 is the trap: `@{u}` is unset on 6 of 7 repos in this family and
+# `git rev-parse` then FAILS, so a `!` test reads a fatal error as a confident answer — and
+# `rev-list` returning empty is AMBIGUOUS between "nothing ahead" and "the command failed".
+# Every path that cannot answer keeps the warning; only a definite "0 commits ahead" silences it.
+_bin_dirty=0;  _bin_staged=0;  _bin_last=0
+git -C "$HERE" diff --name-only HEAD 2>/dev/null | grep -q '^bin/' && _bin_dirty=1
+git -C "$HERE" diff --name-only --cached HEAD 2>/dev/null | grep -q '^bin/' && _bin_staged=1
+git -C "$HERE" diff --name-only 'HEAD~1..HEAD' 2>/dev/null | grep -q '^bin/' && _bin_last=1
+_bin_up="$(git -C "$HERE" rev-parse --abbrev-ref '@{u}' 2>/dev/null || true)"
+_bin_ahead="$(git -C "$HERE" rev-list --count "$_bin_up..HEAD" 2>/dev/null || true)"
 touched_bin=""
-if git -C "$HERE" diff --name-only HEAD 2>/dev/null | grep -q '^bin/' \
-   || git -C "$HERE" diff --name-only --cached HEAD 2>/dev/null | grep -q '^bin/' \
-   || git -C "$HERE" diff --name-only 'HEAD~1..HEAD' 2>/dev/null | grep -q '^bin/'; then
-  touched_bin=1
-fi
+[ "$(bin_warn_state "$_bin_dirty" "$_bin_staged" "$_bin_last" "$_bin_up" "$_bin_ahead")" = "WARN" ] \
+  && touched_bin=1
 
 if [ "$fail" -eq 0 ]; then
   echo "fast-gates: OK — $ran gate(s), none of which builds an engine, an IDE or an npm tree."

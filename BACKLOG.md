@@ -287,7 +287,76 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-21, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-28, not remembered)
+
+**MEASURED today, by running the tools, not from memory:** register **660 rows, 124 open**
+(`candor-spec/scripts/soundness-status.py`). Four-way conformance **421 cells, 421 OK, 0 FAIL**, 0 passing
+xfails, no litter, no tree moved. `gate-run.sh candor-rust` 32/32 ok, 0 failed, plus all three by-hand
+gates green. All seven repos pushed and in sync.
+
+**THE HEADLINE: A CARDINAL SIN WAS FOUND AND CLOSED IN THE FAMILY'S OWN RUST ORACLE (R756).**
+`src/mir_spike.rs`'s `drop_edges` filtered `hir_body_owners()` to `DefKind::Fn` and `DefKind::AssocFn`, so
+every implicit scope-exit drop inside a closure or coroutine body was invisible — in `async fn`s, across
+`.await`, in `for_each` callbacks, and in a boxed closure built in one fn and called in another. Fixed with
+rustc's own `DefKind::is_fn_like()` plus attribution to the enclosing reportable owner (candor-rust
+`759d588`). A/B ADDED 0 / REMOVED 0 / CHANGED 8, **0 gate flips**; the evidence is an executed fixture with
+observed drop counts and a calibrated gate, because the corpus A/B is structurally blind to a silence.
+
+**Two gate holes came with it, both now closed.** R757: `gen_drop.py` emitted only top-level `fn`s, so
+`run_drop.sh 40` was green over 40 cases none of which could reach the filter — the new SITE axis was
+written BEFORE the fix and **6 of 7 sites failed on unmodified HEAD while the `fn` site passed 3/3**, which
+is exactly what made the blind spot invisible. R758: nothing differenced the two rust engines, so
+`candor-scan` answering 7 of the same 9 cells correctly produced no signal for three weeks;
+`soundness/run_differential.sh` now exists and its calibration is **retro-rediscovery** — against a pre-fix
+engine it re-finds R756 on 6 of 6 crates, 29 rows, exit 1.
+
+**THE DROP-GLUE STRATEGY CHANGED, and this is the part that decides where effort goes (R759).** The spine
+is **six mechanisms, not one**, and the structural rewrite is **DECLINED**: binding-instance identity closes
+4 of 16 open rows, not most, and R229's own note had already priced it. Of 19 closed spine rows, seventeen
+ADDED a key/position/term/guard/arm/index and exactly two REMOVED structure — and those two had by far the
+largest payoff, which argues for collapsing locally rather than rewriting.
+
+**MEASURED reach inverts the register's attention** (a syn probe over 473 census crates declaring a local
+`impl Drop`; tight counts, with the stated floors):
+
+  1. **R201** await, non-async base — 346 sites / 21 crates. **BLOCKED:** its remedy was built and
+     reverted; it shares one `Await` arm with R194 and the two want opposite things from it.
+  2. **R200** wrapper-typed by-value param — 333 / 60 (the register's tighter figure is 105 params / 21
+     crates; prefer theirs). **BLOCKED:** cannot ship without R230 — widening `owned_drop_params` converts
+     this silence into R230's fabrication at ~105 real sites.
+  3. **R189** explicit `return` of a value — 146 / 60. **UNBLOCKED and the best next target.** One named
+     mechanism: `acc.sites.extend` UNIONS sites across exits while `acc.leaves.retain` INTERSECTS leaves.
+     A resolution, not a hedge.
+  4. **R195** name reassignment — 76 / 17. Bare-name keying; part of the four-row binding-instance cluster.
+  5. **R297** place assignment — tight 42 / 27 is a FLOOR BY CONSTRUCTION (its own cell mentions no `Drop`
+     type name, so the filter systematically misses it); read the loose 26,784 / 430.
+  6. **R300** body-local `fn` item — 4,072 / 293 loose, no tight filter. **R209(a)** `?` in macro tokens —
+     3,258 / 289 loose.
+  7. **R323** and **R198** measure **0 / 0** tight over 473 crates. **Deprioritised** — two of the nine
+     have ~zero real-code incidence, and R198's real cause is one line already half-closed.
+
+**DO FIRST, because it unblocks measurement rather than closing a row (R761).** The deep engine emits no
+⟨0.21⟩/⟨0.22⟩ completeness manifest — `write_report_files` calls `to_packaged_report_json`, not `_full` — so
+`corpus-ab.py`'s hollow-corpus guard **cannot judge a deep-engine A/B at all**; the R756 A/B ran with
+`--allow-unjudged` and 20 of 88 entries unjudged. Strictly additive, cheap, and every future deep-engine
+measurement leans on it.
+
+**NEEDS A FAMILY DECISION, not a lane (R760).** Deep verdict rows carry no `hash` at all
+(`..Default::default()`), and where the engine does emit one it is a rustc `DefPathHash` rather than
+`package#fn` — with a live consumer at `src/lib.rs:670`. That is R758's ceiling: the new differential joins
+on NAMES because no shared key exists, which SPEC §2 ⟨0.32⟩ forbids. Two defects with one symptom; the
+namespace half is the expensive one.
+
+**INFERRED, not measured:** that R189's fix is confined to the union/intersect asymmetry. Nobody has read
+that code with a fix in hand; the mechanism is named in R759 from the analysis lane's reading.
+
+**STILL WAITING ON TOM'S CREDENTIALS, not his judgement:** the VS Code Marketplace Azure DevOps PAT
+(`vsce publish`), and field-case SSH — still `Permission denied (publickey)`, so we cannot tell whether the
+one field deployment runs candor. **AND ON HIS JUDGEMENT, via Fable first:** the ⟨0.40⟩ convergence
+(R521/R613/R703/R741 — what a consumer may claim when dispatching on a dependency-owned abstraction).
+
+
+### 6d-prev. c. WHAT IS ACTUALLY NEXT (state read 2026-09-21, not remembered)
 
 **v0.39.1 IS PUBLISHED AND VERIFIED — a SCOPED candor-ts patch for a CARDINAL SIN THAT SHIPPED IN
 v0.39.0 AND WAS LIVE ON npm FOR A DAY.** SOUNDNESS R519: `mintStructuralMembers` gave every
@@ -347,7 +416,7 @@ interface falls to the external-call path (`invisible:[dep]`) where the LOCAL tw
 `Unknown[callback:Iface]`. Present at v0.34.0 through HEAD and NOT closed by the R519 fix; closing it
 means revisiting R133's non-gating `invisible` ruling, which is a family-level decision. Needs a row.
 
-### 6b-prev. 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
+### 6e-prev. b-prev. 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-20, not remembered)
 
 **⟨0.39⟩ / v0.39.0 IS PUBLISHED AND VERIFIED LIVE.** `release-verify` resolves every artifact rather than
 every string: four crates on crates.io, `candor-ts@0.39.0` on npm with provenance, six GitHub releases,

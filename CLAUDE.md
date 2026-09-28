@@ -408,6 +408,43 @@ serially afterwards took minutes and came back 31/31, 10/10, 11/11; doing it bef
 cost the same minutes and saved a red `main`. **Parallelism buys lanes and costs the one instrument that
 catches per-repo regressions; reinstate it at the join, not after the push.**
 
+**AND `gate-run.sh` EXIT 2 / INCOMPLETE IS NOT GREEN — THE UNRUN LINES HELD THE FAILING GATE.** Measured
+2026-09-28 on the R756 fix. `gate-run.sh candor-rust` printed `32 gate(s) run, 32 ok, 0 failed` and then its
+own verdict: **`gate-run: INCOMPLETE — 10 skipped, 116 block line(s) not auto-run. Green over an unrun gate
+is what this exists to stop.`** I quoted the 32/32, ran the three gates it named as BY HAND, pushed — and
+CI went red on `Self-guard`, an INLINE multi-line `run:` block that was one of those 116 lines and has no
+script file to invoke. The tool was right and said so in the sentence after the one I read. **Treat exit 2
+as "this did not measure your change" and go find what is in the blocks**, the same way the disk verdict
+outranks `NOT GREEN`.
+
+Three compounding readings made one red `main`, and none was a tool defect:
+
+- **A NEIGHBOURING GATE NAME, for the third time in this repo.** The lane reported `ci/self-gate.sh` OK and
+  that was TRUE. `ci.yml`'s own comment distinguishes them — *Self-gate … complements the nightly
+  Self-guard above, which is a baseline-drift check, not a policy assertion.* `Self-guard` and `Self-gate`
+  differ by one letter and check different things. This file already records paying for this twice on
+  `soundness/run.sh` versus `run_drop.sh`. **A pass is coverage only for the gate that produced it; match
+  the NAME against `bin/gates.sh <repo>`, character by character.**
+- **A CACHED CRATE MAKES A `cargo dylint` GATE EXIT 0 WITHOUT RUNNING.** Reproducing `Self-guard` locally
+  gave exit 0 and no warning, which is indistinguishable from a pass. `touch` the sources and set
+  `CARGO_INCREMENTAL=0` and it fired at once. **Before believing a lint gate's silence, show it able to
+  fail** — here the baseline WITHOUT the new effect firing on the SAME binary is what licensed the fix.
+- **DO NOT HAND-ROLL A CI WAIT.** The one I wrote for this push reported `NO-RUNS` for 16 polls while four
+  runs existed, because **`gh run list --commit` matches only a FULL 40-character sha and silently returns
+  `[]` for a short one** — a wait that can never finish, which is the `pgrep -f` shape in a different tool.
+  `bin/ci-watch.sh` already owns this, already resolves `git rev-parse --verify 'HEAD^{commit}'`, and
+  already documents that `--commit ""` is read as NO FILTER AT ALL. It has `--wait`. Use it; that is R288's
+  fifteen-copies lesson, and the ad-hoc script was copy sixteen.
+
+**AND WHEN A SELF-GUARD BASELINE IS GENUINELY STALE, SPLICE — DO NOT BULK-REFRESH.** `ci.yml` names
+`cargo candor snapshot .candor/baseline` as the remedy. Run on the same tree it rewrote all four baselines,
+**ADDED 133 functions** (22 to 84, 0 to 11, 2 to 62) and a second effect change on a function that a forced
+re-run proves never fires — a reporting-mode difference, not drift. That document defines the engine's own
+PERMITTED effect surface, so a bulk refresh to clear a red gate widens the thing the gate protects. Take the
+engine's own entry for the one function (§G) and splice it: one function differing, 6 insertions, 3
+deletions, and the gate calibrated in both directions before committing.
+
+
 **So: `git push` is not the end of a verification, it is the start of one.** Re-check CI after a push wave,
 and keep a per-repo gate list so the set you run does not drift with whoever last reported to you.
 

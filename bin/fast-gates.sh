@@ -77,6 +77,8 @@ if [ "${1:-}" = "--selftest" ]; then
   chk WARN  "an UNREADABLE ahead-count warns, not silences"  0 0 1 origin/main ""
   chk WARN  "a non-numeric ahead-count warns"                0 0 1 origin/main "fatal:"
   chk WARN  "dirty beats a pushed last commit"               1 0 1 origin/main 0
+  chk WARN  "a DETACHED HEAD cannot resolve a ref, so warns"  0 0 1 ""          0
+  chk QUIET "the origin/<branch> FALLBACK silences the wolf"  0 0 1 origin/main 0
   echo "fast-gates --selftest: $([ "$bad" -eq 0 ] && echo OK || echo "FAILED ($bad)")"
   exit "$([ "$bad" -eq 0 ] && echo 0 || echo 1)"
 fi
@@ -206,7 +208,17 @@ _bin_dirty=0;  _bin_staged=0;  _bin_last=0
 git -C "$HERE" diff --name-only HEAD 2>/dev/null | grep -q '^bin/' && _bin_dirty=1
 git -C "$HERE" diff --name-only --cached HEAD 2>/dev/null | grep -q '^bin/' && _bin_staged=1
 git -C "$HERE" diff --name-only 'HEAD~1..HEAD' 2>/dev/null | grep -q '^bin/' && _bin_last=1
+# RESOLVING "HAS THIS REACHED CI" NEEDS A REF THAT EXISTS HERE. R544 says `@{u}` is unset on 6 of 7
+# repos in this family; measured 2026-09-28 it is unset on ALL of them, umbrella included — so a
+# predicate keyed only on `@{u}` falls to its fail-safe WARN every single time, which is the crying-wolf
+# behaviour this whole block exists to remove. `origin/<branch>` resolves on every one of them. So try
+# the tracking ref, then the remote-tracking ref, and only give up (and warn) if neither resolves.
+_bin_br="$(git -C "$HERE" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 _bin_up="$(git -C "$HERE" rev-parse --abbrev-ref '@{u}' 2>/dev/null || true)"
+if [ -z "$_bin_up" ] && [ -n "$_bin_br" ] && [ "$_bin_br" != "HEAD" ]; then
+  git -C "$HERE" rev-parse --verify --quiet "origin/$_bin_br" >/dev/null 2>&1 \
+    && _bin_up="origin/$_bin_br"
+fi
 _bin_ahead="$(git -C "$HERE" rev-list --count "$_bin_up..HEAD" 2>/dev/null || true)"
 touched_bin=""
 [ "$(bin_warn_state "$_bin_dirty" "$_bin_staged" "$_bin_last" "$_bin_up" "$_bin_ahead")" = "WARN" ] \

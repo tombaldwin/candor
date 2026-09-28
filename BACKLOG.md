@@ -316,17 +316,28 @@ is **six mechanisms, not one**, and the structural rewrite is **DECLINED**: bind
 ADDED a key/position/term/guard/arm/index and exactly two REMOVED structure — and those two had by far the
 largest payoff, which argues for collapsing locally rather than rewriting.
 
-**MEASURED reach inverts the register's attention** (a syn probe over 473 census crates declaring a local
-`impl Drop`; tight counts, with the stated floors):
+**THE REACH ORDERING BELOW IS UNRELIABLE — READ R766 BEFORE USING IT.** Corrected 2026-09-28 by the R189
+fix lane, measuring with the fix in hand: the probe counted *crate declares a local `impl Drop`* AND *the
+shape appears*, **never *the shape is ON a type with a destructor***, which is the only conjunction that can
+move a row. R189 was priced here at 146 sites / 60 crates and measured **REACH 204 hits across 111 entries
+with ADDED 0 / REMOVED 0 / CHANGED 0** — the decision fired 204 times and no row followed, because the
+reached leaves have no destructor. So R201's 346/21 and R200's 333/60 are suspect in exactly the same way
+and **must be re-measured before they order anything**. A reach probe must count the conjunction the FIX
+needs, not the one that is easy to grep.
+
+Kept below as the record of what was claimed, not as a queue (a syn probe over 473 census crates declaring a
+local `impl Drop`; tight counts, with the stated floors):
 
   1. **R201** await, non-async base — 346 sites / 21 crates. **BLOCKED:** its remedy was built and
      reverted; it shares one `Await` arm with R194 and the two want opposite things from it.
   2. **R200** wrapper-typed by-value param — 333 / 60 (the register's tighter figure is 105 params / 21
      crates; prefer theirs). **BLOCKED:** cannot ship without R230 — widening `owned_drop_params` converts
      this silence into R230's fabrication at ~105 real sites.
-  3. **R189** explicit `return` of a value — 146 / 60. **UNBLOCKED and the best next target.** One named
-     mechanism: `acc.sites.extend` UNIONS sites across exits while `acc.leaves.retain` INTERSECTS leaves.
-     A resolution, not a hedge.
+  3. **R189** explicit `return` of a value — claimed 146 / 60. **CLOSED 2026-09-28, candor-rust `321ec98`**
+     — 5 gate flips on executed cells, 9 controls unmoved, deep MIR oracle agreeing. **And the mechanism as
+     stated here was INVERTED in its second half:** `acc.leaves` is the ESCAPING set, so the leaf SURVIVING
+     the intersection produces the silence — the site UNION is the defect and the leaf intersection is the
+     protection it defeats. Measured payoff on 1,624 real crates: **zero rows** (see R766).
   4. **R195** name reassignment — 76 / 17. Bare-name keying; part of the four-row binding-instance cluster.
   5. **R297** place assignment — tight 42 / 27 is a FLOOR BY CONSTRUCTION (its own cell mentions no `Drop`
      type name, so the filter systematically misses it); read the loose 26,784 / 430.
@@ -334,6 +345,12 @@ largest payoff, which argues for collapsing locally rather than rewriting.
      3,258 / 289 loose.
   7. **R323** and **R198** measure **0 / 0** tight over 473 crates. **Deprioritised** — two of the nine
      have ~zero real-code incidence, and R198's real cause is one line already half-closed.
+
+**R761 IS DONE — candor-rust `5241818`.** The manifest count is read off the §2.2 callgraph sidecar's own
+key set, so the two documents cannot disagree. Unjudged fell **20 to 5**, and the acceptance test I wrote
+(*0 unjudged*) was wrong: the five remaining are TRUE refusals — two `#![cfg(windows)]` crates with zero
+analysed units on macOS and two `macro_rules!`-only crates with no function bodies. R242's guard must keep
+refusing those; a target of 0 would have been met only by breaking it. Original entry follows.
 
 **DO FIRST, because it unblocks measurement rather than closing a row (R761).** The deep engine emits no
 ⟨0.21⟩/⟨0.22⟩ completeness manifest — `write_report_files` calls `to_packaged_report_json`, not `_full` — so

@@ -287,7 +287,47 @@ CONSIDERED, which is exactly what stops it being measured. R418's cost one `git 
 and does not treat as a locator. That is the same sentence as ⟨0.37⟩'s clause, one spelling further out —
 so the next rung is probably not a new idea, it is finishing this one.
 
-### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-28, not remembered)
+### 6c. WHAT IS ACTUALLY NEXT (state read 2026-09-28 LATE, not remembered)
+
+**THE DIRECTION CHANGED TONIGHT, ON MEASUREMENT: STOP WORKING DROP-GLUE, START PORTING CLASSES ACROSS
+ENGINES.** Both halves are measured, not argued.
+
+**DROP-GLUE IS DECLINED (R766, corrected probe, candor-rust `a631bf9`).** The old reach figures were wrong
+in BOTH directions and a work queue was built on them. Corrected, over 1,625 census entries / 937 distinct
+crate names, against a noise floor of 15 (R189's true payoff was zero rows and the probe scores it 15):
+R201 **234** sites but **164 are mongodb (70%)** — one crate's house style; R200 **440**, and *its reach IS
+its fabrication cost* (the same population already hand-read, every one storing or forwarding rather than
+dropping); R198 **4**, R323 **9**, R209a **18**, R300 **23** — at or below the floor. **R297 alone is worth
+a second look** — 494 sites over 42 names, none above 17%, and the one open row with no blocker — but it is
+the charging direction and is gated on an A/B pricing the over-charge, not on the reach figure. Blind spot
+stated: a DEPENDENCY's `Drop` is invisible to a source probe, so every figure is a floor and the RANKING is
+less robust than the LEVEL.
+
+**PORTING IS THE WORK (R777 tool, R784 pilot).** Of 603 closed rows only 24% record any cross-engine check.
+The ts pilot asked 42 questions and got **5 findings (12%)** — R780, R781, R782, R783 — but the 42 collapsed
+into TEN mechanisms and 3 of the 5 came from TWO of them. So scale the METHOD, not the row count:
+
+  1. **"Does this engine have a LIST where another has a RULE?"** Both real sins came from that one
+     question. R781 is the proof inside one engine: ts's Fs and Exec masking use the general rule and every
+     owner failed closed, while `Net` is the one allowlist and the one that leaked.
+  2. **The closed-row wrapper sweep** — take any CLOSED silence row's own fixture and re-run it with
+     parenthesis / cast / non-null / alias wrappers. That is R780, and candor-allowlist-chain predicts it
+     generalises.
+  3. The filtered per-engine queue as a REFERENCE, not a worklist: `python3 scripts/porting-queue.py --for
+     <engine>` in candor-spec.
+
+**AND THE FOREIGN ARM IS NOT RARE, IT WAS INVISIBLE (R767, candor `aaed907`).** 0 dependency-owned dispatch
+keys across 28 roster entries became **1,629 charges over 121 keys on 6 of 8** once dependencies existed.
+Every figure for R512, R524-foreign, R521 and R613 over an entry still marked `-` is UNMEASURED. Next: the
+remaining 20 entries, by the method recorded in the roster header.
+
+**NEW AND UNTRIAGED:** R773 (swift, a module qualifier silences the classifier — no dependency needed, and
+ts's R239/R281 one language over), R774 (swift, a dependency's SECOND import turns into a consumer purity
+claim), R776 (rust, a trait associated function through a generic bound), R778 (ts, a nested `node_modules`
+layout mis-keys every package and FLIPS A GATE — 12 of 28 roster repos use pnpm). R782 needs a RULING, not
+a fix: its guard is documented as deliberate and covers a different arm.
+
+### 6d-prev. WHAT IS ACTUALLY NEXT (state read 2026-09-28, not remembered)
 
 **MEASURED today, by running the tools, not from memory:** register **660 rows, 124 open**
 (`candor-spec/scripts/soundness-status.py`). Four-way conformance **421 cells, 421 OK, 0 FAIL**, 0 passing

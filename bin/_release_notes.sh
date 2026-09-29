@@ -3,8 +3,8 @@
 #
 #   bash bin/_release_notes.sh <repo> <spec> <version> <path/to/CHANGELOG.md>
 #
-#   stdout : the notes `release.sh` would publish (heading line first), capped at 120000 bytes (a
-#            trailer pointing at CHANGELOG.md is appended only when that cap actually cut something)
+#   stdout : the notes `release.sh` would publish (heading line first), capped at 120000 bytes, cut at an entry
+#            boundary, with a trailer naming every omitted entry appended only when the cap cut something)
 #   exit 0 : a section belonging to THIS version was found
 #   exit 3 : REFUSED — the reason, with its remedy, is on stderr and NOTHING is on stdout
 #
@@ -66,17 +66,53 @@ refuse() { printf '%s\n' "$*" >&2; exit 3; }
 # and appends it ONLY when the cap actually cut something, so a section that fits (every one measured
 # for ⟨0.35⟩, including ts's ~64KB) is published byte-for-byte with no pointless trailer.
 CAP=120000
+# CUT AT AN ENTRY BOUNDARY, AND NAME WHAT WAS CUT. Measured 2026-09-29 on candor-rust's ⟨0.39.3⟩ section
+# (131,698 bytes): the old `head -c` dropped five entries, THREE of them ⚠ gate-changing, from the release
+# page with only "Full notes: CHANGELOG.md" to say so — while that repo's own preamble tells users to
+# read every ⚠ entry before bumping a pin. The cap is GitHub's (125000), so it cannot be raised; what can
+# change is that nothing leaves silently. An entry is a line starting `- ` or `* ` at column 0, or a
+# heading; the body is cut before the first entry that does not fit WITH the trailer, and the trailer
+# lists the first line of every omitted entry (⚠ ones first), itself shortened if it would not fit.
 cap_body() {
-  # Truncates $OUT in place to CAP bytes and marks it — but only if it was actually longer than that,
-  # so an untruncated section (the ordinary case) is untouched.
-  local size cap_tmp
+  local size
   size="$(wc -c < "$OUT")"
-  if [ "$size" -gt "$CAP" ]; then
-    cap_tmp="$(mktemp "${TMPDIR:-/tmp}/rel-notes-cap.XXXXXX")"
-    head -c "$CAP" "$OUT" > "$cap_tmp"
-    printf '\n\nFull notes: CHANGELOG.md in the repository\n' >> "$cap_tmp"
-    mv "$cap_tmp" "$OUT"
-  fi
+  [ "$size" -gt "$CAP" ] || return 0
+  CAP="$CAP" python3 - "$OUT" <<'PY'
+import os, re, sys
+path, cap = sys.argv[1], int(os.environ["CAP"])
+data = open(path, "rb").read()
+lines = data.splitlines(keepends=True)
+starts, off = [], 0
+for i, ln in enumerate(lines):
+    if i > 0 and re.match(rb"(- |\* |#{2,4} )", ln):
+        starts.append(off)
+    off += len(ln)
+starts.append(len(data))
+def title(chunk):
+    text = chunk.decode("utf-8", "replace")
+    m = re.match(r"[-*#]+\s*\*\*(.+?)\*\*", text, re.S)  # the entry's bold lead, across wrapped lines
+    first = " ".join((m.group(1) if m else text.split("\n", 1)[0]).split())
+    first = re.sub(r"^[-*#]+\s*", "", first).replace("**", "")
+    return first if len(first) <= 200 else first[:197].rstrip() + "..."
+def trailer(cut):
+    segs = [data[a:b] for a, b in zip(starts, starts[1:]) if a >= cut]
+    ts = [title(s) for s in segs if not s.startswith(b"#")]
+    ts = [t for t in ts if "\u26a0" in t] + [t for t in ts if "\u26a0" not in t]
+    head = f"\n\n---\nThese notes exceed GitHub's release-body limit. {len(ts)} further entr{'y' if len(ts)==1 else 'ies'} are in CHANGELOG.md in the repository, not shown here:\n\n"
+    return head, ts
+cut = None
+for c in reversed(starts[:-1]):
+    head, ts = trailer(c)
+    body = "".join(f"- {t}\n" for t in ts)
+    if c + len((head + body).encode()) <= cap:
+        cut = c; break
+if cut is None:  # no entry boundary fits; fall back to a hard cut, still naming it
+    head = "\n\n---\nThese notes exceed GitHub's release-body limit; the rest is in CHANGELOG.md in the repository.\n"
+    body, cut = "", cap - len(head.encode())
+    while cut > 0 and (data[cut] & 0xC0) == 0x80:  # never split a UTF-8 sequence
+        cut -= 1
+open(path, "wb").write(data[:cut].rstrip(b"\n") + (head + body).encode())
+PY
 }
 sect_by_version() { awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' "$CL"; }
 # candor-spec's older headings are FLOOR-shaped (`## 0.27 — …`) rather than `## [0.27.0]`, which the

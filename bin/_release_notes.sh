@@ -106,7 +106,7 @@ def title(chunk, width):
     if text.startswith("#"):
         t = "§ " + " ".join(text.split("\n", 1)[0].lstrip("#").split())
     else:
-        m = re.match(r"[-*]\s*\*\*(.+?)\*\*", text, re.S)  # the entry's bold lead, across wrapped lines
+        m = re.match(r"[-*]\s*(?:\u26a0\s*)?\*\*(.+?)\*\*", text, re.S)  # `- ⚠ **…**` as well as `- **⚠ …**`  # the entry's bold lead, across wrapped lines
         t = " ".join((m.group(1) if m else text.split("\n", 1)[0]).split())
         t = re.sub(r"^[-*]\s*", "", t).replace("**", "")
     if WARN in text and WARN not in t:

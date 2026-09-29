@@ -896,6 +896,7 @@ import sys
 pad = "é" * 60  # multi-byte, so a byte cut can land mid-character
 e = [f"- **Entry {i:03d} ordinary.** {pad}\n  continued {pad}\n" for i in range(700)]
 e.append("- **⚠ LAST-ENTRY-GATE-CHANGE, which\n  wraps its bold lead.** body\n")
+e.append("- ⚠ **OUTSIDE-SPELLING, which\n  also wraps.** body\n")
 open(sys.argv[1], "w").write("# CL\n\n## [0.32.1] — 2026-09-29\n\n" + "".join(e) + "\n## [0.32.0] — old\n\nSTALE\n")
 PY
 bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/CHANGELOG.md" > "$CW/out" 2>/dev/null
@@ -903,7 +904,8 @@ csz="$(wc -c < "$CW/out" | tr -d ' ')"
 [ "$csz" -gt 100000 ] && [ "$csz" -le 125000 ] && ok "cap: an oversized section fits GitHub's limit ($csz bytes)" \
   || bad "cap: oversized section published $csz bytes (want 100001..125000)"
 grep -qF -- "- ⚠ LAST-ENTRY-GATE-CHANGE, which wraps its bold lead." "$CW/out" \
-  && ok "cap: the trailer names an omitted ⚠ entry by its full bold lead" \
+  && grep -qF -- "- ⚠ OUTSIDE-SPELLING, which also wraps." "$CW/out" \
+  && ok "cap: the trailer names an omitted ⚠ entry by its full bold lead (⚠ inside or before the bold)" \
   || bad "cap: an omitted ⚠ entry is not named on the release page"
 python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' < "$CW/out" 2>/dev/null \
   && ok "cap: the cut output is valid UTF-8" || bad "cap: the cut split a UTF-8 sequence"

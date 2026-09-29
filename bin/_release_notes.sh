@@ -67,12 +67,21 @@ refuse() { printf '%s\n' "$*" >&2; exit 3; }
 # for ⟨0.35⟩, including ts's ~64KB) is published byte-for-byte with no pointless trailer.
 CAP=120000
 # CUT AT AN ENTRY BOUNDARY, AND NAME WHAT WAS CUT. Measured 2026-09-29 on candor-rust's ⟨0.39.3⟩ section
-# (131,698 bytes): the old `head -c` dropped five entries, THREE of them ⚠ gate-changing, from the release
-# page with only "Full notes: CHANGELOG.md" to say so — while that repo's own preamble tells users to
-# read every ⚠ entry before bumping a pin. The cap is GitHub's (125000), so it cannot be raised; what can
-# change is that nothing leaves silently. An entry is a line starting `- ` or `* ` at column 0, or a
-# heading; the body is cut before the first entry that does not fit WITH the trailer, and the trailer
-# lists the first line of every omitted entry (⚠ ones first), itself shortened if it would not fit.
+# (131,698 bytes): the old `head -c` dropped six entries, FOUR of them ⚠ gate-changing (one mid-entry),
+# from the release page with only "Full notes: CHANGELOG.md" to say so — while that repo's own preamble
+# tells users to read every ⚠ entry before bumping a pin. The cap is GitHub's (125000 characters; this
+# measures BYTES, which are never fewer), so it cannot be raised; what can change is that nothing leaves
+# silently.
+#
+# An entry boundary is a column-0 line starting `- `, `* ` or a `##`–`####` heading, OUTSIDE a ``` fence
+# (a bullet inside a code block is not an entry, and a cut there would leave the fence open). Every
+# omitted segment is named — a heading by its text, prefixed `§`, so prose under it is not dropped
+# unnamed — and a segment is ⚠ if its TEXT carries ⚠, not only its title. The trailer degrades in steps
+# until one fits: full titles → titles shortened to 80 chars → the ⚠ ones only, plus a count of the rest →
+# a count alone. Each step keeps the LARGEST body that fits with it; an entry larger than half the page is
+# cut at a line inside it and still listed. First review of this code (release
+# panel, 2026-09-30) found the first cut had no step between "all names" and "no names", excluded heading
+# segments, and cut inside fences; release-test pins all three.
 cap_body() {
   local size
   size="$(wc -c < "$OUT")"
@@ -81,37 +90,84 @@ cap_body() {
 import os, re, sys
 path, cap = sys.argv[1], int(os.environ["CAP"])
 data = open(path, "rb").read()
-lines = data.splitlines(keepends=True)
-starts, off = [], 0
-for i, ln in enumerate(lines):
-    if i > 0 and re.match(rb"(- |\* |#{2,4} )", ln):
-        starts.append(off)
+starts, lines, off, fence = [], [], 0, False  # entry boundaries; every line start outside a fence
+for i, ln in enumerate(data.splitlines(keepends=True)):
+    if ln.lstrip().startswith(b"```"):
+        fence = not fence
+    elif i > 0 and not fence:
+        lines.append(off)
+        if re.match(rb"(- |\* |#{2,4} )", ln):
+            starts.append(off)
     off += len(ln)
 starts.append(len(data))
-def title(chunk):
+WARN = "⚠"
+def title(chunk, width):
     text = chunk.decode("utf-8", "replace")
-    m = re.match(r"[-*#]+\s*\*\*(.+?)\*\*", text, re.S)  # the entry's bold lead, across wrapped lines
-    first = " ".join((m.group(1) if m else text.split("\n", 1)[0]).split())
-    first = re.sub(r"^[-*#]+\s*", "", first).replace("**", "")
-    return first if len(first) <= 200 else first[:197].rstrip() + "..."
-def trailer(cut):
-    segs = [data[a:b] for a, b in zip(starts, starts[1:]) if a >= cut]
-    ts = [title(s) for s in segs if not s.startswith(b"#")]
-    ts = [t for t in ts if "\u26a0" in t] + [t for t in ts if "\u26a0" not in t]
-    head = f"\n\n---\nThese notes exceed GitHub's release-body limit. {len(ts)} further entr{'y' if len(ts)==1 else 'ies'} are in CHANGELOG.md in the repository, not shown here:\n\n"
-    return head, ts
-cut = None
-for c in reversed(starts[:-1]):
-    head, ts = trailer(c)
-    body = "".join(f"- {t}\n" for t in ts)
-    if c + len((head + body).encode()) <= cap:
-        cut = c; break
-if cut is None:  # no entry boundary fits; fall back to a hard cut, still naming it
-    head = "\n\n---\nThese notes exceed GitHub's release-body limit; the rest is in CHANGELOG.md in the repository.\n"
-    body, cut = "", cap - len(head.encode())
-    while cut > 0 and (data[cut] & 0xC0) == 0x80:  # never split a UTF-8 sequence
-        cut -= 1
-open(path, "wb").write(data[:cut].rstrip(b"\n") + (head + body).encode())
+    if text.startswith("#"):
+        t = "§ " + " ".join(text.split("\n", 1)[0].lstrip("#").split())
+    else:
+        m = re.match(r"[-*]\s*\*\*(.+?)\*\*", text, re.S)  # the entry's bold lead, across wrapped lines
+        t = " ".join((m.group(1) if m else text.split("\n", 1)[0]).split())
+        t = re.sub(r"^[-*]\s*", "", t).replace("**", "")
+    if WARN in text and WARN not in t:
+        t = WARN + " " + t
+    return t if len(t) <= width else t[:width - 3].rstrip() + "..."
+def omitted(cut):
+    # A cut inside an entry (the mid-entry step below) names that entry too — it is only partly shown.
+    return [data[a:b] for a, b in zip(starts, starts[1:]) if b > cut]
+def trailer(cut, level):
+    segs = omitted(cut)
+    warn = [s for s in segs if WARN.encode() in s]
+    rest = [s for s in segs if WARN.encode() not in s]
+    n, k = len(segs), len(warn)
+    head = (f"\n\n---\nThese notes exceed GitHub's release-body limit. {n} further entr{'y' if n == 1 else 'ies'}"
+            f" ({k} ⚠) {'is' if n == 1 else 'are'} in CHANGELOG.md in the repository, not shown here")
+    if level == 3:
+        return head + ".\n"
+    width = 200 if level == 0 else 80
+    named = warn + rest if level < 2 else warn
+    body = "".join(f"- {title(s, width)}\n" for s in named)
+    if level == 2 and rest:
+        body += f"- …and {len(rest)} other entr{'y' if len(rest) == 1 else 'ies'} without ⚠\n"
+    return head + ":\n\n" + body
+result = None
+for level in range(4):
+    for c in reversed(starts[:-1]):
+        t = trailer(c, level)
+        if c + len(t.encode()) <= cap:
+            result = (c, t); break
+    if result:
+        break
+# ONE ENTRY LARGER THAN THE PAGE. When the best clean cut keeps under half the cap (a single huge entry, or
+# a huge fenced block), cut at a LINE outside a fence inside it instead; `omitted` then names that entry as
+# well, so it is shown in part AND listed.
+if result is None or result[0] < cap // 2:
+    for level in range(4):
+        mid = next(((c, trailer(c, level)) for c in reversed(lines)
+                    if c + len(trailer(c, level).encode()) <= cap), None)
+        if mid:
+            if result is None or mid[0] > result[0]:
+                result = mid
+            break
+# LAST RESORT: a byte cut, used only when nothing above keeps half the page (no boundary fits, or one
+# unbroken line longer than the page). Never inside a UTF-8 sequence; closes a fence it lands in; still
+# names the entry it cuts through and everything after it.
+if result is None or result[0] < cap // 2:
+    for level in range(4):
+        c = cap - len(trailer(cap, level).encode()) - 16
+        while c > 0 and (data[c] & 0xC0) == 0x80:
+            c -= 1
+        t = trailer(c, level)
+        if sum(1 for ln in data[:c].splitlines() if ln.lstrip().startswith(b"```")) % 2 == 1:
+            t = "\n```" + t
+        if c > 0 and c + len(t.encode()) <= cap:
+            if result is None or c > result[0]:
+                result = (c, t)
+            break
+if result is None:  # nothing fits even as a count: publish the count alone
+    result = (0, trailer(0, 3))
+c, t = result
+open(path, "wb").write(data[:c].rstrip(b"\n") + t.encode())
 PY
 }
 sect_by_version() { awk -v v="## [$VER]" 'index($0,v)==1{f=1;print;next} f&&/^## /{exit} f{print}' "$CL"; }

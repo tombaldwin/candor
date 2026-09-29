@@ -888,7 +888,7 @@ THE NEW NOTES
 # so an oversized section is cut — and the old `head -c` cut three ⚠ gate-changing entries from
 # candor-rust's ⟨0.39.3⟩ page with only "Full notes: CHANGELOG.md" to say so. The cut must land on an entry
 # boundary, the trailer must NAME every omitted entry (⚠ first), the result must fit and be valid UTF-8,
-# and a section under the cap must still publish byte-for-byte. Against the old cap_body the NAMED-⚠ and
+# and a section under the cap must still publish byte-for-byte. Against the FIRST cap_body the NAMED-⚠ and
 # WHOLE-OR-NAMED rows fail; the UTF-8 row passed there only because that byte cut landed on a boundary.
 CW="$(mktemp -d)"
 python3 - "$CW/CHANGELOG.md" <<'PY'
@@ -916,6 +916,30 @@ whole = re.findall(r"- \*\*Entry (\d{3}) ordinary\.\*\* é{60}\n  continued é{6
 named = re.findall(r"^- Entry (\d{3}) ordinary\.$", trail, re.M)
 sys.exit(0 if sorted(whole + named) == [f"{i:03d}" for i in range(700)] and not (set(whole) & set(named)) else 1)
 PY
+# The three holes the release panel found in the first cut (2026-09-30), each its own fixture:
+#   heading-prose — a `###` section of plain prose carrying ⚠ was omitted with no name;
+#   many-small    — 2,400 tiny entries: no step between "every name" and "no name", so none was named;
+#   fence         — `- ` lines inside a ``` block counted as entries, and the cut could leave the fence open.
+python3 - "$CW" <<'PY'
+import sys
+d = sys.argv[1]; hdr = "# CL\n\n## [0.32.1] — 2026-09-29\n\n"; tail = "\n## [0.32.0] — old\n\nSTALE\n"
+fill = "".join(f"- **Entry {i:03d}.** {'x' * 200}\n" for i in range(560))
+open(f"{d}/hp.md", "w").write(hdr + fill + "### Upgrade note\n\n⚠ PROSE-ONLY-WARNING under a heading.\n" + tail)
+open(f"{d}/ms.md", "w").write(hdr + "".join(f"- **e{i} {'y' * 150}** tail\n" for i in range(2400)) + "- **⚠ MANY-SMALL-LAST**\n" + tail)
+fence = "```\n" + "".join(f"- not-an-entry {i} {'z' * 100}\n" for i in range(400)) + "```\n"
+open(f"{d}/fe.md", "w").write(hdr + fill + fence + "- **⚠ AFTER-THE-FENCE**\n" + tail)
+PY
+bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/hp.md" 2>/dev/null | grep -q '§ Upgrade note' \
+  && ok "cap: prose under an omitted heading is named (by its heading)" || bad "cap: an omitted heading section vanished unnamed"
+bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/ms.md" > "$CW/ms.out" 2>/dev/null
+[ "$(wc -c < "$CW/ms.out" | tr -d ' ')" -le 125000 ] && grep -q 'MANY-SMALL-LAST' "$CW/ms.out" && grep -q 'other entries without' "$CW/ms.out" \
+  && ok "cap: with too many entries to list, the ⚠ ones are still named and the rest counted" \
+  || bad "cap: too many entries — a ⚠ entry went unnamed or the rest uncounted"
+bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/fe.md" > "$CW/fe.out" 2>/dev/null
+fl="$(grep -c '^[[:space:]]*```' "$CW/fe.out")"
+[ $((fl % 2)) = 0 ] && ! sed -n '/^---$/,$p' "$CW/fe.out" | grep -q '^- not-an-entry' && grep -q 'AFTER-THE-FENCE' "$CW/fe.out" \
+  && ok "cap: a code fence is never cut open and its bullets are not entries" \
+  || bad "cap: fence handling ($fl fence lines; bullets inside it named, or the ⚠ after it lost)"
 printf '# CL\n\n## [0.32.1] — 2026-09-29\n\n- **small** entry\n\n## [0.32.0] — old\n' > "$CW/small.md"
 [ "$(bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/small.md" 2>/dev/null)" = "$(printf '## [0.32.1] — 2026-09-29\n\n- **small** entry')" ] \
   && ok "cap: a section under the cap is published untouched, with no trailer" \

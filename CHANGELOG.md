@@ -10,6 +10,12 @@ keeps its own.
 
 ## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (unreleased)
 
+- **Release notes over GitHub's body limit no longer lose entries silently.** `_release_notes.sh` cut an
+  oversized section with `head -c` and appended only "Full notes: CHANGELOG.md" — on candor-rust's
+  ⟨0.39.3⟩ section (131,698 bytes) that dropped six entries, four of them ⚠ gate-changing, from the release
+  page. It now cuts at an entry boundary and lists the bold lead of every omitted entry, ⚠ first, and
+  never splits a UTF-8 sequence. A section under the cap is still published byte-for-byte. Pinned by five
+  new `release-test.sh` rows (two fail on the old code).
 - **`release-preflight.sh` [7c] no longer stops a release over a deliberately quoted test line.** Its
   predicate moved to `bin/_shell_output_damage.sh`, which has a `--selftest` (now in `fast-gates.sh`) —
   it previously had no calibration at all. The XCTest alternative now requires real XCTest's timing

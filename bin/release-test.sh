@@ -884,6 +884,44 @@ nrow "umbrella: …with the empty Unreleased staging leaves above it" candor 0 \
 THE NEW NOTES
 " "THE NEW NOTES"
 
+# THE CAP MUST NOT DROP AN ENTRY SILENTLY (2026-09-29). GitHub rejects a body over 125000 characters,
+# so an oversized section is cut — and the old `head -c` cut three ⚠ gate-changing entries from
+# candor-rust's ⟨0.39.3⟩ page with only "Full notes: CHANGELOG.md" to say so. The cut must land on an entry
+# boundary, the trailer must NAME every omitted entry (⚠ first), the result must fit and be valid UTF-8,
+# and a section under the cap must still publish byte-for-byte. Against the old cap_body the NAMED-⚠ and
+# WHOLE-OR-NAMED rows fail; the UTF-8 row passed there only because that byte cut landed on a boundary.
+CW="$(mktemp -d)"
+python3 - "$CW/CHANGELOG.md" <<'PY'
+import sys
+pad = "é" * 60  # multi-byte, so a byte cut can land mid-character
+e = [f"- **Entry {i:03d} ordinary.** {pad}\n  continued {pad}\n" for i in range(700)]
+e.append("- **⚠ LAST-ENTRY-GATE-CHANGE, which\n  wraps its bold lead.** body\n")
+open(sys.argv[1], "w").write("# CL\n\n## [0.32.1] — 2026-09-29\n\n" + "".join(e) + "\n## [0.32.0] — old\n\nSTALE\n")
+PY
+bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/CHANGELOG.md" > "$CW/out" 2>/dev/null
+csz="$(wc -c < "$CW/out" | tr -d ' ')"
+[ "$csz" -gt 100000 ] && [ "$csz" -le 125000 ] && ok "cap: an oversized section fits GitHub's limit ($csz bytes)" \
+  || bad "cap: oversized section published $csz bytes (want 100001..125000)"
+grep -qF -- "- ⚠ LAST-ENTRY-GATE-CHANGE, which wraps its bold lead." "$CW/out" \
+  && ok "cap: the trailer names an omitted ⚠ entry by its full bold lead" \
+  || bad "cap: an omitted ⚠ entry is not named on the release page"
+python3 -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' < "$CW/out" 2>/dev/null \
+  && ok "cap: the cut output is valid UTF-8" || bad "cap: the cut split a UTF-8 sequence"
+# Every entry is either whole in the body or named in the trailer — never half of one and not the other.
+python3 - "$CW/out" <<'PY' && ok "cap: every entry is whole in the body or named in the trailer" || bad "cap: an entry was cut mid-body or vanished"
+import re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+body, _, trail = t.partition("\n---\n")
+whole = re.findall(r"- \*\*Entry (\d{3}) ordinary\.\*\* é{60}\n  continued é{60}", body)
+named = re.findall(r"^- Entry (\d{3}) ordinary\.$", trail, re.M)
+sys.exit(0 if sorted(whole + named) == [f"{i:03d}" for i in range(700)] and not (set(whole) & set(named)) else 1)
+PY
+printf '# CL\n\n## [0.32.1] — 2026-09-29\n\n- **small** entry\n\n## [0.32.0] — old\n' > "$CW/small.md"
+[ "$(bash "$NOTES" candor-rust 0.32 0.32.1 "$CW/small.md" 2>/dev/null)" = "$(printf '## [0.32.1] — 2026-09-29\n\n- **small** entry')" ] \
+  && ok "cap: a section under the cap is published untouched, with no trailer" \
+  || bad "cap: a section under the cap was altered"
+rm -rf "$CW"
+
 # THE OTHER HALF OF THE FIX: staging must be able to REACH the accepted state without a human writing a
 # changelog entry by hand on release day. That is what turned this into folklore twice — the workaround
 # was known, performed by hand, and skipped at the end of a long day.

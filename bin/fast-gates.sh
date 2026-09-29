@@ -148,6 +148,7 @@ run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'
 run "ts-fitness-pin"        bash bin/ts-fitness-pin.sh
 run "ts-fitness-pin --selftest" bash bin/ts-fitness-pin.sh --selftest
+run "shell-output-damage --selftest" bash bin/_shell_output_damage.sh --selftest
 # This file gating ITSELF is not circular: `--selftest` short-circuits before the gate list, so the
 # subprocess runs nine pure-function cases and exits. It is here because the bin/** predicate it
 # checks had NO test until it cried wolf, and an untested predicate inside a warning about untested

@@ -8,7 +8,30 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-25 — the CHAINED census arm: scan each library as a dependency of a generated consumer (SOUNDNESS R671/R672/R673)
+## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (unreleased)
+
+- **`release-preflight.sh` [7c] no longer stops a release over a deliberately quoted test line.** Its
+  predicate moved to `bin/_shell_output_damage.sh`, which has a `--selftest` (now in `fast-gates.sh`) —
+  it previously had no calibration at all. The XCTest alternative now requires real XCTest's timing
+  tail (`(N unexpected) in X (Y) seconds`), which a shell splice always carries and a human quotation
+  reliably drops; it also now matches XCTest's real tab indent, which it never did. Measured over 2,624
+  commits in all seven repos: exactly one verdict changes — candor-swift `92496cb`, a §1b calibration
+  quote that would otherwise have failed preflight at step 0 over pushed history.
+- **`bin/fast-gates.sh`**: the `bin/**` warning no longer fires on an already-pushed change (it asks
+  whether HEAD is ahead of `origin/<branch>`, falling back safely when no upstream exists); the verdict
+  counts gates instead of printing a literal.
+- **`bin/corpus-census-ts.tsv` + `bin/corpus-census.sh`**: the pinned TS roster records dependency state
+  (column 8) and engine-measured foreign dispatch keys (column 9), because the foreign arm was
+  unreachable with no dependencies installed (SOUNDNESS R767); the header warns that a near-zero foreign
+  figure over an uninstalled entry is unmeasured, not safe.
+- **`bin/policy-sweep.sh` + `bin/policy-sweep-check.py`** (R731), **`bin/assert-audit.sh`** (R158, R221,
+  R293), **`bin/release-test.sh`** (283 assertions that could pass because their needle was found), and
+  the **chained census arm** for rust (R673) — instrument work since 2026-09-25.
+- **`CLAUDE.md`** gained the method rules measured this fortnight (brief the property, not the remedy or
+  the number; the corpus A/B cannot find a silence; veins not rows; the three directions of the
+  disclosure ruling), and `bin/AGENT-SWEEP-BRIEF.md` moved out of a session scratchpad.
+
+## 2026-09-25 — the CHAINED census arm: scan each library as a dependency of a generated consumer (SOUNDNESS R671/R672/R673) (unreleased)
 
 **`bin/corpus-chained.sh` + `bin/corpus-chained/ConsumerGen.java` + `bin/corpus-chained-judge.py` —
 the second arm SOUNDNESS R668 asked for.** Every census so far ([[R662]] rust, [[R665]] java) scanned

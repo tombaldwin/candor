@@ -720,9 +720,9 @@ for r in $WFREPOS; do
     # What remains is output sitting where only a shell could have put it. Narrowing a detector is how
     # its next miss happens, so this is CALIBRATED below rather than asserted: a bare mid-sentence splice
     # must still fire.
-    if git -C "$ROOT/$r" log -1 --format='%B' "$h" 2>/dev/null \
-       | sed -e 's/^    .*$//' -e 's/`[^`]*`//g' \
-       | grep -qE "test result: (ok|FAILED)\. [0-9]+ passed|^ *Compiling [a-z-]+ v[0-9]|^ *Finished .(dev|release|test) profile|^ *Executed [0-9]+ tests, wi"; then
+    # The predicate lives in bin/_shell_output_damage.sh with a --selftest (run by fast-gates), since it
+    # had no calibration here and produced a false positive over pushed history (candor-swift 92496cb).
+    if git -C "$ROOT/$r" log -1 --format='%B' "$h" 2>/dev/null | bash "$HERE/_shell_output_damage.sh"; then
       DAMAGED="$DAMAGED $r@$h"
     fi
   done

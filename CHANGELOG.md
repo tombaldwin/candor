@@ -13,7 +13,9 @@ keeps its own.
 - **`candor.test.sh`'s "java pin leaves swift on the family line" went red on the 0.39.3 pin bump**, for
   the reason its rust sibling did at 0.38.1: it asserted swift sits on `ENGINE_PIN`, true only while
   `ENGINE_PIN_SWIFT` is empty. It now asserts the invariant — swift resolves identically with and without a
-  java pin, to swift's own pin. (The pin commit was pushed with this gate red; see below.)
+  java pin, to swift's own pin. The pin commit and the release-verify commit were both pushed with this
+  gate red: the pin bump ran no local umbrella gate, and the next commit chained its push onto a pipeline
+  that did not stop on `fast-gates`' exit code.
 
 - **`release-verify.sh`'s family form (what the weekly `release-audit` runs) went red the day 0.39.3 shipped,
   over a correct release.** 0.39.3 left candor-agents out, so the tooling treated it as SCOPED: `ENGINE_PIN`

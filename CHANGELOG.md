@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (released 2026-09-30 as 0.39.3)
 
+- **Pins moved to 0.39.3.** candor-agents had nothing to release, so the cut is SCOPED: `ENGINE_PIN` stays on
+  the family line (0.39.2) and all four engines are pinned to 0.39.3 via `ENGINE_PIN_{JAVA,TS,RUST,SWIFT}` —
+  **clear all four at the next family cut.** `adopt/candor.yml`, the vscode `candorTsVersion` and the
+  jetbrains `candorTsVersion`/`candorJavaVersion` move to 0.39.3 with them.
 - **Release notes over GitHub's body limit no longer lose entries silently.** `_release_notes.sh` cut an
   oversized section with `head -c` and appended only "Full notes: CHANGELOG.md" — on candor-rust's
   ⟨0.39.3⟩ section (131,698 bytes) that dropped six entries, four of them ⚠ gate-changing, from the release

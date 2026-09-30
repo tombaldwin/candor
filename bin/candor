@@ -37,14 +37,13 @@ ENGINE_PIN="0.39.2"                          # the engine release line `candor u
 # first time candor-ts or candor-rust needed the same thing. Four symmetric pins also let the release
 # guard be ONE rule over four engines rather than a special case. (candor-agents and candor-spec carry no
 # pin here: the umbrella never installs them.)
-ENGINE_PIN_JAVA=""      # cleared at the 0.37.0 family cut: it was "0.36.2" from the java-only
-                        # patch line, and a NON-EMPTY override silently WINS over ENGINE_PIN — the
-                        # fallback fires only when this is EMPTY. Left set, `candor update` would
-                        # have kept installing candor-java 0.36.2 against a 0.37.0 front door, with
-                        # every other engine on 0.37.0 and nothing saying so.
-ENGINE_PIN_TS=""        # CLEARED at the 0.39.2 family cut, which is what its own comment
-                        # instructed. It held "0.39.1" for the R519 scoped patch — a cardinal sin that
-                        # shipped in v0.39.0 — and 0.39.2 publishes candor-ts with that fix and more.
+# ⚠ SET BY THE 0.39.3 CUT, WHICH LEFT candor-agents OUT — CLEAR ALL FOUR AT THE NEXT FAMILY CUT.
+# 0.39.3 published all four engines, but candor-agents had nothing to release, so the tooling treats the
+# cut as SCOPED: ENGINE_PIN stays on the family line (0.39.2) and each engine is pinned here. A NON-EMPTY
+# override SILENTLY WINS over ENGINE_PIN — leave these set past the next family cut and it installs 0.39.3
+# engines under a newer umbrella with nothing saying so. `bin/pin-currency.sh` names every live one.
+ENGINE_PIN_JAVA="0.39.3"
+ENGINE_PIN_TS="0.39.3"
 # ⚠ SET BY THE 0.38.1 SCOPED PATCH — CLEAR IT AT THE NEXT FAMILY CUT.
 # A scoped patch moves ONE engine, so ENGINE_PIN stays on the family line (0.38.0) and this overrides it
 # for rust alone. That is what these pins are FOR — but a NON-EMPTY override SILENTLY WINS over
@@ -64,12 +63,8 @@ ENGINE_PIN_TS=""        # CLEARED at the 0.39.2 family cut, which is what its ow
 # reaches nobody until the pin moves. HEAD was clean and the registry was clean and this path was STILL
 # installing the affected version. **When a published artifact is fixed, the pin is a THIRD layer to
 # check, after the source and the registry.**
-ENGINE_PIN_RUST=""         # CLEARED at the 0.39.2 family cut, as its own comment instructed. It held
-                           # "0.39.1" for the R525 scoped patch. TWO scoped pins were live at once for the
-                           # first time; both are gone, and `bin/pin-currency.sh` now names a live scoped
-                           # pin on every run so the instruction is not the only thing standing between a
-                           # pin and the next cut.
-ENGINE_PIN_SWIFT=""
+ENGINE_PIN_RUST="0.39.3"
+ENGINE_PIN_SWIFT="0.39.3"
 # Resolution, once: the CANDOR_ENGINE_PIN_<ENGINE> env seam (used by bin/candor.test.sh, and by anyone
 # trying an unreleased engine without editing an installed file) beats the shipped constant, which beats
 # the family pin. After these four lines each variable holds the RESOLVED version — the declarations above

@@ -84,7 +84,17 @@ echo "[npm] candor-ts at $VER"
 if ! rs_in_set candor-ts; then oos "candor-ts is not in this cut — npm still serves the version it last published"
 else
 v=$(npm view candor-ts version 2>/dev/null)
-[ "$v" = "$VER" ] && ok "candor-ts $v" || bad "candor-ts: npm version '${v:-?}' != $VER"
+# A SCOPED CUT THAT LEFT candor-agents OUT PINS EVERY ENGINE AHEAD OF THE FAMILY LINE (0.39.3: ENGINE_PIN
+# stayed 0.39.2, ENGINE_PIN_TS went to 0.39.3). The weekly audit then asks npm for the FAMILY version and
+# finds the pinned one — which is exactly what `npx candor-ts@$ENGINE_PIN_TS` installs. The rust crates
+# already honoured their pin this way; npm, adopt/ and jbang did not, so the audit was red on the day of a
+# correct release. Same guard as the crates: only when checking the family line, only toward the pin.
+want_ts="$VER"; ts_why=""
+_tp="$(rs_engine_pin ts "$ROOT_C/candor/bin/candor" 2>/dev/null)"
+if [ -n "$_tp" ] && [ "$_tp" != "$VER" ] && [ "$v" != "$VER" ] && rs_ver_lt "$VER" "$_tp"; then
+  want_ts="$_tp"; ts_why=" (pinned separately from the family line $VER)"
+fi
+[ "$v" = "$want_ts" ] && ok "candor-ts $v$ts_why" || bad "candor-ts: npm version '${v:-?}' != $want_ts"
 fi
 
 echo "[gh releases] spec v$SPEC · engines v$VER"
@@ -166,7 +176,14 @@ declare -a oos_urls=()
 declare -a pin_urls=()
 # derive from the pin files rather than hardcoding, so this tracks the pins instead of drifting beside them
 jb="$ROOT_C/candor-java/jbang-catalog.json"
-if rs_in_set candor-java; then
+JPIN_EARLY="$(rs_engine_pin java "$ROOT_C/candor/bin/candor" 2>/dev/null)"
+if rs_in_set candor-java && [ -n "$JPIN_EARLY" ] && [ "$JPIN_EARLY" != "$VER" ] && rs_ver_lt "$VER" "$JPIN_EARLY"; then
+  # jbang names the jar the java pin installs; with that pin deliberately AHEAD it names /v$JPIN/, and
+  # holding it to "/v$VER/" is the false red. Still RESOLVED (pin_urls), and still checked to name the pin.
+  [ -f "$jb" ] && while read -r u; do
+    case "$u" in */v"$JPIN_EARLY"/*) pin_urls+=("$u") ;; *) bad "jbang-catalog names $u, not the java pin v$JPIN_EARLY" ;; esac
+  done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
+elif rs_in_set candor-java; then
   [ -f "$jb" ] && while read -r u; do urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
 else
   [ -f "$jb" ] && while read -r u; do oos_urls+=("$u"); done < <(grep -oE 'https://github\.com/[^"]+/releases/download/[^"]+' "$jb")
@@ -276,6 +293,8 @@ for pf in "candor/adopt/candor.yml:CANDOR_JAVA_VERSION:candor-java" "candor/adop
   pv="$(pin_version "$f" "$key *:? *v?[0-9]+\.[0-9]+\.[0-9]+")"
   if ! rs_in_set "$pin_repo"; then oos "${pf%%:*} pins ${pv:-?} — names $pin_repo, which is not in this cut"
   elif [ -z "$pv" ]; then bad "${pf%%:*}: no $key pin found — a consumer-facing pin nothing verifies"
+  elif [ "$pv" != "$VER" ] && [ "$pin_repo" = candor-java ] && [ -n "$JPIN" ] && [ "$pv" = "$JPIN" ] && rs_ver_lt "$VER" "$JPIN"; then
+    ok "${pf%%:*} pins $pv (the java pin, set separately from the family line $VER)"
   elif [ "$pv" != "$VER" ]; then bad "${pf%%:*} pins $pv, not $VER — every repo that ran \`candor init\` keeps installing $pv"
   else ok "${pf%%:*} pins $VER"; fi
 done

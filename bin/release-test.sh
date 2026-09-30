@@ -2298,6 +2298,42 @@ hasin "$aheadout" -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywh
   && ok "CONTROL: a java pin AHEAD of the release (an in-flight one-engine patch) still reports OK" \
   || { bad "an AHEAD java pin failed the family-wide form — the false-red this fix also closes"
        hasin "$aheadout" -E '✘'; }
+
+# THE SHAPE 0.39.3 ACTUALLY SHIPPED (2026-09-30): every engine cut, candor-agents NOT, so the tooling treats
+# it as SCOPED — ENGINE_PIN stays on the family line and ALL FOUR engines are pinned AHEAD. The weekly
+# release-audit then runs the family form against ENGINE_PIN and, before this row's fix, went red on three
+# surfaces the crates check had always excused: npm (reading $VER, not ENGINE_PIN_TS), adopt/candor.yml
+# (reading $VER, not ENGINE_PIN_JAVA) and jbang's catalog (held to "/v$VER/"). Each of those names the
+# version the front door deliberately installs. The rows below include the adopt/ and jbang FILES, which
+# no earlier fixture here did — the reason the gap survived.
+mkdir -p "$PJ/root/candor/adopt" "$PJ/root/candor-java"
+cat > "$PJ/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = "view" ] && { echo "${PJ_NPM:-${PJ_VER:-0.0.0}}"; exit 0; }
+exit 1
+EOF
+chmod +x "$PJ/bin/npm"
+pjahead() { # $1 = npm's answer ; $2 = adopt's CANDOR_JAVA_VERSION ; $3 = the version jbang's URL names
+  printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA="0.34.0"\nENGINE_PIN_TS="0.34.0"\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' \
+    > "$PJ/root/candor/bin/candor"
+  printf 'jobs:\n  a:\n    env:\n          CANDOR_JAVA_VERSION: %s\n' "$2" > "$PJ/root/candor/adopt/candor.yml"
+  printf '{"aliases":{"candor":{"script-ref":"https://github.com/tombaldwin/candor-java/releases/download/v%s/candor-java-%s-all.jar"}}}\n' "$3" "$3" \
+    > "$PJ/root/candor-java/jbang-catalog.json"
+  PJ_NPM="$1" pjrun
+}
+hasin "$(pjahead 0.34.0 0.34.0 0.34.0)" -q "release-verify: OK — spec 0.33 / v0.33.0 is live everywhere" \
+  && ok "every engine pinned AHEAD (a scoped cut that left agents out): npm, adopt/ and jbang at the pin read OK" \
+  || bad "an all-engines-ahead scoped state failed the family form — release-audit would be red after a correct release"
+hasin "$(pjahead 0.35.0 0.34.0 0.34.0)" -q "candor-ts: npm version '0.35.0' != 0.34.0" \
+  && ok "CONTROL: npm at neither the family line nor the ts pin still fails" \
+  || bad "npm at a version NOTHING pins passed — the excuse is too wide"
+hasin "$(pjahead 0.34.0 0.35.0 0.34.0)" -q "adopt/candor.yml pins 0.35.0, not 0.33.0" \
+  && ok "CONTROL: adopt/ at neither the family line nor the java pin still fails" \
+  || bad "an adopt/ pin naming a version nothing pins passed"
+hasin "$(pjahead 0.34.0 0.34.0 0.35.0)" -q "jbang-catalog names" \
+  && ok "CONTROL: a jbang URL naming neither the family line nor the java pin still fails" \
+  || bad "a jbang URL naming a version nothing pins passed"
+rm -f "$PJ/root/candor/adopt/candor.yml" "$PJ/root/candor-java/jbang-catalog.json"
 hasin "$aheadout" -q "pins java SEPARATELY at 0.34.0" \
   && ok "…and the divergence is still DISCLOSED, just not failed" \
   || bad "an ahead java pin vanished silently instead of being disclosed"

@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (unreleased)
+## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (released 2026-09-30 as 0.39.3)
 
 - **Release notes over GitHub's body limit no longer lose entries silently.** `_release_notes.sh` cut an
   oversized section with `head -c` and appended only "Full notes: CHANGELOG.md" — on candor-rust's
@@ -41,7 +41,7 @@ keeps its own.
   the number; the corpus A/B cannot find a silence; veins not rows; the three directions of the
   disclosure ruling), and `bin/AGENT-SWEEP-BRIEF.md` moved out of a session scratchpad.
 
-## 2026-09-25 — the CHAINED census arm: scan each library as a dependency of a generated consumer (SOUNDNESS R671/R672/R673) (unreleased)
+## 2026-09-25 — the CHAINED census arm: scan each library as a dependency of a generated consumer (SOUNDNESS R671/R672/R673) (released 2026-09-30 as 0.39.3)
 
 **`bin/corpus-chained.sh` + `bin/corpus-chained/ConsumerGen.java` + `bin/corpus-chained-judge.py` —
 the second arm SOUNDNESS R668 asked for.** Every census so far ([[R662]] rust, [[R665]] java) scanned

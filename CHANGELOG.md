@@ -10,6 +10,11 @@ keeps its own.
 
 ## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (unreleased)
 
+- **`candor.test.sh`'s "java pin leaves swift on the family line" went red on the 0.39.3 pin bump**, for
+  the reason its rust sibling did at 0.38.1: it asserted swift sits on `ENGINE_PIN`, true only while
+  `ENGINE_PIN_SWIFT` is empty. It now asserts the invariant — swift resolves identically with and without a
+  java pin, to swift's own pin. (The pin commit was pushed with this gate red; see below.)
+
 - **`release-verify.sh`'s family form (what the weekly `release-audit` runs) went red the day 0.39.3 shipped,
   over a correct release.** 0.39.3 left candor-agents out, so the tooling treated it as SCOPED: `ENGINE_PIN`
   stayed 0.39.2 and all four engines were pinned AHEAD to 0.39.3. The rust crates check already excused a

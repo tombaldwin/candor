@@ -605,7 +605,23 @@ pinsay "…and a rust pin moves rust, alone"        "cargo install --version $JP
 # break if you want to know whether the swift pin still works.
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64)
-    pinsay "java pin leaves swift on the family line" "no published binary for v$PIN"  swift "CANDOR_ENGINE_PIN_JAVA=$JPIN"
+    # THE RUST ROW'S LESSON, APPLIED TO SWIFT (2026-09-30): this asserted `v$PIN` — that swift sits on the
+    # FAMILY line — which held only while the shipped file left ENGINE_PIN_SWIFT empty. The 0.39.3 cut
+    # pinned all four engines separately and the row went red for being right. Assert the invariant instead:
+    # swift's resolution is IDENTICAL with and without a java pin, and names the version swift's own pin
+    # resolves to.
+    sh1="$(mktemp -d "$T/sp1.XXXXXX")"; sh2="$(mktemp -d "$T/sp2.XXXXXX")"
+    s_nojava="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$sh1" CANDOR_CACHE="$sh1/.candor" CANDOR_DISPATCH_DRYRUN= \
+                  bash "$D" update swift 2>&1 | grep -oE 'no published binary for v[0-9.]+')"
+    s_java="$(env PATH="$T/nonet:/usr/bin:/bin" HOME="$sh2" CANDOR_CACHE="$sh2/.candor" CANDOR_ENGINE_PIN_JAVA=$JPIN \
+                  CANDOR_DISPATCH_DRYRUN= bash "$D" update swift 2>&1 | grep -oE 'no published binary for v[0-9.]+')"
+    if [ -n "$s_nojava" ] && [ "$s_nojava" = "$s_java" ] && [ "$s_nojava" = "no published binary for v$SWIFTPIN" ]; then
+      echo "  ok   a java pin does not move swift"
+    else
+      echo "  FAIL a java pin does not move swift"
+      echo "       without java pin: $s_nojava"; echo "       with java pin:    $s_java"; echo "       swift's pin: $SWIFTPIN"
+      fails=$((fails+1))
+    fi
     pinsay "…and a swift pin moves swift, alone"      "no published binary for v$JPIN" swift "CANDOR_ENGINE_PIN_SWIFT=$JPIN";;
   Darwin:*)
     # NOT SILENT, on either arm. A row that simply vanished off Darwin/arm64 would leave the impression

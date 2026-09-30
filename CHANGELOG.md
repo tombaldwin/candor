@@ -8,6 +8,17 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (unreleased)
+
+- **`release-verify.sh`'s family form (what the weekly `release-audit` runs) went red the day 0.39.3 shipped,
+  over a correct release.** 0.39.3 left candor-agents out, so the tooling treated it as SCOPED: `ENGINE_PIN`
+  stayed 0.39.2 and all four engines were pinned AHEAD to 0.39.3. The rust crates check already excused a
+  crate that matched its own pin; npm (`ENGINE_PIN_TS`), `adopt/candor.yml` and jbang's catalog
+  (`ENGINE_PIN_JAVA`) compared against the family version and failed. Each now accepts its engine's pin
+  when that pin is AHEAD of the family line, and nothing else — a version neither the family line nor the
+  pin names still fails. Pinned by four `release-test.sh` rows whose fixture, for the first time, carries
+  the adopt/ and jbang files; the main row fails on the previous script.
+
 ## 2026-09-29 — release-tooling fixes, census instruments, and the method rules (released 2026-09-30 as 0.39.3)
 
 - **Pins moved to 0.39.3.** candor-agents had nothing to release, so the cut is SCOPED: `ENGINE_PIN` stays on

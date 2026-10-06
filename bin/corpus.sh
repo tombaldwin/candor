@@ -97,7 +97,10 @@ KNOWN_SEEN=""
 #
 # WHAT AN ENTRY MAY NOT DO: it may not name a finding that is not in the register. The row is the
 # entry's justification, not a cross-reference — if there is no row, the honest state is a red build.
-KNOWN_FINDINGS='R576|honesty: rust.serde|de::Visitor::visit_char'
+KNOWN_FINDINGS=''
+# R576's entry (rust.serde de::Visitor::visit_char) was REMOVED 2026-10-06: the row was CLOSED by rust vein C
+# (candor-rust `31f6a61` + `ad30e26`) and the scheduled corpus run stopped reproducing it (run 37472134705:
+# the honesty oracle checked 56 reports and serde was scanned — the oracle asked, the answer changed).
 # R578's entry (swift-argument-parser GenerateManual.generatePages) was REMOVED 2026-10-06: the row was
 # CLOSED by swift vein B (candor-swift `9d8d4cf`/`519f62d`), so a recurrence is a new FINDING, not a known one.
 

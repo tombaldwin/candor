@@ -38,6 +38,13 @@ case "$block" in
 esac
 eval "$block"
 
+# THE LIVE LEDGER CAN BE EMPTY — it was, from 2026-10-06, when R576 and R578 both closed. A calibration that
+# reads only the live ledger would then calibrate NOTHING and still print ok, so the MECHANICS (sections 1-3)
+# run over a FIXTURE ledger built from those two real findings, and section 4 checks the LIVE entries.
+LIVE_LEDGER="$KNOWN_FINDINGS"
+KNOWN_FINDINGS='R576|honesty: rust.serde|de::Visitor::visit_char
+R578|honesty: swift.swift-argument-parser|GenerateManual.generatePages'
+
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then printf '  ok   %-46s %s\n' "$1" "$2"; pass=$((pass+1));
           else printf '  FAIL %-46s got=%s want=%s\n' "$1" "$2" "$3"; fail=$((fail+1)); fi; }
@@ -45,9 +52,7 @@ check() { if [ "$2" = "$3" ]; then printf '  ok   %-46s %s\n' "$1" "$2"; pass=$(
 SERDE="honesty: rust.serde.serde.scan.json — ✗ de::Visitor::visit_char: reads certain but calls \`de::Visitor::visit_str\` which is Unknown"
 SWIFT="honesty: swift.swift-argument-parser.swift-argument-parser.Swift.json — ✗ GenerateManual.generatePages: reads certain but calls \`MDocComponent.ast\` which is Unknown"
 
-# 1 — the live finding is recognised and does NOT count; a finding whose row was CLOSED is a FINDING again.
-#     (R578 was the second entry until 2026-10-06, when swift vein B closed it — its symbol is kept here as
-#     the closed-row case, which is the direction that matters: a closure must make a recurrence LOUD.)
+# 1 — both fixture findings are recognised, and do NOT count.
 # KNOWN_SEEN is written by the eval'd finding() and read by the staleness check, so it is
 # ASSERTED below rather than silenced — shellcheck was right that nothing here read it, and
 # the honest answer to "appears unused" in a calibration is to use it.
@@ -55,11 +60,11 @@ findings=0; known_hits=0; KNOWN_SEEN=""
 finding "$SERDE" >"$TMP/o"
 check "serde finding -> KNOWN R576"          "$(grep -c 'KNOWN (R576)' "$TMP/o")" "1"
 finding "$SWIFT" >"$TMP/o"
-check "closed-row finding (R578) -> FINDING" "$(grep -c 'FINDING:' "$TMP/o")" "1"
-check "only the closed-row one counts"      "$findings" "1"
-check "one counted as known"               "$known_hits" "1"
+check "swift finding -> KNOWN R578"          "$(grep -c 'KNOWN (R578)' "$TMP/o")" "1"
+check "neither counts as a finding"          "$findings" "0"
+check "both counted as known"                "$known_hits" "2"
 # The ledger must RECORD which entries fired — the staleness check below reads exactly this.
-check "only the live row recorded as seen"  "$(echo "$KNOWN_SEEN" | tr -d ' ')" "R576"
+check "both rows recorded as seen"           "$(echo "$KNOWN_SEEN" | tr -d ' ')" "R576R578"
 
 # 2 — a NEW finding must still fail. Both near-misses matter: the two-field key is what stops a
 #     DIFFERENT defect at a known symbol, or the known symbol in another project, being swallowed.
@@ -83,9 +88,13 @@ $KNOWN_FINDINGS
 K
   echo "$_s"
 }
-check "entry absent -> stale"                "$(stale_for ' ')" "R576"
-check "entry present -> not stale"          "$(stale_for ' R576 ')" ""
-check "a closed row seen -> not an entry"    "$(stale_for ' R576  R578 ')" ""
+check "one entry absent -> stale"            "$(stale_for ' R576 ')" "R578"
+check "both absent -> both stale"            "$(stale_for ' ')" "R576R578"
+check "both present -> not stale"            "$(stale_for ' R576  R578 ')" ""
+# AND THE REAL CASE THE FIXTURE EXISTS FOR: a finding whose row is gone from the ledger is a FINDING.
+KNOWN_FINDINGS="$LIVE_LEDGER"; findings=0
+finding "$SWIFT" >"$TMP/o"
+check "a removed entry's finding -> FINDING"  "$(grep -c 'FINDING:' "$TMP/o")" "1"
 
 # 4 — EVERY ENTRY MUST NAME A ROW THAT IS OPEN. The row is the entry's justification, not a
 #     cross-reference: an entry citing a closed or absent row is itself the defect, and this is the
@@ -97,7 +106,7 @@ if [ -f "$SPEC/scripts/soundness-status.py" ]; then
     [ -n "$r" ] || continue
     check "entry $r names an OPEN register row"  "$(echo "$ids" | grep -cx "$r")" "1"
   done <<K
-$KNOWN_FINDINGS
+$LIVE_LEDGER
 K
 else
   # A CHECK THAT CANNOT RUN MUST NOT REPORT OK. This assertion is the one that caught a ledger entry

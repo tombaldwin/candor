@@ -16,8 +16,12 @@ keeps its own.
   `diff new.json old.json` and says NEW first. **Already-generated text in a consumer's repo is not
   rewritten** — `candor init` writes `.candor/README.md` only when it is absent. Swap the two arguments by
   hand, or delete that file and re-run `candor init`.
-- `corpus-ledger.test` went red when swift vein B closed R578: a known-findings entry may only name an
-  OPEN row. The entry is gone; a recurrence now reads as a FINDING.
+- **The corpus known-findings ledger is now EMPTY.** `corpus-ledger.test` went red when swift vein B closed
+  R578 (an entry may only name an OPEN row), and the scheduled `corpus` run went red when R576 — closed by
+  rust vein C, but still listed open because its last column led with `OPEN` (fixed in candor-spec) —
+  stopped reproducing. Both entries are gone, so a recurrence of either reads as a FINDING. The calibration
+  now runs its mechanics on a FIXTURE ledger, so an empty live ledger cannot make it test nothing; it was
+  shown to fail with a closed row seeded back in.
 
 ## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (unreleased)
 

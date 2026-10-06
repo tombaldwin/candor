@@ -8,6 +8,17 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-06 — the adopt stub's `diff` example had its arguments backwards (unreleased)
+
+- **`candor init`'s generated usage text said `diff old.json new.json`; every engine's `diff` is
+  `<current> <baseline>` — NEW first** (SPEC §3.3.1). A consumer following it (uflexi) saw an added `Rand`
+  printed as `{ -Rand }` and every new function as `(removed fn)`. The stub now prints
+  `diff new.json old.json` and says NEW first. **Already-generated text in a consumer's repo is not
+  rewritten** — `candor init` writes `.candor/README.md` only when it is absent. Swap the two arguments by
+  hand, or delete that file and re-run `candor init`.
+- `corpus-ledger.test` went red when swift vein B closed R578: a known-findings entry may only name an
+  OPEN row. The entry is gone; a recurrence now reads as a FINDING.
+
 ## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (unreleased)
 
 - **`candor.test.sh`'s "java pin leaves swift on the family line" went red on the 0.39.3 pin bump**, for

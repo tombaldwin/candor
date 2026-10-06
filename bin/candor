@@ -2289,18 +2289,21 @@ PY
         # stub printed `blast`, which is not a verb in any engine (the verb is `impact`), and pointed at
         # `candor agents` for the agent contract — a real verb, but the agent-FLEET drift report, an
         # unrelated feature. Both were caught by running what the stub tells the reader to run.
+        # ARGUMENT ORDER IS COPIED FROM THE ENGINES TOO: every engine's `diff` is `<current> <baseline>`
+        # (SPEC §3.3.1). This stub said `old.json new.json` until 2026-10-06, and a consumer following it
+        # saw every gained effect printed as removed and every new function as `(removed fn)`.
         if [ -f "$runsh" ]; then
           echo ".candor/run show    --report $blname <fn>   # this function's transitive effects"
           echo ".candor/run where   --report $blname Net    # every function that reaches the network"
           echo ".candor/run callers --report $blname <fn>   # who calls this"
           echo ".candor/run impact  --report $blname <fn>   # what breaks if this changes"
-          echo ".candor/run diff    old.json new.json              # what a change altered"
+          echo ".candor/run diff    new.json old.json              # what a change altered (NEW first)"
         else
           echo "candor show    <fn>            # this function's transitive effects"
           echo "candor where   Net             # every function that reaches the network"
           echo "candor callers <fn>            # who calls this"
           echo "candor impact  <fn>            # what breaks if this changes"
-          echo "candor diff    old.json new.json"
+          echo "candor diff    new.json old.json   # NEW first: diff <current> <baseline>"
         fi
         echo '```'
         echo ""

@@ -8,6 +8,23 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-07 — the ⟨0.40⟩ family cut: adopt describes the new-function baseline rule (unreleased)
+
+- **The drop-in adoption docs describe ⟨0.40⟩'s baseline rule** (`0d3907d`). `adopt/candor.yml` and
+  `adopt/README.md` say that a function ABSENT from the baseline that performs an effect now fails the gate
+  (AS-EFF-005, exit 1), and give the remedy: review `candor diff <this run's report> <baseline>` (current
+  first), then re-record the baseline in the same PR. `adopt/candor-init.sh` now copies the report's
+  `.callgraph.json` beside the baseline, as `candor init` already did — under ⟨0.40⟩ the sidecar no longer
+  decides whether AS-EFF-005 fires, only whether a firing is labelled `origin:"new"` or `"existing"`.
+- **`UMBRELLA_VERSION` moves to 0.40.0** with the family. This is a FAMILY cut — all four engines,
+  candor-spec and candor-agents — so the front door returns to one line: `ENGINE_PIN` moves to 0.40.0 and the
+  four per-engine pins 0.39.3 left set (`ENGINE_PIN_{JAVA,TS,RUST,SWIFT}`) are cleared, after the engines
+  are published.
+- **Also in this release**, and recorded in the two dated sections below: the adopt stub's `diff` example
+  now puts NEW first (2026-10-06), the corpus known-findings ledger is empty and calibrated on a fixture
+  (2026-10-06), and `release-verify.sh`'s family form honours every per-engine pin ahead of the line
+  (2026-09-30).
+
 ## 2026-10-06 — the adopt stub's `diff` example had its arguments backwards (unreleased)
 
 - **`candor init`'s generated usage text said `diff old.json new.json`; every engine's `diff` is

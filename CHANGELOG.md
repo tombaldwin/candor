@@ -8,7 +8,7 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-10-07 — the ⟨0.40⟩ family cut: adopt describes the new-function baseline rule (unreleased)
+## 2026-10-07 — the ⟨0.40⟩ family cut: adopt describes the new-function baseline rule (released 2026-10-07 as 0.40.0)
 
 - **The drop-in adoption docs describe ⟨0.40⟩'s baseline rule** (`0d3907d`). `adopt/candor.yml` and
   `adopt/README.md` say that a function ABSENT from the baseline that performs an effect now fails the gate
@@ -25,7 +25,7 @@ keeps its own.
   (2026-10-06), and `release-verify.sh`'s family form honours every per-engine pin ahead of the line
   (2026-09-30).
 
-## 2026-10-06 — the adopt stub's `diff` example had its arguments backwards (unreleased)
+## 2026-10-06 — the adopt stub's `diff` example had its arguments backwards (released 2026-10-07 as 0.40.0)
 
 - **`candor init`'s generated usage text said `diff old.json new.json`; every engine's `diff` is
   `<current> <baseline>` — NEW first** (SPEC §3.3.1). A consumer following it (uflexi) saw an added `Rand`
@@ -40,7 +40,7 @@ keeps its own.
   now runs its mechanics on a FIXTURE ledger, so an empty live ledger cannot make it test nothing; it was
   shown to fail with a closed row seeded back in.
 
-## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (unreleased)
+## 2026-09-30 — release-verify honours every per-engine pin, not just rust's (released 2026-10-07 as 0.40.0)
 
 - **`candor.test.sh`'s "java pin leaves swift on the family line" went red on the 0.39.3 pin bump**, for
   the reason its rust sibling did at 0.38.1: it asserted swift sits on `ENGINE_PIN`, true only while

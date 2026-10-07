@@ -48,7 +48,14 @@ mvn -q compile              # (or ./gradlew classes) — candor reads bytecode
 ```
 
 It writes **five artifacts** — commit **all** of them (the AS-EFF-005 regression ratchet bites only when
-the baseline is committed):
+the baseline is committed). It also copies the report's `.callgraph.json` sidecar beside the baseline when
+the engine wrote one; commit it too — it is what labels a ratchet firing `origin: new` vs `existing`.
+
+From spec ⟨0.40⟩ the ratchet **fails on new code that performs an effect**: a function absent from the
+baseline whose effects include anything but `Unknown` is a gain, exactly like an existing function gaining
+one. The remedy belongs in the same PR — review `candor diff <this run's report> .candor/baseline.json`
+(current report first), then re-record the baseline and commit it. A new pure function passes; a new
+function carrying only `Unknown` is named in an advisory note.
 
 | Artifact | Role |
 |----------|------|

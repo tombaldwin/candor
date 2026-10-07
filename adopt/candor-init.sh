@@ -112,6 +112,9 @@ if [ -f .candor/baseline.json ]; then
 else
   cp "$REPORT" .candor/baseline.json \
     || { echo "candor init: could not record the baseline — stopping"; exit 2; }
+  # The callgraph sidecar too, as `candor init` does: under ⟨0.40⟩ it no longer decides WHETHER the guard
+  # fires, but it is what labels a firing `origin: new` vs `existing` — without it every row says `unknown`.
+  [ -f "${REPORT%.json}.callgraph.json" ] && cp "${REPORT%.json}.callgraph.json" .candor/baseline.callgraph.json
   BASELINE_NOTE=".candor/baseline.json   ← the regression ratchet baseline"
 fi
 

@@ -553,6 +553,32 @@ So: **say which of the THREE directions the change runs in before quoting any ba
 plus a fixture for the disclosure the removal might delete. Adding a concrete effect or an `incomplete`
 is priced by auditing every new charge.
 
+## A release does not re-run what already ran on the same source
+
+**Agreed with Tom 2026-10-07, at the 0.40.0 cut.** The first 0.40.0 brief re-ran every engine's local gate list
+and by-hand gates and `gate-run.sh candor` (seven IntelliJ unpacks) — hours, almost all of it repeating a run
+from that afternoon on IDENTICAL engine source. A release ALWAYS runs: `spec-bump.sh`, `release-stage.sh`,
+`bin/fast-gates.sh`, full `scripts/doc-gates.sh`, four-way `conformance/run.sh` AFTER the last edit (spec-bump
+rewrites SPEC.md, and the ledger is keyed by statement sha), CI green on the staging commits,
+`release-preflight.sh <spec> <ver>` with both args, and `release-verify.sh` after publishing. It re-runs a repo's
+`gate-run.sh` + BY-HAND gates ONLY when that repo's engine SOURCE changed since its last fully gated run, and
+`gate-run.sh candor` only when the IDE plugins changed.
+
+**What the release MUST still prove, and how 0.40.0 learned it: TRUTH-monotone against the LAST RELEASE.**
+For every unit whose gate flips 1→0 against the published previous version, the candidate row must be (a)
+resolved-charged, (b) proven pure by READING the body (a sidecar walk alone is not proof), (c) `[]`+`invisible:[D]`
+where pre ⊆ post invisible, D is directly called, and chaining D's report (candidate binary) MEASURABLY charges or
+Unknowns the row, or (d) re-hedged with a TRUE reason. Else it blocks. At 0.40.0 this found ~10 PRE-EXISTING
+silences (R976–R989) that v0.39.3 had covered only by an accidental wrong-reason `Unknown`, which the release's
+CORRECT resolutions removed. Two instrument lessons: the A/B's flip list is BLIND to rows removed while carrying
+only `invisible`; and a sidecar classifier is BLIND to a dropped edge whose callee reads falsely pure in both
+arms — use a seeded dropped-edge detector. This check belongs in each lane's own A/B (against the last release,
+not HEAD), so the cut only collects it.
+
+**And watch the disk during a long wave.** At 0.40.0 the session scratchpad reached 62 GB and the volume hit
+1.5 GB free mid-checks; `release-test` reported 24 false FAILs. Clean merged lanes' worktrees with
+`git worktree remove` + a guarded `rm -rf "${S:?}/${d:?}"`, then re-run every check that had no disk guard.
+
 ## The standing checks
 
 Run them; don't re-derive them. `bin/verify-local.sh`, `bin/verify-umbrella.sh` (tests a throwaway

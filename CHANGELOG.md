@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-08 — the 0.40.1 family patch: the VS Code extension tracks its server pin again (released 2026-10-08 as 0.40.1)
+
+- **The VS Code extension's own `version` moves 0.39.2 → 0.40.1.** The 0.40.0 pin commit (`9945a4b`) moved
+  `candorTsVersion` to 0.40.0 and left the extension at 0.39.2, so `test-vscode.sh` gate 4 (the extension's
+  major.minor must track the server pin's) turned the umbrella's `vscode extension` workflow red on `main`:
+  `drift: extension 0.39.2 does not track the server pin 0.40.0 (major.minor)`. Locally after the edit:
+  `test-vscode: 15 passed, 0 failed`. The same trap as the ⟨0.36⟩ cut — the version is a different axis
+  from the pin, and the gate couples them deliberately.
+- **`UMBRELLA_VERSION` moves to 0.40.1** with the family. A within-spec patch (spec stays 0.40): every engine,
+  candor-spec and candor-agents carry post-0.40.0 soundness fixes, so this is a family cut and `ENGINE_PIN`
+  moves to 0.40.1 after the engines are published, so `candor update` and the Homebrew formula fetch them.
+- `CLAUDE.md` records the release procedure that does not re-run gates over unchanged engine source, and the
+  truth-monotone bar against the last release (`135bfa6`; docs only).
+
 ## 2026-10-07 — the ⟨0.40⟩ family cut: adopt describes the new-function baseline rule (released 2026-10-07 as 0.40.0)
 
 - **Pins move to the 0.40.0 family line.** `ENGINE_PIN` 0.39.2 → 0.40.0, and the four per-engine overrides

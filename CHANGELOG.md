@@ -10,6 +10,10 @@ keeps its own.
 
 ## 2026-10-07 — the ⟨0.40⟩ family cut: adopt describes the new-function baseline rule (released 2026-10-07 as 0.40.0)
 
+- **Pins move to the 0.40.0 family line.** `ENGINE_PIN` 0.39.2 → 0.40.0, and the four per-engine overrides
+  the 0.39.3 cut left live (`ENGINE_PIN_{JAVA,TS,RUST,SWIFT}=0.39.3`) are CLEARED — 0.40.0 is a full family
+  cut, candor-agents included. adopt (`CANDOR_JAVA_VERSION`, `candor-agents@v0.40.0`), VS Code and JetBrains
+  pins follow. `bin/pin-currency.sh`: 0 stale.
 - **The drop-in adoption docs describe ⟨0.40⟩'s baseline rule** (`0d3907d`). `adopt/candor.yml` and
   `adopt/README.md` say that a function ABSENT from the baseline that performs an effect now fails the gate
   (AS-EFF-005, exit 1), and give the remedy: review `candor diff <this run's report> <baseline>` (current

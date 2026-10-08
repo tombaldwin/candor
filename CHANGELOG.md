@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-08 — the 0.40.1 family patch: the VS Code extension tracks its server pin again (released 2026-10-08 as 0.40.1)
 
+- **Pins move to the 0.40.1 family line.** `bin/candor` `ENGINE_PIN` 0.40.0 → 0.40.1 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.1`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **The VS Code extension's own `version` moves 0.39.2 → 0.40.1.** The 0.40.0 pin commit (`9945a4b`) moved
   `candorTsVersion` to 0.40.0 and left the extension at 0.39.2, so `test-vscode.sh` gate 4 (the extension's
   major.minor must track the server pin's) turned the umbrella's `vscode extension` workflow red on `main`:

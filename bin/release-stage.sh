@@ -135,6 +135,11 @@ bump "agents VERSION" "candor-agents/candor_agents/scan.py"          'VERSION = 
 bump "agents pyproject" "candor-agents/pyproject.toml"               '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'     "version = \"$VER\"" candor-agents
 bump "swift engine" "candor-swift/Sources/candor-swift/main.swift"   'engineVersion = "candor-swift-[0-9]+\.[0-9]+\.[0-9]+"' "engineVersion = \"candor-swift-$VER\"" candor-swift
 bump "ts package.json" "candor-ts/package.json"                      '"version": "[0-9]+\.[0-9]+\.[0-9]+"'        "\"version\": \"$VER\"" candor-ts
+# Since R1062 (candor-ts 09b0352) `prepack` copies package-lock.json into the published npm-shrinkwrap.json,
+# so its ROOT version is a shipped site: the 0.40.2 cut had to move it by hand. Only the two root entries
+# (the top level and `packages[""]`) follow `"name": "candor-ts",` — every dependency's `version` does not,
+# so anchoring on that line cannot touch a pinned dependency.
+bump "ts package-lock" "candor-ts/package-lock.json"                 '("name": "candor-ts",\s*\n\s*)"version": "[0-9]+\.[0-9]+\.[0-9]+"' "\\g<1>\"version\": \"$VER\"" candor-ts
 bump "java gradle" "candor-java/build.gradle.kts"                        '(?m)^version = "[0-9]+\.[0-9]+\.[0-9]+"'    "version = \"$VER\"" candor-java
 # candor-java's README repeats the build version in its `## Status` line, and nothing staged it: every
 # bump edited the SPEC number on that line and left the version, so it read `v0.19.x` for NINE releases

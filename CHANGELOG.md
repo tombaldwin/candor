@@ -8,6 +8,14 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-09 — `release-stage.sh` stages candor-ts's lockfile root version
+
+- **`candor-ts/package-lock.json`'s root `version` is now a staged site.** Since candor-ts R1062 the lockfile
+  ships as the npm shrinkwrap, so a cut that left it behind would publish a shrinkwrap naming the previous
+  version; the 0.40.2 cut moved it by hand. The bump anchors on the `"name": "candor-ts",` line, so only the
+  top-level and `packages[""]` entries move — `release-test.sh` asserts both, and that a pinned
+  dependency's `version` does not.
+
 ## 2026-10-09 — the 0.40.2 family patch (released 2026-10-09 as 0.40.2)
 
 - **Pins move to the 0.40.2 family line.** `bin/candor` `ENGINE_PIN` 0.40.1 → 0.40.2 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.2`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

@@ -131,6 +131,21 @@ mk candor-ts/package.json '{
   "version": "0.25.0"
 }
 '
+mk candor-ts/package-lock.json '{
+  "name": "candor-ts",
+  "version": "0.25.0",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "candor-ts",
+      "version": "0.25.0"
+    },
+    "node_modules/@types/node": {
+      "version": "25.9.2"
+    }
+  }
+}
+'
 mk candor-java/build.gradle.kts 'version = "0.25.0"
 '
 # The README's `## Status` line is a STAGED SITE, so the fixture has to carry it — otherwise the stage
@@ -217,6 +232,9 @@ is "agents VERSION"   '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor
 is "agents pyproject" '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-agents/pyproject.toml")"
 is "swift engine"     '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-swift/Sources/candor-swift/main.swift")"
 is "ts package.json"  '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-ts/package.json")"
+is "ts package-lock root" '0.26.0 0.26.0' "$(grep -A1 '"name": "candor-ts",' "$FIX/candor-ts/package-lock.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ' | sed 's/ $//')"
+# …and a DEPENDENCY's pinned version must not move with the root (the anchor's whole point).
+is "ts package-lock dep untouched" '25.9.2' "$(grep -A1 'node_modules/@types/node' "$FIX/candor-ts/package-lock.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 is "java gradle"      '0.26.0' "$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$FIX/candor-java/build.gradle.kts")"
 # …and the README Status line beside it: only the SPEC number on that line was ever staged, so the
 # version half read v0.19.x for nine releases. The assertion is the version, not the whole line.

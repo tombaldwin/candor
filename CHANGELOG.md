@@ -8,6 +8,13 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-09 — `corpus-ab.py` no longer calls an unproven arm difference "legitimate"
+
+- **When both arms hash to the same file and differ only in arguments, the arm-identity line now says the
+  engines were NOT proven to differ.** A wrapper script (`bash arm.sh pre|post`) hashes identically while
+  choosing different engines by its argument; a java lane's real A/B printed one hash for both arms and the
+  old wording read it as a sanctioned one-binary differential.
+
 ## 2026-10-09 — the 0.40.3 family patch (released 2026-10-09 as 0.40.3)
 
 - **Pins move to the 0.40.3 family line.** `bin/candor` `ENGINE_PIN` 0.40.2 → 0.40.3 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.3`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

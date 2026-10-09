@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-09 — the 0.40.3 family patch (released 2026-10-09 as 0.40.3)
 
+- **Pins move to the 0.40.3 family line.** `bin/candor` `ENGINE_PIN` 0.40.2 → 0.40.3 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.3`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **`UMBRELLA_VERSION` moves to 0.40.3** with the family. A within-spec patch (spec stays 0.40; `SPEC.md` is
   unchanged since the 0.40.2 cut): candor-rust, candor-java (the framework table's JDK package list is now a
   pinned input, closing R1082, and R1077's loader disclosure — see its changelog for the user-visible cost),

@@ -6,7 +6,7 @@
 bytecode (Java, Kotlin, Scala, Groovy) and knows which functions reach the network, filesystem, a
 database, a subprocess — *transitively, across packages* — then turns invariants like *"the domain
 layer does no I/O"* into a policy that fails the build when an edit breaks them. The same spec runs as
-full engines in Rust, TypeScript and Swift, kept in agreement by a machine-checked conformance suite — so
+full engines in Rust, TypeScript and Swift, kept in agreement by an automated four-way conformance suite — so
 one mental model and one policy file work across your whole stack. **candor-java is the reference
 implementation; the others are first-class, conformance-checked engines.**
 

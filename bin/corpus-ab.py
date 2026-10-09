@@ -422,8 +422,14 @@ def arms_are_indistinguishable(pre_cmd, post_cmd, mark_env, mark_arm):
     if pre_h == post_h and pre_r == post_r and not env_differs:
         return True, "arm identity: the two arms are byte-identical commands over byte-identical files."
     if pre_h == post_h and pre_h:
+        # NOT PROVEN, not "legitimate": a wrapper script (`bash arm.sh pre|post`) hashes identically on
+        # both arms while choosing DIFFERENT engines by its argument — measured 2026-10-09, when a java
+        # lane's real A/B printed one hash for both arms. The arguments differ, so this does not refuse;
+        # it says the artefact difference was not shown, which is what is true.
         return False, ("arm identity: both arms name the SAME file content (%s…) and differ only in "
-                       "their arguments or env — a one-binary differential, which is legitimate."
+                       "their arguments or env. Either a one-binary differential (legitimate) or a "
+                       "wrapper that picks the binary by argument — the arms' ENGINES were NOT proven "
+                       "to differ at the artefact (R691); name the binaries directly to prove it."
                        % pre_h[0][:12])
     return False, ("arm identity: the arms' binaries differ (%s… vs %s…), proven by content hash."
                    % ((pre_h[0][:12] if pre_h else "none"), (post_h[0][:12] if post_h else "none")))

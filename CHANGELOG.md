@@ -8,8 +8,14 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-10-09 — `release-stage.sh` stages candor-ts's lockfile root version
+## 2026-10-09 — the 0.40.3 family patch (released 2026-10-09 as 0.40.3)
 
+- **`UMBRELLA_VERSION` moves to 0.40.3** with the family. A within-spec patch (spec stays 0.40; `SPEC.md` is
+  unchanged since the 0.40.2 cut): candor-rust, candor-java (the framework table's JDK package list is now a
+  pinned input, closing R1082, and R1077's loader disclosure — see its changelog for the user-visible cost),
+  candor-ts and candor-swift carry the v044 soundness wave, candor-spec the register, and candor-agents is a
+  version-only cut. `adopt/`, `integrations/` and `fingerprint/` are as they were. `ENGINE_PIN` moves to 0.40.3
+  after the engines are published, so `candor update` and the Homebrew formula fetch them.
 - **`candor-ts/package-lock.json`'s root `version` is now a staged site.** Since candor-ts R1062 the lockfile
   ships as the npm shrinkwrap, so a cut that left it behind would publish a shrinkwrap naming the previous
   version; the 0.40.2 cut moved it by hand. The bump anchors on the `"name": "candor-ts",` line, so only the

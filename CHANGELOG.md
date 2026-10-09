@@ -8,6 +8,15 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-09 — the 0.40.2 family patch (released 2026-10-09 as 0.40.2)
+
+- **`UMBRELLA_VERSION` moves to 0.40.2** with the family. A within-spec patch (spec stays 0.40; `SPEC.md` is
+  unchanged since the 0.40.1 cut): candor-rust, candor-java (the generated framework member→effect table,
+  R492/R727 — see its changelog for the user-visible cost), candor-ts and candor-swift carry the v043
+  soundness wave, candor-spec the register, and candor-agents is a version-only cut. No change to the
+  umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` are as they were. `ENGINE_PIN` moves
+  to 0.40.2 after the engines are published, so `candor update` and the Homebrew formula fetch them.
+
 ## 2026-10-08 — the 0.40.1 family patch: the VS Code extension tracks its server pin again (released 2026-10-08 as 0.40.1)
 
 - **Pins move to the 0.40.1 family line.** `bin/candor` `ENGINE_PIN` 0.40.0 → 0.40.1 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.1`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

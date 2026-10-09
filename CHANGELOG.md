@@ -8,6 +8,13 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-10 — README: the conformance suite is "automated", not "machine-checked"
+
+- **"Machine-checked" claimed proof the suite does not give.** The conformance suite is a differential test;
+  candor-spec's `lean/` model is machine-checked, and LEAN-CHECKER-PLAN.md §4 lists "machine-checked" as
+  wording to avoid for anything that is tested rather than proved. Now "an automated four-way conformance
+  suite".
+
 ## 2026-10-09 — `corpus-ab.py` no longer calls an unproven arm difference "legitimate"
 
 - **When both arms hash to the same file and differ only in arguments, the arm-identity line now says the

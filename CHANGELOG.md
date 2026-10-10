@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-11 — the 0.40.5 family patch (released 2026-10-11 as 0.40.5)
+
+- **`UMBRELLA_VERSION` moves to 0.40.5** with the family. A within-spec patch (spec stays 0.40). `SPEC.md`
+  changed since the 0.40.4 cut, as clarification only: §6.2 `only` gains rule 4 (a listed permitted scope
+  matches by exact segment run, and the implicit `A -> A` is the set `from` binds, SOUNDNESS R1103) and the
+  Scope-matching paragraph names the trailing-separator anchor `app::` / `app.` (R681). All four engines
+  already behaved this way, conformance PART 49b and PART 64 pin it, and no engine verdict moves.
+  candor-java carries R1097 (a framework member overridden in another surveyed jar now discloses, or resolves
+  when that jar is chained). candor-swift carries R1101–R1106 and the three silences its independent audit
+  found and fixed (R1099, R1100, R1107). candor-spec carries the Lean checker's Phase 1, PART 49b/15e and the
+  register. candor-rust, candor-ts and candor-agents are version-only cuts. `adopt/`, `integrations/` and
+  `fingerprint/` are as they were. `ENGINE_PIN` moves to 0.40.5 after the engines are published, so
+  `candor update` and the Homebrew formula fetch them.
+
 ## 2026-10-10 — the 0.40.4 family patch (released 2026-10-10 as 0.40.4)
 
 - **Pins move to the 0.40.4 family line.** `bin/candor` `ENGINE_PIN` 0.40.3 → 0.40.4 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.4`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

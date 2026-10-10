@@ -8,17 +8,23 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-10-10 — README: the conformance suite is "automated", not "machine-checked"
+## 2026-10-10 — the 0.40.4 family patch (released 2026-10-10 as 0.40.4)
 
-- **"Machine-checked" claimed proof the suite does not give.** The conformance suite is a differential test;
+- **`UMBRELLA_VERSION` moves to 0.40.4** with the family. A within-spec patch (spec stays 0.40; `SPEC.md` is
+  unchanged since the 0.40.3 cut): candor-rust, candor-ts and candor-swift carry the v045 soundness wave
+  (candor-swift's R1086 closes a silence v0.40.3 introduced), candor-java's derived JDK indexes are now pinned
+  inputs rather than a property of the JDK that built the jar (R1094: the v0.40.3 jar was built on JDK 17 and
+  missed 23 callback disclosures), candor-spec carries the register, PART 97/98 and `MODEL-DEFINITIONS.md`, and
+  candor-agents is a version-only cut. `adopt/`, `integrations/` and `fingerprint/` are as they were.
+  `ENGINE_PIN` moves to 0.40.4 after the engines are published, so `candor update` and the Homebrew formula
+  fetch them.
+- **README: the conformance suite is "automated", not "machine-checked".** "Machine-checked" claimed proof the
+  suite does not give. The conformance suite is a differential test;
   candor-spec's `lean/` model is machine-checked, and LEAN-CHECKER-PLAN.md §4 lists "machine-checked" as
   wording to avoid for anything that is tested rather than proved. Now "an automated four-way conformance
   suite".
-
-## 2026-10-09 — `corpus-ab.py` no longer calls an unproven arm difference "legitimate"
-
-- **When both arms hash to the same file and differ only in arguments, the arm-identity line now says the
-  engines were NOT proven to differ.** A wrapper script (`bash arm.sh pre|post`) hashes identically while
+- **`corpus-ab.py` no longer calls an unproven arm difference "legitimate".** When both arms hash to the same
+  file and differ only in arguments, the arm-identity line now says the engines were NOT proven to differ. A wrapper script (`bash arm.sh pre|post`) hashes identically while
   choosing different engines by its argument; a java lane's real A/B printed one hash for both arms and the
   old wording read it as a sanctioned one-binary differential.
 

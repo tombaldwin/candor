@@ -575,6 +575,16 @@ only `invisible`; and a sidecar classifier is BLIND to a dropped edge whose call
 arms — use a seeded dropped-edge detector. This check belongs in each lane's own A/B (against the last release,
 not HEAD), so the cut only collects it.
 
+**A LARGE REMOVAL NEEDS AN INDEPENDENT CHECKER, NOT KILL-SWITCH ATTRIBUTION — measured 2026-10-10, swift R1105.**
+A property fix removed ~3,800 charged rows. The lane attributed every removal to a mechanism by turning each
+fix off in turn, calibrated its own classifier with a seed, and read 30 sites; all of it looked clean. An
+independent audit — its own SwiftSyntax parser sharing no engine code, seeded and shown to fire — then found
+THREE real losses inside "explained" removals: one a regression in the same fix, two pre-existing silences the
+old over-wide edge had been covering. A kill switch can only say WHICH change removed a charge, never that the
+charge was false, and a lane's classifier shares the lane's model. So for a removal at scale, the release bar's
+"(b) proven pure by reading" is met by an independent checker over every removal plus a stratified hand
+sample — not by attribution. Budget the audit before calling the change ready.
+
 **And watch the disk during a long wave.** At 0.40.0 the session scratchpad reached 62 GB and the volume hit
 1.5 GB free mid-checks; `release-test` reported 24 false FAILs. Clean merged lanes' worktrees with
 `git worktree remove` + a guarded `rm -rf "${S:?}/${d:?}"`, then re-run every check that had no disk guard.

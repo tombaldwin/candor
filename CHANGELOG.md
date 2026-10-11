@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-11 — the 0.40.5 family patch (released 2026-10-11 as 0.40.5)
 
+- **Pins move to the 0.40.5 family line.** `bin/candor` `ENGINE_PIN` 0.40.4 → 0.40.5 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.5`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **`UMBRELLA_VERSION` moves to 0.40.5** with the family. A within-spec patch (spec stays 0.40). `SPEC.md`
   changed since the 0.40.4 cut, as clarification only: §6.2 `only` gains rule 4 (a listed permitted scope
   matches by exact segment run, and the implicit `A -> A` is the set `from` binds, SOUNDNESS R1103) and the

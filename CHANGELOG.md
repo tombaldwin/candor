@@ -8,6 +8,23 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-11 — the 0.40.6 family patch (released 2026-10-11 as 0.40.6)
+
+- **`UMBRELLA_VERSION` moves to 0.40.6** with the family. A within-spec patch (spec stays 0.40). `SPEC.md`
+  changed since the 0.40.5 cut, as clarification only, under the existing ⟨0.40⟩ marker: §3.1 records the
+  owner's 2026-10-11 ruling that a class filter is answered as written (`deny Net[<all three>]` over an entry
+  with no `netClass` is refused; `Net[*]` / bare `Net` is answered, and likewise for `Unknown[…]`), §6.2's
+  filter bullets point at it, and a present-and-empty `netClass` is read as absent. All four engines already
+  behaved this way, conformance PART 97 (arms B3, D2) pins it, and no engine verdict moves.
+  candor-rust carries R1098 (a comparison over a std wrapper reaches the element's `PartialEq`/`PartialOrd`)
+  and five drop-glue silences closed per row (R297/R195, R300, R829, R1116, R1118) — gate verdicts can go
+  red where a destructor really runs, e.g. tempfile's `NamedTempFile::into_file` now fails `deny Fs`.
+  candor-swift carries R1109 (a conformer through a refining protocol is an implementor). candor-spec carries
+  the Lean checker's Phase 2 first slice (the `Net` destination class) and PART 97 arm D. candor-java,
+  candor-ts and candor-agents are version-only cuts. `adopt/`, `integrations/` and `fingerprint/` are as they
+  were. `ENGINE_PIN` moves to 0.40.6 after the engines are published, so `candor update` and the Homebrew
+  formula fetch them.
+
 ## 2026-10-11 — the 0.40.5 family patch (released 2026-10-11 as 0.40.5)
 
 - **Pins move to the 0.40.5 family line.** `bin/candor` `ENGINE_PIN` 0.40.4 → 0.40.5 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.5`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

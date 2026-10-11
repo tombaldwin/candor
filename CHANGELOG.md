@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-11 — the 0.40.6 family patch (released 2026-10-11 as 0.40.6)
 
+- **Pins move to the 0.40.6 family line.** `bin/candor` `ENGINE_PIN` 0.40.5 → 0.40.6 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.6`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **`UMBRELLA_VERSION` moves to 0.40.6** with the family. A within-spec patch (spec stays 0.40). `SPEC.md`
   changed since the 0.40.5 cut, as clarification only, under the existing ⟨0.40⟩ marker: §3.1 records the
   owner's 2026-10-11 ruling that a class filter is answered as written (`deny Net[<all three>]` over an entry

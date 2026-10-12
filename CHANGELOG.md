@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-12 — the 0.40.7 family patch (released 2026-10-12 as 0.40.7)
+
+- **`UMBRELLA_VERSION` moves to 0.40.7** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` is
+  unchanged since the 0.40.6 cut, and the highest rung marker is still ⟨0.40⟩. candor-rust carries scan-only
+  drop-glue and comparison fixes (R198, R200/R1121, R201, R209, R323, R1111, R1122–R1124, R1129, R1134 and R1128's
+  derive route close silent under-reports; R1120, R1125 and R1127's async-block half remove over-charges) and a
+  new CI gate, `soundness/run_handoff.sh`. Gate verdicts move on real code: `deny Log` now fails over jni 0.21's
+  `JNIEnv`/`JList` wrappers and tokio's `Runtime::block_on`/`LocalSet::block_on`, `deny Rand` over mongodb's
+  `SessionRawBatchCursor::generic_new`, and `deny Log` now passes over tokio's runtime driver `park` family —
+  candor-rust's CHANGELOG lists them. candor-spec carries the register only. candor-java, candor-ts,
+  candor-swift and candor-agents are version-only cuts. `adopt/`, `integrations/` and `fingerprint/` are as they
+  were. `ENGINE_PIN` moves to 0.40.7 after the engines are published, so `candor update` and the Homebrew
+  formula fetch them.
+
 ## 2026-10-11 — the 0.40.6 family patch (released 2026-10-11 as 0.40.6)
 
 - **Pins move to the 0.40.6 family line.** `bin/candor` `ENGINE_PIN` 0.40.5 → 0.40.6 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.6`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

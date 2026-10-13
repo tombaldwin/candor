@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-13 — the 0.40.9 family patch (released 2026-10-13 as 0.40.9)
+
+- **`UMBRELLA_VERSION` moves to 0.40.9** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
+  `conformance/` are unchanged since the 0.40.8 cut, and the highest rung marker is still ⟨0.40⟩. candor-rust
+  carries scan-only fixes that close silent under-reports: operators reached through a cast, a
+  reference-to-primitive impl or a macro-made impl, glob-imported types, a bin calling its own library,
+  `macro_rules!` names defined twice and `pub` trait default bodies (R1150–R1157, R1159–R1162). Gate verdicts
+  move on real code: `deny Fs` now fails over tokio's `Child*::into_owned_fd`, bindgen's `Module::parse` and
+  dunce's `realpath`; `deny Log` over regex-automata's `dfa::search::init_fwd`/`init_rev`; `deny Env` over
+  azure_identity's credential constructors; `deny Rand` over rand_core 0.9's `BlockRng::from_rng`. `deny Rand`
+  now passes over rand_core's `getrandom` error methods and over rand_core 0.5/0.6's `read`, where
+  `deny Rand Unknown` still fails. candor-rust's CHANGELOG lists the gates and the counts. candor-spec carries
+  the register only. candor-java, candor-ts, candor-swift and candor-agents are version-only cuts. `adopt/`,
+  `integrations/` and `fingerprint/` are as they were. `ENGINE_PIN` moves to 0.40.9 after the engines are
+  published, so `candor update` and the Homebrew formula fetch them.
+
 ## 2026-10-13 — the 0.40.8 family patch (released 2026-10-13 as 0.40.8)
 
 - **Pins move to the 0.40.8 family line.** `bin/candor` `ENGINE_PIN` 0.40.7 → 0.40.8 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.8`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

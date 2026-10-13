@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-13 — the 0.40.9 family patch (released 2026-10-13 as 0.40.9)
 
+- **Pins move to the 0.40.9 family line.** `bin/candor` `ENGINE_PIN` 0.40.8 → 0.40.9 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.9`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **`UMBRELLA_VERSION` moves to 0.40.9** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
   `conformance/` are unchanged since the 0.40.8 cut, and the highest rung marker is still ⟨0.40⟩. candor-rust
   carries scan-only fixes that close silent under-reports: operators reached through a cast, a

@@ -655,6 +655,7 @@ BUCKET_LABELS = [
     ("1", "1 absent/pure -> CONCRETE effect (a scoped deny moves)"),
     ("2", "2 absent/pure -> Unknown ONLY (disclosure; bare deny does not move)"),
     ("3", "3 CONCRETE effect LOST (a regression; expect ~0)"),
+    ("3u", "3u Unknown LOST (a removed hedge; account for each)"),
     ("4", "4 everything else (pure rows, other fields)"),
 ]
 
@@ -679,8 +680,34 @@ def _eff_of_values(vals):
     return concrete, unknown, union
 
 
-def classify_verdicts(detail, pre_rows):
-    """Sort a diff into verdict buckets.  `pre_rows` is the (entry, pkg, row) stream of the PRE arm."""
+def _inferred_multiset(vals):
+    """(concrete-effect Counter, number of rows carrying Unknown) over a row-value multiset.  Counted,
+    not set-collapsed, so a duplicated row that drops an effect in ONE copy is still a loss."""
+    concrete, unknown_rows = collections.Counter(), 0
+    for v in vals:
+        try:
+            r = json.loads(v)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(r, dict):
+            continue
+        inf = r.get("inferred") or []
+        if "Unknown" in inf:
+            unknown_rows += 1
+        for e in inf:
+            if e != "Unknown":
+                concrete[e] += 1
+    return concrete, unknown_rows
+
+
+# BUCKETS 3 AND 3u ARE LOSS OVERLAYS, NOT PARTITION CELLS (2026-10-13).  Bucket 3 used to sit in an
+# if/elif ladder BELOW bucket 1, so a row that lost `Fs` and gained `Net` was counted a flip and its
+# loss vanished; and a removed hedge (`["Unknown"] -> []`) fell through to bucket 4, where nothing
+# looks.  A loss is now counted whatever else the row did: a row can be in 1 AND 3, or 1 AND 3u.
+# Buckets 1, 2 and 4 remain exclusive of each other; 4 is "no loss and not 1 or 2".
+def classify_verdicts(detail, pre_rows, sample=6):
+    """Sort a diff into verdict buckets.  `pre_rows` is the (entry, pkg, row) stream of the PRE arm.
+    1/2/4 partition the rows; 3 (concrete effect lost) and 3u (Unknown lost) overlay them."""
     pre_by_fn = collections.defaultdict(set)
     for entry, _pkg, row in pre_rows:
         for e in (row.get("inferred") or []):
@@ -688,6 +715,23 @@ def classify_verdicts(detail, pre_rows):
                 pre_by_fn[(entry, row.get("fn"))].add(e)
 
     counts, dropped = collections.Counter(), collections.Counter()
+    where = collections.defaultdict(list)
+
+    def losses(key, gone, came):
+        """Count the row into 3 / 3u if it lost anything; return True if it did."""
+        pc, pu = _inferred_multiset(gone)
+        qc, qu = _inferred_multiset(came)
+        lost_c = pc - qc
+        hit = False
+        if lost_c:
+            counts["3"] += 1
+            where["3"].append((key, sorted(lost_c)))
+            hit = True
+        if pu > qu:
+            counts["3u"] += 1
+            where["3u"].append((key, ["Unknown"]))
+            hit = True
+        return hit
     def cat1(key, pre, post):
         entry, fn = key[0], key[2] if len(key) > 2 else key[-1]
         if post[2]:
@@ -712,19 +756,20 @@ def classify_verdicts(detail, pre_rows):
         else:
             counts["4"] += 1
     for key, _n, vals in detail.get("removed", []):
-        counts["3" if _eff_of_values(vals)[0] else "4"] += 1
+        if not losses(key, vals, []):
+            counts["4"] += 1
     for key, gone, came in detail.get("changed", []):
+        lost = losses(key, gone, came)
         pre, post = _eff_of_values(gone), _eff_of_values(came)
         P, Q = pre[0], post[0]
         if Q - P:
             cat1(key, pre, post)
-        elif P - Q:
-            counts["3"] += 1
         elif not P and not Q and post[1] and not pre[1]:
             cat2(key, post)
-        else:
+        elif not lost:
             counts["4"] += 1
-    return {"counts": dict(counts), "dropped": dict(dropped)}
+    return {"counts": dict(counts), "dropped": dict(dropped),
+            "where": {k: v[:sample] for k, v in where.items()}}
 
 
 def build_parser():
@@ -1057,6 +1102,9 @@ def run(args):
         for k, label in BUCKET_LABELS:
             n = b["counts"].get(k, 0)
             emit("    %-46s %6d   %.4f%% of %d post rows" % (label, n, 100.0 * n / tot, tot))
+            for key, els in b["where"].get(k, []) if k in ("3", "3u") else []:
+                emit("        %s  lost %s" % (" / ".join(str(x) for x in key), ", ".join(els)[:70]))
+        emit("    3 and 3u OVERLAY 1/2/4: a row that lost an effect AND gained one is in 1 and 3.")
         if b["dropped"]:
             emit("    ── candidates DROPPED, and why a changed row is not a flip ──")
             for k, n in sorted(b["dropped"].items(), key=lambda kv: -kv[1]):
@@ -1276,6 +1324,43 @@ def selftest():
          {"removed": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Fs"])]]]}, [], "3", 1),
         ("a pure row appearing is bucket 4, not 1 or 2",
          {"added": [[["e", "p", "f", "h1"], 1, [_v(inferred=[])]]]}, [], "4", 1),
+        # 3 / 3u are LOSS OVERLAYS (2026-10-13).  Each loss shape is driven where the old if/elif
+        # ladder hid it, and each is paired with a pure-gain control that must stay at 0.
+        ("Fs LOST while Net ARRIVES is bucket 3 (the old ladder put it in 1 only)",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"])], [_v(inferred=["Net"])]]]},
+         [], "3", 1),
+        ("…and the same row is STILL bucket 1: 3 overlays, it does not replace",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"])], [_v(inferred=["Net"])]]]},
+         [], "1", 1),
+        ("a multiset row losing Fs in ONE of two copies is bucket 3",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"]), _v(inferred=["Fs"])],
+                       [_v(inferred=["Fs"]), _v(inferred=[])]]]}, [], "3", 1),
+        ("CONTROL: a row that only GAINS a concrete effect is NOT bucket 3",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"])], [_v(inferred=["Fs", "Net"])]]]},
+         [], "3", 0),
+        ("a hedge REMOVED (`[Unknown] -> []`) is bucket 3u",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Unknown"])], [_v(inferred=[])]]]},
+         [], "3u", 1),
+        ("…and is no longer hidden in bucket 4",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Unknown"])], [_v(inferred=[])]]]},
+         [], "4", 0),
+        ("Unknown leaving while Fs STAYS is 3u, and not 3",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs", "Unknown"])], [_v(inferred=["Fs"])]]]},
+         [], "3u", 1),
+        ("…(the same row's concrete set did not shrink, so bucket 3 stays 0)",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs", "Unknown"])], [_v(inferred=["Fs"])]]]},
+         [], "3", 0),
+        ("a REMOVED Unknown-only row is 3u",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(inferred=["Unknown"])]]]}, [], "3u", 1),
+        ("CONTROL: a row GAINING Unknown is bucket 2, not 3u",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=[])], [_v(inferred=["Unknown"])]]]},
+         [], "3u", 0),
+        ("CONTROL: …and that bucket-2 count did not move",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=[])], [_v(inferred=["Unknown"])]]]},
+         [], "2", 1),
+        ("CONTROL: Fs -> Fs+Unknown loses nothing (3u 0)",
+         {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"])], [_v(inferred=["Fs", "Unknown"])]]]},
+         [], "3u", 0),
     ]
     for name, detail, pre_rows, bucket, want in cases:
         got = classify_verdicts(detail, pre_rows)["counts"].get(bucket, 0)
@@ -1284,6 +1369,10 @@ def selftest():
         else:
             emit("  FAIL %s — bucket %s got %d want %d" % (name, bucket, got, want))
             fails.append(name)
+    bw = classify_verdicts({"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs", "Exec"])],
+                                         [_v(inferred=["Net", "Exec"])]]]}, []).get("where", {})
+    check("the bucket-3 sample names the LOST element (Fs), not the row",
+          [v for _, v in bw.get("3", [])] == [["Fs"]], json.dumps(bw))
 
     emit("[4] VACUITY CONTROL — identical arms must return zero, so a zero means something.")
     same = [_fn("a", ["Fs"]), _fn("a", ["Fs"]), _fn("b", [], ["macro:y"])]

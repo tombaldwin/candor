@@ -118,6 +118,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -456,7 +457,15 @@ def losses_audit(detail, sample=6):
     shape_errors = []
 
     def fields_of(values):
-        """field -> multiset of json-encoded values, over a row-value multiset."""
+        """field -> multiset of json-encoded ELEMENTS, over a row-value multiset.
+
+        A LIST-valued field contributes each of its ELEMENTS, never the list as one value.  Encoding
+        the whole list made `invisible: ["a"] -> ["a", "b"]` read as the value `["a"]` LOST — a gain
+        printed as a loss.  Measured 2026-10-13 on a rust lane's A/Bs: `invisible 565 / inferred 7 /
+        calls 24 lost` over a diff with ZERO lost elements, every one a row that had GAINED values.
+        An instrument that invents losses trains its reader to dismiss the real ones.  The multiset is
+        summed across every row sharing the key, so a duplicated row that loses an element still
+        counts it once per copy.  A scalar (or dict) field is one element: its value."""
         out = collections.defaultdict(collections.Counter)
         for v in values:
             try:
@@ -466,7 +475,8 @@ def losses_audit(detail, sample=6):
             if not isinstance(row, dict):
                 continue
             for k, val in row.items():
-                out[k][json.dumps(val, sort_keys=True)] += 1
+                for el in (val if isinstance(val, list) else [val]):
+                    out[k][json.dumps(el, sort_keys=True)] += 1
         return out
 
     for rec in detail.get("changed", []):
@@ -483,7 +493,7 @@ def losses_audit(detail, sample=6):
             missing = pre_vals - post_f.get(field, collections.Counter())
             if missing:
                 lost[field] += sum(missing.values())
-                where[field].append((key, sorted(missing.elements())[:1]))
+                where[field].append((key, sorted(missing)[:3]))
 
     for rec in detail.get("removed", []):
         if not isinstance(rec, (list, tuple)) or len(rec) != 3:
@@ -761,7 +771,7 @@ def build_parser():
                     help="acknowledge in writing that both arms are the SAME command over the SAME "
                          "bytes (R691); without it such a run REFUSES rather than self-comparing")
     ap.add_argument("--losses", action="store_true",
-                    help="audit what the diff LOST, per field (R701): values present in the PRE arm "
+                    help="audit what the diff LOST, per field (R701): list ELEMENTS (scalar values) present in the PRE arm "
                          "and absent from the POST one, plus every removed row")
     ap.add_argument("--buckets", action="store_true",
                     help="sort the diff into VERDICT buckets (R662/R664): a changed row is not a "
@@ -1074,7 +1084,7 @@ def run(args):
         for field, n in sorted(la["lost"].items(), key=lambda kv: -kv[1]):
             emit("    %-16s %6d value(s) lost" % (field, n))
             for key, vals in la["where"].get(field, []):
-                emit("        %s  %s" % (" / ".join(str(x) for x in key), (vals or [""])[0][:70]))
+                emit("        %s  %s" % (" / ".join(str(x) for x in key), ", ".join(vals)[:90]))
         emit("    Audit the loss set in FULL and ground-truth it from the SOURCE, never from candor's")
         emit("    own report: a wrong removal and a right one are the same bytes.")
 
@@ -1386,6 +1396,50 @@ def selftest():
     rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", e9, "--losses", "--allow-zero-reach"])
     check("--losses over a real run names the lost field and the count",
           rc == 0 and "LOSS AUDIT" in out and "inferred" in out.split("LOSS AUDIT")[1], out)
+
+    emit()
+    emit("[9b] A LOSS IS AN ELEMENT, NOT A LIST.  Comparing whole list values printed a GAIN as a")
+    emit("     loss: `invisible [a] -> [a, b]` read as `[a]` lost (565 such on one rust A/B, 0 real).")
+    # (f) the direction that must stay QUIET: every list field only GROWS, or is reordered.
+    d_grow = {"changed": [[["e", "p", "f", "h1"],
+                           [_v2(inferred=[], invisible=["a"], calls=["x", "y"], unknownWhy=["w1"])],
+                           [_v2(inferred=["Unknown"], invisible=["a", "b"], calls=["y", "x", "z"],
+                                unknownWhy=["w1", "w2"])]]]}
+    la = losses_audit(d_grow)
+    check("CONTROL: a row whose lists only GREW (or reordered) reports 0 losses",
+          not la["lost"] and not la["shape_errors"] and la["seen"]["changed"] == 1, json.dumps(la))
+    # (g) the direction that must FIRE: one element dropped from a list that ALSO grew.  A fix that
+    #     silenced (f) by ignoring list fields, or by comparing lengths, would print 0 here.
+    d_swap = {"changed": [[["e", "p", "f", "h1"],
+                           [_v2(inferred=["Fs", "Net"], invisible=["a", "b"])],
+                           [_v2(inferred=["Net", "Exec", "Unknown"], invisible=["b", "c", "d"])]]]}
+    la = losses_audit(d_swap)
+    check("a seeded element loss inside a GROWING list is still counted, once per element",
+          la["lost"] == {"inferred": 1, "invisible": 1}, json.dumps(la))
+    check("…and the lost ELEMENT is named, not the list",
+          [v for _, v in la["where"].get("inferred", [])] == [['"Fs"']]
+          and [v for _, v in la["where"].get("invisible", [])] == [['"a"']],
+          json.dumps(la))
+    # (h) multiset rows: two rows share the key, each carrying Fs; afterwards only one does.
+    d_multi = {"changed": [[["e", "p", "f", "h1"],
+                            [_v2(inferred=["Fs"]), _v2(inferred=["Fs"])],
+                            [_v2(inferred=["Fs", "Net"]), _v2(inferred=["Net"])]]]}
+    check("a multiset row losing an element in ONE copy counts that one loss",
+          losses_audit(d_multi)["lost"] == {"inferred": 1}, json.dumps(losses_audit(d_multi)))
+    # (i) end to end, both directions, through the real diff machinery.
+    e9g = mk("lossgrow", [_fn("f", ["Fs"], invisible=["a"])],
+             [_fn("f", ["Fs", "Unknown"], invisible=["a", "b"])])
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", e9g, "--losses", "--allow-zero-reach"])
+    tail = out.split("LOSS AUDIT")[-1]
+    check("end to end: a pure GAIN prints `NO field lost a value`",
+          rc == 0 and "1 changed" in tail and "NO field lost a value" in tail, out)
+    e9s = mk("lossswap", [_fn("f", ["Fs"], invisible=["a"])],
+             [_fn("f", ["Net"], invisible=["a", "b"])])
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", e9s, "--losses", "--allow-zero-reach"])
+    tail = out.split("LOSS AUDIT")[-1]
+    check("end to end: Fs dropped while Net arrives prints `inferred 1 value(s) lost` naming Fs",
+          rc == 0 and re.search(r"inferred\s+1 value\(s\) lost", tail) and '"Fs"' in tail
+          and "invisible" not in tail.split("Audit the loss set")[0], out)
 
     emit()
     emit("[10] R700 — A SWIFTPM ENTRY WITH NO `.build/checkouts` CANNOT CHAIN, and a chained A/B over")

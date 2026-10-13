@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-13 — the 0.40.8 family patch (released 2026-10-13 as 0.40.8)
+
+- **`UMBRELLA_VERSION` moves to 0.40.8** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
+  `conformance/` are unchanged since the 0.40.7 cut, and the highest rung marker is still ⟨0.40⟩. candor-rust
+  carries scan-only fixes that close silent under-reports: operators on reference, renamed-trait, macro-made
+  and derived impls, nested-fn and glob-typed parameters, generic callers, and calls inside a local
+  `macro_rules!` (R1130, R1131, R1136, R1137, R1139–R1146, R1149). Gate verdicts move on real code: `deny Log`
+  now fails over mio's `register` family, memchr's `memchr_raw` family, h2, hyper's chunked decoder, redis and
+  jni 0.22's `Env`; `deny Net` over mio's socket functions; `deny Fs` over cc's `Build::which` and grep-cli's
+  `resolve_binary`; `deny Unknown` now passes over glob's `glob`, clap's `_propagate_subcommand` and http's
+  `HeaderValue::partial_cmp`. No concrete effect is lost anywhere in the corpus. candor-rust's CHANGELOG lists
+  the gates and the renamed operator units. candor-spec carries the register only. candor-java, candor-ts,
+  candor-swift and candor-agents are version-only cuts. `adopt/`, `integrations/` and `fingerprint/` are as they
+  were. `ENGINE_PIN` moves to 0.40.8 after the engines are published, so `candor update` and the Homebrew
+  formula fetch them.
+
 ## 2026-10-12 — the 0.40.7 family patch (released 2026-10-12 as 0.40.7)
 
 - **Pins move to the 0.40.7 family line.** `bin/candor` `ENGINE_PIN` 0.40.6 → 0.40.7 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.7`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

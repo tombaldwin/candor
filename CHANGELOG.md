@@ -8,6 +8,35 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-14 — the 0.40.10 family patch (released 2026-10-14 as 0.40.10)
+
+- **`UMBRELLA_VERSION` moves to 0.40.10** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
+  `conformance/` are unchanged since the 0.40.9 cut, and the highest rung marker is still ⟨0.40⟩. Gate verdicts
+  move on real code in three engines:
+  - **candor-rust** closes silent under-reports in candor-scan (a dependency's operator impl on a primitive,
+    in-crate generics that run their argument's std-trait impl, `.await` on a crate-local future, `impl Tr for
+    dep::X` beside a local `X`; R1164, R1167–R1169), discloses a local std-trait impl handed to a chained
+    dependency (R1165), and charges drops inside std and generic bodies in the deep engine (R1117). Gates only
+    tighten: `deny Clock` now fails over mysql_async's connection and query paths, `deny Log` over tokio's
+    `process::Command::status`/`Child::kill`/`wait`, `deny Rand` over hickory-net's UDP client, `deny Net` over
+    mysql_async's `Endpoint::check`, and chained `deny Clock` over aws-smithy-runtime's orchestrator. No effect and
+    no `Unknown` is lost anywhere in its corpus.
+  - **candor-java** models the JDK's collection operations for `equals`/`hashCode` re-entry and charges a caller
+    the override it hands to a generic method (R1166). The false `List.add` charge is removed, so gates move both
+    ways: `deny Fs` now passes over ant's `Concat.add` and zookeeper's `MultiOperationRecord.add`, `deny Log` over
+    protobuf-java's `Api$Builder.addMethods(Method)`, and `deny Llm` over spring-ai-model's
+    `DefaultToolCallingManager.buildConversationHistoryAfterToolExecution`; `deny Net` now fails over jedis's
+    `Pipeline.close` and `deny Fs` over kafka-clients' `AbstractFetch.closeInternal`. Across a chain the new
+    case is disclosed `Unknown`, not charged. Its κ hedge table is regenerated.
+  - **candor-swift** discloses a user `Equatable`/`Comparable`/`Hashable` witness handed to a chained package
+    (R974 (a)); `deny Fs Unknown` moves on such a call, and no gate moved over its chained corpus.
+
+  Each engine's CHANGELOG lists the gates and the counts. candor-spec carries the register only. candor-ts and
+  candor-agents are version-only cuts. `bin/corpus-ab.py` (a maintainer tool, not shipped behaviour) now counts a
+  lost list element rather than a changed list value, and reports a lost effect or a dropped `Unknown` even when
+  the row also gained something. `adopt/`, `integrations/` and `fingerprint/` are as they were. `ENGINE_PIN` moves
+  to 0.40.10 after the engines are published, so `candor update` and the Homebrew formula fetch them.
+
 ## 2026-10-13 — the 0.40.9 family patch (released 2026-10-13 as 0.40.9)
 
 - **Pins move to the 0.40.9 family line.** `bin/candor` `ENGINE_PIN` 0.40.8 → 0.40.9 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.9`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

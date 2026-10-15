@@ -8,6 +8,29 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-15 — the 0.40.11 family patch (released 2026-10-15 as 0.40.11)
+
+- **`UMBRELLA_VERSION` moves to 0.40.11** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
+  `conformance/` are unchanged since the 0.40.10 cut, and the highest rung marker is still ⟨0.40⟩. Gate verdicts
+  move on real code in three engines:
+  - **candor-rust** closes silent under-reports in candor-scan: a compound assignment (`a += b`) over an effectful
+    `AddAssign`-family impl (R1177), and a trait default inherited by one of two same-named implementors (R1171). No
+    concrete-effect gate moves over its corpus; `deny Unknown` now fails over fixedbitset's set operations, bitvec's
+    bit operators, num-bigint's `mul_assign` and similar operator code whose impls were already `Unknown`.
+  - **candor-java** charges the elements' `compareTo` when a collection of project values is sorted or ordered
+    (R1179): `deny Log` now fails over kafka-streams' task registries, `deny Fs` over lucene-core's `Query.visit`
+    implementations and unboundid's `RDN.getNameValuePairs`. A collection handed to a chained dependency is disclosed
+    `Unknown` (R1174). Nothing passes where 0.40.10 failed.
+  - **candor-swift**'s report is now the same on every run: a 0.40.10 report could differ between identical runs on
+    some projects (wikipedia-ios and iina measured), so a gate could change verdict with no code change (R1175). Its
+    comparison-witness walk is complete and reaches five more in-package shapes (R1175, R1176, R1185); `deny
+    Unknown` now fails over periphery's `SourceGraph`, Carthage's `DependencyGraph` and swift-package-manager's
+    `Environment` among others, and no concrete-effect gate moved over its corpus.
+
+  Each engine's CHANGELOG lists the gates and the counts. candor-spec carries the register only. candor-ts and
+  candor-agents are version-only cuts. `adopt/`, `integrations/` and `fingerprint/` are as they were. `ENGINE_PIN`
+  moves to 0.40.11 after the engines are published, so `candor update` and the Homebrew formula fetch them.
+
 ## 2026-10-14 — the 0.40.10 family patch (released 2026-10-14 as 0.40.10)
 
 - **Pins move to the 0.40.10 family line.** `bin/candor` `ENGINE_PIN` 0.40.9 → 0.40.10 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.10`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

@@ -8,6 +8,30 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-16 — the 0.40.12 family patch (released 2026-10-16 as 0.40.12)
+
+- **`UMBRELLA_VERSION` moves to 0.40.12** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
+  `conformance/` are unchanged since the 0.40.11 cut, and the highest rung marker is still ⟨0.40⟩. Gate verdicts
+  move on real code in two engines:
+  - **candor-rust** (candor-scan) gives a hand-written operator impl its call edge back where a macro-made impl of
+    the same operator sat beside it (R1180): bigdecimal's arithmetic and similar operator code lose an `ambiguous:`
+    `Unknown` they carried since 0.40.8, so `deny Unknown` now passes over 376 corpus rows where 0.40.11 failed. A
+    macro-made compound-assignment impl gets a unit (R1182: `deny Unknown` fails over 1,606 new rows in rend,
+    x11rb-protocol, bitflags and others), and a value handed to a chained dependency's conversion or bit-operator
+    body is disclosed (R1181, R1186, R1196, R1197: 647 chained rows, tokio, reqwest, hyper, quinn-proto among them).
+    No concrete-effect gate moves over its corpus in either direction.
+  - **candor-java** charges a comparator where a sort or an ordered container runs it, and reaches the elements'
+    `compareTo` in more shapes (R1184, R1188, R1189, R1195, R1198): `deny <E>` now fails over 159 corpus rows,
+    among them groovy's `toSorted`, JDA's `MemberImpl.getRoles`, jgit's `DescribeCommand.getBestMatch` and
+    liquibase's SQL generators. Its generated framework table discloses 31,667 framework members as `Unknown`
+    (R1193), so `deny Unknown` fails over 4,912 rows, mostly code calling jackson, Spring and JNA without scanning
+    them. Nothing passes where 0.40.11 failed.
+
+  Each engine's CHANGELOG lists the gates and the counts. candor-spec carries the register only. candor-swift,
+  candor-ts and candor-agents are version-only cuts. `adopt/`, `integrations/` and `fingerprint/` are as they were.
+  `ENGINE_PIN` moves to 0.40.12 after the engines are published, so `candor update` and the Homebrew formula fetch
+  them.
+
 ## 2026-10-15 — the 0.40.11 family patch (released 2026-10-15 as 0.40.11)
 
 - **Pins move to the 0.40.11 family line.** `bin/candor` `ENGINE_PIN` 0.40.10 → 0.40.11 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.11`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

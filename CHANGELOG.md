@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-16 — the 0.40.12 family patch (released 2026-10-16 as 0.40.12)
 
+- **Pins move to the 0.40.12 family line.** `bin/candor` `ENGINE_PIN` 0.40.11 → 0.40.12 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.12`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **`UMBRELLA_VERSION` moves to 0.40.12** with the family. A within-spec patch (spec stays 0.40): `SPEC.md` and
   `conformance/` are unchanged since the 0.40.11 cut, and the highest rung marker is still ⟨0.40⟩. Gate verdicts
   move on real code in two engines:

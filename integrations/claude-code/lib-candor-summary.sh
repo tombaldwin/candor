@@ -42,7 +42,7 @@ candor_log_activity() {
   local maxhops
   maxhops=$(printf '%s' "$review" | sed -nE 's/.*deepest propagation: ([0-9]+) hop.*/\1/p' | head -1); [ -z "$maxhops" ] && maxhops=null
   gained=$(printf '%s' "$review" | sed -nE 's/.*introduces \{([^}]*)\}.*/\1/p' | tr ',' '\n' | sed 's/ //g' | grep -v '^$' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$gained" ] && gained='[]'
-  viol=$(printf '%s' "$review" | grep -oE 'AS-EFF-[0-9]+' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
+  viol=$(printf '%s' "$review" | grep -oE '\[AS-EFF-[0-9]+\]' | tr -d '[]' | jq -R . | jq -sc 'unique' 2>/dev/null); [ -z "$viol" ] && viol='[]'
   local summ unknowns effects reviewms
   summ=$(printf '%s' "$review" | grep '^CANDOR_SUMMARY ' | tail -1 | sed 's/^CANDOR_SUMMARY //')
   unknowns=$(printf '%s' "$summ" | jq -r '.unknowns // empty' 2>/dev/null); [ -z "$unknowns" ] && unknowns=null

@@ -232,7 +232,7 @@ if [ "$rc" -eq 1 ]; then
   if have_jq && [ "$notice" != "quiet" ] && [ "$notice" != "off" ]; then
     # a user-facing ⚠ line that NAMES the cause — not the dangling "...introduced new effects:" header.
     # Prefer a policy AS-EFF line; else the first `• fn introduces {E}` introducer; else a generic notice.
-    umsg=$(printf '%s' "$review" | grep -E 'AS-EFF' | head -1 | sed 's/^ *//')
+    umsg=$(printf '%s' "$review" | grep -E '\[AS-EFF-[0-9]+\]' | head -1 | sed 's/^ *//')
     [ -z "$umsg" ] && umsg=$(printf '%s' "$review" | grep -E 'introduces \{' | head -1 | sed 's/^ *•* *//')
     if [ -n "$umsg" ]; then umsg="candor ⚠ blocked — $umsg"; else umsg="candor ⚠ blocked this change — the agent has the verdict"; fi
     printf '{"decision":"block","reason":%s,"systemMessage":%s}\n' "$reason" "$(printf '%s' "$umsg" | jq -Rs .)"

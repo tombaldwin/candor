@@ -171,6 +171,34 @@ OUT=$(CANDOR_SCAN="bash $INCSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/non
 ok "source review: an INCOMPLETE report BLOCKS (rc=1, not 2)"    '[ "$rc" = 1 ]'
 ok "source review: names the unanalyzed file + reason"           'printf "%s" "$OUT" | grep -q "weird.ts — parse error"'
 
+# ── candor#1: PROSE that MENTIONS a code is not a FINDING ──
+# A cannot-evaluate exit (2) whose message merely names a code — the JVM baseline-provenance refusal says
+# "never a bogus AS-EFF-005 wave" — was read as a violation because the review grepped bare `AS-EFF`, and
+# the hook BLOCKED every turn on a setup condition. Every engine renders a finding as `[AS-EFF-NNN] …`
+# (java render(), rust gate.rs, ts scan/query, swift main/GateReportCLI), so only the bracketed form counts.
+PROSEENG="$WORK/mock-prose-engine.sh"
+cat > "$PROSEENG" <<'PEOF'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && echo '{"candor":{"version":"mock","spec":"0.40"},"functions":[{"fn":"app.checkout","inferred":["Db"]}]}' > "$out"
+echo "candor-java: the baseline was produced by engine build b8589ac but this is build e479a2b — an engine swap is baseline-invalidating and the gate cannot evaluate (exit 2, the unreadable-policy class; never a silent skip, never a bogus AS-EFF-005 wave)." >&2
+exit 2
+PEOF
+chmod +x "$PROSEENG"
+OUT=$(CANDOR_CMD="bash $PROSEENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE=/nonexistent "$REV" 2>&1); rc=$?
+ok "JVM review: exit 2 whose prose MENTIONS AS-EFF-005 is a setup error (rc=2), not a violation" '[ "$rc" = 2 ]'
+ok "JVM review: it is not labelled ARCHITECTURE GATE FAILED"   '! printf "%s" "$OUT" | grep -q "ARCHITECTURE GATE FAILED"'
+PROSESCAN="$WORK/mock-prose-scan.sh"
+cat > "$PROSESCAN" <<'PEOF'
+#!/usr/bin/env bash
+echo '{"candor":{"spec":"0.40"},"functions":[{"fn":"app.checkout","inferred":["Db"]}]}' > "$3.json"
+echo "candor: the gate cannot evaluate (exit 2; never a bogus AS-EFF-005 wave)" >&2
+exit 2
+PEOF
+chmod +x "$PROSESCAN"
+OUT=$(CANDOR_SCAN="bash $PROSESCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent "$SRCREV" 2>&1); rc=$?
+ok "source review: exit 2 whose prose MENTIONS AS-EFF-005 is a setup error (rc=2)" '[ "$rc" = 2 ]'
+
 # end-to-end through the REAL hook (not the MOCK review): the block must actually reach the agent.
 OUT=$(printf '{"session_id":"s1","hook_event_name":"Stop"}' \
   | CANDOR_REVIEW="$SRCREV" CANDOR_SCAN="bash $INCSCAN" CANDOR_SRC="$WORK" CANDOR_REVIEW_BASELINE=/nonexistent \

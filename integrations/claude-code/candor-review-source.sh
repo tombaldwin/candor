@@ -83,7 +83,7 @@ fi
 # read this engine's report shape (today: the candor-scan report; ts/swift/java remedies are FIX-SPEC P3).
 remedy=""
 QUERY=${CANDOR_QUERY:-candor-query}
-if [ "$gate" -ne 0 ] && grep -qE "AS-EFF" "$SCANLOG" && [ -n "${CANDOR_POLICY:-}" ] && command -v "$QUERY" >/dev/null 2>&1; then
+if [ "$gate" -ne 0 ] && grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG" && [ -n "${CANDOR_POLICY:-}" ] && command -v "$QUERY" >/dev/null 2>&1; then
   R=$("$QUERY" fix-gate "$PREFIX" "$CANDOR_POLICY" 2>/dev/null)
   case "$R" in *"candor fix — "*) remedy="$R" ;; esac   # a real plan, not the "no crossings" / error line
 fi
@@ -91,9 +91,9 @@ fi
 # One verdict, one exit — body captured so we can print it AND (standalone/CI, not under the hook) self-log.
 verdict_body() {
   if [ "$gate" -ne 0 ]; then
-    if grep -qE "AS-EFF" "$SCANLOG"; then
+    if grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG"; then
       echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
-      grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
+      grep -E "\[AS-EFF-[0-9]+\]" "$SCANLOG" | sed 's/^/  /'
       [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
       [ -n "$remedy" ] && { echo; printf '%s\n' "$remedy"; }
       echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."

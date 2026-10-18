@@ -8,6 +8,19 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-18 — the Claude Code hook no longer blocks a turn on a code named in prose (candor#1)
+
+- **`candor-review.sh` / `candor-review-source.sh` read a cannot-evaluate exit as a policy violation.** The
+  review told a real violation from a setup error by grepping the scan log for bare `AS-EFF`. The JVM
+  baseline-provenance refusal exits 2 and says, in prose, *"never a bogus AS-EFF-005 wave"*, so the grep
+  matched the sentence, the review returned 1, and the Stop hook BLOCKED every turn — including turns with
+  no repo edits — under the header `ARCHITECTURE GATE FAILED`. Every engine renders a finding as
+  `[AS-EFF-NNN] …` (java `render()`, rust `gate.rs`, ts `scan.mjs`/`query.mjs`, swift `main.swift`/
+  `GateReportCLI.swift`), so the review scripts, `stop-hook.sh`'s notice and `lib-candor-summary.sh`'s
+  code list now match only the bracketed form. A real violation still blocks: the existing `[AS-EFF-006]`
+  tests pass unchanged, and three new tests in `test-stop-hook.sh` (exit 2 with that prose, both review
+  forms) fail on the previous scripts and pass now.
+
 ## 2026-10-16 — the 0.40.12 family patch (released 2026-10-16 as 0.40.12)
 
 - **Pins move to the 0.40.12 family line.** `bin/candor` `ENGINE_PIN` 0.40.11 → 0.40.12 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.12`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

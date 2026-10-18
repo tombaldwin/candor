@@ -65,7 +65,7 @@ fi
 # not just the finding. candor-java computes it (`fix-gate`) over the report + its callgraph sidecar; a
 # graceful no-op when no policy is set. $CANDOR is the same engine that just scanned, so no extra install.
 remedy=""
-if [ "$gate" -ne 0 ] && grep -qE "AS-EFF" "$SCANLOG" && [ -n "${CANDOR_POLICY:-}" ]; then
+if [ "$gate" -ne 0 ] && grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG" && [ -n "${CANDOR_POLICY:-}" ]; then
   R=$($CANDOR fix-gate "$CUR" "$CANDOR_POLICY" 2>/dev/null)
   case "$R" in *"candor fix — "*) remedy="$R" ;; esac   # a real plan, not the "no crossings" / error line
 fi
@@ -76,9 +76,9 @@ verdict_body() {   # echoes the human verdict; returns the exit code
   if [ "$gate" -ne 0 ]; then
     # Distinguish a real policy violation (an AS-EFF line) from a tool/build failure that also exits
     # nonzero — don't mislabel a crash/bad-classpath as an "architecture gate" failure.
-    if grep -qE "AS-EFF" "$SCANLOG"; then
+    if grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG"; then
       echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
-      grep -E "AS-EFF" "$SCANLOG" | sed 's/^/  /'
+      grep -E "\[AS-EFF-[0-9]+\]" "$SCANLOG" | sed 's/^/  /'
       [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
       [ -n "$remedy" ] && { echo; printf '%s\n' "$remedy"; }
       echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."

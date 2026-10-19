@@ -12,6 +12,7 @@ keeps its own.
 
 - **0.40.13 family patch.** `ENGINE_PIN` moves to 0.40.13, so `candor update` and the Homebrew formula fetch the engines
   this cut published (candor-rust R1202/R1206–R1209/R1213–R1215, candor-java R1201/R1203–R1205/R1217).
+- **Pins move to the 0.40.13 family line.** `bin/candor` `ENGINE_PIN` 0.40.12 → 0.40.13 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.13`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 
 - **`candor-review.sh` / `candor-review-source.sh` read a cannot-evaluate exit as a policy violation.** The
   review told a real violation from a setup error by grepping the scan log for bare `AS-EFF`. The JVM

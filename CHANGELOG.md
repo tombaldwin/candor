@@ -8,7 +8,10 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-10-18 — the Claude Code hook no longer blocks a turn on a code named in prose (candor#1)
+## 2026-10-18 — the Claude Code hook no longer blocks a turn on a code named in prose (candor#1) (released 2026-10-19 as 0.40.13)
+
+- **0.40.13 family patch.** `ENGINE_PIN` moves to 0.40.13, so `candor update` and the Homebrew formula fetch the engines
+  this cut published (candor-rust R1202/R1206–R1209/R1213–R1215, candor-java R1201/R1203–R1205/R1217).
 
 - **`candor-review.sh` / `candor-review-source.sh` read a cannot-evaluate exit as a policy violation.** The
   review told a real violation from a setup error by grepping the scan log for bare `AS-EFF`. The JVM

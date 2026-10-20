@@ -8,6 +8,19 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## Unreleased
+
+- **`bin/corpus-ab.py` no longer holds the corpus in memory (SOUNDNESS R1228).** The main process kept every
+  entry's parsed PRE and POST rows until the run ended, so its peak grew with corpus size whatever `--jobs`
+  was; in the 2026-10-19 OOM three corpus-ab main processes held 12.7, 9.6 and 5.9 GB while their workers
+  held 0.02 GB each. Each worker now reduces its entry to counts and diff records before returning, which is
+  exact because the corpus entry is in every key. Over 336 Java report entries (578 MB) at `--jobs 2`, main
+  peak RSS fell from 3,063 MB to 102 MB. Every count, partition, bucket and table row is unchanged, checked
+  byte for byte on five corpora and two pair-mode runs. One output change: `--out`'s detail records, and the six-row samples printed
+  under `--buckets`/`--losses`, are now in key order. They used to follow Python's per-process hash seed, so
+  two runs over the same reports wrote different bytes. Giving the same entry twice is now a usage error
+  (exit 2); before, both scans were merged into one key space and the row and key counts disagreed.
+
 ## 2026-10-18 — the Claude Code hook no longer blocks a turn on a code named in prose (candor#1) (released 2026-10-19 as 0.40.13)
 
 - **0.40.13 family patch.** `ENGINE_PIN` moves to 0.40.13, so `candor update` and the Homebrew formula fetch the engines

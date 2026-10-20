@@ -103,6 +103,14 @@ USAGE
 
   bin/corpus-ab.py --selftest        # the four calibration proofs; run by CI
 
+MEMORY (SOUNDNESS R1228).  Each entry's rows are parsed AND reduced to counts and diff records in the
+worker that ran it, so this process holds the DIFF, never the corpus: the Python side peaks at about
+`--jobs` × the largest entry's parsed report, plus the diff.  Until 2026-10-20 the main process kept every
+entry's parsed rows to the end and three of them reached 12.7, 9.6 and 5.9 GB in the 2026-10-19 OOM.  The
+ENGINE is the other half and this tool does not bound it: `--jobs N` runs up to N engine scans at once (a
+worker runs its PRE and POST arms one after the other), and a big rust crate alone reached ~12 GB there.
+The default is still 8; on a 24 GB machine with large crates, pick `--jobs` from the engine's peak RSS.
+
 `{entry}` is substituted per corpus entry.  `{outdir}` (optional) is a fresh temp dir per entry per
 arm; when present, every `*.json` under it after the run is read as a report.  All four engines'
 report shapes are accepted: the ⟨0.2⟩+ envelope with `package` (rust/ts/swift) or `packages` (the JVM
@@ -569,8 +577,69 @@ def swift_unresolved_note(unfit, total):
         ["    … and %d more" % (len(unfit) - 6)] if len(unfit) > 6 else [])
 
 
+# ── PER-ENTRY REDUCTION.  SOUNDNESS R1228 ─────────────────────────────────────────────────────────
+# This tool used to ship every entry's PARSED rows, both arms, back to the main process and hold them
+# all until the end, then build the wide indices over the whole corpus at once.  Peak memory was
+# therefore a function of CORPUS SIZE, not of `--jobs`: on 2026-10-19 the jetsam report of the first
+# of two OOM crashes on a 24 GB machine shows three corpus-ab MAIN processes at 12.7, 9.6 and 5.9 GB
+# while their workers sat at 0.02 GB each.
+#
+# It is sound to reduce each entry where it was read because EVERY KEY MODE HOLDS THE ENTRY (see
+# `row_key`): no key, multiset or last-wins, can join rows across two entries, so the corpus diff is
+# exactly the sum of the per-entry diffs and the concatenation of their detail records.  The one input
+# where that is false — the SAME entry string given twice, whose two scans the old code merged under
+# one key space — is refused at the door (`run`) rather than given a third meaning.
+#
+# What comes back is per-entry COUNTS, the headline DETAIL (which is diff-sized, and is the --out
+# payload anyway), and the one piece of PRE context `--buckets` needs: the concrete effects already on
+# each qual that the diff touches (C2), restricted to those quals.  So the main process grows with the
+# DIFF and the entry count, and the rows of any one entry live only in the worker that read them.
+def table_specs(fields):
+    """The calibration table's rows: (label, value label, key mode, kind).  ONE list, used by both the
+    per-entry reduction and the printer, so they cannot disagree about which row is which."""
+    narrow_fields = fields if fields else NARROW_DEFAULT
+    return [
+        ("entry+package+fn+hash, multiset", "wide", "unit", None),
+        ("entry+package+fn,      multiset", "wide", "pkgfn", None),
+        ("entry+fn,              multiset", "wide", "fn", None),
+        ("entry+fn, LAST-WINS [old ab.py]", "wide", "fn", "lastwins"),
+        ("entry+package+fn+hash, multiset", ",".join(narrow_fields)[:9], "unit", "narrow"),
+    ]
+
+
+def _fn_of_key(key):
+    # The same projection `classify_verdicts` uses to look a key's qual up in the PRE arm.
+    return key[2] if len(key) > 2 else key[-1]
+
+
+def reduce_entry(entry, pre_pairs, post_pairs, key, fields):
+    """One entry's contribution to every number the run reports.  `*_pairs` are `read_reports` rows."""
+    pre_rows = [(entry, p, row) for p, row in pre_pairs]
+    post_rows = [(entry, p, row) for p, row in post_pairs]
+    headline, detail = diff_multiset(index_multiset(pre_rows, key, fields),
+                                     index_multiset(post_rows, key, fields))
+    narrow_fields = fields if fields else NARROW_DEFAULT
+    table = []
+    for _label, _vlabel, mode, kind in table_specs(fields):
+        if kind == "lastwins":
+            d = diff_lastwins(index_lastwins(pre_rows, mode, None),
+                              index_lastwins(post_rows, mode, None))
+        else:
+            d, _ = diff_multiset(index_multiset(pre_rows, mode,
+                                                narrow_fields if kind == "narrow" else None),
+                                 index_multiset(post_rows, mode,
+                                                narrow_fields if kind == "narrow" else None))
+        table.append(d)
+    wanted = {_fn_of_key(k) for k, *_ in detail["added"]} | {_fn_of_key(k) for k, *_ in detail["changed"]}
+    pre_by_fn = {}
+    for (_entry, qual), effs in pre_by_fn_of(pre_rows, wanted).items():
+        pre_by_fn[qual] = sorted(effs)
+    return {"pre_n": len(pre_rows), "post_n": len(post_rows), "headline": headline,
+            "detail": detail, "table": table, "pre_by_fn": pre_by_fn}
+
+
 def one_entry(job):
-    entry, pre_cmd, post_cmd, timeout, marks, mark_env, mark_arm, oglob, oexcl = job
+    entry, pre_cmd, post_cmd, timeout, marks, mark_env, mark_arm, oglob, oexcl, key, fields = job
     label = os.path.basename(entry.rstrip("/")) or entry
     res = {"entry": entry, "label": label}
     arms = {}
@@ -585,11 +654,12 @@ def one_entry(job):
         except BadReport as e:
             res["error"] = "%s arm: unreadable report: %s" % (name, e)
             return res
+        text = None   # the parsed rows are what we keep; do not hold the raw text beside them (R1228)
         if mark_arm in (name, "both"):
             res.setdefault("reach", {})
             for m in marks:
                 res["reach"][m] = res["reach"].get(m, 0) + err_bytes.count(m.encode())
-    res["pre"], res["post"] = arms["pre"], arms["post"]
+    res.update(reduce_entry(entry, arms["pre"], arms["post"], key, fields))
     return res
 
 
@@ -705,14 +775,26 @@ def _inferred_multiset(vals):
 # loss vanished; and a removed hedge (`["Unknown"] -> []`) fell through to bucket 4, where nothing
 # looks.  A loss is now counted whatever else the row did: a row can be in 1 AND 3, or 1 AND 3u.
 # Buckets 1, 2 and 4 remain exclusive of each other; 4 is "no loss and not 1 or 2".
-def classify_verdicts(detail, pre_rows, sample=6):
-    """Sort a diff into verdict buckets.  `pre_rows` is the (entry, pkg, row) stream of the PRE arm.
-    1/2/4 partition the rows; 3 (concrete effect lost) and 3u (Unknown lost) overlay them."""
+def pre_by_fn_of(pre_rows, only_fns=None):
+    """(entry, fn) -> concrete effects in the PRE arm.  `only_fns` restricts it to the quals a diff
+    touches, which is all `classify_verdicts` ever looks up (R1228: the unrestricted map is
+    corpus-sized)."""
     pre_by_fn = collections.defaultdict(set)
     for entry, _pkg, row in pre_rows:
+        if only_fns is not None and row.get("fn") not in only_fns:
+            continue
         for e in (row.get("inferred") or []):
             if e != "Unknown":
                 pre_by_fn[(entry, row.get("fn"))].add(e)
+    return pre_by_fn
+
+
+def classify_verdicts(detail, pre_rows=(), sample=6, pre_by_fn=None):
+    """Sort a diff into verdict buckets.  `pre_rows` is the (entry, pkg, row) stream of the PRE arm;
+    `pre_by_fn` (from `pre_by_fn_of`, possibly merged across entries) may be passed instead.
+    1/2/4 partition the rows; 3 (concrete effect lost) and 3u (Unknown lost) overlay them."""
+    if pre_by_fn is None:
+        pre_by_fn = pre_by_fn_of(pre_rows)
 
     counts, dropped = collections.Counter(), collections.Counter()
     where = collections.defaultdict(list)
@@ -860,11 +942,15 @@ def run(args):
             emit("corpus-ab: pair mode needs BOTH --pre-json and --post-json")
             return 2
         res = {"entry": args.pre_json, "label": os.path.basename(args.pre_json)}
+        arms = {}
         for name, path in (("pre", args.pre_json), ("post", args.post_json)):
             try:
-                res[name], res[name + "_judged"] = read_reports(open(path).read(), res["label"])
+                arms[name], res[name + "_judged"] = read_reports(open(path).read(), res["label"])
             except (BadReport, OSError) as e:
                 res["error"] = "%s arm: %s" % (name, e)
+        if "error" not in res:
+            res.update(reduce_entry(res["entry"], arms["pre"], arms["post"], args.key, fields))
+        del arms
         results.append(res)
         entries = [args.pre_json]
     else:
@@ -875,6 +961,17 @@ def run(args):
         if not entries:
             return refuse(["The entry set is EMPTY.  Nothing was scanned, so nothing was compared.",
                            "Check --entries-dir / --entry / --entries-file."])
+        # THE SAME ENTRY TWICE IS A USAGE ERROR (R1228).  The entry is in every key, so two scans of
+        # one entry used to land in ONE key space: rows doubled, keys did not, and `added_rows` and
+        # `changed_keys` disagreed about how many things moved.  The per-entry reduction cannot merge
+        # two scans, and it should not have to reproduce a number that was never meaningful.
+        dups = sorted(e for e, n in collections.Counter(entries).items() if n > 1)
+        if dups:
+            emit("corpus-ab: %d entr%s given more than once (--entry / --entries-dir / --entries-file "
+                 "overlap): %s" % (len(dups), "y" if len(dups) == 1 else "ies", ", ".join(dups[:6])))
+            emit("  The corpus entry is part of every key, so two scans of one entry would merge into "
+                 "one key space. Give each entry once.")
+            return 2
         # BEFORE A SINGLE ENTRY IS SCANNED — R691.  Two arms that are the same thing cost hours and
         # then report a zero that reads like a safe change.
         same_arms, arm_note = arms_are_indistinguishable(args.pre_cmd, args.post_cmd,
@@ -897,7 +994,8 @@ def run(args):
         swift_unfit = swift_unresolved_entries(entries)
         oexcl = tuple(x.strip() for x in args.outdir_exclude.split(",") if x.strip())
         jobs = [(e, args.pre_cmd, args.post_cmd, args.timeout,
-                 tuple(args.mark), mark_env, args.mark_arm, args.outdir_glob, oexcl)
+                 tuple(args.mark), mark_env, args.mark_arm, args.outdir_glob, oexcl,
+                 args.key, fields)
                 for e in entries]
         with cf.ProcessPoolExecutor(max_workers=max(1, args.jobs)) as ex:
             for res in ex.map(one_entry, jobs):
@@ -926,12 +1024,12 @@ def run(args):
             continue
         for arm in ("pre", "post"):
             j = r.get(arm + "_judged")
-            if not r[arm] and not j:
+            if not r[arm + "_n"] and not j:
                 unjudged.append((r["entry"], "%s arm: analyzed.count %s with no rows — NOTHING WAS JUDGED"
                                  % (arm, "0" if j == 0 else "absent")))
                 break
         else:
-            if not r["pre"] and not r["post"]:
+            if not r["pre_n"] and not r["post_n"]:
                 allpure.append(r["entry"])
 
     excluded = bad + (unjudged if not args.allow_unjudged else [])
@@ -976,27 +1074,41 @@ def run(args):
 
     if not good:
         return refuse(["Every entry was excluded, so the comparison covered NOTHING."])
-    if not any(r["pre"] or r["post"] for r in good):
+    if not any(r["pre_n"] or r["post_n"] for r in good):
         # No flag reaches this one.  If nothing anywhere produced a row there is no comparison, and
         # saying so is the entire reason this file exists.
         return refuse(["NOT ONE of the %d compared entries produced a single report row, on either arm."
                        % len(good),
                        "There is no diff to report and no flag that makes one."])
 
-    # ── flatten ──
-    pre_rows, post_rows = [], []
+    # ── combine the per-entry reductions (R1228) ──
+    # Every key holds the entry, so the corpus diff is the SUM of the per-entry diffs and the
+    # CONCATENATION of their detail.  The detail is then SORTED BY KEY: the per-key records used to come
+    # out in set-iteration order, which follows Python's per-process string-hash seed, so two runs over
+    # the same reports wrote different --out bytes and printed different 6-row samples.  The counts
+    # never depended on that order; now nothing does.
+    def _sum(dicts):
+        out = collections.Counter()
+        for d in dicts:
+            out.update(d)
+        return {k: out[k] for k in ("added_rows", "removed_rows", "added_keys", "removed_keys",
+                                    "changed_keys", "changed_rows")}
+    n_pre = sum(r["pre_n"] for r in good)
+    n_post = sum(r["post_n"] for r in good)
+    headline = _sum(r["headline"] for r in good)
+    detail = {}
+    for part in ("added", "removed", "changed"):
+        detail[part] = sorted((rec for r in good for rec in r["detail"][part]),
+                              key=lambda rec: json.dumps(rec[0]))
+    pre_by_fn = collections.defaultdict(set)
     for r in good:
-        pre_rows += [(r["entry"], p, row) for p, row in r["pre"]]
-        post_rows += [(r["entry"], p, row) for p, row in r["post"]]
+        for qual, effs in r["pre_by_fn"].items():
+            pre_by_fn[(r["entry"], qual)].update(effs)
 
     # ── the calibration table.  Every run prices its own key, so nobody has to remember R288. ──
-    head = diff_multiset(index_multiset(pre_rows, args.key, fields),
-                         index_multiset(post_rows, args.key, fields))
-    headline, detail = head
-
     emit()
     emit("corpus-ab  entries %d compared / %d given   rows  pre %d  post %d"
-         % (len(good), len(results), len(pre_rows), len(post_rows)))
+         % (len(good), len(results), n_pre, n_post))
     # PRINTED ON EVERY RUN, INCLUDING WHEN IT PASSES — R691.  "The arms differ" is a claim this tool
     # makes, so it says on what evidence, and says NOT PROVEN when it could not look (§H).
     emit("  " + arm_identity_note)
@@ -1034,24 +1146,8 @@ def run(args):
     # THE HEADLINE.  The point of the table is to price what the operator's choices cost, and a table
     # that adopted the narrowing would price nothing — it would agree with the headline by
     # construction.  (The docstring claimed this before the code did it; `--selftest` [3] caught that.)
-    narrow_fields = fields if fields else NARROW_DEFAULT
-    rows_tbl = [
-        ("entry+package+fn+hash, multiset", "wide", "unit", None),
-        ("entry+package+fn,      multiset", "wide", "pkgfn", None),
-        ("entry+fn,              multiset", "wide", "fn", None),
-        ("entry+fn, LAST-WINS [old ab.py]", "wide", "fn", "lastwins"),
-        ("entry+package+fn+hash, multiset", ",".join(narrow_fields)[:9], "unit", "narrow"),
-    ]
-    for label, vlabel, mode, kind in rows_tbl:
-        if kind == "lastwins":
-            d = diff_lastwins(index_lastwins(pre_rows, mode, None),
-                              index_lastwins(post_rows, mode, None))
-        elif kind == "narrow":
-            d, _ = diff_multiset(index_multiset(pre_rows, mode, narrow_fields),
-                                 index_multiset(post_rows, mode, narrow_fields))
-        else:
-            d, _ = diff_multiset(index_multiset(pre_rows, mode, None),
-                                 index_multiset(post_rows, mode, None))
+    for i, (label, vlabel, mode, kind) in enumerate(table_specs(fields)):
+        d = _sum(r["table"][i] for r in good)
         star = " <<" if (mode == args.key and ((kind is None and fields is None)
                                                or (kind == "narrow" and fields is not None))) else ""
         emit("  %-34s %-9s %s%s" % (label, vlabel, fmt(d), star))
@@ -1097,8 +1193,8 @@ def run(args):
     if args.buckets:
         emit()
         emit("  VERDICT BUCKETS — a changed ROW is not a changed VERDICT.")
-        b = classify_verdicts(detail, pre_rows)
-        tot = max(1, len(post_rows))
+        b = classify_verdicts(detail, pre_by_fn=pre_by_fn)
+        tot = max(1, n_post)
         for k, label in BUCKET_LABELS:
             n = b["counts"].get(k, 0)
             emit("    %-46s %6d   %.4f%% of %d post rows" % (label, n, 100.0 * n / tot, tot))
@@ -1141,7 +1237,7 @@ def run(args):
         with open(args.out, "w") as fh:
             json.dump({"headline": headline, "key": args.key, "fields": fields,
                        "entries_compared": len(good), "entries_given": len(results),
-                       "excluded": bad, "unjudged": unjudged, "all_pure": allpure, "pre_rows": len(pre_rows), "post_rows": len(post_rows),
+                       "excluded": bad, "unjudged": unjudged, "all_pure": allpure, "pre_rows": n_pre, "post_rows": n_post,
                        "reach": dict(reach), "reach_entries": dict(reach_entries),
                        "reach_where": {k: v for k, v in reach_where.items()},
                        "detail": detail}, fh)
@@ -1561,6 +1657,53 @@ def selftest():
           rc == 4 and "R700" in out.split("=" * 96)[-2], out)
     rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", unresolved, "--allow-zero-reach"])
     check("…and it is ADVISORY: a standalone swift A/B still runs", rc == 0 and "R700" in out, out)
+
+    emit()
+    emit("[11] R1228 — THE PER-ENTRY REDUCTION MUST EQUAL THE WHOLE-CORPUS DIFF.  Rows are reduced in the")
+    emit("     worker that read them, so the main process never holds the corpus; that is exact only")
+    emit("     because every key holds the entry.  Two entries sharing a package AND quals (the flate2")
+    emit("     shape) are the case where a cross-entry join would show, so they are the fixture.")
+    ea = mk("flate2-1.1.9", [_fn("f", ["Fs"]), _fn("f", ["Fs"]), _fn("g", ["Net"]), _fn("h", [])],
+            [_fn("f", ["Fs"]), _fn("g", []), _fn("k", ["Net"]), _fn("f", ["Net"], hash_="pkg#f2")],
+            pkg="flate2")
+    eb = mk("flate2-1.1.10", [_fn("f", ["Net"]), _fn("g", ["Unknown"])],
+            [_fn("f", ["Net"]), _fn("f", ["Net"]), _fn("g", []), _fn("f", ["Net"], hash_="pkg#f3")],
+            pkg="flate2")
+    outp = os.path.join(tmp, "r1228.json")
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", ea, "--entry", eb,
+                  "--buckets", "--allow-zero-reach", "--out", outp])
+    # The reference: the pre-R1228 algorithm, over the flattened corpus, in one index.
+    flat = {"pre": [], "post": []}
+    for e in (ea, eb):
+        for arm in ("pre", "post"):
+            rows, _ = read_reports(open(os.path.join(e, arm + ".json")).read(), os.path.basename(e))
+            flat[arm] += [(e, p, r) for p, r in rows]
+    want_head, want_detail = diff_multiset(index_multiset(flat["pre"], "unit", None),
+                                           index_multiset(flat["post"], "unit", None))
+    got = json.load(open(outp))
+    check("exit 0", rc == 0, out)
+    check("headline equals the whole-corpus diff", got["headline"] == want_head,
+          "%s vs %s" % (got["headline"], want_head))
+    check("…and the detail is the same records", all(
+        sorted(json.dumps(x) for x in got["detail"][k]) == sorted(json.dumps(x) for x in want_detail[k])
+        for k in ("added", "removed", "changed")), json.dumps(got["detail"]))
+    check("…and the detail is written in KEY order, not hash-seed order", all(
+        got["detail"][k] == sorted(got["detail"][k], key=lambda rec: json.dumps(rec[0]))
+        for k in ("added", "removed", "changed")), json.dumps(got["detail"]))
+    lw = [l for l in out.splitlines() if "LAST-WINS" in l]
+    want_lw = diff_lastwins(index_lastwins(flat["pre"], "fn", None), index_lastwins(flat["post"], "fn", None))
+    check("the LAST-WINS table row equals its whole-corpus value", bool(lw) and lw[0].endswith(fmt(want_lw)),
+          "%s vs %s" % (lw, fmt(want_lw)))
+    wb = classify_verdicts(want_detail, flat["pre"])["counts"]
+    check("bucket counts equal the whole-corpus classification (incl. C2 against the PRE arm)",
+          all(("    %-46s %6d " % (lbl, wb.get(k, 0))) in out for k, lbl in BUCKET_LABELS),
+          "%s\n%s" % (wb, out))
+    check("rows pre/post are the corpus totals",
+          got["pre_rows"] == len(flat["pre"]) and got["post_rows"] == len(flat["post"]), out)
+    rc, out = go(["--pre-cmd", PRE, "--post-cmd", POST, "--entry", ea, "--entry", ea,
+                  "--allow-zero-reach"])
+    check("the SAME entry given twice is a usage error (exit 2), never a merged key space",
+          rc == 2 and "more than once" in out, out)
 
     emit()
     emit("[7] all four engines' report shapes parse.")

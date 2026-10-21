@@ -12,6 +12,7 @@ keeps its own.
 
 - **0.40.14 family patch.** `ENGINE_PIN` moves to 0.40.14, so `candor update` and the Homebrew formula fetch the engines
   this cut published (all four engines strip a UTF-8 byte-order mark at byte 0, R1224; candor-java R1232/R1263).
+- **Pins move to the 0.40.14 family line.** `bin/candor` `ENGINE_PIN` 0.40.13 → 0.40.14 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.14`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 
 - **`bin/corpus-ab.py` no longer holds the corpus in memory (SOUNDNESS R1228).** The main process kept every
   entry's parsed PRE and POST rows until the run ended, so its peak grew with corpus size whatever `--jobs`

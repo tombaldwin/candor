@@ -575,6 +575,14 @@ only `invisible`; and a sidecar classifier is BLIND to a dropped edge whose call
 arms — use a seeded dropped-edge detector. This check belongs in each lane's own A/B (against the last release,
 not HEAD), so the cut only collects it.
 
+**(d) MEANS A HEDGE ON THE LOST SITE, AND A SELF-COMPARISON IS NOT A LICENCE — 2026-10-22, java 0.40.15 stack.** Two
+misreadings in one lane report, both caught by Fable. First, rows were filed as (d) because the unit kept an `Unknown`,
+when that `Unknown` hedged a DIFFERENT member than the one whose effect vanished (sshd, netty); those were really (b) and
+needed a body read. **The hedge must cover the site that lost the effect, or it is not (d).** Second, the lane licensed
+chained 1→0 cells as "also absent when the same jar is scanned as one tree", but the release under test had moved the
+one-tree answer too, so for exactly the cells that mattered the check was circular. **Any engine-vs-itself reference
+inherits every in-scan change: put the PUBLISHED arm's one-tree column beside it, or it proves nothing.**
+
 **A LARGE REMOVAL NEEDS AN INDEPENDENT CHECKER, NOT KILL-SWITCH ATTRIBUTION — measured 2026-10-10, swift R1105.**
 A property fix removed ~3,800 charged rows. The lane attributed every removal to a mechanism by turning each
 fix off in turn, calibrated its own classifier with a seed, and read 30 sites; all of it looked clean. An

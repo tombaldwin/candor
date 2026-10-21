@@ -8,7 +8,10 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## Unreleased
+## 2026-10-21 — corpus-ab memory tracks --jobs, not corpus size (R1228) (released 2026-10-21 as 0.40.14)
+
+- **0.40.14 family patch.** `ENGINE_PIN` moves to 0.40.14, so `candor update` and the Homebrew formula fetch the engines
+  this cut published (all four engines strip a UTF-8 byte-order mark at byte 0, R1224; candor-java R1232/R1263).
 
 - **`bin/corpus-ab.py` no longer holds the corpus in memory (SOUNDNESS R1228).** The main process kept every
   entry's parsed PRE and POST rows until the run ended, so its peak grew with corpus size whatever `--jobs`

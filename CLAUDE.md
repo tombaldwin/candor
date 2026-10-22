@@ -575,6 +575,14 @@ only `invisible`; and a sidecar classifier is BLIND to a dropped edge whose call
 arms — use a seeded dropped-edge detector. This check belongs in each lane's own A/B (against the last release,
 not HEAD), so the cut only collects it.
 
+**AND THERE IS A SLOT (c′): PURE OVER EVERY VISIBLE IMPLEMENTOR, WITH THE JOIN KEY PUBLISHED.** Fable settled this from
+SPEC text on 2026-10-20 (`~/candor-handoff/fable-rust0414/REVIEW.md` Q1) and I did not write it down, so the next rust lane
+re-derived it and asked for a ruling. SPEC §4 ⟨0.39⟩ obligation 1 makes the producer name the dispatched member on the
+row even when it is otherwise pure, so a 1→0 row that ends up `[]` with that `dispatchesOn` key is inside the bar, like
+(c). It mirrors (c)'s two legs: **the key is present on the FINAL binary for EVERY flagged member** (a row keyed for only
+some does not pass), **and a chained join is shown to charge on a REAL producer report**: scan the real dependency with the
+candidate and chain a small consumer whose implementor performs the effect. A synthetic producer report does not count.
+
 **(d) MEANS A HEDGE ON THE LOST SITE, AND A SELF-COMPARISON IS NOT A LICENCE — 2026-10-22, java 0.40.15 stack.** Two
 misreadings in one lane report, both caught by Fable. First, rows were filed as (d) because the unit kept an `Unknown`,
 when that `Unknown` hedged a DIFFERENT member than the one whose effect vanished (sshd, netty); those were really (b) and

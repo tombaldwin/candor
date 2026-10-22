@@ -10,6 +10,7 @@ keeps its own.
 
 ## 2026-10-22 — the 0.40.15 family patch (released 2026-10-22 as 0.40.15)
 
+- **Pins move to the 0.40.15 family line.** `bin/candor` `ENGINE_PIN` 0.40.14 → 0.40.15 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.15`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
 - **0.40.15 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.15, so `candor update`
   and the Homebrew formula fetch the engines this cut published (candor-java R1235/R1239 chain + R1337; candor-rust
   R1265/R1319 residue, R1347, R1324 partial).

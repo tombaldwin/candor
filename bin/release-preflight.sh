@@ -295,7 +295,7 @@ for PRIOR in $PRIORS; do
   strays="$(cd "$ROOT" && grep -rInE "spec[^0-9]{0,4}${PRIOR//./\\.}([^0-9]|$)" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=eval --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
-      --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude='CHANGELOG*' --exclude='BACKLOG*.md' --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude=SOUNDNESS.md \
       --exclude='*WORK-QUEUE.md' \
       --exclude='NIGHT-*.md' \
@@ -329,7 +329,7 @@ for PRIOR in $PRIORS; do
   litstrays="$(cd "$ROOT" && grep -rIn "\"${PRIOR//./\\.}\"" \
       --exclude-dir=target --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=build \
       --exclude-dir=.git --exclude-dir=.gradle --exclude-dir=docs --exclude-dir=.candor \
-      --exclude='CHANGELOG*' --exclude=BACKLOG.md --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
+      --exclude='CHANGELOG*' --exclude='BACKLOG*.md' --exclude='*DESIGN*.md' --exclude='*-LOG.md' \
       --exclude=SOUNDNESS.md \
       --exclude='*WORK-QUEUE.md' \
       --exclude='NIGHT-*.md' \
@@ -1250,7 +1250,7 @@ else
   # invokes anything in bin/ — so a change to them cannot alter a conformance result. Named explicitly
   # rather than licensing `^bin/` or `^integrations/` wholesale: an unlisted path only ever costs a
   # wasted run, so the conservative direction here is the SHORT list.
-  SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG\.md$'
+  SKIP_LICENSED='(^|/)CHANGELOG\.md$|^adopt/|^docs/|(^|/)README\.md$|^jbang-catalog\.json$|^bin/candor$|(^|/)BACKLOG[^/]*\.md$'
   SKIP_LICENSED="$SKIP_LICENSED"'|^integrations/vscode/package\.json$|^integrations/jetbrains/gradle\.properties$'
   # …and CI workflow files. The suite runs local binaries against local fixtures and reads nothing under
   # .github/ (verified: zero references in run.sh or any generator). Whether CI is healthy is check [10]'s

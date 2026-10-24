@@ -15,6 +15,10 @@ keeps its own.
   and the Homebrew formula fetch the engines this cut published (SPEC ⟨0.40⟩ union clarifications, PARTs 101–103;
   candor-java R1336/R1360/R1371/R1378 and the paired-sidecar fallback; candor-swift R1357/R1368/R1375/R1376;
   candor-rust R1324 with the rule-3 escape guard, R1345/R1349/R1351–R1353/R1367).
+- **`BACKLOG.md` is the plan again.** The July–October backlog moves unchanged, line numbers intact, to
+  `history/BACKLOG-2026-07-to-09.md`; the new `BACKLOG.md` is a short ranked queue rewritten at each join.
+  `bin/release-preflight.sh` excludes `BACKLOG*.md` (not only `BACKLOG.md`) from its stale-spec-string scans
+  and its conformance-skip licence, so the archive is treated like the file it was.
 
 ## 2026-10-22 — the 0.40.15 family patch (released 2026-10-22 as 0.40.15)
 

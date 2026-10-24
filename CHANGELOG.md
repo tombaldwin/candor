@@ -8,6 +8,13 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-24 — the 0.40.16 family patch (released 2026-10-24 as 0.40.16)
+
+- **0.40.16 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.16, so `candor update`
+  and the Homebrew formula fetch the engines this cut published (SPEC ⟨0.40⟩ union clarifications, PARTs 101–103;
+  candor-java R1336/R1360/R1371/R1378 and the paired-sidecar fallback; candor-swift R1357/R1368/R1375/R1376;
+  candor-rust R1324 with the rule-3 escape guard, R1345/R1349/R1351–R1353/R1367).
+
 ## 2026-10-22 — the 0.40.15 family patch (released 2026-10-22 as 0.40.15)
 
 - **Pins move to the 0.40.15 family line.** `bin/candor` `ENGINE_PIN` 0.40.14 → 0.40.15 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.15`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

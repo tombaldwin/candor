@@ -27,7 +27,11 @@ explicit one always ends in `Unknown`); producers publish dependency keys for on
 identity is coarser than the language's. So the work is a staged restructure, not row-by-row fixing. Rounds
 (FABLE-SYNTHESIS §3.4; about 6–8 lane-rounds per engine):
 
-1. **Round 1 — in flight** (`~/candor-handoff/calltarget-round1/BRIEF.md`). ts: one target oracle `bodiesFor`
+1. **Round 1 — SHIPPED in v0.40.17 (2026-10-25)** (`~/candor-handoff/calltarget-round1/`: BRIEF, per-engine
+   REPORTs, FABLE-REVIEW, FABLE-RUST-R1429). Matrix silent cases at the caller: java 631 → 537, swift 437 → 328,
+   ts 4,006 → 3,316, rust 474 → 398 (rust = typing groundwork, not structural). Open sins 70 → 60. Round-2
+   corrections are FABLE-REVIEW §5; cross-engine controls to add first are §3 (consumer-union subtree scoping
+   R1436/java `c_ct_unrelated_inh`; a producer over-reach cell; the non-invoking look-alike axis). ts: one target oracle `bodiesFor`
    for every reader. java: `CallTargets.resolve` as the first shared entry point, plus the degraded-sidecar
    disclosure (R1377/R1333). swift: dependency keys for `open` class members and one dependency lookup for
    operators, subscripts, hashing (R1416, R1415). rust: one path-value typing fix (R1426) with the matrix re-cut

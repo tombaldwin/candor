@@ -8,6 +8,17 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-25 — the 0.40.17 family patch: call-target round 1 (released 2026-10-25 as 0.40.17)
+
+- **0.40.17 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.17, so
+  `candor update` and the Homebrew formula fetch the engines this cut published: the first round of the
+  call-target restructure (candor-java one `CallTargets` entry point for dependency-typed receivers;
+  candor-swift one dependency-hook lookup and keys for `open` class members; candor-ts one target oracle for the
+  implicit readers; candor-rust path-value typing, R400 and R1429), plus conformance PART 104.
+- **`BACKLOG.md` is the plan again.** The July–October backlog moved unchanged to
+  `history/BACKLOG-2026-07-to-09.md`; the new `BACKLOG.md` leads with the call-target program. `bin/release-preflight.sh`
+  excludes `BACKLOG*.md` from its stale-spec-string scans and conformance-skip licence.
+
 ## 2026-10-24 — the 0.40.16 family patch (released 2026-10-24 as 0.40.16)
 
 - **Pins move to the 0.40.16 family line.** `bin/candor` `ENGINE_PIN` 0.40.15 → 0.40.16 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.16`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
@@ -15,10 +26,6 @@ keeps its own.
   and the Homebrew formula fetch the engines this cut published (SPEC ⟨0.40⟩ union clarifications, PARTs 101–103;
   candor-java R1336/R1360/R1371/R1378 and the paired-sidecar fallback; candor-swift R1357/R1368/R1375/R1376;
   candor-rust R1324 with the rule-3 escape guard, R1345/R1349/R1351–R1353/R1367).
-- **`BACKLOG.md` is the plan again.** The July–October backlog moves unchanged, line numbers intact, to
-  `history/BACKLOG-2026-07-to-09.md`; the new `BACKLOG.md` is a short ranked queue rewritten at each join.
-  `bin/release-preflight.sh` excludes `BACKLOG*.md` (not only `BACKLOG.md`) from its stale-spec-string scans
-  and its conformance-skip licence, so the archive is treated like the file it was.
 
 ## 2026-10-22 — the 0.40.15 family patch (released 2026-10-22 as 0.40.15)
 

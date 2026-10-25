@@ -10,6 +10,8 @@ keeps its own.
 
 ## 2026-10-25 — the 0.40.17 family patch: call-target round 1 (released 2026-10-25 as 0.40.17)
 
+- **Pins move to the 0.40.17 family line.** `bin/candor` `ENGINE_PIN` 0.40.16 → 0.40.17 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.17`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
+
 - **0.40.17 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.17, so
   `candor update` and the Homebrew formula fetch the engines this cut published: the first round of the
   call-target restructure (candor-java one `CallTargets` entry point for dependency-typed receivers;

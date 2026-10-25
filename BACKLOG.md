@@ -18,10 +18,36 @@ Last rewritten 2026-10-24, after the v0.40.16 family release and a full audit of
   `history/BACKLOG-2026-07-to-09.md:<N>`. Its top "THE PLAN" section stopped being the queue on 2026-09-28.
   Do not work from it; mine it.
 
-## 1. Silent under-reports (cardinal sins), by engine — first
+## 0. The call-target program — the main line of work (Tom: "Go", 2026-10-25)
 
-Each lane gets its row IDs from this list, re-verifies them against HEAD before fixing (about one in five has
-a wrong mechanism), and is held to the truth-monotone bar against the LAST RELEASE (`CLAUDE.md`).
+Most open sins are not separate bugs. A four-engine analysis (`~/candor-handoff/calltarget-analysis/`: each
+engine's executed matrix, two prototypes, Fable's synthesis) found the same three defects in every engine:
+an implicit call into user code that the engine does not recognise produces no edge and no `Unknown` (an
+explicit one always ends in `Unknown`); producers publish dependency keys for only some member kinds; and unit
+identity is coarser than the language's. So the work is a staged restructure, not row-by-row fixing. Rounds
+(FABLE-SYNTHESIS §3.4; about 6–8 lane-rounds per engine):
+
+1. **Round 1 — in flight** (`~/candor-handoff/calltarget-round1/BRIEF.md`). ts: one target oracle `bodiesFor`
+   for every reader. java: `CallTargets.resolve` as the first shared entry point, plus the degraded-sidecar
+   disclosure (R1377/R1333). swift: dependency keys for `open` class members and one dependency lookup for
+   operators, subscripts, hashing (R1416, R1415). rust: one path-value typing fix (R1426) with the matrix re-cut
+   by spelling, plus R400. Spec: rows R1405–R1428, draft site/disclosure and wire clauses, the R764 four-way cell
+   and a cross-engine call-target PART.
+2. **Round 2:** implicit-site tables generated from each platform's own declarations, behind the site clause.
+3. **Round 3:** exact unit identity (removes charges: independent checker over every removal).
+4. **Round 4:** producers publish what a consumer needs for generics over std bounds (R974's rung, after a census).
+
+Decisions taken with it (Fable's defaults): price both strictness options of the site clause before choosing;
+count before un-deferring R974; java's restructure does not wait for the Phase D split; identity in round 3.
+Rule for every lane: a row maps to a matrix cell before it is fixed, and a change is accepted when it retires a
+list or a reader. Rows the program subsumes are marked "SUBSUMED by call-target round N" in the register; do not
+fix them one at a time.
+
+## 1. Silent under-reports (cardinal sins), by engine
+
+The rows below are the queue as it stood before the program. Rows marked SUBSUMED in the register go through
+the program; the rest continue as individual fixes. Each lane re-verifies against HEAD before fixing (about one
+in five has a wrong mechanism) and is held to the truth-monotone bar against the LAST RELEASE (`CLAUDE.md`).
 
 - **candor-rust (scan).** R400 (reopened: its fix was reverted in `9889929`, both halves reproduce on 0.40.16);
   R1395 (a chained dependency's effectful `Display` impl reached through a dyn/generic helper); then the 0.40.16

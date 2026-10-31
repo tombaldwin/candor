@@ -10,6 +10,8 @@ keeps its own.
 
 ## 2026-10-31 — the 0.40.18 family patch: call-target round 2 (released 2026-10-31 as 0.40.18)
 
+- **Pins move to the 0.40.18 family line.** `bin/candor` `ENGINE_PIN` 0.40.17 → 0.40.18 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.18`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.
+
 - **0.40.18 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.18 once the
   engines are published, so `candor update` and the Homebrew formula fetch call-target round 2: candor-rust's std
   bound table generated from rust-src (R1444, R1430 in part); candor-java's JDK site table derived from pinned JDK

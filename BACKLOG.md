@@ -37,7 +37,12 @@ identity is coarser than the language's. So the work is a staged restructure, no
    operators, subscripts, hashing (R1416, R1415). rust: one path-value typing fix (R1426) with the matrix re-cut
    by spelling, plus R400. Spec: rows R1405–R1428, draft site/disclosure and wire clauses, the R764 four-way cell
    and a cross-engine call-target PART.
-2. **Round 2:** implicit-site tables generated from each platform's own declarations, behind the site clause.
+2. **Round 2 — SHIPPED in v0.40.18 (2026-10-31)** (`~/candor-handoff/calltarget-round2/`: BRIEF, JOIN-BRIEF, four REPORTs, FABLE-REVIEW).
+   Site tables generated from each platform (rust-src, JDK bytecode, `.swiftinterface`, executed ECMA-262); hand lists deleted.
+   Caller silences: rust 400→154, java 1,330→949, swift 328→312, ts 3,433→2,337; 0 toward silence. Rows R1448–R1460 filed.
+   NEXT (fresh session, two lanes, sonnet default): post-release register pass (mark FIX COMMITTED rows shipped); then round 3a
+   ts + swift (swift R1455 explicit-call drop first: fix the X instrument, re-measure, Tom's priority call), round 3b rust + java
+   identity, then the harmonised option-B re-price. java `soundness-weekly` red since 71876b3 (`framework-reach.tsv` stale).
 3. **Round 3:** exact unit identity (removes charges: independent checker over every removal).
 4. **Round 4:** producers publish what a consumer needs for generics over std bounds (R974's rung, after a census).
 

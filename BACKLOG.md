@@ -41,6 +41,16 @@ identity is coarser than the language's. So the work is a staged restructure, no
 3. **Round 3:** exact unit identity (removes charges: independent checker over every removal).
 4. **Round 4:** producers publish what a consumer needs for generics over std bounds (R974's rung, after a census).
 
+**Tom's ruling on the site-clause disclosure fallback, 2026-10-31** (`~/candor-handoff/calltarget-round2/FABLE-REVIEW.md`):
+option A (disclose at every recognised unresolved site) is DECLINED. It costs about 3–8% in every engine, and the one measured benefit
+(ts) was entirely J3-shaped and resolvable. Option B is the backstop where resolution fails, not an alternative to it. Its class list is
+fixed as: iteration; a function value run by the platform; I/O read/write; conversion meaning `From`/`Into`/`TryFrom`/`AsRef`/`FromStr`-style
+(NOT `Number(x)`/`+x`, which run the formatting family); `await`/`then` deferred force; drop/close/finaliser. Formatting, equality,
+ordering, hashing, cloning, `Default` and operators (including `Deref`/`Index`) stay under §4's MAY. Accessors class with the member they
+run. Next: amend proposal §1.3 to this list, then re-price B four-way with ONE shared `bin/` script plus each matrix with the switch on
+(cost AND silences caught), on the cheaper model. Tom then decides per engine. Neither option reaches generic-parameter sites (round 4).
+The fallback does NOT ship in round 3.
+
 Decisions taken with it (Fable's defaults): price both strictness options of the site clause before choosing;
 count before un-deferring R974; java's restructure does not wait for the Phase D split; identity in round 3.
 Rule for every lane: a row maps to a matrix cell before it is fixed, and a change is accepted when it retires a

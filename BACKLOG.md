@@ -36,7 +36,9 @@ Rest of rounds 3–4 and the option-B re-price stay in §0, PAUSED until the end
 **Track B — a two-week product test (starts in parallel).** Run candor as the edit-time check for one coding agent
 on one real codebase, every day: Claude Code with candor's MCP server (`candor mcp install`) and the stop hook
 (`integrations/claude-code/`). Keep a log: every wrong verdict, every slow run, every confusing message, every setup
-step that failed. One line each, with the date. **Codebase: the field case** (`~/git/fieldcase`, Tom's day-to-day; JVM, so candor-java is the engine under test). First step:
+step that failed. One line each, with the date. **Codebase: a large production Java web application (the field case), developed on `buffy.local`** (Tom's day-to-day machine; JVM, so candor-java is the engine under
+   test). Track B is set up and used ON BUFFY, not here. The log is `field/java-webapp-log.md` in this repo, pushed from buffy.
+   `anya.local` stays free for corpus A/Bs. First step:
    check whether PR #887's v0.15.0-pinned gate ever merged (memory `candor-field-ci-gate`), then install 0.40.18 fresh.
 
 **End of the block: decide from the log.** Mostly wrong verdicts → soundness again, aimed at those cases. Mostly

@@ -38,8 +38,10 @@ on one real codebase, every day: Claude Code with candor's MCP server (`candor m
 (`integrations/claude-code/`). Keep a log: every wrong verdict, every slow run, every confusing message, every setup
 step that failed. One line each, with the date. **Codebase: a large production Java web application (the field case), developed on `buffy.local`** (Tom's day-to-day machine; JVM, so candor-java is the engine under
    test). Track B is set up and used ON BUFFY, not here. The log is `field/java-webapp-log.md` in this repo, pushed from buffy.
-   `anya.local` stays free for corpus A/Bs. First step:
-   check whether PR #887's v0.15.0-pinned gate ever merged (memory `candor-field-ci-gate`), then install 0.40.18 fresh.
+   `anya.local` stays free for corpus A/Bs. **Tom 2026-11-01: the field case
+   already uses candor; the version is unknown.** First step on buffy: find how it is wired (CI gate pin, `.candor/`, hooks) and
+   which version, before changing anything. Then upgrade to 0.40.18. Upgrading from an old pin can turn gates red (each rung
+   since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The `~/git/fieldcase` clone on this Mac is stale.
 
 **End of the block: decide from the log.** Mostly wrong verdicts → soundness again, aimed at those cases. Mostly
 setup, speed or output problems → the product side gets the time.

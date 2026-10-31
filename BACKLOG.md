@@ -36,7 +36,8 @@ Rest of rounds 3–4 and the option-B re-price stay in §0, PAUSED until the end
 **Track B — a two-week product test (starts in parallel).** Run candor as the edit-time check for one coding agent
 on one real codebase, every day: Claude Code with candor's MCP server (`candor mcp install`) and the stop hook
 (`integrations/claude-code/`). Keep a log: every wrong verdict, every slow run, every confusing message, every setup
-step that failed. One line each, with the date. **Open: which codebase** (Tom picks something he actually works on).
+step that failed. One line each, with the date. **Codebase: the field case** (`~/git/fieldcase`, Tom's day-to-day; JVM, so candor-java is the engine under test). First step:
+   check whether PR #887's v0.15.0-pinned gate ever merged (memory `candor-field-ci-gate`), then install 0.40.18 fresh.
 
 **End of the block: decide from the log.** Mostly wrong verdicts → soundness again, aimed at those cases. Mostly
 setup, speed or output problems → the product side gets the time.

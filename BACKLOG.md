@@ -18,7 +18,42 @@ Last rewritten 2026-10-24, after the v0.40.16 family release and a full audit of
   `history/BACKLOG-2026-07-to-09.md:<N>`. Its top "THE PLAN" section stopped being the queue on 2026-09-28.
   Do not work from it; mine it.
 
-## 0. The call-target program — the main line of work (Tom: "Go", 2026-10-25)
+## Now — a time-boxed split (Tom: "Yes, perfect", 2026-11-01)
+
+**Why.** Rounds 1–2 did the call-target program's structural work: one entry point per engine, and site tables
+generated from each platform. Their real-code payoff is now uneven. Round 2's corpus gains were ts 3 edges, swift 0
+rows, rust ~400 rows and java ~1,400 rows. Meanwhile nobody outside the project is known to rely on a candor verdict:
+gains has 0 sign-ups in ~15 weeks, the JetBrains plugin is unlisted, the VS Code extension is unpublished and the
+field-case gate is unconfirmed. The decision question: *who is the first person who will rely on a candor verdict, and
+what would make them stop trusting it?* We can't name them yet, so the next block finds out.
+
+**Track A — soundness, only the two items with large real-world reach, then pause the program.**
+1. swift R1455: explicit untyped member calls are dropped (24,797 sites, 4.93% of units). Fix the X-arm instrument
+   first (it loses concrete effects on 3 rows). Re-measure, then Tom's call: resolve by typing, hedge, or a named miss.
+2. rust identity: the 1,009 `ambiguous:same-name` rows that round 2's resolution disclosed (plus the R1420 merge).
+Rest of rounds 3–4 and the option-B re-price stay in §0, PAUSED until the end-of-block decision.
+
+**Track B — a two-week product test (starts in parallel).** Run candor as the edit-time check for one coding agent
+on one real codebase, every day: Claude Code with candor's MCP server (`candor mcp install`) and the stop hook
+(`integrations/claude-code/`). Keep a log: every wrong verdict, every slow run, every confusing message, every setup
+step that failed. One line each, with the date. **Open: which codebase** (Tom picks something he actually works on).
+
+**End of the block: decide from the log.** Mostly wrong verdicts → soundness again, aimed at those cases. Mostly
+setup, speed or output problems → the product side gets the time.
+
+**How we work (rules in memory `feedback-usage-budget-lanes`).**
+- At most two lanes at once.
+- Sonnet by default; opus only to design a fix.
+- Each lane has one task and a stated stop point; its hand-back is ≤300 words, with detail in its evidence dir.
+- Before the first lane, build two shared tools once in `bin/`: one pricing tool, and a durable per-release cache
+  of the published arm's corpus results.
+- Run corpus A/Bs on `anya.local`, so lanes don't wait on the local lock.
+- Lanes iterate on fixtures + matrix; they run the full corpus A/B once, on the final candidate.
+- Fable reviews only releases that remove charges or change the wire.
+- Release every second round unless a fix is urgent.
+- Start a fresh coordinator session per block.
+
+## 0. The call-target program — PAUSED after Track A (Tom: "Go", 2026-10-25)
 
 Most open sins are not separate bugs. A four-engine analysis (`~/candor-handoff/calltarget-analysis/`: each
 engine's executed matrix, two prototypes, Fable's synthesis) found the same three defects in every engine:

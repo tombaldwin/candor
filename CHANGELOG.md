@@ -8,6 +8,16 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-10-31 — the 0.40.18 family patch: call-target round 2 (released 2026-10-31 as 0.40.18)
+
+- **0.40.18 family patch.** No change to the umbrella's own surface. `ENGINE_PIN` moves to 0.40.18 once the
+  engines are published, so `candor update` and the Homebrew formula fetch call-target round 2: candor-rust's std
+  bound table generated from rust-src (R1444, R1430 in part); candor-java's JDK site table derived from pinned JDK
+  bytecode and the S6 stream-decorator floor (R1441, R1452); candor-swift's transitive obligation-3 join and derived
+  witness-site table (R1446); candor-ts's executed ECMA-262 site table, R1434/R1435 and the J3 CommonJS fix (R1450).
+  SPEC text unchanged; candor-spec's proposal §1.3 records Tom's 2026-10-31 ruling on the site-clause fallback
+  (option A declined; option B's class list fixed, as the backstop where resolution fails).
+
 ## 2026-10-25 — the 0.40.17 family patch: call-target round 1 (released 2026-10-25 as 0.40.17)
 
 - **Pins move to the 0.40.17 family line.** `bin/candor` `ENGINE_PIN` 0.40.16 → 0.40.17 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.17`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

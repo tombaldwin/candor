@@ -143,6 +143,8 @@ run "test-fingerprint"      bash fingerprint/test-fingerprint.sh
 run "candor.test"           bash bin/candor.test.sh
 run "corpus-ab.test"        bash bin/corpus-ab.test.sh
 run "corpus-ledger.test"    bash bin/corpus-ledger.test.sh
+run "ab-price --selftest"   python3 bin/ab-price.py --selftest
+run "pubarm_cache --selftest" python3 bin/pubarm_cache.py --selftest
 run "ci-watch --selftest"   bash bin/ci-watch.sh --selftest
 run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'

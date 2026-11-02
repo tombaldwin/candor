@@ -133,6 +133,8 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import pubarm_cache  # noqa: E402  — the published-arm cache; ONE implementation of the lookup (R288)
 
 # The value fields a narrow key would look at.  Named here only so the calibration table can show what
 # narrowing costs; the DEFAULT is every field.
@@ -612,6 +614,22 @@ def _fn_of_key(key):
     return key[2] if len(key) > 2 else key[-1]
 
 
+def gate_tokens_of(rows, quals):
+    """qual -> sorted gate-visible tokens over EVERY row of that qual (touched or not): each effect incl.
+    `Unknown`, plus `~incomplete:E` / `~invisible:X` disclosure markers.  A `deny E <fn>` gate fires on
+    the UNION over a qual's rows, so a flip is a property of this set, not of any one changed row."""
+    out = collections.defaultdict(set)
+    for _entry, _pkg, row in rows:
+        q = row.get("fn")
+        if q not in quals:
+            continue
+        s = out[q]
+        s.update(row.get("inferred") or [])
+        s.update("~incomplete:%s" % x for x in (row.get("incomplete") or []))
+        s.update("~invisible:%s" % x for x in (row.get("invisible") or []))
+    return {q: sorted(v) for q, v in out.items()}
+
+
 def reduce_entry(entry, pre_pairs, post_pairs, key, fields):
     """One entry's contribution to every number the run reports.  `*_pairs` are `read_reports` rows."""
     pre_rows = [(entry, p, row) for p, row in pre_pairs]
@@ -634,18 +652,39 @@ def reduce_entry(entry, pre_pairs, post_pairs, key, fields):
     pre_by_fn = {}
     for (_entry, qual), effs in pre_by_fn_of(pre_rows, wanted).items():
         pre_by_fn[qual] = sorted(effs)
+    # GATE STATE of every qual the diff touches (removed too), both arms, for `bin/ab-price.py`: a gate
+    # flip is decided by the union over a qual's rows, including its UNTOUCHED sibling rows, which the
+    # detail records alone cannot show.  Diff-sized, like pre_by_fn.
+    touched = wanted | {_fn_of_key(k) for k, *_ in detail["removed"]}
+    gpre, gpost = gate_tokens_of(pre_rows, touched), gate_tokens_of(post_rows, touched)
+    gate = [[entry, q, gpre.get(q, []), gpost.get(q, [])] for q in sorted(touched)
+            if gpre.get(q, []) != gpost.get(q, [])]
     return {"pre_n": len(pre_rows), "post_n": len(post_rows), "headline": headline,
-            "detail": detail, "table": table, "pre_by_fn": pre_by_fn}
+            "detail": detail, "table": table, "pre_by_fn": pre_by_fn, "gate_by_fn": gate}
 
 
 def one_entry(job):
-    entry, pre_cmd, post_cmd, timeout, marks, mark_env, mark_arm, oglob, oexcl, key, fields = job
+    entry, pre_cmd, post_cmd, timeout, marks, mark_env, mark_arm, oglob, oexcl, key, fields = job[:11]
+    caches = job[11] if len(job) > 11 else {}
     label = os.path.basename(entry.rstrip("/")) or entry
     res = {"entry": entry, "label": label}
     arms = {}
     for name, cmd in (("pre", pre_cmd), ("post", post_cmd)):
         env = dict(mark_env) if (mark_arm in (name, "both")) else {}
-        text, err_bytes, error = run_arm(cmd, entry, timeout, env, oglob, oexcl)
+        if caches.get(name):
+            # SERVED FROM THE PUBLISHED-ARM CACHE (bin/pubarm_cache.py).  A miss is this entry's ERROR,
+            # never an empty arm, so the run refuses (exit 3) instead of diffing against nothing.
+            c = caches[name]
+            try:
+                text, cmeta = pubarm_cache.lookup(c["version"], c["engine"], entry, c["hashes"], c["residual"])
+                err_bytes, error = b"", None
+                res.setdefault("cache_hits", {})[name] = {"report_sha256": cmeta["report_sha256"],
+                                                          "scan_seconds": cmeta.get("scan_seconds")}
+            except pubarm_cache.CacheMiss as e:
+                res["error"] = "%s arm: CACHE MISS (%s:%s) — %s" % (name, c["version"], c["engine"], e)
+                return res
+        else:
+            text, err_bytes, error = run_arm(cmd, entry, timeout, env, oglob, oexcl)
         if error is not None:
             res["error"] = "%s arm: %s" % (name, error)
             return res
@@ -867,6 +906,13 @@ def build_parser():
     ap.add_argument("--entries-file", help="a file of entry paths, one per line")
     ap.add_argument("--pre-json", help="pair mode: a captured PRE report")
     ap.add_argument("--post-json", help="pair mode: a captured POST report")
+    ap.add_argument("--pre-cache", metavar="VERSION:ENGINE",
+                    help="serve the PRE arm from the published-arm cache (bin/pubarm_cache.py, "
+                         "/Users/tom/candor-handoff/pubarm/VERSION/ENGINE) instead of scanning.  --pre-cmd is "
+                         "still REQUIRED: it is the identity the cache is keyed on (engine sha, command, "
+                         "entry content, candor version) and it is never run.  A miss is an entry ERROR "
+                         "(exit 3) naming why; an empty arm is never substituted.")
+    ap.add_argument("--post-cache", metavar="VERSION:ENGINE", help="as --pre-cache, for the POST arm")
     ap.add_argument("--mark", action="append", default=[],
                     help="a marker string your instrumented arm prints on stderr; counted as REACH")
     ap.add_argument("--mark-env", action="append", default=[],
@@ -935,6 +981,10 @@ def run(args):
     # ── gather both arms ──
     results = []
     swift_unfit = []
+    caches = {}
+    if (args.pre_json or args.post_json) and (args.pre_cache or args.post_cache):
+        emit("corpus-ab: --pre-cache/--post-cache serve a COMMAND arm; pair mode already takes captured reports.")
+        return 2
     arm_identity_note = ("arm identity: pair mode — two captured reports, so there is no command to "
                          "hash; the arms are whatever produced those files.")
     if args.pre_json or args.post_json:
@@ -957,6 +1007,24 @@ def run(args):
         if not (args.pre_cmd and args.post_cmd):
             emit("corpus-ab: need --pre-cmd and --post-cmd (or --pre-json/--post-json)")
             return 2
+        for arm_name, spec in (("pre", args.pre_cache), ("post", args.post_cache)):
+            if not spec:
+                continue
+            if spec.count(":") != 1 or not all(spec.split(":")):
+                emit("corpus-ab: --%s-cache wants VERSION:ENGINE, got %r" % (arm_name, spec))
+                return 2
+            if args.mark_arm in (arm_name, "both") and args.mark:
+                emit("corpus-ab: --mark counts a marker on the %s arm's stderr, and a CACHED arm has no "
+                     "stderr: REACH would read 0 for a reason that has nothing to do with the code.  Put "
+                     "--mark-arm on the uncached arm (default is post), or scan this arm live." % arm_name)
+                return 2
+            hashes, residual = pubarm_cache.identity_of(getattr(args, arm_name + "_cmd"))
+            if not hashes:
+                emit("corpus-ab: --%s-cmd names no file that exists, so the cache has no engine identity "
+                     "to verify against.  Refusing." % arm_name)
+                return 2
+            ver, eng = spec.split(":")
+            caches[arm_name] = {"version": ver, "engine": eng, "hashes": hashes, "residual": residual}
         entries = collect_entries(args)
         if not entries:
             return refuse(["The entry set is EMPTY.  Nothing was scanned, so nothing was compared.",
@@ -995,7 +1063,7 @@ def run(args):
         oexcl = tuple(x.strip() for x in args.outdir_exclude.split(",") if x.strip())
         jobs = [(e, args.pre_cmd, args.post_cmd, args.timeout,
                  tuple(args.mark), mark_env, args.mark_arm, args.outdir_glob, oexcl,
-                 args.key, fields)
+                 args.key, fields, caches)
                 for e in entries]
         with cf.ProcessPoolExecutor(max_workers=max(1, args.jobs)) as ex:
             for res in ex.map(one_entry, jobs):
@@ -1093,6 +1161,10 @@ def run(args):
             out.update(d)
         return {k: out[k] for k in ("added_rows", "removed_rows", "added_keys", "removed_keys",
                                     "changed_keys", "changed_rows")}
+    analyzed_pre = sum(r.get("pre_judged") or 0 for r in good)
+    analyzed_post = sum(r.get("post_judged") or 0 for r in good)
+    gate_by_fn = [g for r in good for g in r.get("gate_by_fn", [])]
+    cache_hits = collections.Counter(a for r in good for a in (r.get("cache_hits") or {}))
     n_pre = sum(r["pre_n"] for r in good)
     n_post = sum(r["post_n"] for r in good)
     headline = _sum(r["headline"] for r in good)
@@ -1112,6 +1184,11 @@ def run(args):
     # PRINTED ON EVERY RUN, INCLUDING WHEN IT PASSES — R691.  "The arms differ" is a claim this tool
     # makes, so it says on what evidence, and says NOT PROVEN when it could not look (§H).
     emit("  " + arm_identity_note)
+    for arm_name, c in sorted(caches.items()):
+        emit("  %s arm SERVED FROM THE PUBLISHED-ARM CACHE %s:%s: %d of %d entries hit (every one re-verified "
+             "on engine sha, command, entry content and report sha); %s arm scanned live."
+             % (arm_name.upper(), c["version"], c["engine"], cache_hits[arm_name], len(good),
+                "POST" if arm_name == "pre" else "PRE"))
     if args.allow_identical_arms:
         emit("  --allow-identical-arms: a self-comparison was ACKNOWLEDGED.  Every number below is a "
              "diff of one artefact against itself.")
@@ -1237,6 +1314,10 @@ def run(args):
         with open(args.out, "w") as fh:
             json.dump({"headline": headline, "key": args.key, "fields": fields,
                        "entries_compared": len(good), "entries_given": len(results),
+                       "analyzed_pre": analyzed_pre, "analyzed_post": analyzed_post,
+                       "gate_by_fn": gate_by_fn,
+                       "pre_cache": caches.get("pre") and {k: v for k, v in caches["pre"].items() if k in ("version", "engine")},
+                       "post_cache": caches.get("post") and {k: v for k, v in caches["post"].items() if k in ("version", "engine")},
                        "excluded": bad, "unjudged": unjudged, "all_pure": allpure, "pre_rows": n_pre, "post_rows": n_post,
                        "reach": dict(reach), "reach_entries": dict(reach_entries),
                        "reach_where": {k: v for k, v in reach_where.items()},
@@ -1732,6 +1813,42 @@ def selftest():
                for e in ("flate2-1.1.9", "flate2-1.1.10")}) == 2)
 
     emit()
+    emit()
+    emit("[cache] --pre-cache serves the PRE arm from the published-arm cache, and a stale entry cannot be")
+    emit("        read as current.  The PRE command EXITS 1 if it is ever run, so a hit proves it was not.")
+    croot = os.path.join(tmp, "pubarm-root")
+    os.environ["CANDOR_PUBARM"] = croot
+    eng = os.path.join(tmp, "cache-engine.sh")
+    open(eng, "w").write("echo 'the cached arm was SCANNED' >&2; exit 1\n")
+    pre_c = [_fn("f", []), _fn("g", ["Fs"]), _fn("h", ["Unknown"], ["x"])]
+    post_c = [_fn("f", ["Unknown"], ["y"]), _fn("g", ["Fs"]), _fn("h", [])]
+    ec = mk("cached-entry", pre_c, post_c)
+    open(os.path.join(ec, "content.txt"), "w").write("v1")
+    hashes, resid = pubarm_cache.identity_of("bash %s {entry}" % eng)
+    pubarm_cache.store("fixture", "fx", ec, open(os.path.join(ec, "pre.json")).read(), hashes, resid, 0.1)
+    outc = os.path.join(tmp, "cache-out.json")
+    cargs = ["--pre-cmd", "bash %s {entry}" % eng, "--post-cmd", POST, "--pre-cache", "fixture:fx",
+             "--entry", ec, "--allow-zero-reach", "--out", outc]
+    rc, out = go(cargs)
+    got = json.load(open(outc)) if os.path.exists(outc) else {}
+    check("a HIT diffs the cached PRE against the live POST (exit 0)", rc == 0, out)
+    check("…and says the PRE arm was served from the cache", "PRE arm SERVED FROM THE PUBLISHED-ARM CACHE" in out, out)
+    check("…the diff is the real one: f gained Unknown, h lost it",
+          got.get("headline", {}).get("changed_rows") == 2, json.dumps(got.get("headline")))
+    check("--out carries the denominators and the gate state ab-price.py reads",
+          got.get("analyzed_pre") == 3 and got.get("analyzed_post") == 3 and
+          sorted(g[1] for g in got.get("gate_by_fn", [])) == ["f", "h"], json.dumps(got.get("gate_by_fn")))
+    open(os.path.join(ec, "content.txt"), "w").write("v2")
+    rc, out = go(cargs)
+    check("a STALE entry (content changed) is a CACHE MISS, exit 3, not an empty arm",
+          rc == 3 and "CACHE MISS" in out and "same label cached with different content" in out, out)
+    open(os.path.join(ec, "content.txt"), "w").write("v1")
+    rc, out = go(cargs[:4] + ["--pre-cache", "fixture:otherengine"] + cargs[6:])
+    check("another engine name MISSES, exit 3", rc == 3 and "CACHE MISS" in out, out)
+    rc, out = go(cargs[:-3] + ["--mark", "M", "--mark-arm", "pre", "--out", outc])
+    check("--mark on a CACHED arm is a usage error (its REACH would read 0 for the wrong reason)", rc == 2, out)
+    os.environ.pop("CANDOR_PUBARM", None)
+
     if fails:
         emit("corpus-ab selftest: %d FAILED — %s" % (len(fails), "; ".join(fails)))
         return 1

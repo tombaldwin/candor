@@ -38,7 +38,7 @@ on one real codebase, every day: Claude Code with candor's MCP server (`candor m
 (`integrations/claude-code/`). Keep a log: every wrong verdict, every slow run, every confusing message, every setup
 step that failed. One line each, with the date. **Codebase: a large production Java web application (the field case), developed on `buffy.local`** (Tom's day-to-day machine; JVM, so candor-java is the engine under
    test). Track B is set up and used ON BUFFY, not here. The log is `field/java-webapp-log.md` in this repo, pushed from buffy.
-   `anya.local` stays free for corpus A/Bs. **Tom 2026-11-01: the field case
+   **Tom 2026-11-01: the field case
    already uses candor; the version is unknown.** First step on buffy: find how it is wired (CI gate pin, `.candor/`, hooks) and
    which version, before changing anything. Then upgrade to 0.40.18. Upgrading from an old pin can turn gates red (each rung
    since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The `~/git/fieldcase` clone on this Mac is stale.
@@ -52,7 +52,8 @@ setup, speed or output problems → the product side gets the time.
 - Each lane has one task and a stated stop point; its hand-back is ≤300 words, with detail in its evidence dir.
 - Before the first lane, build two shared tools once in `bin/`: one pricing tool, and a durable per-release cache
   of the published arm's corpus results.
-- Run corpus A/Bs on `anya.local`, so lanes don't wait on the local lock.
+- Corpus A/Bs stay on this Mac's lock: THIS Mac is `anya.local` (corrected 2026-11-02), and buffy is Tom's dev machine.
+  Sequence lanes so that no lane waits on the lock.
 - Lanes iterate on fixtures + matrix; they run the full corpus A/B once, on the final candidate.
 - Fable reviews only releases that remove charges or change the wire.
 - Release every second round unless a fix is urgent.

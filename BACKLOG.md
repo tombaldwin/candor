@@ -41,7 +41,7 @@ step that failed. One line each, with the date. **Codebase: a large production J
    **Tom 2026-11-01: the field case
    already uses candor; the version is unknown.** First step on buffy: find how it is wired (CI gate pin, `.candor/`, hooks) and
    which version, before changing anything. Then upgrade to 0.40.18. Upgrading from an old pin can turn gates red (each rung
-   since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The `~/git/fieldcase` clone on this Mac is stale.
+   since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The local clone of the field case on this Mac is stale.
 
 **First findings from the field-case log (2026-10-31; answers in the session of 2026-11-01).** These are false alarms and
 setup problems, not silent misses, so they go first:

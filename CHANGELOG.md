@@ -10,6 +10,15 @@ keeps its own.
 
 ## Unreleased
 
+- **Claude Code hook: policy violations that pre-date the edit no longer block every turn.** A field report (a Java webapp,
+  no edit made) got `block` with "an edit reached a forbidden effect" and 210 `[AS-EFF-006]` lines: the scan's policy gate is
+  whole-tree, the baseline filtered only the effect diff, and a failing gate never stamps, so every first stop of every turn
+  blocked. Both review scripts now run the same policy over the BASELINE report (`gate --report`, the engine's no-scan gate;
+  `candor-query gate` for candor-scan) and block only on `[AS-EFF-nnn]` lines absent from it; the rest are a count
+  ("N pre-existing ... not re-listed") and the clean pass stamps. A line is keyed whole (rule + fn + effect set + clause), so a
+  second Fs call site inside a function that already violated is masked (as the diff side already masks it). No baseline, or a
+  baseline gate that cannot be evaluated, fails closed: everything lists and the header no longer claims an edit did it.
+  `candor gate` / CI unchanged. Tested on candor-java, candor-scan and candor-swift plus a mock-engine suite.
 - **Claude Code hook, java: `candor hook-run` builds, finds the classes, and no longer loses stdin.** The generated
   command was hard-wired to `mvn -q compile 1>&2 && … CANDOR_CLASSES=target/classes`: Maven-only, one classes dir, and
   the build ran BEFORE the hook so a build that reads stdin drained the Stop-hook JSON (measured: `stop_hook_active`

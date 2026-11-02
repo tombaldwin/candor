@@ -78,17 +78,38 @@ if [ "$gate" -ne 0 ] && grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG" && [ -n "${CANDO
   case "$R" in *"candor fix — "*) remedy="$R" ;; esac   # a real plan, not the "no crossings" / error line
 fi
 
+# WHICH policy findings did this edit introduce? (see candor_policy_split in lib-candor-summary.sh)
+# Only the NEW ones block; findings already present in the baseline's own state are counted, not listed.
+POL_ALL=""; POL_NEW=""; POL_OLD_N=0; POL_BASE_KNOWN=0
+if [ "$gate" -ne 0 ] && grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG"; then
+  bout=""; brc=""
+  if [ -f "$BASELINE" ]; then
+    bout=$($CANDOR gate --report "$BASELINE" ${CANDOR_POLICY:+--policy "$CANDOR_POLICY"} 2>&1 </dev/null); brc=$?
+  fi
+  if command -v candor_policy_split >/dev/null 2>&1; then candor_policy_split "$SCANLOG" "$bout" "$brc"
+  else POL_ALL=$(grep -E "\[AS-EFF-[0-9]+\]" "$SCANLOG" | sed 's/^ *//'); POL_NEW=$POL_ALL; fi
+  # the remedy covers every crossing; with pre-existing ones present, keep only the blocks for new ones
+  if [ "$POL_OLD_N" -gt 0 ] && [ -n "$remedy" ]; then remedy=$(candor_filter_remedy "$remedy"); fi
+fi
+
 # One verdict, one exit — the human body is built into a variable so we can print it AND (when run
 # standalone/CI, not via the hook) self-log the same record the hook would have written.
 verdict_body() {   # echoes the human verdict; returns the exit code
   if [ "$gate" -ne 0 ]; then
     # Distinguish a real policy violation (an AS-EFF line) from a tool/build failure that also exits
     # nonzero — don't mislabel a crash/bad-classpath as an "architecture gate" failure.
-    if grep -qE "\[AS-EFF-[0-9]+\]" "$SCANLOG"; then
-      echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
-      grep -E "\[AS-EFF-[0-9]+\]" "$SCANLOG" | sed 's/^/  /'
+    if [ -n "$POL_NEW" ] || { [ -n "$POL_ALL" ] && [ "$gate" -ne 1 ]; }; then
+      [ -n "$POL_NEW" ] || POL_NEW=$POL_ALL
+      if [ "$POL_BASE_KNOWN" = 1 ]; then
+        echo "candor: ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:"
+      else
+        echo "candor: ARCHITECTURE GATE FAILED — policy violations found (no usable baseline to tell which this edit introduced):"
+      fi
+      printf '%s\n' "$POL_NEW" | sed 's/^/  /'
+      [ "$POL_OLD_N" -gt 0 ] && echo "  ($POL_OLD_N pre-existing policy violation(s) already in the baseline are not listed)"
       [ -n "$delta" ] && { echo "effects this change introduced:"; echo "$delta"; }
       [ -n "$remedy" ] && { echo; printf '%s\n' "$remedy"; }
+      [ "$POL_OLD_N" -gt 0 ] && [ -z "$remedy" ] && echo "(run fix-gate on the report for remedies)"
       echo "fix: keep the effect out of that layer, or — if intended — update the policy / refresh the baseline."
       return 1
     fi
@@ -133,17 +154,21 @@ verdict_body() {   # echoes the human verdict; returns the exit code
       echo "fix: make the unread/unanalyzed part legible to candor (fix the parse/build error, or narrow the scope deliberately), then re-run — this is not a safe-to-ignore setup error."
       return 1
     fi
-    echo "candor-review: candor exited $gate with no policy finding — a build/scan error, not a violation:"
-    tail -3 "$SCANLOG" | sed 's/^/  /'
-    return 2
+    if ! { [ -n "$POL_ALL" ] && [ -z "$POL_NEW" ] && [ "$gate" -eq 1 ]; }; then
+      echo "candor-review: candor exited $gate with no policy finding — a build/scan error, not a violation:"
+      tail -3 "$SCANLOG" | sed 's/^/  /'
+      return 2
+    fi
   fi
   if [ -n "$delta" ]; then
-    echo "candor: this change introduced new effects (no policy violation):"
+    if [ "$POL_OLD_N" -gt 0 ]; then echo "candor: this change introduced new effects (no new policy violation; $POL_OLD_N pre-existing in the baseline):"
+    else echo "candor: this change introduced new effects (no policy violation):"; fi
     echo "$delta"
     echo "review them; if intended, refresh the baseline."
     return 1
   fi
-  echo "candor: no new effects vs baseline ✓"
+  if [ "$POL_OLD_N" -gt 0 ]; then echo "candor: no new effects vs baseline ✓ — no new policy violations ($POL_OLD_N pre-existing in the baseline, not re-listed)"
+  else echo "candor: no new effects vs baseline ✓"; fi
   return 0
 }
 BODY=$(verdict_body); rc=$?

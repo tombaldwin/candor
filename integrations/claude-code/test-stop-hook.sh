@@ -572,5 +572,61 @@ DENG2="$WORK/mock-silent-diff.sh"; sed 's/\*\.json) echo[^;]*;;/*.nomatch) :;;/'
 OUT=$(CANDOR_CMD="sh $DENG2" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE="$WORK/empty-base.json" "$REV" 2>&1); rc=$?
 ok "a diff that prints nothing is a setup error (rc=2), never 'no new effects'"  '[ "$rc" = 2 ] && ! printf "%s" "$OUT" | grep -q "no new effects"'
 
+# ── POLICY FINDINGS THAT PRE-DATE THE EDIT MUST NOT BLOCK; ONE THE EDIT INTRODUCED STILL MUST ──
+# Field report (a Java webapp, no edit made): the hook returned `block` with "an edit reached a forbidden
+# effect" and 210 AS-EFF lines — the scan's policy gate is whole-tree, and the baseline filtered only the
+# effect DIFF. The mock engine below honours the three calls the review scripts make: a scan (prints and
+# exits 1 on the violations in $VIOLS), `gate --report <r>` (the engine's no-scan gate, which reads the
+# violations the report carries), and `diff` (no effect change — so ONLY the policy side is under test).
+echo
+echo "pre-existing policy violations (edit-time hook):"
+PENG="$WORK/mock-policy-engine.sh"
+cat > "$PENG" <<'PEOF'
+#!/bin/bash
+V1='[AS-EFF-006] `svc.old1` performs { Fs }, forbidden by policy: `deny Fs`'
+V2='[AS-EFF-006] `svc.old2` performs { Fs }, forbidden by policy: `deny Fs`'
+V3='[AS-EFF-006] `svc.fresh` performs { Fs }, forbidden by policy: `deny Fs`'
+viols() { case "${MOCK_VIOLS:-base}" in base) printf '%s\n%s\n' "$V1" "$V2";; plus) printf '%s\n%s\n%s\n' "$V1" "$V2" "$V3";; none) :;; esac; }
+if [ "$1" = diff ]; then echo '{"changes":[]}'; exit 0; fi
+if [ "$1" = fix-gate ]; then exit 0; fi
+if [ "$1" = gate ]; then
+  [ "${MOCK_GATE_BROKEN:-}" = 1 ] && { echo "gate: report unreadable" >&2; exit 2; }
+  r=""; while [ $# -gt 0 ]; do [ "$1" = "--report" ] && { r=$2; shift; }; shift; done
+  jq -r '.viol[]?' "$r"; jq -e '(.viol|length)>0' "$r" >/dev/null 2>&1 && exit 1; exit 0
+fi
+out=""; while [ $# -gt 0 ]; do case "$1" in --json|--out) out=$2; shift;; esac; shift; done
+case "$out" in *.json) : ;; *) out="$out.json" ;; esac
+jq -n --arg v "$(viols)" '{candor:{spec:"0.40"},functions:[],viol:($v|split("\n")|map(select(length>0)))}' > "$out"
+v=$(viols); [ -n "$v" ] && { printf '%s\n' "$v"; exit 1; }; exit 0
+PEOF
+chmod +x "$PENG"
+PBASE="$WORK/policy-base.json"; MOCK_VIOLS=base bash "$PENG" "$CLS" --json "$PBASE" >/dev/null
+for form in jvm src; do
+  if [ "$form" = jvm ]; then SCRIPT="$REV"; ENVV=(CANDOR_CMD="bash $PENG" CANDOR_CLASSES="$CLS"); RV="$REV"
+  else SCRIPT="$SRCREV"; ENVV=(CANDOR_SCAN="bash $PENG" CANDOR_SRC="$WORK"); RV="$SRCREV"; fi
+  OUT=$(env "${ENVV[@]}" MOCK_VIOLS=base CANDOR_POLICY=p CANDOR_REVIEW_BASELINE="$PBASE" "$SCRIPT" 2>&1); rc=$?
+  ok "$form: only PRE-EXISTING violations → clean (rc=0)"                         '[ "$rc" = 0 ]'
+  ok "$form: …reported as a count, never listed"                                   'printf "%s" "$OUT" | grep -q "2 pre-existing" && ! printf "%s" "$OUT" | grep -q "svc.old1"'
+  ok "$form: …and no message claims an edit reached a forbidden effect"            '! printf "%s" "$OUT" | grep -q "an edit reached"'
+  OUT=$(env "${ENVV[@]}" MOCK_VIOLS=plus CANDOR_POLICY=p CANDOR_REVIEW_BASELINE="$PBASE" "$SCRIPT" 2>&1); rc=$?
+  ok "$form: a violation the EDIT introduced still BLOCKS (rc=1)"                  '[ "$rc" = 1 ]'
+  ok "$form: …names the new one with today's detail"                               'printf "%s" "$OUT" | grep -q "an edit reached a forbidden effect" && printf "%s" "$OUT" | grep -q "\[AS-EFF-006\] .svc.fresh. performs { Fs }, forbidden by policy"'
+  ok "$form: …and does not list the pre-existing ones"                             '! printf "%s" "$OUT" | grep -q "svc.old1" && printf "%s" "$OUT" | grep -q "2 pre-existing"'
+  OUT=$(env "${ENVV[@]}" MOCK_VIOLS=plus MOCK_GATE_BROKEN=1 CANDOR_POLICY=p CANDOR_REVIEW_BASELINE="$PBASE" "$SCRIPT" 2>&1); rc=$?
+  ok "$form: baseline gate unreadable → FAIL CLOSED, all listed, no 'edit' claim"  '[ "$rc" = 1 ] && printf "%s" "$OUT" | grep -q "svc.old1" && ! printf "%s" "$OUT" | grep -q "an edit reached"'
+  OUT=$(env "${ENVV[@]}" MOCK_VIOLS=base CANDOR_POLICY=p CANDOR_REVIEW_BASELINE=/nonexistent "$SCRIPT" 2>&1); rc=$?
+  ok "$form: NO baseline → cannot tell, so it blocks and says so (rc=1)"           '[ "$rc" = 1 ] && printf "%s" "$OUT" | grep -q "no usable baseline"'
+done
+# through the real hook: pre-existing → allowed AND stamped (so the next stop skips); new → block
+rm -f "$WORK/pstamp"
+hookp() { printf '{"session_id":"s1","hook_event_name":"Stop"}' | CANDOR_REVIEW="$REV" CANDOR_CMD="bash $PENG" CANDOR_CLASSES="$CLS" \
+  CANDOR_POLICY=p CANDOR_REVIEW_BASELINE="$PBASE" CANDOR_HOOK_NOTICE=summary CANDOR_HOOK_STAMP="$WORK/pstamp" CANDOR_ACTIVITY_LOG=off MOCK_VIOLS="$1" "$HOOK" 2>/dev/null; }
+OUT=$(hookp base)
+ok "hook: pre-existing violations only → ALLOWS with a ✓ notice"  '[ "$(printf "%s" "$OUT" | jq -r ".decision // \"none\"")" = none ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"2 pre-existing\")" >/dev/null'
+ok "hook: …and writes the stamp (no more block-on-first-stop-of-every-turn)"  '[ -f "$WORK/pstamp" ]'
+sleep 1; echo changed > "$CLS/Edited.class"   # the edit: bytecode moved, so the skip guard must not skip
+OUT=$(hookp plus)
+ok "hook: one NEW violation among pre-existing ones BLOCKS the turn"  '[ "$(printf "%s" "$OUT" | jq -r .decision)" = block ] && printf "%s" "$OUT" | jq -e ".reason | test(\"svc.fresh\") and (test(\"svc.old1\")|not)" >/dev/null'
+
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

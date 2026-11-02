@@ -104,3 +104,51 @@ for fn, effs in cinf.items():
 if best is not None: print(best)
 PY
 }
+
+# ── POLICY FINDINGS: WHICH ONES DID THIS EDIT INTRODUCE? ───────────────────────────────────────────
+# The scan's inline policy gate is WHOLE-TREE: it prints an `[AS-EFF-nnn]` line for every violation in the
+# tree, edited or not. The effect DIFF against the baseline filters only effects, never policy findings, so
+# on a project whose policy already has violations (any upgrade across a stricter rung produces them) the
+# hook blocked every turn and said "an edit reached a forbidden effect" about code nobody touched
+# (field report, a Java webapp: 210 pre-existing findings, no edit).
+#
+# A violation is NEW iff its `[AS-EFF-nnn]` line — rule code + function + performed effect set + the policy
+# clause, i.e. the whole line the engine printed — is not among the lines the SAME policy yields over the
+# BASELINE report (`gate --report <baseline>`, the engine's own no-scan gate, §3.1). Equal text = the same
+# finding; any difference (renamed fn, extra effect in the set, a different clause) counts as new, which
+# errs toward blocking.
+#   BLIND SPOT (same as the diff side, which keys per function on its effect SET): a function that already
+#   violated the rule with effect E and now performs E at a SECOND site yields the identical line, so it is
+#   not new.
+# FAIL-CLOSED: if the baseline is absent or its gate cannot be evaluated (exit other than 0/1), every line
+# is treated as new and the header says the baseline could not tell them apart.
+#
+# candor_policy_split <scanlog> <baseline-gate-output> <baseline-gate-rc|"">
+#   sets POL_ALL, POL_NEW (lines, leading space stripped), POL_OLD_N (how many of POL_ALL are pre-existing),
+#   POL_BASE_KNOWN (1 iff the baseline's own policy state was evaluated).
+candor_policy_split() {
+  local log=$1 bout=$2 brc=$3 base
+  POL_ALL=$(grep -E '\[AS-EFF-[0-9]+\]' "$log" 2>/dev/null | sed 's/^ *//' | awk '!s[$0]++')
+  POL_BASE_KNOWN=0; POL_NEW=$POL_ALL; POL_OLD_N=0
+  case "$brc" in 0|1) POL_BASE_KNOWN=1 ;; esac
+  [ "$POL_BASE_KNOWN" = 1 ] || return 0
+  base=$(printf '%s\n' "$bout" | grep -E '\[AS-EFF-[0-9]+\]' | sed 's/^ *//')
+  if [ -z "$base" ]; then return 0; fi
+  POL_NEW=$(printf '%s\n' "$POL_ALL" | grep -Fxv -f <(printf '%s\n' "$base") || true)
+  POL_OLD_N=$(( $(printf '%s\n' "$POL_ALL" | grep -c . ) - $(printf '%s' "$POL_NEW" | grep -c . ) ))
+}
+
+# candor_filter_remedy <remedy-text> : keep only the fix-gate blocks about a NEW violation. The java/swift
+# renderer separates remedies with a `candor fix — hoist …` heading and names the function on a
+# `  The violation: \`fn\`` line; a block is kept iff that fn is in POL_NEW. Prints nothing if none match.
+candor_filter_remedy() {
+  local fns; fns=$(printf '%s\n' "$POL_NEW" | sed -n 's/^\[AS-EFF-[0-9]*\] `\([^`]*\)`.*/\1/p')
+  [ -n "$fns" ] || return 0
+  printf '%s\n' "$1" | awk -v fns="$fns" '
+    BEGIN { n = split(fns, a, "\n"); for (i = 1; i <= n; i++) want["`" a[i] "`"] = 1 }
+    function flush() { if (keep && buf != "") printf "%s", buf; buf = ""; keep = 0 }
+    /^candor fix — hoist/ { flush(); inb = 1 }
+    /^  \(Advisory:/ { flush(); inb = 0 }
+    { if (inb) { buf = buf $0 "\n"; if ($0 ~ /^  The violation: /) { for (k in want) if (index($0, k) == 18) keep = 1 } } }
+    END { flush() }'
+}

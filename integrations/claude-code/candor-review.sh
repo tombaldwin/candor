@@ -27,9 +27,12 @@ BASELINE=${CANDOR_REVIEW_BASELINE:-.candor/baseline.json}
 
 # mktemp portably (BSD/macOS `-t` treats the arg as a prefix, not a template, and an appended `.json` would
 # point at a path mktemp never created → an orphaned temp every run). A bare mktemp + a trap is portable.
-CUR=$(mktemp); SCANLOG=$(mktemp)
+# The report path MUST end in `.json`: `candor-java diff` treats an extensionless path as a report LOCATOR
+# (prefix + `.*.json`), finds nothing, prints nothing — and an empty diff was read as "no new effects ✓",
+# a silent false clean (measured 2026-11-02 against candor-java 83b5adf).
+CURBASE=$(mktemp); SCANLOG=$(mktemp); CUR="$CURBASE.json"
 # `$CUR.callgraph.json` / `.hierarchy.json` sidecars are written beside the report — clean them too.
-trap 'rm -f "$CUR" "$CUR".* "$SCANLOG"' EXIT
+trap 'rm -f "$CURBASE" "$CUR" "$CUR".* "$CURBASE".* "$SCANLOG"' EXIT
 # One scan (the --json path needs no extension). If CANDOR_POLICY is set it gates inline → nonzero + an
 # [AS-EFF-…] line on a violation.
 $CANDOR "$CLASSES" --json "$CUR" >"$SCANLOG" 2>&1; gate=$?
@@ -48,6 +51,11 @@ if [ ! -f "$BASELINE" ]; then
   echo "  establish one from your last-known-good build:  ${CANDOR} <classes> --json $BASELINE"
 elif true; then
   D=$($CANDOR diff "$CUR" "$BASELINE" --json 2>/dev/null)
+  # A diff that produced no `changes` document did not COMPARE anything: that is a setup error, never a clean.
+  if ! printf '%s' "$D" | jq -e 'has("changes")' >/dev/null 2>&1; then
+    echo "candor-review: the effect diff against $BASELINE produced no result — cannot say whether this change introduced effects."
+    exit 2
+  fi
   if [ -n "$D" ] && [ "$(printf '%s' "$D" | jq -r '[.changes[]?|select((.introduced|length)>0)]|length' 2>/dev/null || echo 0)" -gt 0 ]; then
     delta=$(printf '%s' "$D" | jq -r '
       ([.changes[]? | select((.introduced|length)>0) | "  • \(.fn) introduces {\(.introduced|join(", "))}"] | .[]),

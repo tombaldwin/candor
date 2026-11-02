@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## Unreleased
+
+- **Claude Code hook, java: `candor hook-run` builds, finds the classes, and no longer loses stdin.** The generated
+  command was hard-wired to `mvn -q compile 1>&2 && … CANDOR_CLASSES=target/classes`: Maven-only, one classes dir, and
+  the build ran BEFORE the hook so a build that reads stdin drained the Stop-hook JSON (measured: `stop_hook_active`
+  was ignored and the review re-ran). Now the generated command is `CANDOR_LANG=java … candor hook-run`; hook-run reads
+  stdin first, builds with stdin from `/dev/null` (`./gradlew -q classes`, else `gradle`, `./mvnw`, `mvn compile`;
+  override `CANDOR_BUILD`), discovers every module's `target/classes` and `build/classes/*/main` (Kotlin/Scala/Groovy
+  included, tests excluded) and scans them as one. A failed build or no classes allows the turn with a notice that says
+  candor did NOT check. Existing wirings (`CANDOR_CLASSES` set) keep working and are not built twice; installed hooks
+  keep their old `mvn` prefix until `candor hook uninstall && candor hook install`. rust/ts/swift hooks unchanged.
+- **Claude Code hook (java review): an empty diff is no longer "no new effects ✓".** `candor-review.sh` handed
+  `candor-java diff` an extensionless temp path, which the engine reads as a report locator; the diff printed nothing and
+  the review reported a clean verdict. The report path now ends `.json`, and a diff that returns no `changes` document
+  is a setup error (exit 2).
+
 ## 2026-10-31 — the 0.40.18 family patch: call-target round 2 (released 2026-10-31 as 0.40.18)
 
 - **Pins move to the 0.40.18 family line.** `bin/candor` `ENGINE_PIN` 0.40.17 → 0.40.18 (the four per-engine overrides stay empty); `adopt/candor.yml` `CANDOR_JAVA_VERSION`, `adopt/candor-digest.yml` `candor-agents@v0.40.18`, the VS Code extension's `candorTsVersion` and the JetBrains plugin's `candorJavaVersion`/`candorTsVersion` follow.

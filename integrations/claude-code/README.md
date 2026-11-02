@@ -47,6 +47,9 @@ wiring done by hand (and still the reference for polyglot repos — one Stop ent
    ```
 2. *(optional)* drop an `arch.policy` at the repo root (see [`../../adopt/arch.policy`](../../adopt/arch.policy))
    to also gate boundaries (`deny Db io.app.domain`, …).
+   **Easiest:** `candor hook install` wires `CANDOR_LANG=java … candor hook-run`, which builds (Gradle, else Maven;
+   `CANDOR_BUILD` overrides), finds every module's classes (`target/classes`, `build/classes/*/main`, Kotlin
+   included) and keeps the hook's stdin away from the build. The manual form below is for pinning one dir or jar.
 3. **Wire the hook** in `.claude/settings.json` (project) or `~/.claude/settings.json` (global). The command
    must **build first** (the hook scans compiled classes), then run the hook. **Redirect the build's stdout to
    stderr with `1>&2`** — Claude Code parses the hook's *stdout* as JSON, so any byte the build prints there

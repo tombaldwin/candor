@@ -467,5 +467,110 @@ ok "…an unchanged engine still skips"                                         
 sleep 1; echo 'v2-with-new-detections' > "$JARF"; je_run
 ok "replacing the ENGINE JAR re-runs, though CANDOR_CMD is unchanged"            'ran' 
 
+# ── `candor hook-run` for java: build selection, stdin, multi-root classes (HOOK-RUN-MAVEN-ONLY) ──
+# Drives bin/candor hook-run exactly as Claude Code does: the hook JSON on stdin. The "build tools" are stubs
+# (hermetic: no mvn/gradle needed) and the stub DRAINS stdin, which is what a real build client may do. The
+# mock ENGINE records the path it is handed and lists what is under it.
+echo
+echo "hook-run java (build + stdin + multi-module):"
+UMB="$HERE/../../bin/candor"
+HR="$WORK/hr"; mkdir -p "$HR/bin"
+cat > "$HR/engine.sh" <<'ENGEOF'
+#!/bin/sh
+out=""; first="$1"; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ "$first" = diff ] && { echo '{"changes":[]}'; exit 0; }
+echo "$first" >> "$HR_LOG"; (cd "$first" && find . -name '*.class' | sort) >> "$HR_LOG"
+[ -n "$out" ] && echo '{"candor":{"spec":"0.40"},"functions":[{"fn":"a","inferred":["Log"]}]}' > "$out"
+ENGEOF
+cat > "$HR/bin/mvn" <<'E'
+#!/bin/sh
+cat >/dev/null
+echo "mvn $*" >> "$HR_BUILDLOG"; echo "mvn-stdout-noise"
+mkdir -p target/classes mod/target/classes; touch target/classes/Root.class mod/target/classes/Mod.class mod/target/test-classes 2>/dev/null
+exit "${HR_BUILD_RC:-0}"
+E
+cat > "$HR/gradlew" <<'E'
+#!/bin/sh
+cat >/dev/null
+echo "gradlew $*" >> "$HR_BUILDLOG"; echo "gradle-stdout-noise"
+mkdir -p app/build/classes/java/main lib/build/classes/kotlin/main app/build/classes/java/test
+touch app/build/classes/java/main/App.class lib/build/classes/kotlin/main/Lib.class app/build/classes/java/test/T.class
+exit "${HR_BUILD_RC:-0}"
+E
+chmod +x "$HR/engine.sh" "$HR/bin/mvn" "$HR/gradlew"
+# hr_run <projdir> <stdin-json> [env...] -> $OUT (stdout), $HR_RC
+hr_run() {
+  local d=$1 js=$2; shift 2
+  : > "$HR_LOG"; : > "$HR_BUILDLOG"
+  OUT=$(cd "$d" && printf '%s' "$js" | env HR_LOG="$HR_LOG" HR_BUILDLOG="$HR_BUILDLOG" PATH="$HR/bin:$PATH" \
+        CANDOR_LANG=java CANDOR_REVIEW_BASELINE=/nonexistent CANDOR_HOOK_NOTICE=summary CANDOR_ACTIVITY_LOG=off \
+        CANDOR_HOOK_SKIP=0 CANDOR_HOOK_STAMP="$WORK/hr-stamp" CANDOR_HOOK_DIR="$HERE" CANDOR_CMD="sh $HR/engine.sh" \
+        TMPDIR="$WORK" "$@" bash "$UMB" hook-run 2>/dev/null); HR_RC=$?
+}
+HR_LOG="$WORK/hr-engine.log"; HR_BUILDLOG="$WORK/hr-build.log"; export HR
+J='{"session_id":"s1","hook_event_name":"Stop"}'
+JA='{"session_id":"s1","hook_event_name":"Stop","stop_hook_active":true}'
+
+# Maven multi-module: autodetected, builds with mvn, finds BOTH module roots, never the test dir.
+MV="$WORK/mvproj"; mkdir -p "$MV"; echo '<project/>' > "$MV/pom.xml"
+hr_run "$MV" "$J"
+ok "maven: autodetects pom.xml and builds with mvn"                 'grep -q "^mvn -q compile" "$HR_BUILDLOG"'
+ok "maven: the build's stdout does not corrupt the hook JSON"       'printf "%s" "$OUT" | jq -e . >/dev/null 2>&1'
+ok "maven: scans BOTH module class roots (multi-module)"           'grep -q "Root.class" "$HR_LOG" && grep -q "Mod.class" "$HR_LOG"'
+# stdin survives a build that drains it: stop_hook_active must still short-circuit.
+hr_run "$MV" "$JA"
+ok "a stdin-draining build cannot blind the loop guard (stop_hook_active honoured)"  '[ "$(printf "%s" "$OUT" | jq -c .)" = "{}" ]'
+ok "…and a re-entry neither builds nor scans"                       '[ ! -s "$HR_BUILDLOG" ] && [ ! -s "$HR_LOG" ]'
+
+# Gradle (Kotlin + Java, two modules): wrapper preferred, kotlin/main and java/main both found, tests not.
+GR="$WORK/grproj"; mkdir -p "$GR"; echo "" > "$GR/settings.gradle.kts"; cp "$HR/gradlew" "$GR/gradlew"
+hr_run "$GR" "$J"
+ok "gradle: autodetects the wrapper and runs \`classes\` (all modules)"   'grep -q "^gradlew -q classes" "$HR_BUILDLOG"'
+ok "gradle: scans java/main AND kotlin/main from different modules"       'grep -q "App.class" "$HR_LOG" && grep -q "Lib.class" "$HR_LOG"'
+ok "gradle: does not scan test classes"                                   '! grep -q "T.class" "$HR_LOG"'
+ok "gradle: valid JSON on stdout"                                         'printf "%s" "$OUT" | jq -e . >/dev/null 2>&1'
+
+# Build failure: no verdict is claimed, the turn is allowed, and the notice says so.
+rm -rf "$GR"/app "$GR"/lib
+hr_run "$GR" "$J" HR_BUILD_RC=1
+ok "build failure: ALLOWS (no decision) with a notice that says candor did NOT check"  '[ "$(printf "%s" "$OUT" | jq -r ".decision // \"none\"")" = none ] && printf "%s" "$OUT" | jq -e ".systemMessage | test(\"did NOT check\")" >/dev/null'
+ok "build failure: the review did not run on stale classes"       '[ ! -s "$HR_LOG" ]'
+
+# Legacy wiring (build in the command prefix, CANDOR_CLASSES named): hook-run must NOT build a second time.
+LG="$WORK/lgproj"; mkdir -p "$LG/target/classes"; echo '<project/>' > "$LG/pom.xml"; touch "$LG/target/classes/L.class"
+hr_run "$LG" "$J" CANDOR_CLASSES=target/classes
+ok "legacy wiring (CANDOR_CLASSES set): no second build"           '[ ! -s "$HR_BUILDLOG" ] && grep -q "L.class" "$HR_LOG"'
+# CANDOR_BUILD override.
+hr_run "$LG" "$J" CANDOR_BUILD="echo custom >> $HR_BUILDLOG"
+ok "CANDOR_BUILD overrides autodetection"                          'grep -q "^custom" "$HR_BUILDLOG"'
+# Nothing to build with and nothing named: setup notice, not a silent pass.
+NB="$WORK/nbproj"; mkdir -p "$NB"; echo '<project/>' > "$NB/pom.xml"
+OUT=$(cd "$NB" && printf '%s' "$J" | env PATH="/usr/bin:/bin" CANDOR_LANG=java CANDOR_HOOK_DIR="$HERE" bash "$UMB" hook-run 2>/dev/null)
+ok "no build tool and no CANDOR_CLASSES: says so (setup notice, allowed)" 'printf "%s" "$OUT" | jq -e ".systemMessage | test(\"no build tool\")" >/dev/null'
+
+# The generated command is portable and drops the hard-wired mvn; other languages unchanged.
+GEN=$(cd "$MV" && mkdir -p .candor && echo '{}' > .candor/baseline.json && bash "$UMB" hook "$MV" 2>/dev/null | sed '/^→/,$d' | jq -r '.hooks.Stop[0].hooks[0].command')
+ok "java hook command has no hard-wired mvn and no absolute path"  '! printf "%s" "$GEN" | grep -q "mvn" && ! printf "%s" "$GEN" | grep -q "/Users\|/home\|/opt"'
+ok "java hook command is CANDOR_LANG=java … candor hook-run"        'printf "%s" "$GEN" | grep -q "^CANDOR_LANG=java .*candor hook-run$"'
+TSD="$WORK/tsproj"; mkdir -p "$TSD/.candor"; echo '{}' > "$TSD/package.json"; echo '{}' > "$TSD/.candor/baseline.json"
+TGEN=$(bash "$UMB" hook "$TSD" 2>/dev/null | sed '/^→/,$d' | jq -r '.hooks.Stop[0].hooks[0].command')
+ok "ts hook command is unchanged"  '[ "$TGEN" = "CANDOR_LANG=ts CANDOR_SRC=. CANDOR_REVIEW_BASELINE=.candor/baseline.json candor hook-run" ]'
+
+# ── a diff that compared nothing is not "no new effects" (found while driving the real engine: candor-java
+#    treats an extensionless report path as a locator and prints nothing; that read as a clean verdict) ──
+DENG="$WORK/mock-diff-engine.sh"
+cat > "$DENG" <<'ENGEOF'
+#!/bin/sh
+if [ "$1" = diff ]; then case "$2" in *.json) echo '{"changes":[{"fn":"a","introduced":["Fs"],"gained":["Fs"]}]}';; esac; exit 0; fi
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--json" ] && { out=$2; shift; }; shift; done
+[ -n "$out" ] && echo '{"candor":{"spec":"0.40"},"functions":[{"fn":"a","inferred":["Fs"]}]}' > "$out"
+ENGEOF
+echo '{"candor":{"spec":"0.40"},"functions":[]}' > "$WORK/empty-base.json"
+OUT=$(CANDOR_CMD="sh $DENG" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE="$WORK/empty-base.json" "$REV" 2>&1); rc=$?
+ok "review hands the engine a .json report path, so an introduced effect is SEEN (rc=1)"  '[ "$rc" = 1 ] && printf "%s" "$OUT" | grep -q "introduces {Fs}"'
+DENG2="$WORK/mock-silent-diff.sh"; sed 's/\*\.json) echo[^;]*;;/*.nomatch) :;;/' "$DENG" > "$DENG2"
+OUT=$(CANDOR_CMD="sh $DENG2" CANDOR_CLASSES="$CLS" CANDOR_REVIEW_BASELINE="$WORK/empty-base.json" "$REV" 2>&1); rc=$?
+ok "a diff that prints nothing is a setup error (rc=2), never 'no new effects'"  '[ "$rc" = 2 ] && ! printf "%s" "$OUT" | grep -q "no new effects"'
+
 echo "test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

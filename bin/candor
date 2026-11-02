@@ -2521,8 +2521,8 @@ PY
       rust)  hcmd="CANDOR_LANG=rust CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
       ts)    hcmd="CANDOR_LANG=ts CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
       swift) hcmd="CANDOR_LANG=swift CANDOR_SRC=. ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run";;
-      java)  hcmd="mvn -q compile 1>&2 && CANDOR_LANG=java CANDOR_CLASSES=target/classes ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run"
-             hgradle_note="Gradle: change the build to \`./gradlew -q classes 1>&2\` and CANDOR_CLASSES=build/classes/java/main.";;
+      java)  hcmd="CANDOR_LANG=java ${hpol}CANDOR_REVIEW_BASELINE=$hbl candor hook-run"
+             hgradle_note="the hook builds for you (./gradlew classes, else mvn compile; override with CANDOR_BUILD) and finds every module's classes; set CANDOR_CLASSES only to pin one dir or jar.";;
     esac
     if [ "$hmode" = print ]; then
       # PRINT the ready .claude/settings.json Stop-hook snippet (valid JSON via python3) + where it goes.
@@ -2587,6 +2587,63 @@ PY
     esac
     exit 0;;
   hook-run)
+    # A setup problem must ALLOW the turn and say so (stop-hook.sh's setup contract), never pass silently:
+    # Claude Code reads the notice off stdout JSON.
+    hook_setup_error() {
+      printf '%s' "candor hook: $1" | python3 -c 'import json,sys; print(json.dumps({"systemMessage": sys.stdin.read()}))'
+      exit 0
+    }
+    hook_java_prepare() {
+      # Build (if asked or if nothing was named), then find the compiled-classes root(s) to scan.
+      #   CANDOR_BUILD    build command (run via sh -c, stdin=/dev/null, stdout->stderr). Unset and
+      #                   CANDOR_CLASSES unset: autodetect (Gradle wrapper/gradle, else Maven wrapper/mvn).
+      #                   Unset with CANDOR_CLASSES set = LEGACY wiring that builds in its own command prefix:
+      #                   no build here (a second build every turn would be pure cost).
+      #   CANDOR_CLASSES  explicit classes dir or jar (no discovery). Unset: discovered, so a multi-module
+      #                   or Kotlin/Gradle project needs no per-project path in the committed settings.json.
+      local bcmd="${CANDOR_BUILD:-}" stage d n roots
+      if [ -z "$bcmd" ] && [ -z "${CANDOR_CLASSES:-}" ]; then
+        if   [ -f build.gradle ] || [ -f build.gradle.kts ] || [ -f settings.gradle ] || [ -f settings.gradle.kts ]; then
+          if [ -x ./gradlew ]; then bcmd="./gradlew -q classes"; elif have gradle; then bcmd="gradle -q classes"; fi
+        elif [ -f pom.xml ]; then
+          if [ -x ./mvnw ]; then bcmd="./mvnw -q compile"; elif have mvn; then bcmd="mvn -q compile"; fi
+        fi
+        [ -n "$bcmd" ] || hook_setup_error "no build tool found to compile this project (looked for ./gradlew, gradle, ./mvnw, mvn). Set CANDOR_BUILD, or CANDOR_CLASSES to an already-built classes dir."
+      fi
+      if [ -n "$bcmd" ]; then
+        sh -c "$bcmd" </dev/null 1>&2 || hook_setup_error "the build ($bcmd) failed, so candor did NOT check this turn - fix the build; there is no verdict, clean or otherwise."
+      fi
+      if [ -z "${CANDOR_CLASSES:-}" ]; then
+        # main-source class roots only: Maven */target/classes; Gradle */build/classes/<java|kotlin|scala|groovy>/main
+        roots="$(find . -maxdepth 6 \( -name node_modules -o -name .git -o -name .gradle \) -prune -o -type d \
+            \( -path '*/target/classes' -o -path '*/build/classes/*/main' \) -print 2>/dev/null | sort)"
+        n=$(printf '%s\n' "$roots" | grep -c . || true)
+        [ "$n" -gt 0 ] || hook_setup_error "no compiled classes found (looked for target/classes and build/classes/*/main under $(pwd)). Build the project, or set CANDOR_CLASSES."
+        if [ "$n" -eq 1 ]; then CANDOR_CLASSES="${roots#./}"
+        else
+          # candor-java takes ONE path and does not follow symlinks, so gather the roots into one directory by
+          # copy. -p keeps mtimes, so stop-hook.sh's skip guard still sees "unchanged" as unchanged. The path
+          # is stable per project and lives outside the repo.
+          stage="${TMPDIR:-/tmp}/candor-hook-classes-$(pwd | cksum | cut -d' ' -f1)"
+          rm -rf "$stage"; mkdir -p "$stage"; n=0
+          while IFS= read -r d; do
+            cp -Rp "$d" "$stage/$n" 2>/dev/null || hook_setup_error "could not stage $d"
+            n=$((n+1))
+          done <<EOF
+$roots
+EOF
+          CANDOR_CLASSES="$stage"
+        fi
+      fi
+      export CANDOR_CLASSES
+      # the engine: the umbrella's own resolution, not the review script's jbang default (jbang may not exist)
+      if [ -z "${CANDOR_CMD:-}" ]; then
+        if have candor-java; then CANDOR_CMD="candor-java"
+        elif [ -x "$CDBIN/candor-java" ]; then CANDOR_CMD="$CDBIN/candor-java"
+        elif [ -n "$(java_jar)" ]; then CANDOR_CMD="java -jar $(java_jar)"; fi
+        [ -z "${CANDOR_CMD:-}" ] || export CANDOR_CMD
+      fi
+    }
     # Internal entry the wired Stop hook invokes as `candor hook-run` — the PORTABILITY fix. It resolves
     # `candor` on PATH and finds the shipped hook scripts ITSELF, so a committed .claude/settings.json works
     # for every teammate's brew install, not only the machine that ran `candor hook` (which used to bake in
@@ -2606,7 +2663,17 @@ PY
     hd="$(hook_dir)"
     [ -n "$hd" ] || { echo "candor hook-run: the hook scripts aren't installed (looked beside the dispatcher and in share/candor/hooks). Reinstall candor, or set CANDOR_HOOK_DIR." >&2; exit 2; }
     case "${CANDOR_LANG:-}" in
-      java)  : "${CANDOR_REVIEW:=$hd/candor-review.sh}";;
+      java)  : "${CANDOR_REVIEW:=$hd/candor-review.sh}"
+             # THE HOOK JSON IS READ FIRST, BEFORE ANY BUILD. A build tool (mvn, ./gradlew, a wrapper) may read
+             # stdin and drain it, leaving stop-hook.sh an empty document: no session id, no stop_hook_active
+             # (so the loop guard is blind), no transcript. The build below runs with stdin from /dev/null and
+             # the captured JSON is handed to stop-hook.sh by hand.
+             hook_in="$(cat 2>/dev/null || true)"
+             # A re-entry after a block must not pay for (or be broken by) a build: stop-hook.sh would answer {}.
+             if printf '%s' "$hook_in" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true'; then echo '{}'; exit 0; fi
+             hook_java_prepare
+             export CANDOR_REVIEW
+             printf '%s' "$hook_in" | "$hd/stop-hook.sh" "$@"; exit $?;;
       rust)  : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-scan}";;
       ts)    : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=npx -y candor-ts@$ENGINE_PIN_TS}";;
       swift) : "${CANDOR_REVIEW:=$hd/candor-review-source.sh}"; : "${CANDOR_SCAN:=candor-swift}";;

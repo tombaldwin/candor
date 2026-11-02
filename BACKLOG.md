@@ -43,6 +43,20 @@ step that failed. One line each, with the date. **Codebase: a large production J
    which version, before changing anything. Then upgrade to 0.40.18. Upgrading from an old pin can turn gates red (each rung
    since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The `~/git/fieldcase` clone on this Mac is stale.
 
+**First findings from the field-case log (2026-10-31; answers in the session of 2026-11-01).** These are false alarms and
+setup problems, not silent misses, so they go first:
+- java: bounded CHA fan-out over `java.util.Iterator` reaches an app `next` whose leaf is Joda (`ITERATOR-FANOUT-OVERCHARGE`);
+  152 of the field case's 211 new violations. It is a resolvable over-charge: an iterator from a JDK collection can't be the app's.
+  Watch the soundness edge where a JDK wrapper re-enters a project Iterable.
+- Joda constructors charged Fs (`JODA-TZ-FS`); there is no per-project member-effect override.
+- Regen remedy names a command the engine refuses, and a regen exits 2 (`REGEN-REMEDY-REFUSED`; Policy.java:156/162,
+  Candor.java:3215/3381).
+- `candor hook-run`: java is hard-wired to `mvn`, the build step drains the hook's stdin, and it takes a single classes
+  dir (`HOOK-RUN-MAVEN-ONLY`; bin/candor:2523).
+- MCP has no freshness check on the report it reads (`MCP-STALE-REPORT`; candor-ts/mcp.mjs:39-72).
+- `candor path` names neither the call site nor the library member (`PATH-NO-CALLSITE`; needs a report field).
+- The gate is 3.5× slower on the field case (`GATE-SLOWDOWN-3.5X`).
+
 **End of the block: decide from the log.** Mostly wrong verdicts → soundness again, aimed at those cases. Mostly
 setup, speed or output problems → the product side gets the time.
 

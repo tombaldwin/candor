@@ -10,7 +10,7 @@ keeps its own.
 
 ## Unreleased
 
-- **Claude Code hook: policy violations that pre-date the edit no longer block every turn.** A field report (a Java webapp,
+- **Claude Code hook: policy violations that pre-date the edit no longer block every turn.** A field report (the field case,
   no edit made) got `block` with "an edit reached a forbidden effect" and 210 `[AS-EFF-006]` lines: the scan's policy gate is
   whole-tree, the baseline filtered only the effect diff, and a failing gate never stamps, so every first stop of every turn
   blocked. Both review scripts now run the same policy over the BASELINE report (`gate --report`, the engine's no-scan gate;

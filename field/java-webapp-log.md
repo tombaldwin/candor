@@ -1,0 +1,40 @@
+# Java webapp field log (Track B)
+
+One line per wrong verdict, slow run, confusing message or failed setup step. Engine under test: candor-java. The field
+case is a large production Java 17 web application (~10,959 functions at 0.40.18), gated with `closed-world`, a
+committed baseline, an architecture policy, and a chained deps report for a first-party library.
+
+Tags: **WRONG** (verdict is false), **DOUBT** (defensible but noise for an architecture gate), **RIGHT** (a changed
+verdict that is correct), **SETUP**, **MSG** (confusing output), **SLOW**, **GAP** (missing product capability).
+
+## 2026-10-31: upgrade 0.26.0 → 0.40.18 (first entries: every gate verdict that changed)
+
+- 2026-10-31 SETUP: the engine pin lives in three places that must move together (the CI step, the local runner script, the jar path in the Claude Code stop-hook wrapper); no single source for the pin.
+- 2026-10-31 WRONG (visibility): the committed deps snapshot for the first-party library was already stale under 0.26.0 (built by afe2688, engine b8589ac), so the library's effects had been silently downgraded to Unknown since adoption; only a stderr note, gate green throughout.
+- 2026-10-31 RIGHT: verdict change 1. Old baseline + new engine: pass → exit 2 "engine swap is baseline-invalidating". Fails closed as designed; message is clear.
+- 2026-10-31 MSG: that exit-2 message says to run `candor <target> --json .candor/baseline.json`, but the engine refuses exactly that when `.candor/config` names the same baseline ("would destroy the input"). So the project's regen command is broken under 0.40. Workaround: write `report.json`, then rename it and its sidecars to `baseline*`.
+- 2026-10-31 RIGHT: the regen run writes the report but still exits 2 (it compared against the stale baseline). Correct, but at first sight it looks like the regen failed.
+- 2026-10-31 WRONG: verdict change 2. After regen the gate goes pass → FAIL: 211 AS-EFF-006 violations in 209 functions (dao 93, beans 71, lookups 19, events 15, security 4, form beans 2, web config 2, exceptions 2, filters 1). Same code and policy that passed under 0.26.0.
+- 2026-10-31 WRONG: 152 of the 211 have one cause. Any for-each loop calls `java.util.Iterator.next`; under closed-world 0.40.18 resolves that JDK interface to every app implementor, including an anonymous Iterator in a domain class whose `next` builds a Joda `Interval`. So a plain bean getter that loops over a list now "performs Fs".
+- 2026-10-31 DOUBT: Joda-Time constructors (`Interval`, `LocalTime`, `LocalDate`, `DateTime`) carry {Clock, Fs}: the root of the iterator case and of most of the remaining ~40 Fs (an ORM type mapper, domain classes, JDBC row mappers). Joda loads tz data from the classpath once; for a "this layer doesn't touch the filesystem" rule this reads as noise.
+- 2026-10-31 RIGHT: the `events` layer gains Clock ×15: the framework's event base class timestamps in its constructor. The adoption policy's `pure events` was too strong; 0.26 missed it.
+- 2026-10-31 RIGHT (probably): a service constructor gains Fs via Ehcache `CacheManager.init()`; the web config's `objectMapper` gains Clock/Fs via the Jackson builder; `exceptions` gains Log ×2 via framework exception-handler and validation-errors base classes. Plausible; not verified against library source.
+- 2026-10-31 RIGHT: an application-event listener loses {Db, Net}: its body only logs. 0.26 over-approximated.
+- 2026-10-31 MSG: `candor path` puts the "source" on the function's first line or declaration (a class declaration line; a `rs.getString` line when the effect is a `new LocalTime` five lines later), and never names the library member that carries the effect. You can't tell from `path` why Joda is Fs.
+- 2026-10-31 MSG: `candor path .candor/baseline.json <fn> Fs` → "no report found for locator .candor/report". The report must go via `--report`, but the project's agent docs and runner document the positional `show <report> <fn>` form.
+- 2026-10-31 SLOW: gate 2.6 s (0.26.0, 7,679 fns) → 9.0 s wall (0.40.18, 10,959 fns). `candor path` ~1.5 s per call, so tracing all 211 violations took ~5 min. No batch form.
+- 2026-10-31 MSG: `candor diff` old→new baseline lists 6,113 changed functions (2,082 "new fn": constructors/lambdas now reported), mixing code drift with engine reclassification. Unreviewable as a diff; the warning says so.
+- 2026-10-31 MSG: advisory "methods PASS the policy but are Unknown" goes from 762 to 3,884.
+- 2026-10-31 SETUP: the brew formula still says stable 0.40.17 after 0.40.18 shipped; the `candor` on PATH is a symlink into an umbrella checkout, so its version is whatever that checkout is (it was 26 commits behind); `brew upgrade` prints a PATH-shadow hint; `candor update` then reports "SPEC DRIFT" because candor-scan/query are 0.38, although only Java is in use.
+- 2026-10-31 SETUP: `candor mcp install` wrote a portable `.mcp.json`; the server (candor-mcp 0.40.18) starts and lists 16 tools. But it reads `.candor/report*.json`, which is gitignored and not the committed baseline. In the main checkout those files were 92 days old (spec 0.8 / 0.15), so the agent would query a stale report without being told. `candor` status does flag it as stale.
+- 2026-10-31 SETUP: the project already had the stop hook, as a local wrapper that builds with Gradle and then calls `integrations/claude-code/stop-hook.sh` by absolute path, with its own diff-signature skip on top of the hook's stamp skip. Not the portable `candor hook install` form.
+
+## 2026-11-02: setup decision and follow-ups
+
+- 2026-11-02 GAP (top finding): an engine upgrade turns a policy gate permanently red, and there is no way to accept known AS-EFF-006 violations. The baseline covers only the effect diff; policy violations are evaluated regardless of it. Nothing in SPEC, policy or config acknowledges them (SARIF dismissal exists downstream, not on Bitbucket).
+- 2026-11-02 WRONG (top finding): the 0.40.18 stop hook, run on a tree with NO source change, blocks with "ARCHITECTURE GATE FAILED — an edit reached a forbidden effect:" and lists 210 AS-EFF-006 lines. No edit reached anything. The policy comes from `.candor/config` (no CANDOR_POLICY set), the scan is whole-tree, and the stamp is written only on rc=0, so it re-blocks on every turn. Unusable as an edit-time check until it reports only new violations. 210 vs the gate's 211: not yet reconciled.
+- 2026-11-02 SETUP (decision): the blocking CI gate and the stop hook stay on 0.26.0; 0.40.18 runs as a NON-BLOCKING CI step and a local `run next` mode against its own baseline + deps snapshot (swapped into the config-named paths for the run, since `.candor/config` has one baseline path and no per-engine override); MCP on 0.40.18. Bitbucket has no allow-failure, so the non-blocking step always passes and prints its verdict.
+- 2026-11-02 MSG: the regen defect is wider than first logged: no command regenerates a baseline that config or env already names (`--json <same file>` refused; empty `CANDOR_BASELINE=` doesn't override config; a stale baseline exits 2 even with `--json elsewhere`). Until the `--no-baseline` flag ships, the workaround is to drop the `baseline` line from config, regen, restore it.
+- 2026-11-02 DOUBT (modelling question): one-time library init reads are charged like per-call I/O. Measured: Joda reads `tzdb.dat` and its ZoneInfoMap only on the first use that needs the default zone; later constructions do no reads. Candor is right that the code can read files; it has no notion of "first-use-only init", and no per-member override exists.
+- 2026-11-02 RIGHT (on reflection): the Iterator over-charge is sound, not a bug. Executed fixtures reach an app Iterator from JDK collections via unmodifiable/synchronized views, `AbstractList` re-entry and subclasses, and the domain class is handed to the ORM, so no sound rule removes it. Cost to note: a function already falsely charged Fs won't show a real new Fs in diff mode.
+- 2026-11-02 WRONG (visibility): a stale deps report leaving a library's effects Unknown under a green gate, with only a stderr note, should fail loudly (see 2026-10-31 entry).

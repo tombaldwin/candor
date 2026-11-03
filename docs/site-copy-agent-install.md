@@ -205,9 +205,10 @@ The first was a review catch; the other two came from re-running the draft's own
 - The written route (AGENTS.md) still works and should stay — it just should not be the first thing an
   agent is told to fetch. Once an engine is installed, `--agents` prints the same contract
   version-matched to the installed build, which a web page cannot do.
-- **Sixteen tools**, verified by calling every one of them against a real report on 2026-09-15 — and
+- **Seventeen tools**, verified by calling every one of them against a real report on 2026-09-15 — and
   the gate among them checked in BOTH directions, since a tool that only ever answers `ok` is not
-  evidence. Names from `tools/list`: `candor_activity`, `candor_blindspots`,
+  evidence. `candor_accepts` (⟨0.41⟩, 2026-11-03) proposes refreshed `accept` lines and writes no file;
+  adopting needs an explicit `because` from the caller. Names from `tools/list`: `candor_accepts`, `candor_activity`, `candor_blindspots`,
   `candor_callers`, `candor_containment`, `candor_diff`, `candor_fix`, `candor_gains`, `candor_gate`,
   `candor_impact`, `candor_map`, `candor_path`, `candor_reachable`, `candor_show`, `candor_unverified`,
   `candor_whatif`, `candor_where`. If the page names a subset, `candor_impact`, `candor_reachable` and

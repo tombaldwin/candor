@@ -7,7 +7,7 @@ _candor() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  actions="init hook scan effects doctor engines update outdated config mcp lsp where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified rewire parsepolicy agents"
+  actions="init hook scan effects doctor engines update outdated config mcp lsp where path callers tour blindspots gains fix fix-gate show map containment diff reachable impact whatif unverified accepts rewire parsepolicy agents"
   effects="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"
   engines="jvm rust ts swift"
 

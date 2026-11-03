@@ -10,6 +10,12 @@ keeps its own.
 
 ## Unreleased
 
+- **`candor accepts` reaches every engine; `candor accept` is the same usage error the engines give.** SPEC ⟨0.41⟩ §6.2 added the
+  `accepts` verb (a proposed policy that refreshes or adopts `accept` lines) to all four engines, but the dispatcher's verb lists
+  (route table, capability table, config-policy hook, per-verb help, ALL ACTIONS, typo suggestions, `.candor/run`, the three shell
+  completions) did not know it, so `candor accepts` was "unknown action". `accept` (a policy LINE kind, one letter short) now exits 2
+  naming the verb instead of being treated as a typo or a scan target.
+
 - **Claude Code hook: policy violations that pre-date the edit no longer block every turn.** A field report (the field case,
   no edit made) got `block` with "an edit reached a forbidden effect" and 210 `[AS-EFF-006]` lines: the scan's policy gate is
   whole-tree, the baseline filtered only the effect diff, and a failing gate never stamps, so every first stop of every turn

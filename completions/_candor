@@ -34,6 +34,7 @@ _candor() {
     'impact:what reaches a function (the blast radius)'
     'whatif:the verdict if a policy rule changed'
     'unverified:scopes that pass the policy but contain Unknown'
+    'accepts:a proposed policy refreshing the accept lines'
     'rewire:call-graph edges that changed between two reports'
     'parsepolicy:dump a parsed policy as canonical JSON'
     'agents:the agent contract for the routed engine'
@@ -67,6 +68,7 @@ _candor() {
         gains|diff|rewire) _files ;;
         tour)         _message 'N (how many, default 10)' ;;
         callers|show|reachable|impact) _message 'function (qualified name)' ;;
+        accepts)      _message 'options: --policy <file> --json --adopt --because <reason>' ;;
         parsepolicy)  _files ;;
         *)            _files ;;
       esac

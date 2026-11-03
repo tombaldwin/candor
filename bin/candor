@@ -154,7 +154,7 @@ rust_asset_check() {
 # `candor init` writes the pin regardless — `.candor/run` reads it to fetch the right engine — but it
 # must not claim enforcement an OLDER pinned engine does not perform. Move this when the rung ships.
 PIN_ENFORCED_FROM="0.27.0"
-QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents gate privacy-manifest "
+QUERY_VERBS=" show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents gate privacy-manifest accepts "
 EFFECTS="Net Fs Db Llm Exec Env Clock Ipc Log Rand Clipboard Unknown"   # the §6 effect vocabulary (kept in step with the completions + `candor effects`)
 
 die()  { echo "candor: $*" >&2; exit 2; }
@@ -562,7 +562,7 @@ route_query() {
   # config-driven policy: a policy-consuming verb honors .candor/config's `policy` key (the one `candor
   # init` writes) when no --policy/CANDOR_POLICY is given — so `candor fix-gate` after a violation works
   # like the scan gate, not "a policy is required".
-  case " $verb " in *" fix "*|*" fix-gate "*|*" whatif "*|*" unverified "*)
+  case " $verb " in *" fix "*|*" fix-gate "*|*" whatif "*|*" unverified "*|*" accepts "*)
     if [ -z "${CANDOR_POLICY:-}" ]; then
       case " $* " in *" --policy "*) ;; *) cp="$(config_policy)"; [ -n "$cp" ] && export CANDOR_POLICY="$cp";; esac
     fi;;
@@ -759,7 +759,7 @@ detect_langs() {
 # ever dispatches it. That is how the first re-measurement reported `where` as absent from rust.
 verb_engines() {
   case "$1" in
-    gains|path|tour|fix|fix-gate|unverified|gate)  echo "JS jvm rust Swift";;
+    gains|path|tour|fix|fix-gate|unverified|gate|accepts)  echo "JS jvm rust Swift";;
     show|where|callers|map|containment|diff|reachable|impact|blindspots|whatif) echo "JS jvm rust";;
     parsepolicy)       echo "JS jvm rust Swift";;
     rewire)            echo "jvm rust";;
@@ -1009,6 +1009,8 @@ verb_help() {
               echo "candor privacy-manifest [--verify <Info.plist>] — the Apple usage-description keys the code's"
               echo "  sensor reach requires. Bare: GENERATE them. --verify: check a plist, exit 1 on an"
               echo "  under-declaration, 2 on an unreadable manifest. candor-swift only (the privacy/2 extension).";;
+    accepts)  echo "candor accepts [--policy <file>] [--json] [--adopt --because <reason>] — print a PROPOSED policy: stale \`accept\` lines deleted, over-wide ones narrowed, exceeded ones proposed in a comment."
+              echo "  Writes no file. --adopt --because adds \`accept\` lines for the violations the policy does not yet name. (\`accept\` alone is a policy LINE kind, not a verb.)";;
     parsepolicy) echo "candor parsepolicy <file> — echo the parsed policy AST (deny / pure / allow / forbid / only rules)."; echo "  Grammar: \`deny <Effect> <layer>\` · \`pure <layer>\` · \`allow <Effect> <layer>\` · \`forbid <A> -> <B>\` · \`only <A> -> <B> [<C>…]\`.";;
     *)        echo "candor $1 — see \`candor --help\`.";;
   esac
@@ -1292,7 +1294,7 @@ ENVIRONMENT
 
 ALL ACTIONS
   show  where  callers  map  containment  diff  reachable  impact  blindspots
-  gains  path  tour  whatif  fix  fix-gate  unverified  rewire  parsepolicy  agents
+  gains  path  tour  whatif  fix  fix-gate  unverified  accepts  rewire  parsepolicy  agents
 
 OPTIONS  (uniform across every engine)
   --report <locator>        use this report instead of discovering .candor/
@@ -2683,12 +2685,19 @@ EOF
     exec "$hd/stop-hook.sh" "$@";;
   scan) shift; route_scan "$@";;
   *)
+    # `accept` is a policy LINE kind, one letter short of the verb `accepts` (SPEC ⟨0.41⟩ §6.2). Typed as a verb it
+    # would be read as a typo of something else or a scan target; it is the same usage error every engine gives
+    # (exit 2, names the verb). A path really named `accept` is still scanned, like the engines do.
+    if [ "$verb" = accept ] && [ ! -e accept ]; then
+      echo "candor: \`accept\` is a policy LINE kind (\`accept <fn> <effects> for <rule> because <reason>\`), not a verb. The verb that refreshes or adopts those lines is \`accepts\`: candor accepts [--report <locator>] [--policy <file>] [--json] [--adopt --because <reason>]" >&2
+      exit 2
+    fi
     # not a known action: a real path/dir is a scan target (candor <dir> = scan); anything else is
     # almost certainly a typo'd action — suggest the nearest match instead of handing it to a scanner.
     if [ ! -e "$verb" ]; then
       sugg=$(python3 - "$verb" <<'PY' 2>/dev/null
 import sys
-actions = "init scan doctor engines update install upgrade outdated check config show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified rewire parsepolicy agents".split()
+actions = "init scan doctor engines update install upgrade outdated check config show where callers map containment diff reachable impact blindspots gains path tour whatif fix fix-gate unverified accepts rewire parsepolicy agents".split()
 v = sys.argv[1]
 def d(a, b):
     if abs(len(a)-len(b)) > 2: return 99

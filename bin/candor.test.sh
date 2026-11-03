@@ -51,6 +51,15 @@ ok "gate is routed at all"            "WOULD-RUN: candor-query gate"            
 ok "swift + show → names the engines that do" "does not implement \`show\`"     bash -c "cd '$T/qs' && '$D' show foo"
 ok "swift + show → suggests candor-ts"        "candor-ts"                        bash -c "cd '$T/qs' && '$D' show foo"
 ok "rust + privacy-manifest → refused"        "does not implement \`privacy-manifest\`" bash -c "cd '$T/qr' && '$D' privacy-manifest"
+# ⟨0.41⟩ `accepts` is in all four engines; `accept` (the policy LINE kind) is a usage error, never a scan or a typo.
+ok "accepts → candor-query (rust)"    "WOULD-RUN: candor-query accepts"          bash -c "cd '$T/qr' && '$D' accepts"
+ok "accepts → candor-ts-query"        "WOULD-RUN: candor-ts-query accepts"       bash -c "cd '$T/qt' && '$D' accepts"
+ok "accepts → candor-java"            "WOULD-RUN: candor-java accepts"           bash -c "cd '$T/qj' && '$D' accepts"
+ok "accepts → candor-swift"           "WOULD-RUN: candor-swift accepts"          bash -c "cd '$T/qs' && '$D' accepts --json"
+ok "accepts --help has its own text"  "PROPOSED policy"                          bash -c "cd '$T/qr' && '$D' accepts --help"
+ok "accept → usage error naming accepts" "The verb that refreshes or adopts those lines is \`accepts\`" bash -c "cd '$T/qr' && '$D' accept"
+ok "accept → exit 2"                  "rc=2"                                     bash -c "cd '$T/qr'; '$D' accept >/dev/null 2>&1; echo rc=\$?"
+ok "a typo of accepts is suggested"   "did you mean \`candor accepts\`"                           bash -c "cd '$T/qr' && '$D' acceptx"
 # THE ASYMMETRIES ARE REAL AND EACH WOULD MISROUTE WITHOUT ITS OWN ROW: java has no parsepolicy, ts has no
 # rewire, only rust has agents.
 # CORRECTED 2026-08-05 by a review: java DOES implement parsepolicy and ts DOES implement agents, so

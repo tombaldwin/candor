@@ -10,6 +10,8 @@ keeps its own.
 
 ## Unreleased
 
+## 2026-11-03 — the 0.41.0 family release: accept lines for known policy violations (released 2026-11-03 as 0.41.0)
+
 - **`candor accepts` reaches every engine; `candor accept` is the same usage error the engines give.** SPEC ⟨0.41⟩ §6.2 added the
   `accepts` verb (a proposed policy that refreshes or adopts `accept` lines) to all four engines, but the dispatcher's verb lists
   (route table, capability table, config-policy hook, per-verb help, ALL ACTIONS, typo suggestions, `.candor/run`, the three shell
@@ -38,6 +40,14 @@ keeps its own.
   `candor-java diff` an extensionless temp path, which the engine reads as a report locator; the diff printed nothing and
   the review reported a clean verdict. The report path now ends `.json`, and a diff that returns no `changes` document
   is a setup error (exit 2).
+
+- **Corpus A/B tooling: `bin/ab-price.py` and `bin/pubarm_cache.py`.** One pricing tool for an A/B (direction first, gate
+  flips, the removed-row partition with a seeded C1/C2/C3), and a keyed cache of the PUBLISHED engine's arm so a lane does
+  not rescan it; `corpus-ab.py --pre-cache/--post-cache VERSION:ENGINE` serves an arm from it (a miss is exit 3, never an
+  empty arm). The cache root now travels with each job: on Linux python >= 3.14 pool workers fork from a forkserver that
+  did not see a later `CANDOR_PUBARM`, and every cached arm missed.
+- **MCP install docs list seventeen tools**, adding `candor_accepts` (candor-ts).
+- **`ENGINE_PIN` and the umbrella version move to 0.41.0**, so `candor update` and the Homebrew formula fetch this cut.
 
 ## 2026-10-31 — the 0.40.18 family patch: call-target round 2 (released 2026-10-31 as 0.40.18)
 

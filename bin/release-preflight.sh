@@ -144,8 +144,9 @@ grab() { # $1 label ; $2 file ; $3 regex capturing the version
   note "$1: spec $v"; specs+=("$v")
 }
 grab "rust " "candor-rust/crates/candor-report/src/lib.rs" 'SPEC_VERSION[^0-9]*[0-9]+\.[0-9]+'
-grab "ts   " "candor-ts/query.mjs"                          'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
-# candor-ts has TWO SPEC_VERSION constants — query.mjs (above) AND scan.mjs, which is the one that stamps the
+grab "ts   " "candor-ts/spec-version.mjs"                   'SPEC_VERSION *= *"[0-9]+\.[0-9]+'
+# query.mjs and gate-core.mjs import theirs from spec-version.mjs (candor-ts af371ba, 2026-11-03).
+# candor-ts has TWO SPEC_VERSION constants — spec-version.mjs (above) AND scan.mjs, which is the one that stamps the
 # REPORT ENVELOPE + gate verdict. The 0.17 bump missed scan.mjs (preflight only checked query.mjs), so reports
 # shipped declaring the old floor while --version disagreed. Check both so they can never drift apart.
 grab "ts-scn" "candor-ts/scan.mjs"                          'SPEC_VERSION *= *"[0-9]+\.[0-9]+'

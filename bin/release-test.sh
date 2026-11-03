@@ -1463,7 +1463,7 @@ sbfix() {
   mkb candor-rust/crates/candor-report/src/lib.rs 'pub const SPEC_VERSION: &str = "0.27";'
   mkb candor-java/src/main/java/io/poly/candor/Candor.java '    static final String SPEC_VERSION = "0.27";'
   mkb candor-ts/scan.mjs 'const SPEC_VERSION = "0.27";'
-  mkb candor-ts/query.mjs 'const SPEC_VERSION = "0.27";'
+  mkb candor-ts/spec-version.mjs 'export const SPEC_VERSION = "0.27";'
   mkb candor-swift/Sources/candor-swift/main.swift "${1:-let specVersion = \"0.27\"}"
   mkb candor-agents/candor_agents/scan.py 'SPEC = "0.27"'
   # SPEC.md carries the headline AND two envelope fences: one plain, one ALIGNED (the padding that
@@ -1488,7 +1488,7 @@ CANDOR_ROOT="$SB" bash "$UMBRELLA/bin/spec-bump.sh" 0.28 --decls-only >/dev/null
 # declaration file for ITS OWN value.
 sbdecl_stale=""
 for f in candor-rust/crates/candor-report/src/lib.rs candor-java/src/main/java/io/poly/candor/Candor.java \
-         candor-ts/scan.mjs candor-ts/query.mjs candor-swift/Sources/candor-swift/main.swift \
+         candor-ts/scan.mjs candor-ts/spec-version.mjs candor-swift/Sources/candor-swift/main.swift \
          candor-agents/candor_agents/scan.py; do
   grep -q '0\.28' "$SB/$f" || sbdecl_stale="$sbdecl_stale $f"
 done
@@ -2739,7 +2739,7 @@ let engineVersion = "candor-swift-0.32.0"
 '
   csmk candor-ts/package.json '{ "version": "0.32.0" }
 '
-  csmk candor-ts/query.mjs 'const SPEC_VERSION = "0.32";
+  csmk candor-ts/spec-version.mjs 'export const SPEC_VERSION = "0.32";
 '
   csmk candor-ts/scan.mjs  'const SPEC_VERSION = "0.32";
 '
@@ -3185,7 +3185,7 @@ say "9b. release-preflight.sh — FAIL branches a guard-deletion sweep found not
 csfix "$CSF"
 
 # --- [1] engines DISAGREE on the declared spec -------------------------------------------------------
-perl -pi -e 's/const SPEC_VERSION = "0\.32"/const SPEC_VERSION = "0.31"/' "$CSF/candor-ts/query.mjs"
+perl -pi -e 's/const SPEC_VERSION = "0\.32"/const SPEC_VERSION = "0.31"/' "$CSF/candor-ts/spec-version.mjs"
 red="$(PATH="$CS/bin:$PATH" GH_RUNS="$GHGREEN" CI_NO_WAIT=1 PINS_ADVISORY=1 CANDOR_ROOT="$CSF" \
       bash "$CSF/candor/bin/release-preflight.sh" 0.32 0.32.1 --only candor-java 2>&1)"
 hasin "$red" -q "engines DISAGREE on the declared spec" \

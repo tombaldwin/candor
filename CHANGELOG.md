@@ -47,6 +47,9 @@ keeps its own.
   empty arm). The cache root now travels with each job: on Linux python >= 3.14 pool workers fork from a forkserver that
   did not see a later `CANDOR_PUBARM`, and every cached arm missed.
 - **MCP install docs list seventeen tools**, adding `candor_accepts` (candor-ts).
+- **Release tooling follows candor-ts's moved spec declaration.** candor-ts now declares `SPEC_VERSION` in `spec-version.mjs`
+  (shared by `query.mjs` and `gate-core.mjs`); `spec-bump.sh`, `release-preflight.sh` [1] and `release-test.sh`'s fixture tree
+  read it there. Before, the bump skipped it and preflight [1] would have read no ts-query declaration.
 - **`ENGINE_PIN` and the umbrella version move to 0.41.0**, so `candor update` and the Homebrew formula fetch this cut.
 
 ## 2026-10-31 — the 0.40.18 family patch: call-target round 2 (released 2026-10-31 as 0.40.18)

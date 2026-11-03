@@ -59,7 +59,7 @@ DECLS=(
   "rust|candor-rust/crates/candor-report/src/lib.rs|pub const SPEC_VERSION: &str = \"%s\";"
   "java|candor-java/src/main/java/io/poly/candor/Candor.java|    static final String SPEC_VERSION = \"%s\";"
   "ts-scan|candor-ts/scan.mjs|const SPEC_VERSION = \"%s\";"
-  "ts-query|candor-ts/query.mjs|const SPEC_VERSION = \"%s\";"
+  "ts-query|candor-ts/spec-version.mjs|export const SPEC_VERSION = \"%s\";"
   "swift|candor-swift/Sources/candor-swift/main.swift|let specVersion = \"%s\""
   "agents|candor-agents/candor_agents/scan.py|SPEC = \"%s\""
 )

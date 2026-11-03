@@ -545,7 +545,10 @@ hr_run "$LG" "$J" CANDOR_BUILD="echo custom >> $HR_BUILDLOG"
 ok "CANDOR_BUILD overrides autodetection"                          'grep -q "^custom" "$HR_BUILDLOG"'
 # Nothing to build with and nothing named: setup notice, not a silent pass.
 NB="$WORK/nbproj"; mkdir -p "$NB"; echo '<project/>' > "$NB/pom.xml"
-OUT=$(cd "$NB" && printf '%s' "$J" | env PATH="/usr/bin:/bin" CANDOR_LANG=java CANDOR_HOOK_DIR="$HERE" bash "$UMB" hook-run 2>/dev/null)
+# A PATH with no build tool on it. "/usr/bin:/bin" is not one: ubuntu CI runners ship /usr/bin/mvn.
+NOBT="$WORK/nobuildtool-bin"; mkdir -p "$NOBT"
+for f in /usr/bin/* /bin/*; do n=${f##*/}; case "$n" in mvn|mvnw|gradle|gradlew) continue ;; esac; [ -e "$NOBT/$n" ] || ln -s "$f" "$NOBT/$n"; done
+OUT=$(cd "$NB" && printf '%s' "$J" | env PATH="$NOBT" CANDOR_LANG=java CANDOR_HOOK_DIR="$HERE" bash "$UMB" hook-run 2>/dev/null)
 ok "no build tool and no CANDOR_CLASSES: says so (setup notice, allowed)" 'printf "%s" "$OUT" | jq -e ".systemMessage | test(\"no build tool\")" >/dev/null'
 
 # The generated command is portable and drops the hard-wired mvn; other languages unchanged.

@@ -67,6 +67,9 @@ ab() { python3 "$AB" --pre-cmd "bash -c 'cat {entry}/pre.json'" --post-cmd "bash
 
 echo "the in-process calibration (the four proofs):"
 rc_is "corpus-ab.py --selftest passes" 0 python3 "$AB" --selftest
+# rc_is shows only the last 3 lines, which for the selftest is its summary; a failing calibration must
+# say WHY, so print each FAIL with the detail check() attached to it.
+case "$LAST_OUT" in *"  FAIL "*) printf '%s\n' "$LAST_OUT" | grep -A12 '^  FAIL ' | sed 's/^/        | /' ;; esac
 says  "…and it is a calibration, not a smoke test"      "R288"
 rc_is "ab-price.py --selftest passes (seeded buckets + seeded C3)" 0 python3 "$HERE/ab-price.py" --selftest
 rc_is "pubarm_cache.py --selftest passes (stale/mismatched entries MISS)" 0 python3 "$HERE/pubarm_cache.py" --selftest

@@ -676,7 +676,8 @@ def one_entry(job):
             # never an empty arm, so the run refuses (exit 3) instead of diffing against nothing.
             c = caches[name]
             try:
-                text, cmeta = pubarm_cache.lookup(c["version"], c["engine"], entry, c["hashes"], c["residual"])
+                text, cmeta = pubarm_cache.lookup(c["version"], c["engine"], entry, c["hashes"], c["residual"],
+                                                  root=c.get("root"))
                 err_bytes, error = b"", None
                 res.setdefault("cache_hits", {})[name] = {"report_sha256": cmeta["report_sha256"],
                                                           "scan_seconds": cmeta.get("scan_seconds")}
@@ -1024,7 +1025,11 @@ def run(args):
                      "to verify against.  Refusing." % arm_name)
                 return 2
             ver, eng = spec.split(":")
-            caches[arm_name] = {"version": ver, "engine": eng, "hashes": hashes, "residual": residual}
+            # The ROOT is resolved here, in the parent, and travels with the job: a pool worker on Linux
+            # python >= 3.14 forks from a forkserver started before a later CANDOR_PUBARM was set, so it
+            # would read the default root instead (measured on ubuntu CI: every cached arm MISSED).
+            caches[arm_name] = {"version": ver, "engine": eng, "hashes": hashes, "residual": residual,
+                                "root": pubarm_cache.root_dir()}
         entries = collect_entries(args)
         if not entries:
             return refuse(["The entry set is EMPTY.  Nothing was scanned, so nothing was compared.",

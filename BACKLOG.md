@@ -43,6 +43,17 @@ step that failed. One line each, with the date. **Codebase: a large production J
    which version, before changing anything. Then upgrade to 0.40.18. Upgrading from an old pin can turn gates red (each rung
    since ⟨0.37⟩ is stricter), and every such flip is the first data for the log. The local clone of the field case on this Mac is stale.
 
+**0.41.0 trial on the field case (2026-11-04, MEASURED on buffy: scratch tree, published 0.41.0 jar, JDK 21).** Policy is
+13 `deny` + 3 `pure`, no `forbid`/`only`; 210 AS-EFF-006 violations. `candor accepts --adopt --because …` over a fresh
+baseline proposed 208 lines; the gate then had 2 left, both in an anonymous class (`Foo$1`, refused as a positional key). After
+naming that class: 210 accepted, gate exit 0 ("210 violation(s) accepted by policy; 0 new"); deleting one line brought exactly
+that violation back (exit 1). Product follow-ups, none blocking adoption:
+- `accepts` with no `--report`/`--policy` does not use `.candor/config`'s baseline and policy (exit 2 "no report found for
+  locator .candor/report"); it should discover them the way `gate` does.
+- the positional-key refusal is summarised without its reason or remedy; name both (rename the class, or fix the violation).
+- `--no-baseline --json` writes the baseline and still exits 1 on policy violations, so a recording step under `set -e`
+  aborts. Decide whether a recording run reports the gate separately.
+
 **First findings from the field-case log (2026-10-31; answers in the session of 2026-11-01).** These are false alarms and
 setup problems, not silent misses, so they go first:
 - java: bounded CHA fan-out over `java.util.Iterator` reaches an app `next` whose leaf is Joda (`ITERATOR-FANOUT-OVERCHARGE`);

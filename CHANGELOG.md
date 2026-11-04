@@ -8,6 +8,12 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-04 — family build bump (released 2026-11-04 as 0.41.1)
+
+No change to `adopt/`, `integrations/` or `fingerprint/`. `BACKLOG.md` records the field case's 0.41.0 trial of `accept`
+lines and its three follow-ups, which this cut's engines fix. `ENGINE_PIN` moves to 0.41.1 so `candor update` and the
+Homebrew formula fetch the engines this cut published.
+
 ## Unreleased
 
 ## 2026-11-03 — the 0.41.0 family release: accept lines for known policy violations (released 2026-11-03 as 0.41.0)

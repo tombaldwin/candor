@@ -12,7 +12,7 @@ keeps its own.
 
 No change to `adopt/`, `integrations/` or `fingerprint/`. `BACKLOG.md` records the field case's 0.41.0 trial of `accept`
 lines and its three follow-ups, which this cut's engines fix. `ENGINE_PIN` moves to 0.41.1 so `candor update` and the
-Homebrew formula fetch the engines this cut published.
+Homebrew formula fetch the engines this cut published; the `adopt/` workflows and the VS Code / JetBrains clients pin 0.41.1.
 
 ## Unreleased
 

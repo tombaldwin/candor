@@ -15,6 +15,8 @@ family docs are as they were. This entry exists because a release with no notes 
 used to be published under the PREVIOUS release's notes; `ENGINE_PIN` moves to 0.41.3 so
 `candor update` and the Homebrew formula fetch the engines this cut published (the change is candor-java's: SOUNDNESS R1461); the `adopt/`
 workflows and the VS Code / JetBrains clients pin 0.41.3.
+The VS Code extension's own version moves 0.40.1 → 0.41.0 so it tracks the server it bundles
+(major.minor), which its test requires; it had stayed at 0.40.1 since the 0.41 line began.
 
 ## 2026-11-05 — family build bump (released 2026-11-05 as 0.41.2)
 

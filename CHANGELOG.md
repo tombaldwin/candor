@@ -8,6 +8,13 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## Unreleased
+
+No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and the
+family docs are as they were. `ENGINE_PIN` moves to 0.41.3 so `candor update` and the Homebrew
+formula fetch the engines this cut published (the change is candor-java's: SOUNDNESS R1461);
+the `adopt/` workflows and the VS Code / JetBrains clients pin 0.41.3.
+
 ## 2026-11-05 — family build bump (released 2026-11-05 as 0.41.2)
 
 No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and the

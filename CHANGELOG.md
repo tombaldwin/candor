@@ -13,7 +13,7 @@ keeps its own.
 No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and the
 family docs are as they were. This entry exists because a release with no notes of its own
 used to be published under the PREVIOUS release's notes; `ENGINE_PIN` moves to 0.41.2 so
-`candor update` and the Homebrew formula fetch the engines this cut published.
+`candor update` and the Homebrew formula fetch the engines this cut published; the `adopt/` workflows and the VS Code / JetBrains clients pin 0.41.2.
 
 ## 2026-11-04 — family build bump (released 2026-11-04 as 0.41.1)
 

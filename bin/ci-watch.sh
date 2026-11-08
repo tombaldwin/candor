@@ -99,15 +99,36 @@ OWNER="tombaldwin"
 # moves WHEN it is printed. The cost: a fresh red at HEAD is reported when the wave settles, not at once;
 # the interim line below names it immediately so nobody waits blind.
 wait_keeps_going() {  # $1 snapshot exit ; $2 pending count ("" if the snapshot never wrote one)
-  [ "$1" -eq 2 ] && return 0
+  [ "$1" -eq 2 ] && return 0   # (75 = BLOCKED by the rate limit: stop, polling harder is the cause)
   [ "$1" -eq 1 ] && [ -n "$2" ] && [ "$2" -gt 0 ] && return 0
   return 1
 }
 if [ "$WAIT" -eq 1 ]; then
   WAIT_MAX="${CI_WATCH_WAIT_MAX:-1800}"
   deadline=$(( $(date +%s) + WAIT_MAX ))
+  # ONE --wait AT A TIME PER USER (2026-11-08). Two concurrent waits each poll every repo every 20s; together
+  # they exhausted the GitHub API — a 403, including the SECONDARY limit while `gh api rate_limit` still read
+  # 4,980 core calls remaining — and the verdict was a NOT GREEN made only of 403 rows. A second wait adds
+  # load and no information (it reads the same runs), so it REFUSES, exit 75, naming the holder. A lock
+  # whose recorded pid is dead is reclaimed; a lock with NO pid yet is treated as live (the holder is
+  # between `mkdir` and writing it), which fails toward refusing, never toward doubling the load.
+  _wlock="${CI_WATCH_LOCK:-${TMPDIR:-/tmp}/ci-watch-wait.lock}"
+  if ! mkdir "$_wlock" 2>/dev/null; then
+    _holder="$(cat "$_wlock/pid" 2>/dev/null || true)"
+    _got=0
+    if [ -n "$_holder" ] && ! kill -0 "$_holder" 2>/dev/null; then
+      rm -rf "$_wlock"; mkdir "$_wlock" 2>/dev/null && _got=1
+    fi
+    if [ "$_got" -eq 0 ]; then
+      echo "ci-watch: REFUSING a second --wait — another is already polling (pid ${_holder:-unknown}, lock $_wlock)." >&2
+      echo "  Two waits double the GitHub API load and have exhausted it (403 secondary rate limit). Let that one" >&2
+      echo "  finish, or take a single snapshot without --wait. If no wait is running: rm -rf '$_wlock'." >&2
+      exit 75
+    fi
+  fi
+  echo $$ > "$_wlock/pid"
   _wstate="$(mktemp "${TMPDIR:-/tmp}/ci-watch-state.XXXXXX")"
-  trap 'rm -f "$_wstate"' EXIT
+  trap 'rm -f "$_wstate"; rm -rf "$_wlock"' EXIT
   _red_noted=0
   while :; do
     : > "$_wstate"
@@ -894,6 +915,57 @@ EOF
     else echo "  ✘ --wait on exit=$1 pending=${_p:-<none>} -> $got (want $3)"; fails=$((fails+1)); fi
   done
 
+  # 75 = BLOCKED by the rate limit: --wait must STOP on it (polling harder is the cause), never go on.
+  if wait_keeps_going 75 0; then echo "  ✘ --wait keeps polling on exit 75 (rate-limit BLOCKED)"; fails=$((fails+1))
+  else echo "  ✔ --wait on exit=75 (BLOCKED) -> stop"; fi
+
+  # ── 2026-11-08: THE RATE-LIMIT VERDICT AND THE --wait LOCK, END TO END. These run the real script as a
+  # child over a scratch ROOT (the script derives ROOT from its own path) with a PATH-shim `gh`, so the
+  # wrapper, the footer and the lock are what is exercised — not a copy of their logic. No live GitHub.
+  _t="$(mktemp -d "${TMPDIR:-/tmp}/ci-watch-e2e.XXXXXX")"
+  mkdir -p "$_t/candor/bin" "$_t/shim" "$_t/candor-spec"
+  cp "${BASH_SOURCE[0]}" "$_t/candor/bin/ci-watch.sh"
+  cp "$(dirname "${BASH_SOURCE[0]}")/_release_set.sh" "$(dirname "${BASH_SOURCE[0]}")/wf-expected.py" "$_t/candor/bin/"
+  ( cd "$_t/candor-spec" && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x \
+    && mkdir -p .github/workflows \
+    && printf 'name: ci\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: ok\n' > .github/workflows/ci.yml \
+    && git add -A && git -c user.email=t@e -c user.name=t commit -qm y ) >/dev/null 2>&1
+  _e2e() {  # $1 = gh stub body ; rest = extra env. Prints the child's output, sets E2E_RC.
+    printf '#!/bin/sh\n%s\n' "$1" > "$_t/shim/gh"; chmod +x "$_t/shim/gh"
+    E2E_OUT="$(PATH="$_t/shim:$PATH" TMPDIR="$_t" CI_WATCH_LOCK="$_t/lock" bash "$_t/candor/bin/ci-watch.sh" "${@:2}" candor-spec 2>&1)"; E2E_RC=$?
+  }
+  _RL='echo "HTTP 403: API rate limit exceeded for user ID 1." >&2; exit 1'
+  _GOOD='case "$*" in *"workflow list"*) echo "[{\"id\":1,\"path\":\".github/workflows/ci.yml\"}]";; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"$C\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
+  _e2e "$_RL"
+  if [ "$E2E_RC" -eq 75 ] && printf '%s' "$E2E_OUT" | grep -q 'BLOCKED by the GitHub API rate limit' && ! printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN'; then
+    echo "  ✔ a verdict made only of rate-limit rows says BLOCKED (exit 75), not NOT GREEN"
+  else echo "  ✘ all-403 snapshot was not BLOCKED (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
+  _e2e "C=failure; export C; $_GOOD"
+  if [ "$E2E_RC" -eq 1 ] && printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN' && ! printf '%s' "$E2E_OUT" | grep -q 'BLOCKED'; then
+    echo "  ✔ a genuine red run stays NOT GREEN (exit 1) — BLOCKED does not swallow it"
+  else echo "  ✘ a real red run did not read NOT GREEN (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
+  _e2e 'case "$*" in *"workflow list"*) echo "HTTP 403: API rate limit exceeded" >&2; exit 1;; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"failure\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
+  if [ "$E2E_RC" -eq 1 ] && printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN' && printf '%s' "$E2E_OUT" | grep -q 'are rate-limit/403 answers'; then
+    echo "  ✔ a red run beside a rate-limited call stays NOT GREEN and the rate-limit rows are counted in a note"
+  else echo "  ✘ mixed red + 403 was not NOT GREEN with a note (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
+  _e2e "C=success; export C; $_GOOD"
+  if [ "$E2E_RC" -eq 0 ] && printf '%s' "$E2E_OUT" | grep -q '^ci-watch: OK' && ! printf '%s' "$E2E_OUT" | grep -qE 'BLOCKED|REFUSING'; then
+    echo "  ✔ a clean snapshot is unchanged: OK, exit 0"
+  else echo "  ✘ clean snapshot changed (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
+  # the lock: a LIVE holder -> refuse; a DEAD holder -> reclaimed; own lock removed on exit
+  sleep 30 & _lp=$!
+  mkdir "$_t/lock"; echo "$_lp" > "$_t/lock/pid"
+  _e2e "$_RL" --wait
+  if [ "$E2E_RC" -eq 75 ] && printf '%s' "$E2E_OUT" | grep -q 'REFUSING a second --wait' && printf '%s' "$E2E_OUT" | grep -q "pid $_lp"; then
+    echo "  ✔ a second --wait with a live holder REFUSES (exit 75) and names the holder"
+  else echo "  ✘ second --wait was not refused (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
+  kill "$_lp" 2>/dev/null; wait "$_lp" 2>/dev/null
+  _e2e "$_RL" --wait    # holder now dead: the stale lock is reclaimed, the wait runs and stops on BLOCKED
+  if [ "$E2E_RC" -eq 75 ] && printf '%s' "$E2E_OUT" | grep -q 'BLOCKED by the GitHub API rate limit' && ! printf '%s' "$E2E_OUT" | grep -q REFUSING && [ ! -e "$_t/lock" ]; then
+    echo "  ✔ a stale lock is reclaimed, --wait stops on BLOCKED instead of polling, and releases its lock"
+  else echo "  ✘ stale-lock reclaim / BLOCKED stop failed (rc=$E2E_RC, lock present: $([ -e "$_t/lock" ] && echo yes || echo no)): $E2E_OUT"; fails=$((fails+1)); fi
+  rm -rf "$_t"
+
   echo
   [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, neither is a wf-expected.py one, neither is a HEAD git cannot resolve, and a workflow display name shared by two files never hides one of them" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
@@ -933,6 +1005,39 @@ median_secs() {
   fi
 }
 
+
+# ── A SNAPSHOT THAT WAS BLOCKED BY THE RATE LIMIT IS NOT A RED RUN (2026-11-08) ─────────────────────
+# Every `gh` failure here already prints a named ✘ row and forces rc=1, which is right: a call that was
+# never answered must not read as green. But when EVERY ✘ row is a rate-limit or 403 answer, "NOT GREEN —
+# see the rows" tells the reader a run FAILED when no run was read at all, and `--wait` would have kept
+# hammering. So the snapshot runs as a child whose rows are inspected: if there is at least one ✘ row and
+# ALL of them carry a rate-limit marker, the verdict is BLOCKED, exit 75 (EX_TEMPFAIL — not 1, which is red,
+# and not 2, which is pending and makes `--wait` poll again). One genuine red row among them keeps the
+# ordinary NOT GREEN, with a note counting the blocked rows. Still never green. A plain 403 for a
+# permissions reason matches too; that is blocked-not-read as well, and the row text says which.
+if [ -z "${CI_WATCH_INNER:-}" ]; then
+  _snap="$(mktemp "${TMPDIR:-/tmp}/ci-watch-snap.XXXXXX")"
+  CI_WATCH_INNER=1 "$0" "${REPOS[@]}" > "$_snap"; _ist=$?
+  if [ "$_ist" -eq 1 ]; then
+    _nred="$(grep -c '✘' "$_snap" || true)"
+    _nrl="$(grep '✘' "$_snap" | grep -ciE 'rate limit|HTTP 429|HTTP 403|abuse detection' || true)"
+    if [ "$_nred" -gt 0 ] && [ "$_nred" -eq "$_nrl" ]; then
+      sed '/^ci-watch: NOT GREEN/,$d' "$_snap"
+      echo "ci-watch: BLOCKED by the GitHub API rate limit — all $_nred red row(s) above are rate-limit/403 answers."
+      echo "  NO run was read, so this is neither green nor a red run. Wait for the limit to reset (\`gh api rate_limit\`;"
+      echo "  the SECONDARY limit does not show there), stop other pollers, then take ONE snapshot. exit 75."
+      [ -n "${CI_WATCH_STATE_FILE:-}" ] && printf '%s %s\n' 75 0 > "$CI_WATCH_STATE_FILE"
+      rm -f "$_snap"; exit 75
+    fi
+    cat "$_snap"
+    if [ "$_nrl" -gt 0 ]; then
+      echo "  (note: $_nrl of the $_nred red row(s) are rate-limit/403 answers — those runs were not read; re-check them once the limit resets)"
+    fi
+  else
+    cat "$_snap"
+  fi
+  rm -f "$_snap"; exit "$_ist"
+fi
 
 for repo in "${REPOS[@]}"; do
   d="$ROOT/$repo"

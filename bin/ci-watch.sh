@@ -87,13 +87,39 @@ OWNER="tombaldwin"
 #
 # On expiry it prints the last snapshot and exits 2. It must never turn "I got bored" into green: the
 # deadline bounds how long this WAITS, not what it CONCLUDES.
+#
+# A RED DOES NOT END THE WAIT WHILE ANYTHING IS STILL PENDING (2026-11-07). As first written the loop
+# stopped on any exit other than 2, so ONE OLD red — a weekly job whose newest run, on an earlier commit,
+# failed (the "would otherwise vanish" arm below) — ended the wait on its first poll with every HEAD run
+# still in progress. Measured: `--wait candor-rust candor-java candor-swift candor-spec` returned exit 1
+# after one snapshot, java's soundness-weekly red masking ten in-flight runs, and the caller had to split
+# the repo list by hand to wait at all. The snapshot already counts pending apart from rc; it now hands
+# both to this loop through CI_WATCH_STATE_FILE, and the loop stops only when nothing is pending. The
+# verdict is unchanged — still the one snapshot implementation, still red if any row was red — this only
+# moves WHEN it is printed. The cost: a fresh red at HEAD is reported when the wave settles, not at once;
+# the interim line below names it immediately so nobody waits blind.
+wait_keeps_going() {  # $1 snapshot exit ; $2 pending count ("" if the snapshot never wrote one)
+  [ "$1" -eq 2 ] && return 0
+  [ "$1" -eq 1 ] && [ -n "$2" ] && [ "$2" -gt 0 ] && return 0
+  return 1
+}
 if [ "$WAIT" -eq 1 ]; then
   WAIT_MAX="${CI_WATCH_WAIT_MAX:-1800}"
   deadline=$(( $(date +%s) + WAIT_MAX ))
+  _wstate="$(mktemp "${TMPDIR:-/tmp}/ci-watch-state.XXXXXX")"
+  trap 'rm -f "$_wstate"' EXIT
+  _red_noted=0
   while :; do
+    : > "$_wstate"
     # Pass the repo list through. Re-execing bare here is what dropped it (2026-08-28).
-    out="$("$0" "${REPOS[@]}")"; st=$?
-    if [ "$st" -ne 2 ]; then printf '%s\n' "$out"; exit "$st"; fi
+    out="$(CI_WATCH_STATE_FILE="$_wstate" "$0" "${REPOS[@]}")"; st=$?
+    _pend=""; read -r _ _pend < "$_wstate" 2>/dev/null || true
+    if ! wait_keeps_going "$st" "$_pend"; then printf '%s\n' "$out"; exit "$st"; fi
+    if [ "$st" -eq 1 ] && [ "$_red_noted" -eq 0 ]; then
+      printf '%s\n' "$out" | grep '✘' || true
+      echo "ci-watch: RED already (above) — still waiting on $_pend pending run(s) before the verdict."
+      _red_noted=1
+    fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       printf '%s\n' "$out"
       echo "ci-watch: gave up WAITING after $(( WAIT_MAX / 60 ))m — still pending, and that is not green."
@@ -859,6 +885,15 @@ EOF
     echo "  ✔ resolve_sha fails closed on a path that is not a git repository"
   fi
 
+  # --wait's stop rule. The 2026-11-07 defect was row "1 3": an old red plus three runs in flight
+  # stopped the wait. "1 " is a snapshot that died before writing its state — stop, never loop on it.
+  for row in "2 0 go" "2 5 go" "1 3 go" "1 0 stop" "1 _ stop" "0 0 stop" "64 0 stop"; do
+    set -- $row; _p="$2"; [ "$_p" = "_" ] && _p=""
+    if wait_keeps_going "$1" "$_p"; then got=go; else got=stop; fi
+    if [ "$got" = "$3" ]; then echo "  ✔ --wait on exit=$1 pending=${_p:-<none>} -> $got"
+    else echo "  ✘ --wait on exit=$1 pending=${_p:-<none>} -> $got (want $3)"; fails=$((fails+1)); fi
+  done
+
   echo
   [ "$fails" -eq 0 ] && echo "ci-watch selftest: OK — the stall arm fires, is bounded, its input parses, a gh failure is never silent, neither is a wf-expected.py one, neither is a HEAD git cannot resolve, and a workflow display name shared by two files never hides one of them" \
                      || echo "ci-watch selftest: FAILED — $fails row(s)"
@@ -1236,4 +1271,6 @@ else
   echo "  that summarised these rows by hand once said ALL GREEN over a failure, which is why the"
   echo "  verdict here is computed from every row and defaults to red."
 fi
+# For --wait (see wait_keeps_going): rc and pending, so a red snapshot with runs still going keeps waiting.
+[ -n "${CI_WATCH_STATE_FILE:-}" ] && printf '%s %s\n' "$rc" "$pending" > "$CI_WATCH_STATE_FILE"
 exit "$rc"

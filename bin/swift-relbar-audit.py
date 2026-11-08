@@ -42,8 +42,21 @@ RULES (one per root class; each verdict comes from source):
             statically to a concrete type whose own declarations of the member are sink-free.
   Any root: the root body is sink-scanned for the lost effect (Unknown: any effect), following typed calls (and
             untyped ones by name; an ambiguous name is scanned one hop). A sink reached only through a call that the
-            head row hedges by name (`dispatch:<...>.m`) or still charges is HEDGED -- release-bar slot (d) -- and a
-            HEDGED leaf must itself carry Unknown on head. Any other sink FLAGS.
+            head row hedges by name (`dispatch:<...>.m`) or still charges is HEDGED -- release-bar slot (d). A HEDGED
+            leaf must carry on its own head row the disclosure the root's coverage rests on: Unknown always suffices;
+            otherwise (coverage by a CONCRETE charge the root keeps) every such effect must be on the leaf's head row,
+            and no part of the coverage may rest on a by-name hedge. Any other sink FLAGS.
+  Narrowed 2026-11-08 (seeds: ~/candor-handoff/swift-relbar-seeds2/seeds2.py -- run it AND swift-rb157/seeds.py):
+            (1) the HEDGED-leaf rule above; (2) a `{` that follows a property read in an if/while/for/switch/catch/guard
+            header opens the body, not a trailing closure (a `{`/`}`/`;` or an open paren between keyword and brace
+            means a closure); (3) `x.m(...)` on a rebound name whose scoped type is a stdlib nominal needs no head cover
+            iff no in-tree `m` could be the callee (an extension of a stdlib type or protocol, or a protocol the type adopts
+            in tree, blocks it); (4) local typing is a lexically SCOPED binder census (if/while/guard let, case payloads,
+            closure parameters, for, nested func parameters), un-annotated fields typed by a constructor initialiser,
+            nested type names resolved to their full path, and a receiver typed to a SUPERTYPE of the callee's owner binds;
+            (5) a dotted reference to a top-level name binds only when module-qualified (capitalised head not declared in
+            tree), never as `value.name`. Every one can only make a name LESS typed or a cover requirement WEAKER where the
+            source proves the reference is not the callee.
   Limits, stated: the sink lists are name patterns (SINKS); property reads on a rebound name are not required to be
   hedged (only calls); test/benchmark/example targets are excluded from reach (a library cannot call them).
 
@@ -173,6 +186,34 @@ def norm_type(s):
     return s.split()[0] if s.split() else None
 
 
+def split_payload(T, a, b):
+    """payload types of an enum case `case c(label: T, U)` -- T[a:b] is the parenthesised list."""
+    out = []; seg = []; d = 0
+    def flush():
+        if not seg: return
+        body = seg[2:] if len(seg) >= 2 and seg[0][0] == 'id' and seg[1][1] == ':' else seg
+        out.append(''.join(x[1] for x in body))
+    for x in range(a, b):
+        tk = T[x]
+        if tk[0] == 'p' and tk[1] in '([': d += 1
+        elif tk[0] == 'p' and tk[1] in ')]': d -= 1
+        elif tk[0] == 'op' and '->' not in tk[1]: d += tk[1].count('<') - tk[1].count('>')
+        if d == 0 and tk[0] == 'p' and tk[1] == ',': flush(); seg = []
+        else: seg.append(tk)
+    flush()
+    return out
+
+
+def ctor_name(T, a, b):
+    """`Qual.Type(` at T[a:] -> 'Type' (every component capitalised), else None."""
+    seq = []; j = a
+    while j < b and T[j][0] in ('id', 'dot'):
+        if T[j][0] == 'id': seq.append(T[j][1])
+        j += 1
+    if seq and j < b and T[j][1] == '(' and all(x[:1].isupper() for x in seq): return seq[-1]
+    return None
+
+
 class Index:
     def __init__(self, root):
         self.root = root
@@ -181,6 +222,10 @@ class Index:
         self.conforms = collections.defaultdict(set)  # type -> {protocol or superclass}
         self.protocols = {}                     # protocol name -> (vis, set(member names declared))
         self.byname = collections.defaultdict(list)
+        self.fulltypes = set()                  # full dotted path of every nominal type declared in tree
+        self.declared = set()                   # last component of every nominal type DECLARED in tree (not merely extended)
+        self.cases = collections.defaultdict(list)    # enum case name -> [payload type list | None] over every in-tree enum
+        self.finit = collections.defaultdict(dict)    # owner -> field -> TypeName from an un-annotated `= Type(...)` initializer
         self.files = {}
         for p in sorted(glob.glob(os.path.join(root, '**', '*.swift'), recursive=True)):
             if '/.build/' in p: continue
@@ -210,6 +255,7 @@ class Index:
                         if T[j][1].endswith('>'): d -= T[j][1].count('>')
                         j += 1
                         if d <= 0: break
+                if t != 'extension': self.declared.add(name.split('.')[-1])
                 inh = []
                 if j < b and T[j][1] == ':':
                     j += 1
@@ -222,6 +268,7 @@ class Index:
                 full = name if t == 'extension' or not owner else '.'.join(owner + [name])
                 if t == 'extension':
                     full = name
+                else: self.fulltypes.add(full)
                 vis = 'public' if any(T[x][1] in ('public', 'open', 'package') for x in range(max(a, i - 4), i)) else 'internal'
                 for x in inh:
                     self.conforms[full].add(x)
@@ -269,6 +316,9 @@ class Index:
                             e = match_close(T, e)
                         e += 1
                     ty = ''.join(x[1] for x in T[s:e]); j = e
+                if owner and not ty and j < b and T[j][1] == '=' and T[j][2] == T[i][2]:
+                    ct = ctor_name(T, j + 1, b)      # `var x = Qual.Type(...)` -- a constructor call names its type
+                    if ct: self.finit['.'.join(owner)][name] = ct
                 if owner and ty:
                     self.fields['.'.join(owner)][name] = ty
                 if j < b and T[j][0] == 'p' and T[j][1] == '{' and owner:
@@ -278,7 +328,17 @@ class Index:
                     self.decls.append(d); i = d.b1 + 1; continue
                 i = j if j > i else i + 1; continue
             if k == 'id' and t == 'case' and owner:
-                # enum case declarations are not decls with bodies; skip the line
+                # an enum case declaration (a `case` in a switch sits inside a function body, which is skipped whole)
+                j = i + 1
+                while j < b and T[j][0] == 'id':
+                    nm = T[j][1]; j += 1; payload = None
+                    if j < b and T[j][1] == '(' and T[j][2] == T[j - 1][2]:
+                        close = match_close(T, j); payload = split_payload(T, j + 1, close); j = close + 1
+                    self.cases[nm].append(payload)
+                    if j < b and T[j][1] == '=':
+                        while j < b and not (T[j][0] == 'p' and T[j][1] == ',') and T[j][2] == T[j - 1][2]: j += 1
+                    if j < b and T[j][0] == 'p' and T[j][1] == ',': j += 1; continue
+                    break
                 i += 1; continue
             i += 1
 
@@ -294,15 +354,37 @@ class Index:
         if not hasattr(self, '_fs'):
             self._fs = collections.defaultdict(dict)       # last component -> merged fields
             for cand, fs in self.fields.items():
-                for k, v in fs.items(): self._fs[cand.split('.')[-1]].setdefault(k, v)
+                for k, v in fs.items():
+                    cur = self._fs[cand.split('.')[-1]]
+                    if k in cur and norm_type(cur[k]) != norm_type(v): cur[k] = None    # same-named types disagree: unknown
+                    else: cur.setdefault(k, v)
+        if not hasattr(self, '_fi'):
+            self._fi = collections.defaultdict(dict)
+            for cand, fs in self.finit.items():
+                for k, v in fs.items(): self._fi[cand.split('.')[-1]].setdefault(k, set()).add(v)
         o = owner
         while o:
             fs = self.fields.get(o) or {}
             if name in fs: return norm_type(fs[name])
             fs = self._fs.get(o.split('.')[-1]) or {}
-            if name in fs: return norm_type(fs[name])
+            if name in fs: return norm_type(fs[name]) if fs[name] else None
+            # an un-annotated field initialised by a constructor call: only if every in-tree spelling agrees and the name
+            # is not an in-tree FUNCTION (a capitalised factory function would make the call's type something else)
+            ci = self._fi.get(o.split('.')[-1], {}).get(name)
+            if ci and len(ci) == 1 and next(iter(ci)) not in self.byname: return norm_type(next(iter(ci)))
             o = '.'.join(o.split('.')[:-1])
         return None
+
+    def resolve(self, ty, ctx):
+        """a type NAME written inside type `ctx` -> its full dotted path when it is a nested type visible from there
+        (innermost enclosing type first), so two same-named nested types (`_StorageClass` in every generated message)
+        are not merged."""
+        if not ty or not ctx: return ty
+        parts = ctx.split('.')
+        for n in range(len(parts), 0, -1):
+            cand = '.'.join(parts[:n]) + '.' + ty
+            if cand in self.fulltypes: return cand
+        return ty
 
     def _short(self):
         if not hasattr(self, '_bys'):
@@ -418,6 +500,210 @@ def bound_at(T, d, i, name):
 NONEXPR = {'unsafe', 'try', 'await', 'return', 'in', 'else', 'case', 'throw', 'where', 'let', 'var', 'if', 'guard'}
 
 
+# ---- lexically scoped local typing: the binder CENSUS. A name's type at a use is the type of the INNERMOST binder whose
+# scope covers the use (a closure parameter, `let`/`var`, `if|while|guard let`, `case .X(let a)`, `for`, a nested func's
+# parameter). An uncovered use falls through to the enclosing parameter / field. Any binder whose type cannot be read
+# (tuple pattern, `for`, shorthand `if let x`, an unannotated closure parameter, an unknown enum case) is recorded as
+# UNKNOWN, so the name types to nothing there -- the census can only ever make a name LESS typed than a lone binder would.
+_CENSUS = {}; _ENC = {}
+
+
+def _enc(d):
+    """index -> the '{' that most closely encloses it within d's body."""
+    e = _ENC.get(id(d))
+    if e is not None: return e
+    T = d.toks; e = {}; st = [d.b0]
+    for j in range(d.b0, d.b1 + 1):
+        if T[j][0] == 'p' and T[j][1] == '}' and len(st) > 1: st.pop()
+        e[j] = st[-1]
+        if T[j][0] == 'p' and T[j][1] == '{': st.append(j)
+    _ENC[id(d)] = e
+    return e
+
+
+def _ann_text(T, a, stop):
+    """type text of an annotation starting at T[a]: up to a depth-0 `=`, `,`, `)`, `{`, `in`, `else`, `;` or a new line."""
+    out = []; dp = 0; ln = T[a][2] if a < len(T) else 0; k = a
+    while k < stop:
+        tk = T[k]
+        if dp == 0 and (tk[0] == 'op' and tk[1] == '=' or tk[0] == 'p' and tk[1] in ',){;}' or tk[0] == 'id' and tk[1] in ('in', 'else')): break
+        if dp == 0 and tk[2] != ln and out and tk[0] != 'dot': break
+        if tk[0] == 'p' and tk[1] in '([': dp += 1
+        elif tk[0] == 'p' and tk[1] in ')]': dp -= 1
+        out.append(tk[1]); k += 1
+    return ''.join(out) or None
+
+
+def _head_kw(T, d, x):
+    """the nearest if/while/guard/case/for keyword to the left of x within its statement head (paren-balanced), else None."""
+    dp = 0; j = x - 1
+    while j > d.b0:
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] in ')]': dp += 1
+        elif tk[0] == 'p' and tk[1] in '([':
+            if dp == 0: return None
+            dp -= 1
+        elif dp == 0 and tk[0] == 'p' and tk[1] in ';{}': return None
+        elif dp == 0 and tk[0] == 'id' and tk[1] in ('if', 'while', 'guard', 'for'): return tk[1]
+        elif dp == 0 and tk[0] == 'id' and tk[1] == 'case':
+            j2 = _head_kw(T, d, j)          # `if case ...` / `guard case ...` / `for case ...` vs a switch's `case`
+            return j2 or 'case'
+        j -= 1
+    return None
+
+
+def _body_end(T, d, x):
+    """close of the first depth-0 `{` after x (the body of an if/while/for header)."""
+    dp = 0; j = x
+    while j < d.b1:
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] in '([': dp += 1
+        elif tk[0] == 'p' and tk[1] in ')]': dp -= 1
+        elif dp == 0 and tk[0] == 'p' and tk[1] == '{': return match_close(T, j)
+        j += 1
+    return d.b1
+
+
+def _case_end(T, d, x, rb):
+    """end of a switch-case binder's scope: the next `case`/`default` of the same switch, else the block end."""
+    lb = _enc(d)[x]; dp = 0; j = x
+    while j < rb:
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] == '{': dp += 1
+        elif tk[0] == 'p' and tk[1] == '}': dp -= 1
+        elif dp == 0 and tk[0] == 'id' and tk[1] in ('case', 'default') and T[j - 1][1] != '.' and j > x and T[j + 1][1] != ':' or \
+                dp == 0 and tk[0] == 'id' and tk[1] == 'default' and T[j + 1][1] == ':': return j
+        j += 1
+    return rb
+
+
+def _enclosing_paren(T, d, x):
+    dp = 0; j = x - 1
+    while j > d.b0:
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] in ')]': dp += 1
+        elif tk[0] == 'p' and tk[1] in '([':
+            if dp == 0: return j
+            dp -= 1
+        elif dp == 0 and tk[0] == 'p' and tk[1] in ';{}': return None
+        j -= 1
+    return None
+
+
+def _pattern_group(T, d, x):
+    """is the `(` group enclosing x a binding PATTERN (tuple pattern after let/var/for/case) rather than call arguments?"""
+    lp = _enclosing_paren(T, d, x)
+    if lp is None or T[lp][1] != '(': return False
+    j = lp - 1
+    while j > d.b0:
+        tk = T[j]
+        if tk[0] == 'op' and tk[1] == '=': return False
+        if tk[0] == 'p' and tk[1] in ';{}': return False
+        if tk[0] == 'id' and tk[1] in ('let', 'var', 'for', 'case'): return True
+        j -= 1
+    return False
+
+
+def _case_payload(ix, T, d, x):
+    """enum-case payload type bound by `X(.., let x, ..)`: every in-tree enum declaring case X must agree, else None."""
+    lp = _enclosing_paren(T, d, x)
+    if lp is None or T[lp][1] != '(' or not (T[lp - 1][0] == 'id' and T[lp - 2][0] == 'dot'): return None
+    pos = 0; dp = 0
+    for j in range(lp + 1, x):
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] in '([': dp += 1
+        elif tk[0] == 'p' and tk[1] in ')]': dp -= 1
+        elif dp == 0 and tk[0] == 'p' and tk[1] == ',': pos += 1
+    decl = ix.cases.get(T[lp - 1][1])
+    if not decl or any(p is None or len(p) <= pos for p in decl): return None
+    ts = {p[pos] for p in decl}
+    return ts.pop() if len(ts) == 1 else None
+
+
+def binder_sites(ix, d, name):
+    key = (id(d), name)
+    if key in _CENSUS: return _CENSUS[key]
+    T = d.toks; enc = _enc(d); sites = []      # (start, end, kind, arg)
+    for lb in range(d.b0 + 1, d.b1):
+        if T[lb][0] == 'p' and T[lb][1] == '{':
+            rb = match_close(T, lb)
+            if name in closure_params(T, lb, rb):
+                ty = None
+                for x in range(lb + 1, rb):
+                    if T[x][0] == 'id' and T[x][1] == 'in': break
+                    if T[x][0] == 'id' and T[x][1] == name and T[x + 1][1] == ':' and T[x - 1][1] in ('(', ','):
+                        ty = _ann_text(T, x + 2, rb); break
+                sites.append((lb, rb, 'ann' if ty else 'unknown', ty))
+    for x in range(d.b0 + 1, d.b1):
+        tk = T[x]
+        if tk[0] != 'id' or tk[1] != name or T[x - 1][0] == 'dot': continue
+        prev, nxt = T[x - 1], T[x + 1]
+        rb = match_close(T, enc[x]) if enc[x] != d.b0 or True else d.b1
+        pv = prev[1] if prev[0] == 'id' else None
+        if pv in ('let', 'var'):
+            kw = _head_kw(T, d, x)
+            if kw in ('if', 'while'): end = _body_end(T, d, x)
+            elif kw == 'case': end = _case_end(T, d, x, rb)
+            else: end = rb                                    # guard / plain let: the rest of the block
+            if nxt[1] == ':' and nxt[0] == 'p': sites.append((x, end, 'ann', _ann_text(T, x + 2, d.b1)))
+            elif nxt[0] == 'op' and nxt[1] == '=': sites.append((x, end, 'init', x + 2))
+            elif nxt[0] == 'p' and nxt[1] in ',)' and _enclosing_paren(T, d, x) is not None:
+                pay = _case_payload(ix, T, d, x)
+                sites.append((x, end, 'ann' if pay else 'unknown', pay))
+            else: sites.append((x, end, 'unknown', None))
+        elif pv == 'for' or pv == 'func':
+            sites.append((x, _body_end(T, d, x) if pv == 'for' else rb, 'unknown', None))
+        elif prev[0] == 'p' and prev[1] in '(,':
+            lp = _enclosing_paren(T, d, x)
+            if nxt[0] == 'p' and nxt[1] == ':':
+                # `name:` is a call-argument label unless the group is a nested func/init parameter list
+                if lp is not None and T[lp][1] == '(' and (T[lp - 1][0] == 'id' and T[lp - 2][1] in ('func',) or
+                                                           T[lp - 1][0] == 'id' and T[lp - 1][1] == 'init'
+                                                           or T[lp - 1][1] == '>' and any(T[q][1] == 'func' for q in range(max(d.b0, lp - 8), lp))):
+                    sites.append((x, _body_end(T, d, match_close(T, lp)), 'unknown', None))
+            elif _pattern_group(T, d, x):
+                kw = _head_kw(T, d, x)
+                sites.append((x, _body_end(T, d, x) if kw in ('if', 'while', 'for') else rb, 'unknown', None))
+    _CENSUS[key] = sites
+    return sites
+
+
+def local_type(ix, d, T, name, at):
+    """(found, RAW type text) -- the innermost binder of `name` covering token `at`; found=False when none covers it."""
+    cover = [s for s in binder_sites(ix, d, name) if s[0] <= at <= s[1]]
+    if not cover: return False, None
+    start = max(s[0] for s in cover)
+    inner = [s for s in cover if s[0] == start]
+    tys = set()
+    for st, en, kind, arg in inner:
+        if kind == 'ann': tys.add(arg or None)
+        elif kind == 'init': tys.add(expr_type(ix, d, T, arg, st - 1))
+        else: tys.add(None)
+    return True, (tys.pop() if len(tys) == 1 else None)
+
+
+def expr_type(ix, d, T, j, at):
+    """static type of the initialiser expression starting at T[j], as far as this checker can tell (None otherwise)."""
+    while j < d.b1 and T[j][1] in ('try', 'await', '?', '!'): j += 1
+    seq = []; k = j
+    while k < d.b1 and T[k][0] in ('id', 'dot'):
+        if T[k][0] == 'id': seq.append(T[k][1])
+        k += 1
+    if not seq: return None
+    if T[k][1] == '(' and T[k][0] == 'p':
+        fname = seq[-1]
+        rts = {ret_type(c) for c in ix.byname.get(fname, [])
+               if (len(seq) == 1 or seq[0] == 'self') and owner_match(ix, c.owner, d.owner) or seq[0][:1].isupper() and owner_match(ix, c.owner, seq[0])}
+        rts.discard(None)
+        if len(rts) == 1: return rts.pop()
+        if fname[:1].isupper() and (len(seq) == 1 or all(x[:1].isupper() for x in seq) and fname not in ix.byname): return fname
+        return None
+    tk = T[k]
+    ends = (tk[0] == 'p' and tk[1] in ',){;}') or (tk[0] == 'id' and tk[1] == 'else') or (tk[2] != T[k - 1][2] and tk[0] not in ('op', 'dot'))
+    if ends: return type_chain(ix, d, T, seq, at)
+    return None
+
+
 def chain_before(T, i):
     """receiver chain tokens for a member reference whose `.` is at T[i-1] (T[i] the member). Returns list of ids
     (outermost first), [] for an implicit member (`.name` with no receiver), or None if not a plain chain."""
@@ -439,36 +725,16 @@ def type_chain(ix, d, T, chain, at):
     if not chain: return None
     head = chain[0]
     if head == 'self': ty = d.owner
-    elif head in d.params: ty = norm_type(d.params[head])
-    elif head and head[0].isupper(): ty = head
     else:
-        ty = None
-        # a local with an explicit annotation  `let head: T`
-        for k in range(d.b0, at):
-            if T[k][0] == 'id' and T[k][1] in BINDKW and k + 3 < at and T[k + 1][1] == head and T[k + 2][1] == ':':
-                ty = norm_type(T[k + 3][1]); break
-        if ty is None:
-            for k in range(d.b0, at):
-                if T[k][0] == 'id' and T[k][1] in BINDKW and k + 2 < at and T[k + 1][1] == head and T[k + 2][1] == '=':
-                    j = k + 3
-                    while j < at and T[j][1] in ('try', 'await', '?', '!'): j += 1
-                    seq = []
-                    while j < at and T[j][0] in ('id', 'dot'):
-                        if T[j][0] == 'id': seq.append(T[j][1])
-                        j += 1
-                    if seq and j < at and T[j][1] == '(':
-                        fname = seq[-1]
-                        rts = {ret_type(c) for c in ix.byname.get(fname, [])
-                               if (len(seq) == 1 or seq[0] == 'self') and owner_match(ix, c.owner, d.owner) or seq[0][:1].isupper() and owner_match(ix, c.owner, seq[0])}
-                        rts.discard(None)
-                        if len(rts) == 1: ty = rts.pop()
-                        elif fname[:1].isupper() and len(seq) == 1: ty = fname        # T(...) constructs a T
-                    break
-        if ty is None:
-            ty = ix.field_type(d.owner, head)
+        found, ty = local_type(ix, d, T, head, at)
+        if found: ty = norm_type(ty) if ty else None
+        elif head in d.params: ty = norm_type(d.params[head])
+        elif head and head[0].isupper(): ty = head
+        else: ty = ix.field_type(d.owner, head)
+    ty = ix.resolve(ty, d.owner)
     for f in chain[1:]:
         if ty is None: return None
-        ty = ix.field_type(ty, f)
+        ty = ix.resolve(ix.field_type(ty, f), ty)
     return ty
 
 
@@ -659,6 +925,64 @@ def callee_ref(callee):
     return o, m
 
 
+CTLKW = ('if', 'while', 'for', 'switch', 'catch', 'guard')
+
+
+def ctl_brace(T, d, lb):
+    """is the `{` at lb the BODY of an if/while/for/switch/catch/guard statement, not a trailing closure? Swift forbids an
+    unparenthesised trailing closure in such a header, so a depth-0 `{` that follows a statement-leading control keyword
+    (with nothing but one balanced header between) opens the body. A `{`, `}` or `;` before any keyword ends the search:
+    that is a plain statement, and the brace is a closure."""
+    dp = 0; j = lb - 1
+    while j > d.b0:
+        tk = T[j]
+        if tk[0] == 'p' and tk[1] in ')]': dp += 1
+        elif tk[0] == 'p' and tk[1] in '([':
+            if dp == 0: return False              # the brace sits inside an argument list: a closure argument
+            dp -= 1
+        elif dp == 0 and tk[0] == 'p' and tk[1] in ';{}': return False
+        elif dp == 0 and tk[0] == 'id' and tk[1] in CTLKW: return True
+        j -= 1
+    return False
+
+
+STDTYPES = {'String', 'Substring', 'Character', 'Bool', 'Int', 'Int8', 'Int16', 'Int32', 'Int64', 'UInt', 'UInt8', 'UInt16', 'UInt32',
+            'UInt64', 'Double', 'Float', 'Array', 'Dictionary', 'Set', 'Optional', 'Range', 'ClosedRange'}
+
+
+def std_kind(ix, ty):
+    """the stdlib nominal a type text denotes (Array for `[T]`, Dictionary for `[K: V]`, Optional for `T?`), else None."""
+    if not ty: return None
+    t = ty.replace('inout', '').replace(' ', '').strip()
+    if t.startswith('['):
+        dp = 0
+        for q, c in enumerate(t):
+            dp += c in '[(<'; dp -= c in '])>'
+            if c == ':' and dp == 1: return 'Dictionary'
+        return 'Array'
+    if t.endswith('?') or t.endswith('!'): return 'Optional'
+    base = re.sub(r'<.*', '', t).split('.')[-1]
+    return base if base in STDTYPES and base not in ix.declared else None
+
+
+def stdlib_receiver_cannot_reach(ix, d, T, name, k, j):
+    """`name.m(...)` where `name` types to a stdlib nominal and NO in-tree declaration named m could be the callee: every
+    in-tree candidate m must be owned by a type declared in tree that the stdlib type does not conform to. An extension of
+    a stdlib type or protocol (owner not declared in tree), or a protocol the type adopts in tree, blocks the exemption."""
+    if j != k + 2: return False                       # one hop only: name.m(...)
+    found, ty = local_type(ix, d, T, name, k)
+    if not found: ty = d.params.get(name)
+    kind = std_kind(ix, ty)
+    if not kind: return False
+    m = T[j][1]
+    sup = ix.supers(kind)
+    for c in ix.byname.get(m, []):
+        if not c.owner: continue
+        o = c.owner.split('.')[-1]
+        if o not in ix.declared or o in sup or o == kind: return False
+    return True
+
+
 def rule_lostedge(ix, d, callee, hrow_why, hcg_callees):
     T = d.toks; owner, member = callee_ref(callee)
     refs = []
@@ -700,6 +1024,13 @@ def rule_lostedge(ix, d, callee, hrow_why, hcg_callees):
         if tk[0] == 'id' and tk[1] == member:
             if T[k - 1][0] == 'dot':
                 ch = chain_before(T, k)
+                if owner is None:
+                    # a top-level declaration can only be named bare or MODULE-qualified (`Mod.name`); `expr.name` on a
+                    # value, `.name` as an implicit member, and `Type.name` are members. A capitalised head that is not
+                    # a type declared in tree may be a module, and stays unresolved.
+                    if ch and ch[0][:1].isupper() and ch[0] not in ix.declared and not binder_sites(ix, d, ch[0]):
+                        refs.append((tk[2], member, 'UNRESOLVED', 'qualifier %s may be a module' % ch[0])); continue
+                    refs.append((tk[2], member, 'NOT-BOUND', 'a member of %s, not a top-level declaration' % ('.'.join(ch) if ch else 'an expression'))); continue
                 if ch is None:
                     refs.append((tk[2], member, 'UNRESOLVED', 'receiver is not a plain chain')); continue
                 rt = type_chain(ix, d, T, ch, k)
@@ -709,6 +1040,8 @@ def rule_lostedge(ix, d, callee, hrow_why, hcg_callees):
                     refs.append((tk[2], member, 'BINDS', 'receiver %s : %s' % ('.'.join(ch), rt)))
                 elif owner and owner.split('.')[-1] in ix.supers(rt):
                     refs.append((tk[2], member, 'BINDS', 'receiver %s : %s conforms to %s' % ('.'.join(ch), rt, owner)))
+                elif owner and rt.split('.')[-1] in ix.supers(owner):
+                    refs.append((tk[2], member, 'BINDS', 'receiver %s : %s is a supertype of the callee owner %s' % ('.'.join(ch), rt, owner)))
                 else:
                     refs.append((tk[2], member, 'NOT-BOUND', 'receiver %s : %s, callee owner %s' % ('.'.join(ch), rt, owner)))
             else:
@@ -733,9 +1066,11 @@ def rule_lostedge(ix, d, callee, hrow_why, hcg_callees):
                 j = k + 2
                 while j + 2 < d.b1 and T[j + 1][0] == 'dot' and T[j + 2][0] == 'id': j += 2
                 if not (j + 1 < d.b1 and T[j + 1][0] == 'p' and T[j + 1][1] in '({'): continue   # a property read, no call
+                if T[j + 1][1] == '{' and ctl_brace(T, d, j + 1): continue      # `if x.flag {` -- the brace opens a body
                 m = T[j][1]
                 if bound_at(T, d, k, member) is None: continue
                 cov = any(w.endswith('.' + m) for w in hrow_why) or any(re.sub(r'\(.*$', '', c).endswith('.' + m) for c in hcg_callees)
+                if not cov and stdlib_receiver_cannot_reach(ix, d, T, member, k, j): continue
                 if not cov: uncovered.append((T[k][2], member + '.' + m))
     if uncovered: verdict = 'FLAG'
     return verdict, {'refs': refs, 'uncoveredRealSites': uncovered}
@@ -889,12 +1224,16 @@ def audit(args, cells, corpus, pub, head):
             skip |= {re.sub(r'.*\.', '', w) for w in R['why']}
         sh = [h for x in ds for h in sink_scan(ix, x, effects, depth=2, skip=frozenset(skip))]
         heff = eff(H[0], R['root'])
-        cov, unc = [], []
+        cov, unc = [], []; conc, named = set(), False
         for h in sh:
             e_, m_, path_ = h
             first = path_[1].split('|')[0] if len(path_) > 1 else re.split(r'[ (.]', m_.strip())[0]
-            ok = e_ in heff or ('Unknown' in heff and any(w.endswith('.' + first) or w.endswith(':' + first) for w in hwhy))
-            (cov if ok else unc).append(h)
+            by_conc = e_ in heff
+            by_name = not by_conc and 'Unknown' in heff and any(w.endswith('.' + first) or w.endswith(':' + first) for w in hwhy)
+            if by_conc: conc.add(e_)
+            elif by_name: named = True
+            (cov if by_conc or by_name else unc).append(h)
+        R['hedgeNeeds'] = {'concrete': sorted(conc), 'unknown': named}
         checks['sinkReach'] = ('FLAG' if unc else ('HEDGED' if cov else 'CLEAN'),
                                {'uncovered': unc[:20], 'coveredOnHead': cov[:20],
                                 'note': 'a covered hit is reached only through a call the head row charges or hedges by name'})
@@ -906,7 +1245,12 @@ def audit(args, cells, corpus, pub, head):
         for r in L['roots']:
             R = roots[tuple(r['key'])]
             v = R['verdict'] if r['edgeIdentical'] else 'FLAG'
-            if v == 'HEDGED' and 'Unknown' not in eff(arms[L['entry']][1][0], L['fn']): v = 'FLAG'
+            if v == 'HEDGED':
+                # A HEDGED root is covered on head either by a CONCRETE charge it keeps, or by an Unknown naming the call.
+                # The leaf must carry the same disclosure: Unknown always suffices; otherwise every effect the root's
+                # coverage rests on must be on the leaf's own head row, and no part of the coverage may rest on a name.
+                le = eff(arms[L['entry']][1][0], L['fn']); need = R.get('hedgeNeeds') or {}
+                if not ('Unknown' in le or (not need.get('unknown') and need.get('concrete') and set(need['concrete']) <= le)): v = 'FLAG'
             vs.append(v)
         L['verdict'] = 'NOROOT' if not vs else ('FLAG' if 'FLAG' in vs else ('HEDGED' if 'HEDGED' in vs else 'CLEAN'))
     return roots, leaves

@@ -583,6 +583,25 @@ row even when it is otherwise pure, so a 1→0 row that ends up `[]` with that `
 some does not pass), **and a chained join is shown to charge on a REAL producer report**: scan the real dependency with the
 candidate and chain a small consumer whose implementor performs the effect. A synthetic producer report does not count.
 
+**AND A SLOT (c″): A PARAMETRIC UNIT PURE UNDER A CALLER-WITNESS REQUIREMENT — the generic analogue of (c′).** Fable settled
+this on 2026-11-08 (`~/candor-handoff/swift-r1515/FABLE-REVIEW.md`) for a swift generic unit whose effect depends on its type
+argument through a stdlib abstraction (`Base.Iterator.next`). (a) does not apply because the bar is per unit and the row is
+`[]`. "Charged at the caller" names a different unit. (b) does not apply because the body is parametric, and SPEC §4 forbids
+reading it as resolved-pure. (c′) does not apply literally, because obligation 1 binds package-owned abstractions and has no wire
+field for a stdlib one. The caller-witness requirement plays the part of the `dispatchesOn` key. It is recorded on the unit and
+answered per instantiation. It is not on the wire, so across a chain the consumer's own over-approximation does the answering.
+The legs mirror (c′):
+- **L1:** the requirement is recorded on the FINAL binary for EVERY parametric unit in the producer. Each one is listed as
+  recorded, hedged or residual. A corpus reach count is not an enumeration.
+- **L2:** a consumer is charged with the REAL producer CHAINED, across expression-position AND type-position spellings, the
+  pub arm beside the candidate. Type-position spellings are things like `var s: Wrapper<Loud>`, a parameter, or a returned
+  wrapper. They are the only places a consumer could have JOINED the old hedged row.
+- **L3:** pure twins have unique names. A control that reads charged on every arm, the pub arm included, is vacuous.
+- **L4:** state which pub consumer spellings edged the hedged row.
+
+If pub joins and the candidate is silent, that is a genuine introduced 1→0 and it BLOCKS. The fix is then a join-site disclosure
+or a hedge on exactly the losing units, never a blanket producer `Unknown`.
+
 **(d) MEANS A HEDGE ON THE LOST SITE, AND A SELF-COMPARISON IS NOT A LICENCE — 2026-10-22, java 0.40.15 stack.** Two
 misreadings in one lane report, both caught by Fable. First, rows were filed as (d) because the unit kept an `Unknown`,
 when that `Unknown` hedged a DIFFERENT member than the one whose effect vanished (sshd, netty); those were really (b) and

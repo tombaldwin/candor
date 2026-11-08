@@ -316,8 +316,50 @@ selftest() {
   if [ "$rc" -ne 1 ]; then echo "  ✘ a COMMENT mentioning --selftest was credited as coverage (rc=$rc) — the R293 bound overshot"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
   else echo "  ✔ …and a comment that merely MENTIONS --selftest is NOT coverage — the bound holds"; fi
 
+  # (15) INLINE-ONLY TEST (2026-11-08): an assertion whose only test is inline #[cfg(test)] still FAILS
+  # (policy unchanged) but the message must say why; a plain no-test failure must NOT carry the note.
+  mkdir -p "$tmp/src"; printf '// this is PROVEN safe\npub fn h() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n' > "$tmp/src/lib.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm inline
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'inline tests, which this audit does NOT count' || ! printf '%s' "$out" | grep -q 'What counts as a test'; then
+    echo "  ✘ an inline-only test failed without saying why / or did not fail (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ an inline-only test still FAILS, and the failure names the inline tests and what does count"; fi
+  printf '// also PROVEN safe\npub fn k() {}\n' > "$tmp/src/k.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm noinline
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 1 ] || printf '%s' "$out" | grep -q 'inline tests'; then
+    echo "  ✘ a no-test failure carried the inline note, or did not fail (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/      | /'; fails=$((fails+1))
+  else echo "  ✔ …and a failure with no inline tests carries no inline note (quiet on the other case)"; fi
+  # a pass is byte-identical: assertion + tests/ file beside inline tests passes with no note
+  printf '// PROVEN again\n#[test]\nfn z() {}\n' > "$tmp/src/z.rs"; mkdir -p "$tmp/tests"; printf 'x\n' > "$tmp/tests/z_test.rs"
+  git -C "$tmp" add -A; git -C "$tmp" commit -qm pass
+  out="$(scan_range "$tmp" "HEAD~1..HEAD" 2>&1)"; rc=$?
+  if [ "$rc" -ne 0 ] || printf '%s' "$out" | grep -q 'inline tests'; then echo "  ✘ a passing range changed (rc=$rc)"; fails=$((fails+1))
+  else echo "  ✔ …and a passing range is unchanged"; fi
+
   if [ "$fails" -eq 0 ]; then echo; echo "assert-audit selftest: OK — 14 cases, both arms and both directions of each: a CHANGELOG is not coverage, neither is a doc file under eval/ci/soundness/conformance, and a changed effect RULE needs a fixture even when the diff makes no claim in words"; return 0
   else echo; echo "assert-audit selftest: FAILED — $fails case(s)"; return 1; fi
+}
+
+# INLINE-ONLY TESTS — SAY WHY THE AUDIT FAILED (2026-11-08). TEST_RE counts test FILES. A Rust test written
+# inline (`#[cfg(test)] mod tests` / `#[test]` inside src/) is not a file the path heuristic can see, so a
+# change whose only test is inline fails with a message that never said why. This does NOT count inline
+# tests as coverage — that would widen what passes, which is a policy decision and not this function's.
+# It only reads the ADDED lines and, when it finds inline-test markers, makes the FAILED message name them
+# and say what does count. Comments do not count as markers (same bound as the R293 selftest read).
+inline_test_note() {  # $1 = diff text -> prints an explanation (nothing when there is no inline test)
+  local m
+  m="$(printf '%s\n' "$1" | grep -E '^\+' | grep -vE '^\+\+\+' \
+    | grep -vE '^\+[[:space:]]*(//|\*)' \
+    | grep -E '#\[(cfg\(test\)|test|[A-Za-z_:]+::test)([]( ,]|$)|^\+[[:space:]]*(pub )?mod tests[[:space:]]*\{' || true)"
+  [ -z "$m" ] && return 0
+  echo "  NOTE: this range ADDS inline tests, which this audit does NOT count:"
+  printf '%s\n' "$m" | sed 's/^+/    /' | cut -c1-140 | head -4
+  echo "  What counts as a test: a CHANGED FILE matching TEST_RE (under test/tests/spec/ci/soundness/"
+  echo "  conformance/eval with a source extension, or named *test*/*Test(s)/smoke.sh/fuzz*/verify*.sh/"
+  echo "  *.test.*), or an ADDED non-comment line that defines/invokes a --selftest. An inline"
+  echo "  #[cfg(test)] in src/ is neither. Put the test in a tests/ file, or ask the coordinator whether"
+  echo "  inline tests should count — that is a policy change, not something to work around here."
 }
 
 scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any assertion lacks test cover
@@ -414,6 +456,7 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
     echo "assert-audit: FAILED — a rule moved with nothing beside it that would fail if the new rule"
     echo "  were wrong. Measured: candor-rust \`eb31dcc\` added 24 calibration-ceiling rows this way, and"
     echo "  a neighbouring commit then rewrote that table and silently dropped nine of them (R328)."
+    inline_test_note "$diff"
     return 1
   fi
 
@@ -451,6 +494,7 @@ scan_range() {  # $1 = repo dir, $2 = git range -> prints findings; rc 1 if any 
   echo "  Measured: candor-ts \`7ecda11\` asserted \"PROVEN — not guessed\" and shipped zero tests (only"
   echo "  CHANGELOG.md and scan.mjs changed). It was guessed, and it was a cardinal sin. Either add the"
   echo "  fixture that would fail if the assertion were false, or word the claim as the assumption it is."
+  inline_test_note "$diff"
   return 1
 }
 

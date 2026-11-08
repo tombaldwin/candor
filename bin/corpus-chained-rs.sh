@@ -205,6 +205,9 @@ cmd_measure() {
   local rc="${PIPESTATUS[0]}"
   echo
   python3 "$HERE/bin/corpus-chained-judge.py" --report-rs "$out" "$work" "$entries" "$variant" | tee "$out/judge.txt"
+  local jrc="${PIPESTATUS[0]}"
+  # judge rc 3 = NOT A MEASUREMENT (no entry's chain joined): never let it read as the A/B's clean exit
+  [ "$jrc" -eq 3 ] && return 3
   return "$rc"
 }
 

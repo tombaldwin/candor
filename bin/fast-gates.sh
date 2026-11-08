@@ -147,6 +147,8 @@ run "ab-price --selftest"   python3 bin/ab-price.py --selftest
 run "pubarm_cache --selftest" python3 bin/pubarm_cache.py --selftest
 run "ci-watch --selftest"   bash bin/ci-watch.sh --selftest
 run "pin-currency --selftest" bash bin/pin-currency.sh --selftest
+run "assert-audit --selftest" bash bin/assert-audit.sh --selftest
+run "corpus-chained-judge --selftest" python3 bin/corpus-chained-judge.py --selftest
 run "shellcheck bin"        sh -c 'shellcheck -S warning bin/*.sh'
 run "ts-fitness-pin"        bash bin/ts-fitness-pin.sh
 run "ts-fitness-pin --selftest" bash bin/ts-fitness-pin.sh --selftest

@@ -54,6 +54,80 @@ def load_arm(d):
     return out
 
 
+
+# ── JOIN LIVENESS.  A chained arm whose join did not happen is NOT A MEASUREMENT. ────────────────
+# Measured 2026-11-08 (swift, R1523): a "real producer chained" arm was INERT. The consumer imported
+# `Algorithms` against a report whose package is `swift-algorithms`, so nothing joined, both arms read
+# the library as uncovered, and a comparison of two identically-blind arms prints a clean 0/0/0 exactly
+# like a safe change. The tell was the consumer report itself: the LIBRARY'S OWN NAME sat in the
+# consumer's `invisible` / `coverage.uncovered` ledger, i.e. the engine said "I could not see it".
+#
+# So before any cell is read, each entry's two consumer reports are asked: does either name the
+# library being chained as uncovered?  If yes the entry is DEAD-JOIN: it is excluded and LISTED, and when
+# no entry is live the whole run returns 3 and says NOT A MEASUREMENT.  `lib_names(...)` gives the names
+# to look for: java = the library packages the generated probes mirror (`candorgen.<pkg>.<Class>.<m>`);
+# rust = the crate name from the entry directory, version suffix stripped, `-` read as `_`.
+def uncovered_names(doc):
+    out = set()
+    for u in ((doc.get("coverage") or {}).get("uncovered") or []):
+        out.add(u.get("name") if isinstance(u, dict) else u)
+    for r in doc.get("functions", []):
+        out.update(r.get("invisible") or [])
+    return {n for n in out if n}
+
+
+def _norm(n):
+    return (n or "").replace("-", "_").lower()
+
+
+def java_lib_names(quals):
+    pk = set()
+    for q in quals:
+        parts = q.split(".")
+        if len(parts) >= 4 and parts[0] == "candorgen":
+            pk.add(".".join(parts[1:-2]))
+    return pk
+
+
+def rust_lib_names(entry):
+    import re
+    base = re.sub(r"-[0-9][0-9A-Za-z.+_-]*$", "", entry)
+    return {_norm(base)}
+
+
+def dead_join(doc, libs, rust=False):
+    """the library names this consumer report lists as UNCOVERED (sorted); empty means the join is live."""
+    hit = set()
+    for n in uncovered_names(doc):
+        for l in libs:
+            if rust:
+                if _norm(n) == l:
+                    hit.add(n)
+            elif n == l or l.startswith(n + ".") or n.startswith(l + "."):
+                hit.add(n)
+    return sorted(hit)
+
+
+def split_live(PRE, POST, names, libs_of, rust=False):
+    """-> (live names, {dead name: {arm: [uncovered library names]}}) — and the printed accounting."""
+    live, dead = [], {}
+    for n in names:
+        libs = libs_of(n)
+        d = {}
+        for arm, doc in (("pre", PRE[n]), ("post", POST[n])):
+            h = dead_join(doc, libs, rust)
+            if h:
+                d[arm] = h
+        (dead.__setitem__(n, d) if d else live.append(n))
+    if dead:
+        print("== JOIN LIVENESS: %d of %d entries are DEAD-JOIN (the consumer's own ledger lists the chained" % (len(dead), len(names)))
+        print("   library as UNCOVERED, so the chain never joined) — excluded; their cells are NOT A MEASUREMENT:")
+        for n, d in sorted(dead.items())[:40]:
+            print("      %-44s %s" % (n, "; ".join("%s: invisible/uncovered=%s" % (a, ",".join(v)) for a, v in sorted(d.items()))))
+        print()
+    return live, dead
+
+
 def pkg_of(fn, pkgs):
     best = ""
     for p in pkgs:
@@ -134,6 +208,20 @@ def report(out, work, entries):
     if not names:
         print("corpus-chained-judge: NO ENTRY has both arms — nothing to compare.")
         return 3
+    def LIBS(n):
+        mf = os.path.join(work, "c", n, "manifest.json")
+        try:
+            return java_lib_names(list((json.load(open(mf)).get("quals") or {}).keys()))
+        except (OSError, ValueError):
+            return set()
+    RUST = False
+    live, dead = split_live(PRE, POST, names, LIBS, RUST)
+    if not live:
+        print("corpus-chained-judge: NOT A MEASUREMENT — no entry's chain JOINED (%d of %d dead-join)." % (len(dead), len(names)))
+        print("  Both arms read the library as uncovered, so identical arms say nothing about the engine.")
+        print("  Fix the join (the consumer must name the dependency as the report's package does) and re-run.")
+        return 3
+    names = live
 
     # ── probe accounting, ABSENT in its own column ────────────────────────────────────────────────
     move = collections.Counter()
@@ -228,7 +316,7 @@ def report(out, work, entries):
         print("   LOST detail (every one, no sampling — E1: the removals are the claim under test):")
         for row in lost_detail[:60]:
             print("      %-38s %-58s %s" % row)
-    json.dump({"entries": len(names), "analyzed": analyzed, "probes": probes_total,
+    json.dump({"dead_join": {k: v for k, v in dead.items()}, "entries": len(names), "analyzed": analyzed, "probes": probes_total,
                "reach_rows": reach_rows,
                "move": {"%s->%s" % k: v for k, v in move.items()},
                "scope": {"function": fnflip, "class": clsflip, "package": pkgflip,
@@ -331,6 +419,17 @@ def report_rs(out, work, entries, variant):
         print("corpus-chained-judge: NO ENTRY has both arms — nothing to compare.")
         return 3
     mans = rs_manifests(work, entries, variant)
+    LIBS = rust_lib_names
+    RUST = True
+    dead = {}
+    if variant != "standalone":   # a standalone scan chains nothing, so there is no join to be dead
+        live, dead = split_live(PRE, POST, names, LIBS, RUST)
+        if not live:
+            print("corpus-chained-judge: NOT A MEASUREMENT — no entry's chain JOINED (%d of %d dead-join)." % (len(dead), len(names)))
+            print("  Both arms read the library as uncovered, so identical arms say nothing about the engine.")
+            print("  Fix the join (the consumer must name the dependency as the report's package does) and re-run.")
+            return 3
+        names = live
 
     move = collections.Counter()
     per_entry_moved = []
@@ -431,7 +530,7 @@ def report_rs(out, work, entries, variant):
         print("   LOST detail (every one, no sampling — E1: the removals are the claim under test):")
         for row in lost_detail[:80]:
             print("      %-34s %-58s %s" % row)
-    json.dump({"variant": variant, "entries": len(names), "analyzed": analyzed,
+    json.dump({"dead_join": {k: v for k, v in dead.items()}, "variant": variant, "entries": len(names), "analyzed": analyzed,
                "probes": probes_total, "reach_rows": reach_rows,
                "foreign_dropped": foreign_dropped,
                "move": {"%s->%s" % k: v for k, v in move.items()},
@@ -443,7 +542,66 @@ def report_rs(out, work, entries, variant):
               open(os.path.join(out, "judge.json"), "w"), indent=1)
     return 0
 
+
+def selftest():
+    """SEEDS for the join-liveness gate: it must FIRE on a dead join and stay QUIET on a live one, java and rust."""
+    import tempfile, shutil
+    bad = 0
+    def check(label, ok):
+        nonlocal bad
+        print("  %s %s" % ("ok " if ok else "FAIL", label))
+        bad += 0 if ok else 1
+    def run(fn, *a):
+        import io, contextlib
+        b = io.StringIO()
+        with contextlib.redirect_stdout(b):
+            rc = fn(*a)
+        return rc, b.getvalue()
+    def fnrow(fn, inv=None):
+        r = {"fn": fn, "inferred": []}
+        if inv: r["invisible"] = inv
+        return r
+    # java: two entries; `dead` lists its own library package as uncovered in both arms, `live` does not.
+    t = tempfile.mkdtemp(prefix="cjudge.")
+    try:
+        out, work = os.path.join(t, "o"), os.path.join(t, "w")
+        for arm in ("rep-pre", "rep-post"):
+            os.makedirs(os.path.join(out, arm))
+        for ent, inv in (("live-1.0", None), ("dead-1.0", ["org.acme.lib"])):
+            q = "candorgen.org.acme.lib.Foo.m"
+            os.makedirs(os.path.join(work, "c", ent))
+            json.dump({"quals": {q: "x"}}, open(os.path.join(work, "c", ent, "manifest.json"), "w"))
+            for arm in ("rep-pre", "rep-post"):
+                json.dump({"analyzed": {"count": 1}, "functions": [fnrow(q, inv)],
+                           "coverage": {"uncovered": [{"name": n, "calls": 1} for n in (inv or [])]}},
+                          open(os.path.join(out, arm, ent + ".json"), "w"))
+        ent_file = os.path.join(t, "entries"); open(ent_file, "w").write("live-1.0.jar\ndead-1.0.jar\n")
+        rc, txt = run(report, out, work, ent_file)
+        check("java: a dead-join entry is listed and excluded, run continues on the live one",
+              rc == 0 and "1 of 2 entries are DEAD-JOIN" in txt and "dead-1.0" in txt and "with both arms" in txt and "1 entries with both arms" in txt)
+        # every entry dead -> NOT A MEASUREMENT, rc 3
+        os.remove(os.path.join(work, "c", "live-1.0", "manifest.json"))
+        for arm in ("rep-pre", "rep-post"):
+            json.dump({"analyzed": {"count": 1}, "functions": [fnrow("candorgen.org.acme.lib.Foo.m", ["org.acme.lib"])]},
+                      open(os.path.join(out, arm, "live-1.0.json"), "w"))
+        json.dump({"quals": {"candorgen.org.acme.lib.Foo.m": "x"}}, open(os.path.join(work, "c", "live-1.0", "manifest.json"), "w"))
+        rc, txt = run(report, out, work, ent_file)
+        check("java: all entries dead -> rc 3 and 'NOT A MEASUREMENT'", rc == 3 and "NOT A MEASUREMENT" in txt)
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+    # rust: crate name from the entry dir, `-` read as `_`; the swift-shaped mismatch is exactly this tell.
+    check("rust: library name uncovered in the consumer ledger -> dead",
+          dead_join({"coverage": {"uncovered": [{"name": "swift_algorithms"}]}}, rust_lib_names("swift-algorithms-1.2.0"), True) == ["swift_algorithms"])
+    check("rust: an unrelated uncovered package leaves the join live",
+          dead_join({"coverage": {"uncovered": [{"name": "libc"}]}, "functions": [fnrow("a::b", ["libc"])]}, rust_lib_names("serde-1.0.1"), True) == [])
+    check("java: an unrelated uncovered package leaves the join live",
+          dead_join({"functions": [fnrow("x", ["java.sql"])]}, {"org.acme.lib"}) == [])
+    print("corpus-chained-judge selftest: %s" % ("OK" if not bad else "FAILED (%d)" % bad))
+    return 1 if bad else 0
+
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
+        sys.exit(selftest())
     if len(sys.argv) >= 2 and sys.argv[1] == "--coverage":
         coverage(sys.argv[2], sys.argv[3]); sys.exit(0)
     if len(sys.argv) >= 2 and sys.argv[1] == "--coverage-rs":

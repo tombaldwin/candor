@@ -602,6 +602,14 @@ The legs mirror (c′):
 If pub joins and the candidate is silent, that is a genuine introduced 1→0 and it BLOCKS. The fix is then a join-site disclosure
 or a hedge on exactly the losing units, never a blanket producer `Unknown`.
 
+**The first (c″) case this was applied to failed it, measured 2026-11-08 (R1523).** Two lessons from it:
+- **MAKE THE CHAINED ARM LIVE FIRST.** The earlier lane's "real producer" chain imported module `Algorithms` against the report's
+  package `swift-algorithms`, so it never joined: `invisible:[Algorithms]` was the tell. A live swift chain needs a
+  `Package.swift` naming the dependency, plus `.build/checkouts`. Prove the join is live by showing that some count differs
+  between the arms before reading any cell.
+- **L2 MUST INCLUDE THE EXPLICIT `Wrapper<Loud>.Iterator` + `i.next()` SPELLING.** That spelling was the one that joined pub's
+  hedge and went silent on the candidate. Every for-in spelling was clean.
+
 **(d) MEANS A HEDGE ON THE LOST SITE, AND A SELF-COMPARISON IS NOT A LICENCE — 2026-10-22, java 0.40.15 stack.** Two
 misreadings in one lane report, both caught by Fable. First, rows were filed as (d) because the unit kept an `Unknown`,
 when that `Unknown` hedged a DIFFERENT member than the one whose effect vanished (sshd, netty); those were really (b) and

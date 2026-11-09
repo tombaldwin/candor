@@ -263,6 +263,12 @@ Worth noting what caught it: `fast-gates.sh` went red on `shellcheck` over a fil
 The gate that found a coordinator's ownership violation was a lint on someone else's half-written script. An agent that notices a problem in a repo it does not own should
 **report it, not fix it** — that is what makes single-ownership workable rather than a way to drop things.
 
+**THE GRADLE DAEMON IS A SHARED INSTRUMENT TOO — ONE PER MACHINE, NOT PER WORKTREE.** Measured 2026-11-09: a daemon
+started from a lane worktree that was later removed could no longer run `git`, and candor-java's build baked git's own
+error text into the jar as its version, so `--agents` printed it and conformance failed. Build with `--no-daemon`
+(conformance now does); candor-java's build now takes only a zero-exit hex sha and falls back to `unknown`. If a header
+shows `fatal:` text, the jar is poisoned: rebuild with `--no-daemon` or pass a known-good `CANDOR_JAVA_JAR`. Never `--stop` a daemon mid-wave.
+
 **THE SCRATCHPAD IS A SHARED INSTRUMENT TOO, AND RECLAIMING DISK MID-WAVE DESTROYS EVIDENCE.** Measured
 2026-09-01: with four agents running, I swept ~6G of build output from the shared scratchpad — including
 `node_modules` under corpus clones another agent was *mid-A/B* against. It could then verify only 5 of

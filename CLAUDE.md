@@ -441,6 +441,10 @@ script file to invoke. The tool was right and said so in the sentence after the 
 as "this did not measure your change" and go find what is in the blocks**, the same way the disk verdict
 outranks `NOT GREEN`.
 
+One of those BY-HAND gates, `assert-audit.sh`, counts only tests in a `tests/` file: an inline `#[cfg(test)]`
+module does not count, and its failure message now names the inline-only tests it saw, so the remedy is to move
+or add an integration test, not to argue with the audit.
+
 Three compounding readings made one red `main`, and none was a tool defect:
 
 - **A NEIGHBOURING GATE NAME, for the third time in this repo.** The lane reported `ci/self-gate.sh` OK and
@@ -458,7 +462,9 @@ Three compounding readings made one red `main`, and none was a tool defect:
   `[]` for a short one** — a wait that can never finish, which is the `pgrep -f` shape in a different tool.
   `bin/ci-watch.sh` already owns this, already resolves `git rev-parse --verify 'HEAD^{commit}'`, and
   already documents that `--commit ""` is read as NO FILTER AT ALL. It has `--wait`. Use it; that is R288's
-  fifteen-copies lesson, and the ad-hoc script was copy sixteen.
+  fifteen-copies lesson, and the ad-hoc script was copy sixteen. **`--wait` is single-instance** (a second one
+  refuses, exit 75), and **exit 75 also means BLOCKED by the GitHub rate limit — neither red nor pending**; wait
+  for the quota, do not read it as a verdict.
 
 **AND WHEN A SELF-GUARD BASELINE IS GENUINELY STALE, SPLICE — DO NOT BULK-REFRESH.** `ci.yml` names
 `cargo candor snapshot .candor/baseline` as the remedy. Run on the same tree it rewrote all four baselines,
@@ -606,7 +612,9 @@ or a hedge on exactly the losing units, never a blanket producer `Unknown`.
 - **MAKE THE CHAINED ARM LIVE FIRST.** The earlier lane's "real producer" chain imported module `Algorithms` against the report's
   package `swift-algorithms`, so it never joined: `invisible:[Algorithms]` was the tell. A live swift chain needs a
   `Package.swift` naming the dependency, plus `.build/checkouts`. Prove the join is live by showing that some count differs
-  between the arms before reading any cell.
+  between the arms before reading any cell. For rust and java, `bin/corpus-chained-judge.py` now does this mechanically: a
+  chained entry whose join did not happen is listed as DEAD-JOIN and excluded, and no live entry at all is `NOT A
+  MEASUREMENT` (rc 3). Swift has no judge yet, so there it is still by hand.
 - **L2 MUST INCLUDE THE EXPLICIT `Wrapper<Loud>.Iterator` + `i.next()` SPELLING.** That spelling was the one that joined pub's
   hedge and went silent on the candidate. Every for-in spelling was clean.
 

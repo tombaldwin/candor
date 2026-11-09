@@ -31,7 +31,7 @@ what would make them stop trusting it?* We can't name them yet, so the next bloc
 1. swift R1455: explicit untyped member calls are dropped (24,797 sites, 4.93% of units). Fix the X-arm instrument
    first (it loses concrete effects on 3 rows). Re-measure, then Tom's call: resolve by typing, hedge, or a named miss.
 2. rust identity: the 1,009 `ambiguous:same-name` rows that round 2's resolution disclosed (plus the R1420 merge).
-Rest of rounds 3–4 and the option-B re-price stay in §0, PAUSED until the end-of-block decision.
+Rest of rounds 3–4 and the option-B re-price stay in §0, PAUSED until the end-of-block decision. **2026-11-08: Tom ruled "rust identity step 3" YES — round 3 RESUMED for rust (see §0).**
 
 **Track B — a two-week product test (starts in parallel).** Run candor as the edit-time check for one coding agent
 on one real codebase, every day: Claude Code with candor's MCP server (`candor mcp install`) and the stop hook
@@ -85,6 +85,13 @@ setup, speed or output problems → the product side gets the time.
 - Start a fresh coordinator session per block.
 
 ## 0. The call-target program — PAUSED after Track A (Tom: "Go", 2026-10-25)
+
+**RESUMED for rust round 3, Tom 2026-11-08.** Done so far: R1420(a) default instances (candor-rust `3d7fa58` — NOT
+round 3 proper; it adds a mechanism and retires no list), R1540 std-typed receivers (`691674b`). Round 3 proper is
+the merge split measured in SOUNDNESS R1537 (15,792 merged quals): a SPEC clause for a split unit's published
+spelling comes FIRST (spec lane, Fable review), then one rust lane for class (c) inherent-vs-trait, with R1202's
+autoref rank as the floor. The acceptance rule stands: a change is accepted when it retires a list or a reader.
+Other engines' rounds stay paused.
 
 Most open sins are not separate bugs. A four-engine analysis (`~/candor-handoff/calltarget-analysis/`: each
 engine's executed matrix, two prototypes, Fable's synthesis) found the same three defects in every engine:

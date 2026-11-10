@@ -624,6 +624,33 @@ or a hedge on exactly the losing units, never a blanket producer `Unknown`.
 - **L2 MUST INCLUDE THE EXPLICIT `Wrapper<Loud>.Iterator` + `i.next()` SPELLING.** That spelling was the one that joined pub's
   hedge and went silent on the candidate. Every for-in spelling was clean.
 
+**RUST HAS A (c″) TOO, BUT NO CALLER-WITNESS RECORD.** Fable settled this on 2026-11-10
+(`~/candor-handoff/rust-r1630/FABLE-REVIEW.md`). It covers a 1→0 unit that formats, drops or calls back a
+caller-chosen `T`. In rust the consumer side does the answering:
+- the R1165 hand-off witness, narrowed by `depsig`;
+- the in-crate `charge_stringify_bound`.
+
+It is not "sound because the consumer pays". The stored-then-dispatched, forwarded-`T` and `Drop`-of-`T` shapes are documented
+misses (R1165, R1126). The legs:
+- **L1:** for each parametric unit, name the arm that answers each instantiation, and cite the row:
+  - *closed `T`*: no consumer can supply an impl, e.g. a private field fed only by `pub(crate)` constructors over a sealed trait;
+  - *the hand-off witness fires*;
+  - *a named residual*.
+- **L2:** a live chained consumer against the real producer report, with the pub arm beside the candidate. Cover the
+  expression-position spellings and the stored, scope-end and type-position ones. Prove the join live first with
+  `bin/corpus-chained-judge.py`.
+- **L3:** pure twins need unique names. A control is vacuous if it is charged on every arm. It is equally vacuous
+  if it is PURE on every arm because it contains no effect.
+- **L4:** say which pub spellings edged the hedged row.
+
+If pub joins and the candidate is silent over a real effect that no MAY or ruling permits, it blocks. The fix is then a
+consumer-side join disclosure or a true-reason hedge on exactly the losing units. If SPEC or a ruling permits the silence, ship
+and record the instance on the row that permits it.
+
+**AND AN EXPOSED PRE-EXISTING SILENCE DOES NOT SHIP AS AN OPEN ROW.** The 0.40.0 floor rule applies to it even at
+one unit (R986). Resolve it if that is cheap and sound. Otherwise hedge at the LOST site with a true reason, priced in
+absolute rows. A both-arms silence is invisible to the flip list, so count its reach directly; one flip is not one unit.
+
 **(d) MEANS A HEDGE ON THE LOST SITE, AND A SELF-COMPARISON IS NOT A LICENCE — 2026-10-22, java 0.40.15 stack.** Two
 misreadings in one lane report, both caught by Fable. First, rows were filed as (d) because the unit kept an `Unknown`,
 when that `Unknown` hedged a DIFFERENT member than the one whose effect vanished (sshd, netty); those were really (b) and

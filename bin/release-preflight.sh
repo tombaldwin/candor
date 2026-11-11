@@ -577,6 +577,22 @@ if [ -n "$WANT_VER" ]; then
   fi
 fi
 
+# --- 4b. an engine whose SOURCE changed since its last release must report a DIFFERENT version string ----
+# [4] asserts the constants equal $WANT_VER; a re-publish (or one crate missing the bump) satisfies that while
+# carrying the previous release's string — and SPEC's version-skew rule keys on that string, so an OLD
+# consumer would read a changed producer as if nothing changed (SOUNDNESS R1670: rust's co-path split read
+# as ABSENT). bin/version-moved.sh holds the reasoning, the scope and its own --selftest.
+echo "[4b] each engine with changed source reports a version that moved (built binary where present)"
+if [ ! -x "$HERE/version-moved.sh" ]; then
+  bad "bin/version-moved.sh is missing or not executable — [4] cannot see a changed engine that kept its old version string"
+elif vm_out="$(CANDOR_ROOT="$ROOT" CANDOR_ONLY="${CANDOR_ONLY:-}" "$HERE/version-moved.sh" "$WANT_VER" 2>&1)"; then
+  printf '%s\n' "$vm_out" | grep -v '^version-moved: OK' | grep -v '⊘' | sed 's/^/  /'
+  ok "no engine ships changed source under its previous release's version string"
+else
+  printf '%s\n' "$vm_out" | sed 's/^/  /'
+  bad "an engine changed since its last release but still reports that release's version string — see above"
+fi
+
 # --- 5. every CHANGELOG mentions the floor being cut -----------------------------------------------------
 # Checks 2 and 3 EXCLUDE CHANGELOG from the stale-string sweep, and rightly so: a changelog is a history, so
 # old rung text in it is correct rather than stale. But excluding it from the negative check left no positive

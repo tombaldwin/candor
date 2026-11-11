@@ -2844,7 +2844,7 @@ the floor cut.
   # sibling script reads exactly like "CI status unknown", not like "test fixture incomplete".
   cp "$UMBRELLA/bin/release-stage.sh" "$UMBRELLA/bin/_stage_changelogs.py" "$UMBRELLA/bin/_release_set.sh" \
      "$UMBRELLA/bin/release.sh" "$UMBRELLA/bin/release-verify.sh" "$UMBRELLA/bin/release-preflight.sh" \
-     "$UMBRELLA/bin/changelog-lag.sh" "$UMBRELLA/bin/_release_notes.sh" "$UMBRELLA/bin/_ci_verdict.py" \
+     "$UMBRELLA/bin/changelog-lag.sh" "$UMBRELLA/bin/_release_notes.sh" "$UMBRELLA/bin/_ci_verdict.py" "$UMBRELLA/bin/version-moved.sh" \
      "$F/candor/bin/"
   mkdir -p "$F/remotes"
   for r in candor-rust candor-java candor-ts candor-swift candor-agents candor-spec candor; do
@@ -4773,6 +4773,32 @@ aa_self_rc=$?
 [ "$aa_self_rc" -eq 0 ] \
   && ok "assert-audit --selftest passes (9 cases: both ARMS and both directions of each — the prose arm, and R339's structural arm where a changed effect RULE needs a fixture even when the diff makes no claim in words)" \
   || bad "assert-audit --selftest failed (rc=$aa_self_rc)"
+
+say "7i. release-preflight.sh [4b] / version-moved.sh — a changed engine must not keep its published version string (R1670)"
+# An old consumer recognises a producer by `candor.version`; a changed producer that re-publishes under the
+# previous release's string is read as unchanged (rust's co-path split read as ABSENT). [4] could not see it.
+bash "$UMBRELLA/bin/version-moved.sh" --selftest >/dev/null 2>&1; vm_self_rc=$?
+[ "$vm_self_rc" -eq 0 ] \
+  && ok "version-moved --selftest passes (seeded: changed source + published version FAILS; stale built binary FAILS; unreadable constant FAILS; moved version and a fresh binary PASS)" \
+  || bad "version-moved --selftest failed (rc=$vm_self_rc)"
+# Wired in, and in the right direction: a fixture tree through the REAL preflight, grepping only [4b].
+T4B="$(mktemp -d)"; mkdir -p "$T4B/candor-rust/crates/candor-scan/src" "$T4B/candor"
+printf '[package]\nname = "candor-scan"\nversion = "0.1.0"\n' > "$T4B/candor-rust/crates/candor-scan/Cargo.toml"
+echo 'fn a(){}' > "$T4B/candor-rust/crates/candor-scan/src/scan.rs"
+t4b() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false -C "$T4B/candor-rust" "$@"; }
+git -C "$T4B/candor-rust" init -q; t4b add -A; t4b commit -qm one; t4b tag v0.1.0
+echo 'fn b(){}' >> "$T4B/candor-rust/crates/candor-scan/src/scan.rs"
+t4b_run() { CANDOR_ROOT="$T4B" bash "$UMBRELLA/bin/release-preflight.sh" 0.2 0.2.0 --only candor-rust 2>&1 | sed -n '/^\[4b\]/,/^\[5\]/p'; }
+_o="$(t4b_run)"
+hasin "$_o" -q '✘ candor-rust: 1 source file' \
+  && ok "[4b] through the real preflight: changed rust source under the published 0.1.0 string FAILS" \
+  || { bad "[4b] did not fail a changed engine that kept its version"; printf '%s\n' "$_o" | sed 's/^/      /'; }
+sed -i.bak 's/0.1.0/0.2.0/' "$T4B/candor-rust/crates/candor-scan/Cargo.toml"; rm -f "$T4B/candor-rust/crates/candor-scan/Cargo.toml.bak"
+_o="$(t4b_run)"
+hasin "$_o" -q '✔ candor-rust: scan-0.2.0' \
+  && ok "[4b] …and the same tree with the version moved PASSES (the check is not one-directional)" \
+  || { bad "[4b] failed a moved version"; printf '%s\n' "$_o" | sed 's/^/      /'; }
+rm -rf "${T4B:?}"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

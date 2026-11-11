@@ -64,6 +64,13 @@ designed, not a bug. Separately: two *mechanisms* that produce the same effect *
 other — a java audit nearly misread a working `<clinit>` fold as covering a broken method-join because
 both charged `Env`. Prefer distinguishable effects per mechanism under test.
 
+**In a CHAINED arm, the producer and the consumer must be the same build — never a producer report from
+one engine build joined by a consumer from another.** Measured 2026-11-11 (SOUNDNESS R1670): once candor-scan
+splits a co-path set into `Ty::m(Ty)` / `Ty::m(Tr)` (SPEC ⟨0.42⟩), a consumer built before the split reads the
+split producer's bare-path calls as ABSENT. SPEC's version-skew rule puts the burden on `candor.version`, and an
+unreleased build still prints the published tag, so the mixed arm is silent and nothing says so. The arms differ
+in two variables (producer build and consumer build); hold one of them constant.
+
 ## 5. Include a tree shape the ecosystem's convention hides
 
 Every SPM package excludes `Package.swift`, so no SPM tree ever reaches the zero-exclusion code path —

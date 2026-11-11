@@ -1861,10 +1861,36 @@ def selftest():
     return 0
 
 
+def _machine_lock():
+    """One corpus A/B per machine. Two concurrent runs share CPU, RAM and disk and each makes the other's
+    timeouts and failures lie (measured 2026-11-11: two lanes' A/Bs overlapped twice in one session, once
+    noticed only by a lane reading `ps`). Blocks until the holder exits; the kernel drops the lock when
+    the holder dies, so a crashed run cannot wedge the next one."""
+    import fcntl
+    path = os.environ.get("CANDOR_AB_LOCK") or os.path.expanduser("~/.cache/candor/corpus-ab.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fh = open(path, "a+")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.seek(0)
+        holder = fh.read().strip() or "unknown"
+        emit("corpus-ab: another corpus A/B holds %s (%s) — WAITING for it to finish; "
+             "a concurrent run would make both measurements lie." % (path, holder))
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        emit("corpus-ab: lock acquired, starting.")
+    fh.seek(0)
+    fh.truncate()
+    fh.write("pid %d cwd %s\n" % (os.getpid(), os.getcwd()))
+    fh.flush()
+    return fh  # held for the life of the process
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.selftest:
         return selftest()
+    _lock = _machine_lock()  # noqa: F841 — keep the handle open
     return run(args)
 
 

@@ -361,7 +361,11 @@ scan() {
     # 0 = clean, 1 = a gate fired, 2 = a refusal. Anything else is a crash, and a crash is a finding.
     case "$rc" in 0|1|2) ;; *) finding "$eng/$item exited $rc — not one of {0,1,2}" ;; esac
     grep -qE "panicked|Exception in thread|Traceback|RUST_BACKTRACE|internal error" "$LOG/$eng.$item.err" \
-      && finding "$eng/$item stderr carries a crash signature: $(grep -m1 -E 'panicked|Exception in thread|Traceback|internal error' "$LOG/$eng.$item.err" | cut -c1-100)"
+      && { finding "$eng/$item stderr carries a crash signature: $(grep -m1 -E 'panicked|Exception in thread|Traceback|internal error' "$LOG/$eng.$item.err" | cut -c1-100)"
+           # The finding line stays short; the CI log needs the WHOLE panic site and message, which a 100-column
+           # cut drops (a registry path alone is ~100 chars, so the crate and the message were both lost).
+           echo "    --- $eng/$item crash excerpt ---"
+           grep -m1 -A4 -E 'panicked|Exception in thread|Traceback|internal error' "$LOG/$eng.$item.err" | cut -c1-400 | sed 's/^/    | /'; }
   }
   for r in ripgrep clap serde regex tokio hyper; do [ -d "$SRC/$r" ] && run rust "$r" "$RS/candor-scan" "$SRC/$r" --out "$OUT/rust.$r"; done
   # axios exits 2 with "no TypeScript sources" ONLY if its `.d.ts` is excluded; it currently scans. A

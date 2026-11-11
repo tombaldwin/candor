@@ -42,7 +42,16 @@ EXIT: 0 priced.  2 usage.  3 the input could not be priced (not an --out, no det
 reconcile with detail) — never a price built on a malformed input.
 
   bin/ab-price.py AB.json [AB2.json ...] [--denominator N] [--json OUT] [--sidecar-pre D --sidecar-post D]
+  bin/ab-price.py --arms-pre PREDIR --arms-post POSTDIR [--flips-out FLIPS.tsv]     # ARM MODE (see below)
   bin/ab-price.py --selftest
+
+ARM MODE — the release bar's "every 1->0 flip", per unit, including `deny Unknown[<class>]`.  The --out document
+holds effect tokens only (no `unknownWhy`, no call graph) and prints the first 8 quals, so a class lost while a
+plain `Unknown` stays — SOUNDNESS R1668 — could not be seen in it and lanes kept `flips.py` copies keyed on `fn`
+with last-wins.  ARM MODE reads the arms directly (`<entry>.scan.json[.gz]` + `.scan.callgraph.json[.gz]`; or a
+pubarm_cache `<version>/<engine>` dir, whose rust reports carry no graph and java's carry `calls`), judges each
+qual on the UNION of its rows, projects `unknownWhy` to the engine's classes, propagates them over the graph,
+and writes EVERY flipped unit.  One arm without a graph => both compared direct-only, and it says so.
 """
 from __future__ import annotations
 
@@ -524,6 +533,186 @@ def _unk_doc(n_new, den):
                 gate=[["e", "u%d" % i, [], ["Unknown"]] for i in range(n_new)])
 
 
+# ── ARM-DIRECTORY MODE: every 1->0 gate flip, per unit, incl. Unknown[<class>] ───────────────────
+# WHY THIS EXISTS (measured 2026-11-11 from nine per-lane `flips.py` copies, SOUNDNESS R1668).  The --out
+# document above holds EFFECT-level tokens per qual: no `unknownWhy`, no call graph, so it cannot say that
+# `deny Unknown[unresolved] <qual>` went 1->0 while the unit keeps a plain `Unknown` of ANOTHER class.  And it
+# prints only the first 8 flipped quals.  Both are why lanes kept a copy.  This mode reads the ARMS (the
+# `<entry>.scan.json[.gz]` + `<entry>.scan.callgraph.json[.gz]` pairs a lane keeps, or a pubarm_cache dir) and
+# writes EVERY flipped unit to a TSV.
+#
+# UNIT = QUAL, JUDGED ON THE UNION OF ITS ROWS (candor-query gate.rs: "two entries sharing a hash are ONE unit
+# by construction").  A last-wins dict over `fn` is the bug the copies had: a trait-default row plus an
+# `interfaceUnion: true` beside row share a qual, and last-wins reports whichever row came last.
+#
+# THE CLASS PROJECTION IS THE ENGINE'S, not a copy of a lane's: candor-rust crates/candor-classify/src/policy.rs
+# `ReasonClass::classify` (lowercase, trimmed, PREFIX tests; the five §4 kinds first, so an alias cannot shadow
+# one) and `reason_class_matches` (a unit with `Unknown` and NO class gates as `unresolved`), propagated over the
+# call graph as scan.rs `reason_class_acc = propagate_str(...)` does.  The selftest checks the prefix table
+# against that file when a candor-rust checkout is present.
+CLASS_PREFIXES = (("reflect", "reflect"), ("native", "native"), ("dispatch", "dispatch"), ("callback", "indirect"),
+                  ("ambiguous", "dispatch"), ("dynamicmemberlookup", "reflect"), ("closure", "indirect"),
+                  ("task-handoff", "indirect"), ("indy", "dispatch"), ("missing-config", "setup"),
+                  ("no-tsconfig", "setup"), ("no-node_modules", "setup"))
+
+
+def reason_class(why):
+    w = str(why).strip().lower()
+    for p, c in CLASS_PREFIXES:
+        if w.startswith(p):
+            return c
+    return "unresolved"
+
+
+def _read_json(path):
+    import gzip
+    op = gzip.open if path.endswith(".gz") else open
+    with op(path, "rt") as f:
+        return json.load(f)
+
+
+def _first(*paths):
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def arm_index(d):
+    """{entry-name: (report_path, callgraph_path|None)} for a directory of arms.  Layouts: A) `<e>.scan.json[.gz]`
+    (+ `<e>.scan.callgraph.json[.gz]`); B) a pubarm_cache dir (`entries/<label>-<sha>.report.gz` + `.meta.json`)."""
+    idx = {}
+    if os.path.isdir(os.path.join(d, "entries")):
+        ent = os.path.join(d, "entries")
+        for m in sorted(os.listdir(ent)):
+            if m.endswith(".meta.json"):
+                lab = _read_json(os.path.join(ent, m)).get("entry_label")
+                rp = os.path.join(ent, m[:-len(".meta.json")] + ".report.gz")
+                if lab and os.path.exists(rp):
+                    idx[lab] = (rp, None)
+        return idx
+    for f in sorted(os.listdir(d)):
+        for suf in (".scan.json.gz", ".scan.json"):
+            if f.endswith(suf):
+                n = f[:-len(suf)]
+                idx[n] = (os.path.join(d, f), _first(os.path.join(d, n + ".scan.callgraph.json.gz"),
+                                                     os.path.join(d, n + ".scan.callgraph.json")))
+    return idx
+
+
+def load_units(report_path, cg_path, use_graph=True):
+    """-> {qual: {"eff": set, "unknown": bool, "classes": set}} — ONE record per qual, the UNION of its rows
+    (never last-wins), classes transitive over the call graph.  `calls` on the rows are the fallback graph."""
+    rep = _read_json(report_path)
+    rows = collections.defaultdict(list)
+    for f in rep.get("functions") or []:
+        rows[f["fn"]].append(f)
+    cg, graph_src = {}, "none"
+    if not use_graph:
+        pass
+    elif cg_path:
+        cg, graph_src = _read_json(cg_path), "sidecar"
+    else:
+        for q, rs in rows.items():
+            for r in rs:
+                if r.get("calls"):
+                    cg.setdefault(q, set()).update(r["calls"])
+                    graph_src = "report"
+    direct = {q: {reason_class(w) for r in rs for w in (r.get("unknownWhy") or [])} for q, rs in rows.items()}
+    acc = {q: set(s) for q, s in direct.items()}
+    changed = True
+    while changed:
+        changed = False
+        for q, cs in cg.items():
+            if q not in rows and not cs:
+                continue
+            s = acc.setdefault(q, set())
+            b = len(s)
+            for c in cs:
+                s |= acc.get(c, set())
+            if len(s) != b:
+                changed = True
+    out = {}
+    for q, rs in rows.items():
+        inf = set()
+        for r in rs:
+            inf.update(r.get("inferred") or [])
+        unk = "Unknown" in inf
+        out[q] = {"eff": {t for t in inf if is_eff(t)}, "unknown": unk,
+                  "classes": (acc.get(q) or {"unresolved"}) if unk else set()}
+    return out, graph_src
+
+
+def arm_flips(pre_dir, post_dir):
+    """Every unit whose gate moved 1->0 (and 0->1, counted) between two arm directories.  A unit absent from the
+    post report is pure there.  Returns a dict with `rows` (every flip: entry, qual, kind, detail) and counts."""
+    A, B = arm_index(pre_dir), arm_index(post_dir)
+    res = {"rows": [], "gain": collections.Counter(), "loss": collections.Counter(), "entries": 0,
+           "only_pre": sorted(set(A) - set(B)), "only_post": sorted(set(B) - set(A)),
+           "graph": collections.Counter(), "dup_quals": 0}
+    for n in sorted(set(A) & set(B)):
+        (pa, ca), (pb, cb) = A[n], B[n]
+        ua, ga = load_units(pa, ca)
+        ub, gb = load_units(pb, cb)
+        if (ga == "none") != (gb == "none"):
+            # ONE arm has a graph and the other does not: comparing transitive classes against direct ones FABRICATES
+            # flips (a caller that inherits a class on one side only).  Compare like with like: direct on both.
+            ua, ga = load_units(pa, ca, use_graph=False)
+            ub, gb = load_units(pb, cb, use_graph=False)
+            res["graph"]["MISMATCH->none"] += 1
+        res["entries"] += 1
+        res["graph"][ga + "/" + gb] += 1
+        for q, a in ua.items():
+            b = ub.get(q, {"eff": set(), "unknown": False, "classes": set()})
+            for e in sorted(a["eff"] - b["eff"]):
+                res["rows"].append((n, q, "deny " + e, "1->0"))
+                res["loss"]["deny " + e] += 1
+            if a["unknown"] and not b["unknown"]:
+                res["rows"].append((n, q, "deny Unknown", "1->0"))
+                res["loss"]["deny Unknown"] += 1
+            for c in sorted(a["classes"] - b["classes"]):
+                kept = "plain Unknown KEPT, classes now " + ",".join(sorted(b["classes"])) if b["unknown"] else "Unknown gone"
+                res["rows"].append((n, q, "deny Unknown[%s]" % c, "1->0 (%s)" % kept))
+                res["loss"]["deny Unknown[%s]" % c] += 1
+        for q, b in ub.items():
+            a = ua.get(q, {"eff": set(), "unknown": False, "classes": set()})
+            for e in b["eff"] - a["eff"]:
+                res["gain"]["deny " + e] += 1
+            if b["unknown"] and not a["unknown"]:
+                res["gain"]["deny Unknown"] += 1
+            for c in b["classes"] - a["classes"]:
+                res["gain"]["deny Unknown[%s]" % c] += 1
+    return res
+
+
+def render_arm_flips(res, pre, post, show=12):
+    o = ["=" * 100, "ab-price --arms   pre=%s  post=%s" % (pre, post), "=" * 100,
+         "entries compared %d  (only in pre: %d, only in post: %d)" % (res["entries"], len(res["only_pre"]), len(res["only_post"]))]
+    if res["only_pre"] or res["only_post"]:
+        o.append("  !! entries present in one arm only are NOT compared: pre-only %s ... post-only %s"
+                 % (res["only_pre"][:3], res["only_post"][:3]))
+    if res["entries"] == 0:
+        o.append("  NOT A MEASUREMENT: no entry exists in both arms.")
+    g = res["graph"]
+    o.append("call graph (pre/post): " + ", ".join("%s x%d" % kv for kv in sorted(g.items())))
+    if any("none" in k for k in g):  # includes MISMATCH->none
+        o.append("  !! an arm with NO call graph computes DIRECT classes only: a class reaching a unit through a callee is "
+                 "invisible, so class flips are UNDER-counted there (the sin direction).  Supply the sidecar.")
+    o.append("")
+    o.append("1->0 gate flips (the cardinal-sin direction): %d units-gates" % len(res["rows"]))
+    kinds = collections.Counter(r[2] for r in res["rows"])
+    for k, v in sorted(kinds.items()):
+        o.append("   %-28s %d" % (k, v))
+    cls_kept = [r for r in res["rows"] if r[2].startswith("deny Unknown[") and "KEPT" in r[3]]
+    o.append("   of which a class lost while plain Unknown KEPT: %d   <- invisible to `deny Unknown`, only `deny E Unknown[<class>]` sees it" % len(cls_kept))
+    for r in res["rows"][:show]:
+        o.append("     %s  %s  %s  %s" % r)
+    if len(res["rows"]) > show:
+        o.append("     ... %d more: write them all with --flips-out FILE" % (len(res["rows"]) - show))
+    o.append("0->1 gate flips (adds; priced elsewhere): %d" % sum(res["gain"].values()))
+    return "\n".join(o)
+
+
 def selftest():
     global classify_unknown_lost
     fails = []
@@ -682,6 +871,84 @@ def selftest():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    print("[arms] class-scoped 1->0 flips, over DUPLICATE-QUAL rows, proven able to fail")
+    import gzip
+    import re
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="ab-price-arms.")
+    try:
+        row = lambda q, inf, why=(), **k: dict({"fn": q, "inferred": list(inf), "unknownWhy": list(why)}, **k)
+        MACRO, DISP = "macro:unreadable macro_rules! template `with_inner`", "dispatch:untyped receiver of `x`"
+
+        def arm(name, rows, cg=None):
+            os.makedirs(os.path.join(tmp, name), exist_ok=True)
+            with gzip.open(os.path.join(tmp, name, "e1.scan.json.gz"), "wt") as f:
+                json.dump({"functions": rows}, f)
+            if cg is not None:
+                with gzip.open(os.path.join(tmp, name, "e1.scan.callgraph.json.gz"), "wt") as f:
+                    json.dump(cg, f)
+        # pre: Object::sym has a real row (dispatch) AND a beside row (`macro:` -> class unresolved), beside row FIRST.
+        # post (the bad arm): the beside row is gone; the unit keeps `Unknown` with class dispatch only.
+        # ctrl: a pure twin with unique name that must not flip; `pure_both` carries the same class on both arms.
+        pre = [row("sym", ["Unknown"], [MACRO], interfaceUnion=True), row("sym", ["Unknown"], [DISP]),
+               row("caller", ["Unknown"]), row("same", ["Unknown"], [DISP])]
+        bad = [row("sym", ["Unknown"], [DISP]), row("caller", ["Unknown"]), row("same", ["Unknown"], [DISP])]
+        good = [row("sym", ["Unknown"], [DISP]), row("sym", ["Unknown"], [MACRO], interfaceUnion=True),
+                row("caller", ["Unknown"]), row("same", ["Unknown"], [DISP])]
+        cg = {"caller": ["sym"], "sym": [], "same": []}
+        arm("pre", pre, cg); arm("bad", bad, cg); arm("good", good, cg); arm("badnocg", bad)
+        r = arm_flips(os.path.join(tmp, "pre"), os.path.join(tmp, "bad"))
+        got = sorted((x[1], x[2]) for x in r["rows"])
+        check("SEED FIRES: sym AND its caller (transitively) lose Unknown[unresolved]; nothing else",
+              got == [("caller", "deny Unknown[unresolved]"), ("sym", "deny Unknown[unresolved]")], str(got))
+        check("…and each is a class lost while plain Unknown is KEPT (`deny Unknown` never moves)",
+              all("KEPT" in x[3] for x in r["rows"]) and "deny Unknown" not in {x[2] for x in r["rows"]}, str(r["rows"]))
+        check("negative control: the beside row restored (the fix) -> ZERO flips",
+              arm_flips(os.path.join(tmp, "pre"), os.path.join(tmp, "good"))["rows"] == [])
+        check("negative control: identical arms -> ZERO flips",
+              arm_flips(os.path.join(tmp, "pre"), os.path.join(tmp, "pre"))["rows"] == [])
+
+        def lastwins(path):
+            u = {}
+            for f in _read_json(path)["functions"]:
+                u[f["fn"]] = {reason_class(w) for w in f.get("unknownWhy") or []}
+            return u
+        lw_pre = lastwins(os.path.join(tmp, "pre", "e1.scan.json.gz"))
+        lw_bad = lastwins(os.path.join(tmp, "bad", "e1.scan.json.gz"))
+        check("the seed is DISCRIMINATING: a last-wins loader over the same arms sees no class lost on `sym`",
+              lw_pre["sym"] - lw_bad["sym"] == set(), str(lw_pre["sym"]))
+        r = arm_flips(os.path.join(tmp, "pre"), os.path.join(tmp, "badnocg"))
+        check("graph on ONE arm only: compared direct-vs-direct (no fabricated caller flip), and the report SAYS the graph is missing",
+              sorted(x[1] for x in r["rows"]) == ["sym"] and "NO call graph" in render_arm_flips(r, "a", "b")
+              and r["graph"]["MISMATCH->none"] == 1, str(r["rows"]))
+        pure = [row("pureA", [])]
+        arm("pp", pure, {}); arm("pq", pure + [row("pureB", ["Fs"])], {})
+        r = arm_flips(os.path.join(tmp, "pq"), os.path.join(tmp, "pp"))
+        check("a lost concrete effect is listed too, and an absent unit counts as pure", [(x[1], x[2]) for x in r["rows"]] == [("pureB", "deny Fs")])
+        arm("pn", [row("g", ["Unknown"], [DISP])], {}); arm("pz", [], {})
+        r = arm_flips(os.path.join(tmp, "pn"), os.path.join(tmp, "pz"))
+        check("an Unknown that vanishes entirely lists `deny Unknown` AND its class",
+              sorted(x[2] for x in r["rows"]) == ["deny Unknown", "deny Unknown[dispatch]"])
+        check("flip list is COMPLETE, not first-8 (30 units)", len(arm_flips(
+            *[(arm("m%d" % i, [row("u%d" % j, ["Net"]) for j in range(30)] if i == 0 else [], {}), os.path.join(tmp, "m%d" % i))[1] for i in (0, 1)])["rows"]) == 30)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    for w, c in (("dispatch:x", "dispatch"), ("ambiguous:same-name", "dispatch"), ("callback:cb", "indirect"),
+                 ("macro:unreadable", "unresolved"), ("  REFLECT:y", "reflect"), ("dep:abc", "unresolved"),
+                 ("dep-stale:p", "unresolved"), ("dynamicMemberLookup:R.p", "reflect"), ("closure:c", "indirect"),
+                 ("indy:z", "dispatch"), ("no-tsconfig", "setup"), ("native:ffi", "native"), ("", "unresolved")):
+        check("reason_class(%r) == %s" % (w, c), reason_class(w) == c, reason_class(w))
+    pol = os.path.expanduser("~/git/candor-rust/crates/candor-classify/src/policy.rs")
+    if os.path.exists(pol):
+        src = open(pol).read()
+        # drift guard against the engine's own table (skipped when no checkout): every prefix we hold is a
+        # string literal in ReasonClass::classify (or a Kind token), so a renamed/removed alias shows up here.
+        miss = [p for p, _ in CLASS_PREFIXES if ('"%s' % p) not in src and p.replace("_", "-") not in src]
+        check("every prefix in CLASS_PREFIXES still appears in candor-rust's policy.rs", not miss, str(miss))
+    else:
+        print("  (candor-rust checkout absent: engine-table drift guard skipped)")
+
     if fails:
         print("ab-price selftest: %d FAILED — %s" % (len(fails), "; ".join(fails)))
         return 1
@@ -696,10 +963,32 @@ def main(argv=None):
     ap.add_argument("--sidecar-pre", help="DIR/<entry>/callgraph.json for the PRE arm (see the docstring)")
     ap.add_argument("--sidecar-post", help="DIR/<entry>/{callgraph,report}.json for the POST arm")
     ap.add_argument("--json", help="also write the priced result here")
+    ap.add_argument("--arms-pre", help="ARM-DIRECTORY MODE: the PRE arm dir (`<entry>.scan.json[.gz]` + `.scan.callgraph.json[.gz]`, "
+                    "or a pubarm_cache `<version>/<engine>` dir).  Lists EVERY 1->0 flip incl. `deny Unknown[<class>]`.")
+    ap.add_argument("--arms-post", help="ARM-DIRECTORY MODE: the POST arm dir (same layouts)")
+    ap.add_argument("--flips-out", help="ARM-DIRECTORY MODE: write EVERY flipped unit here as TSV (entry, qual, gate, detail)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
+    if bool(args.arms_pre) != bool(args.arms_post):
+        print("ab-price: --arms-pre and --arms-post go together")
+        return 2
+    if args.arms_pre:
+        try:
+            res = arm_flips(args.arms_pre, args.arms_post)
+        except (OSError, ValueError) as e:
+            print("ab-price: CANNOT READ ARMS — %s" % e)
+            return 3
+        print(render_arm_flips(res, args.arms_pre, args.arms_post))
+        if args.flips_out:
+            with open(args.flips_out, "w") as f:
+                for r in res["rows"]:
+                    f.write("\t".join(r) + "\n")
+        if res["entries"] == 0:
+            return 3
+        if not args.files:
+            return 0
     if not args.files:
         ap.print_usage()
         return 2

@@ -58,6 +58,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import os
 import sys
 
@@ -639,8 +640,51 @@ def load_units(report_path, cg_path, use_graph=True):
             inf.update(r.get("inferred") or [])
         unk = "Unknown" in inf
         out[q] = {"eff": {t for t in inf if is_eff(t)}, "unknown": unk,
+                  "dispatch": {k for r in rs for k in (r.get("dispatchesOn") or [])},
+                  "invisible": {k for r in rs for k in (r.get("invisible") or [])},
                   "classes": (acc.get(q) or {"unresolved"}) if unk else set()}
     return out, graph_src
+
+
+def bare_path(fn):
+    """SPEC §3.1 ⟨0.42⟩ bare path: `fn` with its CO-PATH DISAMBIGUATOR removed.  The disambiguator is a parenthesised
+    group that ENDS the fn and is opened directly after the last segment's name (so `row::(T1,T2)::from_row_opt`,
+    whose group BEGINS a segment, is a path segment and is kept), optionally followed by `#<N>`; a lone `NAME#<N>`
+    (swift private global) strips to NAME.  Never splits inside the group (a `::`/`.` inside it is not a separator)."""
+    m = re.match(r"^(.*?)#\d+$", fn)
+    core = m.group(1) if m else fn
+    if core.endswith(")"):
+        depth = 0
+        for i in range(len(core) - 1, -1, -1):
+            c = core[i]
+            if c == ")":
+                depth += 1
+            elif c == "(":
+                depth -= 1
+                if depth == 0:
+                    pre = core[:i]
+                    if pre and not pre.endswith(("::", ".", "/")):
+                        return pre
+                    return fn if not m else core
+        return fn if not m else core
+    return core
+
+
+def union_by_bare(units):
+    """{fn: rec} -> ({bare: UNION rec}, count of bare keys that merged >1 member).  A gate scope naming the bare path
+    binds EVERY co-path member, and a consumer resolving a bare path takes the UNION (SPEC ⟨0.42⟩), so a unit is
+    judged at the bare path: a split on one arm against a merged unit on the other is not a flip."""
+    out, n = {}, collections.Counter()
+    for q, u in units.items():
+        b = bare_path(q)
+        n[b] += 1
+        o = out.setdefault(b, {"eff": set(), "unknown": False, "classes": set(), "dispatch": set(), "invisible": set()})
+        o["dispatch"] |= u.get("dispatch", set())
+        o["invisible"] |= u.get("invisible", set())
+        o["eff"] |= u["eff"]
+        o["unknown"] = o["unknown"] or u["unknown"]
+        o["classes"] |= u["classes"]
+    return out, sum(1 for v in n.values() if v > 1)
 
 
 def arm_flips(pre_dir, post_dir):
@@ -649,7 +693,7 @@ def arm_flips(pre_dir, post_dir):
     A, B = arm_index(pre_dir), arm_index(post_dir)
     res = {"rows": [], "gain": collections.Counter(), "loss": collections.Counter(), "entries": 0,
            "only_pre": sorted(set(A) - set(B)), "only_post": sorted(set(B) - set(A)),
-           "graph": collections.Counter(), "dup_quals": 0}
+           "graph": collections.Counter(), "dup_quals": 0, "copath_merged": 0, "keyloss": []}
     for n in sorted(set(A) & set(B)):
         (pa, ca), (pb, cb) = A[n], B[n]
         ua, ga = load_units(pa, ca)
@@ -662,20 +706,51 @@ def arm_flips(pre_dir, post_dir):
             res["graph"]["MISMATCH->none"] += 1
         res["entries"] += 1
         res["graph"][ga + "/" + gb] += 1
-        for q, a in ua.items():
-            b = ub.get(q, {"eff": set(), "unknown": False, "classes": set()})
-            for e in sorted(a["eff"] - b["eff"]):
-                res["rows"].append((n, q, "deny " + e, "1->0"))
-                res["loss"]["deny " + e] += 1
+        # Judge at the BARE path (union of co-path members) — then, only where the very same disambiguated fn exists on
+        # both arms, also per member, so a loss that moves between members is not hidden by the union.
+        xa, xb = ua, ub
+        ua, ma = union_by_bare(xa)
+        ub, mb = union_by_bare(xb)
+        res["copath_merged"] += ma + mb
+        EMPTY = {"eff": set(), "unknown": False, "classes": set(), "dispatch": set(), "invisible": set()}
+
+        def losses(a, b):
+            out = [("deny " + e, "1->0") for e in sorted(a["eff"] - b["eff"])]
             if a["unknown"] and not b["unknown"]:
-                res["rows"].append((n, q, "deny Unknown", "1->0"))
-                res["loss"]["deny Unknown"] += 1
+                out.append(("deny Unknown", "1->0"))
             for c in sorted(a["classes"] - b["classes"]):
                 kept = "plain Unknown KEPT, classes now " + ",".join(sorted(b["classes"])) if b["unknown"] else "Unknown gone"
-                res["rows"].append((n, q, "deny Unknown[%s]" % c, "1->0 (%s)" % kept))
-                res["loss"]["deny Unknown[%s]" % c] += 1
+                out.append(("deny Unknown[%s]" % c, "1->0 (%s)" % kept))
+            return out
+        seen = set()
+        for q, a in ua.items():
+            for k, d in losses(a, ub.get(q, EMPTY)):
+                res["rows"].append((n, q, k, d))
+                res["loss"][k] += 1
+                seen.add((q, k))
+        for q, a in xa.items():
+            bq = bare_path(q)
+            if bq == q or q not in xb:
+                continue
+            for k, d in losses(a, xb[q]):
+                if (bq, k) not in seen:
+                    res["rows"].append((n, q, k, d + " [member]"))
+                    res["loss"][k] += 1
+        # JOIN-KEY LOSS, independent of every effect/Unknown flip: a unit present on BOTH arms whose `dispatchesOn` keys or
+        # `invisible` packages shrank.  A chained consumer joins on those; a row that keeps `Unknown` can still stop being
+        # joined (futures-lite stream::Chain::poll_next).  Unit absent on post is covered by the flips above, not here.
+        for q, a in ua.items():
+            b = ub.get(q)
+            if b is None:
+                continue
+            for field in ("dispatch", "invisible"):
+                lost = sorted(a[field] - b[field])
+                if lost:
+                    res["keyloss"].append((n, q, "lost " + ("dispatchesOn" if field == "dispatch" else "invisible"),
+                                           ",".join(lost[:4]) + ("..." if len(lost) > 4 else "") +
+                                           ("  [Unknown KEPT]" if a["unknown"] and b["unknown"] else "")))
         for q, b in ub.items():
-            a = ua.get(q, {"eff": set(), "unknown": False, "classes": set()})
+            a = ua.get(q, EMPTY)
             for e in b["eff"] - a["eff"]:
                 res["gain"]["deny " + e] += 1
             if b["unknown"] and not a["unknown"]:
@@ -694,6 +769,7 @@ def render_arm_flips(res, pre, post, show=12):
     if res["entries"] == 0:
         o.append("  NOT A MEASUREMENT: no entry exists in both arms.")
     g = res["graph"]
+    o.append("units judged at the BARE path (co-path members unioned, SPEC ⟨0.42⟩): %d bare paths merged >1 member" % res["copath_merged"])
     o.append("call graph (pre/post): " + ", ".join("%s x%d" % kv for kv in sorted(g.items())))
     if any("none" in k for k in g):  # includes MISMATCH->none
         o.append("  !! an arm with NO call graph computes DIRECT classes only: a class reaching a unit through a callee is "
@@ -709,6 +785,14 @@ def render_arm_flips(res, pre, post, show=12):
         o.append("     %s  %s  %s  %s" % r)
     if len(res["rows"]) > show:
         o.append("     ... %d more: write them all with --flips-out FILE" % (len(res["rows"]) - show))
+    kl = res["keyloss"]
+    o.append("JOIN-KEY LOSS (units on both arms whose dispatchesOn / invisible shrank; not a gate flip, a chained consumer stops joining): %d units-fields"
+             % len(kl))
+    for k, v in sorted(collections.Counter(r[2] for r in kl).items()):
+        o.append("   %-28s %d" % (k, v))
+    o.append("   of which the row KEPT Unknown (invisible to every flip above): %d" % sum(1 for r in kl if "[Unknown KEPT]" in r[3]))
+    for r in kl[:show]:
+        o.append("     %s  %s  %s  %s" % r)
     o.append("0->1 gate flips (adds; priced elsewhere): %d" % sum(res["gain"].values()))
     return "\n".join(o)
 
@@ -922,6 +1006,45 @@ def selftest():
         check("graph on ONE arm only: compared direct-vs-direct (no fabricated caller flip), and the report SAYS the graph is missing",
               sorted(x[1] for x in r["rows"]) == ["sym"] and "NO call graph" in render_arm_flips(r, "a", "b")
               and r["graph"]["MISMATCH->none"] == 1, str(r["rows"]))
+        # ── co-path skew (R1679): merged `Ty::m` on pre vs `Ty::m(Ty)` + `Ty::m(Tr)` on post ──
+        arm("cp_pre", [row("Ty::m", ["Fs"]), row("Ty::g", ["Net"]), row("T::new_ok", [])], {})
+        for nm, rows in (("cp_a", [row("Ty::m(Ty)", ["Fs"]), row("Ty::m(Tr)", []), row("Ty::g(Ty)", ["Net"]), row("Ty::g(Tr)", ["Net"])]),
+                         ("cp_b", [row("Ty::m(Ty)", []), row("Ty::m(Tr)", ["Fs"]), row("Ty::g", ["Net"])]),
+                         ("cp_lost", [row("Ty::m(Ty)", []), row("Ty::m(Tr)", []), row("Ty::g(Ty)", ["Net"]), row("Ty::g(Tr)", [])]),
+                         ("cp_new", [row("Ty::m(Ty)", ["Fs"]), row("Ty::g(Ty)", ["Net"]), row("Ty::fresh(Ty)", ["Net"])])):
+            arm(nm, rows, {})
+        pa = os.path.join(tmp, "cp_pre")
+        check("(a) merged -> split, effect on either member: NO flip",
+              arm_flips(pa, os.path.join(tmp, "cp_a"))["rows"] == [] and arm_flips(pa, os.path.join(tmp, "cp_b"))["rows"] == [])
+        got = sorted((x[1], x[2]) for x in arm_flips(pa, os.path.join(tmp, "cp_lost"))["rows"])
+        check("(b) effect gone from EVERY post member: listed (Ty::m Fs), while Ty::g (Net kept on one member) is not", got == [("Ty::m", "deny Fs")], str(got))
+        rn = arm_flips(pa, os.path.join(tmp, "cp_new"))
+        check("(c) a genuinely new member is not swallowed: counted as a gain, and no flip", rn["rows"] == [] and rn["gain"]["deny Net"] == 1, str(rn["gain"]))
+        _lp = load_units(os.path.join(pa, "e1.scan.json.gz"), None)[0]
+        _la = load_units(os.path.join(tmp, "cp_a", "e1.scan.json.gz"), None)[0]
+        naive = sorted(q for q, u in _lp.items() if u["eff"] - _la.get(q, {"eff": set()})["eff"])
+        check("naive exact-key comparison WOULD flip on (a) (the seed discriminates)", naive == ["Ty::g", "Ty::m"], str(naive))
+        arm("sp_pre", [row("Ty::m(Ty)", ["Fs"]), row("Ty::m(Tr)", [])], {})
+        arm("sp_post", [row("Ty::m(Ty)", []), row("Ty::m(Tr)", ["Fs"])], {})
+        r = arm_flips(os.path.join(tmp, "sp_pre"), os.path.join(tmp, "sp_post"))
+        check("both arms split, loss MOVES between members: listed as a [member] row, not hidden by the union",
+              [(x[1], x[2]) for x in r["rows"]] == [("Ty::m(Ty)", "deny Fs")] and "[member]" in r["rows"][0][3], str(r["rows"]))
+        for f, want in (("Ty::m(Ty)", "Ty::m"), ("a.B.m(byte[])", "a.B.m"), ("p.M.hmac(a.b.C)#2", "p.M.hmac"), ("NAME#1", "NAME"),
+                        ("row::convert::(T1,T2)::from_row_opt", "row::convert::(T1,T2)::from_row_opt"), ("(T1,T2)::f", "(T1,T2)::f"),
+                        ("a::<T as X<(A,B)>>::m(Y)", "a::<T as X<(A,B)>>::m"), ("plain", "plain")):
+            check("bare_path(%r) == %r" % (f, want), bare_path(f) == want, bare_path(f))
+        # ── join-key loss on rows that KEEP Unknown (stage-1b) ──
+        arm("kl_pre", [row("Chain::poll", ["Unknown"], dispatchesOn=["futures_core#Stream::poll_next"], invisible=["futures_core"]),
+                       row("Same::x", ["Unknown"], dispatchesOn=["a#T::x"], invisible=["a"]),
+                       row("Co::m", ["Unknown"], dispatchesOn=["a#T::m"])], {})
+        arm("kl_post", [row("Chain::poll", ["Unknown"]), row("Same::x", ["Unknown"], dispatchesOn=["a#T::x"], invisible=["a"]),
+                        row("Co::m(Ty)", ["Unknown"], dispatchesOn=["a#T::m"]), row("Co::m(Tr)", ["Unknown"])], {})
+        r = arm_flips(os.path.join(tmp, "kl_pre"), os.path.join(tmp, "kl_post"))
+        got = sorted((x[1], x[2]) for x in r["keyloss"])
+        check("lost dispatchesOn + invisible on a row that KEEPS Unknown is listed; unchanged row and co-path-unioned key are not, and no gate flip exists",
+              got == [("Chain::poll", "lost dispatchesOn"), ("Chain::poll", "lost invisible")] and r["rows"] == []
+              and all("[Unknown KEPT]" in x[3] for x in r["keyloss"]), str(r["keyloss"]))
+        check("…and the render prints the count", "JOIN-KEY LOSS" in render_arm_flips(r, "a", "b"))
         pure = [row("pureA", [])]
         arm("pp", pure, {}); arm("pq", pure + [row("pureB", ["Fs"])], {})
         r = arm_flips(os.path.join(tmp, "pq"), os.path.join(tmp, "pp"))
@@ -984,6 +1107,9 @@ def main(argv=None):
         if args.flips_out:
             with open(args.flips_out, "w") as f:
                 for r in res["rows"]:
+                    f.write("\t".join(r) + "\n")
+            with open(args.flips_out + ".keyloss", "w") as f:
+                for r in res["keyloss"]:
                     f.write("\t".join(r) + "\n")
         if res["entries"] == 0:
             return 3

@@ -8,6 +8,22 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-12 — ⟨0.42⟩ family release (released 2026-11-12 as 0.42.0)
+
+`ENGINE_PIN` moves to 0.42.0 so `candor update` and the Homebrew formula fetch the engines this cut
+published (spec ⟨0.42⟩: co-path units, result-moving switches, `dependencySources`). The umbrella's own
+changes since 0.41.3 are release and measurement tooling:
+
+- `bin/release-preflight.sh` [4b] + `bin/version-moved.sh`: an engine whose source changed since its last
+  release must report a version string that moved (SOUNDNESS R1670 — an old consumer reads a co-path split
+  producer's calls as absent under an unchanged version string).
+- `bin/ab-price.py` arms mode: every 1→0 gate flip per unit, including `deny Unknown[<class>]`, judged on
+  the union of a qual's rows and across the ⟨0.42⟩ co-path disambiguator, plus a JOIN-KEY LOSS column
+  (`dispatchesOn`/`invisible` shrinking on rows that keep `Unknown`) — SOUNDNESS R1679.
+- `bin/corpus-ab.py` takes a machine-wide lock; `bin/corpus-chained-judge.py` refuses a dead join;
+  `bin/ci-watch.sh --wait` is single-instance and reads a rate-limited verdict as BLOCKED, not red;
+  `bin/corpus.sh` prints the whole panic site of a crash finding; `bin/swift-relbar-audit.py` added.
+
 ## 2026-11-06 — family build bump (released 2026-11-06 as 0.41.3)
 
 No change to the umbrella's own surface — `adopt/`, `integrations/`, `fingerprint/` and the

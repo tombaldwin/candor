@@ -1358,6 +1358,28 @@ else
   ok "highest rung ⟨0.${MAXRUNG}⟩ is within the declared ${SPEC_FLOOR}"
 fi
 
+# --- 13. the PACKED candor-ts starts -----------------------------------------------------------------------
+# candor-ts 0.42.0 shipped to npm without `env.mjs` (missing from package.json `files`) and died on start with
+# ERR_MODULE_NOT_FOUND; every test ran from the git tree where the file exists, and npm will not take a published
+# version back. candor-ts's own `test-pack.mjs` (in its `npm test`) walks the tarball's import graph, but nothing in
+# THIS ladder looked at what would be published, so a cut with that test absent, stale or skipped went straight
+# to the registry. This packs the repo as a consumer receives it, unpacks it elsewhere and runs its bin
+# (bin/_pack_smoke.sh, which carries its own seeded selftest). release.sh step 0 runs this script, so it gates
+# the publish. Only when candor-ts is in the cut: no other engine is published to npm.
+echo "[13] the packed candor-ts tarball starts"
+if ! rs_in_set candor-ts; then
+  oos "candor-ts is not in this cut — no npm tarball is published"
+else
+  psout="$(bash "$HERE/_pack_smoke.sh" "$ROOT/candor-ts" 2>&1)"; psrc=$?
+  case "$psrc" in
+    0) ok "npm pack of candor-ts starts when unpacked elsewhere: $psout" ;;
+    4) oos "candor-ts's package.json declares no bin, so there is nothing to start ($psout)" ;;
+    1) bad "the PACKED candor-ts does not start — this is what npm would serve: $psout
+      Fix package.json \`files\` (or the bin path) before publishing; a published npm version cannot be replaced." ;;
+    *) bad "the pack smoke could not run, and a cut must not publish over an unrun check: $psout" ;;
+  esac
+fi
+
 echo
 if [ "$fail" = 0 ]; then
   # The scope is part of the verdict, not a decoration. `release-preflight: OK` over one repo and over

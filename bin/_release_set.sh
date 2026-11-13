@@ -341,3 +341,36 @@ pin_version() {                 # $1 = file, $2 = extended-regex matching key+ve
   fi
   printf '%s' "$uniq"
 }
+
+# rs_wait_npm_resolvable — wait until `npm install <pkg>@<ver>` can actually succeed, not merely until the
+# registry's METADATA names the version.
+#
+# MEASURED on the 0.42 cut (2026-11-13): release.sh step 6 waited for `npm view candor-ts@VER version` and then
+# pushed the IDE pins, whose CI `npm install`s that version. The registry's CDN kept answering 404 for the TARBALL
+# for about five minutes after the metadata resolved, so the VS Code and JetBrains jobs went red until re-run
+# (the same shape as 0.16.0 and 0.29.0, which the metadata wait was written for — it fixed the first stage only).
+# Metadata and tarball are served separately, so BOTH must answer. The tarball is read with a one-byte ranged GET
+# of the URL the registry itself names in `dist.tarball`, which is the request `npm install` makes.
+#
+#   rs_wait_npm_resolvable <pkg@ver> [tries=150] [sleep=10]
+#
+# Returns 0 when both answer. Returns 1 on timeout and sets RS_NPM_STAGE to what was still missing:
+# `metadata` (the version is not on the registry — a publish problem) or `tarball` (it is, but the CDN does not
+# serve it yet — a wait problem), because the two want different remedies. Prints a dot per poll.
+rs_wait_npm_resolvable() {
+  local spec="$1" tries="${2:-150}" nap="${3:-10}" i url code
+  RS_NPM_STAGE="metadata"
+  for ((i = 0; i < tries; i++)); do
+    if npm view "$spec" version >/dev/null 2>&1; then
+      RS_NPM_STAGE="tarball"
+      url="$(npm view "$spec" dist.tarball 2>/dev/null)"
+      if [ -n "$url" ]; then
+        code="$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 30 -r 0-0 "$url" 2>/dev/null)"
+        # shellcheck disable=SC2034 # RS_NPM_STAGE is read by the caller (release.sh)
+        case "$code" in 200|206) RS_NPM_STAGE=""; return 0 ;; esac
+      fi
+    fi
+    printf '.'; sleep "$nap"
+  done
+  return 1
+}

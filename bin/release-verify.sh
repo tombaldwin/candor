@@ -363,10 +363,18 @@ for u in $(printf '%s\n' "${pin_urls[@]:-}" | sort -u); do
   [ "$code" = "200" ] && ok "$code ${u##*/}" || bad "$code ${u##*/} — $u"
 done
 
-echo "[live smoke] npx candor-ts@$VER --version reports spec $SPEC"
-if ! rs_in_set candor-ts; then oos "candor-ts is not in this cut — there is no candor-ts@$VER to smoke"
+# SMOKE THE VERSION USERS GET. `candor` runs `npx candor-ts@$ENGINE_PIN_TS`, and a cut that patches ts alone
+# (0.42.1 while the family line is 0.42.0) leaves that pin different from $VER. The npm metadata check above
+# already honours it; this smoke used $VER and so exercised a tarball no user is served — while the one that
+# is served (0.42.0's missing env.mjs) was the one that could not start. Only a pin AHEAD of $VER is smoked:
+# a pin BEHIND is already a hard `bad` from rs_pin_report in the family form, and smoking the stale version
+# would only report the wrong thing twice.
+TS_SMOKE="$VER"
+if [ -n "$TPIN" ] && [ "$TPIN" != "$VER" ] && ! rs_ver_lt "$TPIN" "$VER"; then TS_SMOKE="$TPIN"; fi
+echo "[live smoke] npx candor-ts@$TS_SMOKE --version reports spec $SPEC"
+if ! rs_in_set candor-ts; then oos "candor-ts is not in this cut — there is no candor-ts@$TS_SMOKE to smoke"
 else
-out=$(npx -y "candor-ts@$VER" --version 2>/dev/null | head -1)
+out=$(npx -y "candor-ts@$TS_SMOKE" --version 2>/dev/null | head -1)
 echo "$out" | grep -q "spec $SPEC" && ok "$out" || bad "npx reported '${out:-<none>}' (expected spec $SPEC)"
 fi
 

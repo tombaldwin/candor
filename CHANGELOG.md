@@ -8,6 +8,18 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-13 — release-ladder fixes from the ⟨0.42⟩ cut
+
+Three defects the 0.42 cut hit in the ladder itself (the candor-swift and candor-spec halves are in those repos):
+
+- `release-preflight.sh` [13] packs candor-ts, unpacks the tarball elsewhere and runs its bin (`bin/_pack_smoke.sh`, seeded
+  selftest in `fast-gates.sh`). candor-ts 0.42.0 reached npm without `env.mjs` and could not start; `release.sh` step 0 runs
+  preflight, so this now gates the publish.
+- `release.sh` step 6 waits for the npm TARBALL to download (`rs_wait_npm_resolvable`), not only for the metadata, before the
+  IDE pins are pushed; the registry CDN 404'd the tarball for about five minutes after the metadata resolved.
+- `release-verify.sh`'s live `npx candor-ts` smoke runs `ENGINE_PIN_TS` when it is ahead of the family version, the version
+  users are served, instead of the family version.
+
 ## 2026-11-13 — candor-ts 0.42.1 (released 2026-11-13 as 0.42.1)
 
 The first ⟨0.42⟩ front door. The family engines were published at 0.42.0, but `candor-ts@0.42.0` reached npm

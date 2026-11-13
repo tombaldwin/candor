@@ -263,13 +263,16 @@ else
   # that completed normally. The wait must be sized to the work being waited on, not to a round number —
   # the same error as calling an 18-second job stalled at 3x its median.
   printf '  waiting for candor-ts@%s on npm (publish.yml runs the full battery first; 10-15m is normal) ' "$VER"
+  # METADATA IS NOT ENOUGH (0.42, 2026-11-13): the registry named the version while its CDN still 404'd the TARBALL
+  # for ~5 more minutes, and the IDE jobs this step exists to protect failed on `npm install`. The wait is on
+  # BOTH — see rs_wait_npm_resolvable in _release_set.sh.
   npm_ok=0
-  for _ in $(seq 1 150); do                     # 150 × 10s = 25 minutes
-    if npm view "candor-ts@$VER" version >/dev/null 2>&1; then npm_ok=1; break; fi
-    printf '.'; sleep 10
-  done
+  if rs_wait_npm_resolvable "candor-ts@$VER" 150 10; then npm_ok=1; fi   # 150 x 10s = 25 minutes
   echo
-  if [ "$npm_ok" = "1" ]; then ok "candor-ts@$VER is resolvable on npm — the consumers will install it"
+  if [ "$npm_ok" = "1" ]; then ok "candor-ts@$VER is resolvable on npm (metadata AND tarball) — the consumers will install it"
+  elif [ "$RS_NPM_STAGE" = "tarball" ]; then die "candor-ts@$VER is on npm's metadata but its TARBALL still does not download after 25 minutes.
+     Do NOT push the pin bump yet: the vscode + jetbrains jobs npm-install this exact version. Check
+     \`npm view candor-ts@$VER dist.tarball\` and curl it; then re-run this script — steps 1-3 skip what exists."
   else die "candor-ts@$VER is STILL not on npm after 25 minutes — longer than any publish run on record.
      Do NOT push the pin bump yet: it starts the vscode + jetbrains jobs, which npm-install this exact
      version and will fail on it. Check candor-ts's \`publish\` workflow (OIDC), then re-run this

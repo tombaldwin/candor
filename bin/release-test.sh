@@ -2254,6 +2254,7 @@ exit 1
 EOF
 cat > "$PJ/bin/npx"  <<'EOF'
 #!/usr/bin/env bash
+echo "$*" >> "${PJ_NPXLOG:-/dev/null}"
 echo "candor-ts v${PJ_VER:-0.0.0} (spec ${PJ_SPEC:-0.0})"
 EOF
 # gh: every release, for every repo/tag asked, reports back as a clean non-draft — this row is about the
@@ -2351,6 +2352,18 @@ hasin "$(pjahead 0.34.0 0.35.0 0.34.0)" -q "adopt/candor.yml pins 0.35.0, not 0.
 hasin "$(pjahead 0.34.0 0.34.0 0.35.0)" -q "jbang-catalog names" \
   && ok "CONTROL: a jbang URL naming neither the family line nor the java pin still fails" \
   || bad "a jbang URL naming a version nothing pins passed"
+# THE LIVE SMOKE MUST RUN THE VERSION USERS GET (0.42 cut: ENGINE_PIN_TS 0.42.1, family 0.42.0; the smoke ran
+# `npx candor-ts@0.42.0` — the broken tarball nobody is served — and never looked at 0.42.1). The npx stub
+# logs its argv, so this row reads WHICH version was smoked rather than whether the smoke printed a spec.
+: > "$PJ/npx.log"; PJ_NPXLOG="$PJ/npx.log" pjahead 0.34.0 0.34.0 0.34.0 >/dev/null
+grep -q 'candor-ts@0.34.0 ' "$PJ/npx.log" && ! grep -q 'candor-ts@0.33.0' "$PJ/npx.log" \
+  && ok "the live npx smoke runs the PINNED ts version (0.34.0), not the family line it did not ship" \
+  || { bad "the live npx smoke ran '$(cat "$PJ/npx.log")' — a version users are not served"; }
+: > "$PJ/npx.log"; printf 'ENGINE_PIN="0.33.0"\nENGINE_PIN_JAVA=""\nENGINE_PIN_TS=""\nENGINE_PIN_RUST=""\nENGINE_PIN_SWIFT=""\n' > "$PJ/root/candor/bin/candor"
+PJ_NPXLOG="$PJ/npx.log" pjrun >/dev/null
+grep -q 'candor-ts@0.33.0 ' "$PJ/npx.log" \
+  && ok "CONTROL: with no ts pin the smoke runs the family version" \
+  || bad "with no ts pin the smoke did not run candor-ts@0.33.0: '$(cat "$PJ/npx.log")'"
 rm -f "$PJ/root/candor/adopt/candor.yml" "$PJ/root/candor-java/jbang-catalog.json"
 hasin "$aheadout" -q "pins java SEPARATELY at 0.34.0" \
   && ok "…and the divergence is still DISCLOSED, just not failed" \
@@ -2377,6 +2390,80 @@ hasin "$scopedout" -q "pins ts SEPARATELY at 0.30.0" \
   && ok "…and is still disclosed, so an operator reading the scoped output is not blind to it" \
   || bad "a diverged pin vanished entirely under a scoped run"
 rm -rf "$PJ"
+
+say "7j. release.sh step 6 — wait for the npm TARBALL, not only the metadata (0.42 cut, 2026-11-13)"
+# DEFECT. The wait polled `npm view candor-ts@VER version` and then the IDE pins were pushed; the registry's
+# CDN kept 404ing the tarball ~5 minutes after the metadata resolved, so the jobs that `npm install` it went
+# red until re-run. The function under test is rs_wait_npm_resolvable (_release_set.sh), driven with stub
+# `npm` and `curl` on PATH. The tarball stub answers 404 for the first N requests, counted in a file.
+WN="$(mktemp -d)"; mkdir -p "$WN/bin"
+cat > "$WN/bin/npm" <<'WNEOF'
+#!/usr/bin/env bash
+[ "$1" = "view" ] || exit 1
+[ "${WN_NO_META:-}" = 1 ] && exit 1
+case "$3" in
+  version) echo "1.2.3" ;;
+  dist.tarball) echo "https://registry.example/candor-ts/-/candor-ts-1.2.3.tgz" ;;
+esac
+WNEOF
+cat > "$WN/bin/curl" <<'WNEOF'
+#!/usr/bin/env bash
+n=$(cat "$WN_CNT" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$WN_CNT"
+if [ "$n" -le "${WN_404:-0}" ]; then printf '404'; else printf '206'; fi
+WNEOF
+chmod +x "$WN"/bin/*
+wnrun() { # $1 = 404 count ; $2 = WN_NO_META ; prints "rc=<> stage=<> curls=<>"
+  echo 0 > "$WN/cnt"
+  ( PATH="$WN/bin:$PATH" WN_CNT="$WN/cnt" WN_404="$1" WN_NO_META="${2:-0}"
+    export WN_CNT WN_404 WN_NO_META
+    # shellcheck source=bin/_release_set.sh
+    . "$UMBRELLA/bin/_release_set.sh"
+    rs_wait_npm_resolvable candor-ts@1.2.3 8 0 >/dev/null; rc=$?
+    echo "rc=$rc stage=${RS_NPM_STAGE:-} curls=$(cat "$WN/cnt")" )
+}
+is "CONTROL: metadata and tarball both answer at once -> ready after one probe" "rc=0 stage= curls=1" "$(wnrun 0)"
+is "metadata ready but the tarball 404s three times -> keeps waiting, ready on the fourth probe" "rc=0 stage= curls=4" "$(wnrun 3)"
+is "a tarball that never serves -> times out naming the TARBALL stage (the old metadata-only wait returned success here)" "rc=1 stage=tarball curls=8" "$(wnrun 99)"
+is "metadata that never appears -> times out naming the METADATA stage, and never asks for a tarball" "rc=1 stage=metadata curls=0" "$(wnrun 0 1)"
+grep -q 'rs_wait_npm_resolvable "candor-ts@\$VER"' "$UMBRELLA/bin/release.sh" \
+  && ok "release.sh step 6 calls rs_wait_npm_resolvable" || bad "release.sh step 6 no longer waits on the tarball"
+grep -q 'for _ in \$(seq 1 150)' "$UMBRELLA/bin/release.sh" \
+  && bad "release.sh still carries the metadata-only poll loop" || ok "...and the metadata-only poll loop is gone"
+rm -rf "$WN"
+
+say "7k. release-preflight.sh [13] — the PACKED candor-ts must start (0.42.0 shipped without env.mjs)"
+# DEFECT. candor-ts 0.42.0 reached npm without `env.mjs` (missing from package.json `files`); every test ran
+# from the git tree, so everything was green, and a published version cannot be taken back. [13] packs the
+# repo, unpacks the tarball elsewhere and runs its bin. Fixture: a real two-file package, once complete and
+# once with the imported file left out of `files` — the exact 0.42.0 shape.
+T13="$(mktemp -d)"; mkdir -p "$T13/candor-ts"
+git -C "$T13/candor-ts" init -q
+t13pkg() { # $1 = files array JSON
+  printf '{"name":"candor-ts","version":"1.0.0","bin":{"candor-ts":"./scan.mjs"},"files":%s}\n' "$1" > "$T13/candor-ts/package.json"
+  printf 'import { V } from "./env.mjs";\nconsole.log("candor-ts " + V);\n' > "$T13/candor-ts/scan.mjs"
+  printf 'export const V = "1.0.0";\n' > "$T13/candor-ts/env.mjs"
+}
+t13run() { CANDOR_ROOT="$T13" bash "$UMBRELLA/bin/release-preflight.sh" 2>&1 | grep -A3 '\[13\]'; }
+t13pkg '["scan.mjs","env.mjs"]'
+green13="$(t13run)"
+hasin "$green13" -q '✔ npm pack of candor-ts starts' \
+  && ok "[13] CONTROL: a complete package passes" || bad "[13] a complete package did not pass: $green13"
+t13pkg '["scan.mjs"]'
+red13="$(t13run)"
+hasin "$red13" -q '✘ the PACKED candor-ts does not start' \
+  && ok "[13] the 0.42.0 shape (an imported file absent from files) is a FAIL" \
+  || bad "[13] a package that cannot start was not refused — the 0.42.0 defect would reach npm: $red13"
+hasin "$red13" -q 'env.mjs' \
+  && ok "[13] ...and the message names the missing module" || bad "[13] the failure did not say which file: $red13"
+printf '{"name":"candor-ts","version":"1.0.0"}\n' > "$T13/candor-ts/package.json"
+nobin13="$(t13run)"
+hasin "$nobin13" -q '⊘ candor-ts.s package.json declares no bin' \
+  && ok "[13] a package with no bin is disclosed as out of scope, never a pass" \
+  || bad "[13] a no-bin package read as a pass or vanished: $nobin13"
+scoped13="$(CANDOR_ROOT="$T13" bash "$UMBRELLA/bin/release-preflight.sh" --only candor-java 2>&1 | grep -A1 '\[13\]')"
+hasin "$scoped13" -q '⊘ candor-ts is not in this cut' \
+  && ok "[13] a cut without candor-ts does not run it (out of scope, not a pass)" || bad "[13] ran or vanished on a cut without candor-ts: $scoped13"
+rm -rf "$T13"
 
 say "7f. release-verify.sh — the npm version-mismatch line, and both adopt/ pin lines"
 # WHY THIS EXISTS. Four release-verify.sh `bad()` branches were found by grepping the file for messages

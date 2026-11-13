@@ -15,6 +15,8 @@ without `env.mjs` and does not start (`ERR_MODULE_NOT_FOUND`), so no umbrella wa
 family line at 0.42.0 and candor-ts at 0.42.1 (`ENGINE_PIN_TS`), and the VS Code and JetBrains clients bundle
 candor-ts 0.42.1. The 2026-11-12 entry below describes the rest of what this release carries.
 
+- Pins: `ENGINE_PIN_TS="0.42.1"` (the family `ENGINE_PIN` stays 0.42.0); VS Code and JetBrains `candorTsVersion` → 0.42.1.
+
 ## 2026-11-12 — ⟨0.42⟩ family release (engines released 2026-11-13 as 0.42.0; the umbrella ships it as 0.42.1)
 
 `ENGINE_PIN` moves to 0.42.0 so `candor update` and the Homebrew formula fetch the engines this cut

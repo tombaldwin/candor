@@ -44,7 +44,7 @@ ENGINE_PIN="0.42.0"                          # the engine release line `candor u
 # override SILENTLY WINS over ENGINE_PIN — leave these set past the next family cut and it installs 0.39.3
 # engines under a newer umbrella with nothing saying so. `bin/pin-currency.sh` names every live one.
 ENGINE_PIN_JAVA=""
-ENGINE_PIN_TS=""
+ENGINE_PIN_TS="0.42.1"
 # (Historical: rust was set by the 0.38.1 scoped patch; cleared at the 0.40.0 family cut.)
 # A scoped patch moves ONE engine, so ENGINE_PIN stays on the family line (0.38.0) and this overrides it
 # for rust alone. That is what these pins are FOR — but a NON-EMPTY override SILENTLY WINS over

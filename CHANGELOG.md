@@ -8,7 +8,14 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
-## 2026-11-12 — ⟨0.42⟩ family release (released 2026-11-12 as 0.42.0)
+## 2026-11-13 — candor-ts 0.42.1 (released 2026-11-13 as 0.42.1)
+
+The first ⟨0.42⟩ front door. The family engines were published at 0.42.0, but `candor-ts@0.42.0` reached npm
+without `env.mjs` and does not start (`ERR_MODULE_NOT_FOUND`), so no umbrella was cut at 0.42.0. This one pins the
+family line at 0.42.0 and candor-ts at 0.42.1 (`ENGINE_PIN_TS`), and the VS Code and JetBrains clients bundle
+candor-ts 0.42.1. The 2026-11-12 entry below describes the rest of what this release carries.
+
+## 2026-11-12 — ⟨0.42⟩ family release (engines released 2026-11-13 as 0.42.0; the umbrella ships it as 0.42.1)
 
 `ENGINE_PIN` moves to 0.42.0 so `candor update` and the Homebrew formula fetch the engines this cut
 published (spec ⟨0.42⟩: co-path units, result-moving switches, `dependencySources`). The umbrella's own

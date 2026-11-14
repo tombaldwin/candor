@@ -769,6 +769,8 @@ BUCKET_LABELS = [
     ("2", "2 absent/pure -> Unknown ONLY (disclosure; bare deny does not move)"),
     ("3", "3 CONCRETE effect LOST (a regression; expect ~0)"),
     ("3u", "3u Unknown LOST (a removed hedge; account for each)"),
+    ("3i", "3i `invisible` disclosure LOST (a dependency no longer named; account for each)"),
+    ("3k", "3k `dispatchesOn` join key LOST (a consumer can no longer join the row)"),
     ("4", "4 everything else (pure rows, other fields)"),
 ]
 
@@ -791,6 +793,24 @@ def _eff_of_values(vals):
             else:
                 concrete.add(e)
     return concrete, unknown, union
+
+
+def _field_multiset(vals, field):
+    """Counter of the ELEMENTS of a list-valued row field over a row-value multiset.  Counted, so a
+    duplicated row that drops an element in ONE copy is still a loss.  `invisible` and `dispatchesOn`
+    carry no effect, so `inferred`-only loss detection (3 / 3u) never sees them; a row that carried
+    ONLY one of them and was removed fell through to bucket 4 (measured: 4 rav1e rows losing
+    `invisible:[rayon]`, bucketed harmless)."""
+    out = collections.Counter()
+    for v in vals:
+        try:
+            r = json.loads(v)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(r, dict):
+            for e in (r.get(field) or []):
+                out[str(e)] += 1
+    return out
 
 
 def _inferred_multiset(vals):
@@ -856,6 +876,12 @@ def classify_verdicts(detail, pre_rows=(), sample=6, pre_by_fn=None):
             counts["3u"] += 1
             where["3u"].append((key, ["Unknown"]))
             hit = True
+        for b, field in (("3i", "invisible"), ("3k", "dispatchesOn")):
+            lost_f = _field_multiset(gone, field) - _field_multiset(came, field)
+            if lost_f:
+                counts[b] += 1
+                where[b].append((key, sorted(lost_f)))
+                hit = True
         return hit
     def cat1(key, pre, post):
         entry, fn = key[0], key[2] if len(key) > 2 else key[-1]
@@ -1283,8 +1309,10 @@ def run(args):
         for k, label in BUCKET_LABELS:
             n = b["counts"].get(k, 0)
             emit("    %-46s %6d   %.4f%% of %d post rows" % (label, n, 100.0 * n / tot, tot))
-            for key, els in b["where"].get(k, []) if k in ("3", "3u") else []:
+            for key, els in b["where"].get(k, []) if k in ("3", "3u", "3i", "3k") else []:
                 emit("        %s  lost %s" % (" / ".join(str(x) for x in key), ", ".join(els)[:70]))
+        emit("    3i/3k count lost `invisible` / `dispatchesOn` ELEMENTS: a removed row that carried only a")
+        emit("    disclosure is a loss, not bucket 4.  Numbering 1/2/3/3u/4 is unchanged.")
         emit("    3 and 3u OVERLAY 1/2/4: a row that lost an effect AND gained one is in 1 and 3.")
         if b["dropped"]:
             emit("    ── candidates DROPPED, and why a changed row is not a flip ──")
@@ -1546,6 +1574,24 @@ def selftest():
         ("CONTROL: Fs -> Fs+Unknown loses nothing (3u 0)",
          {"changed": [[["e", "p", "f", "h1"], [_v(inferred=["Fs"])], [_v(inferred=["Fs", "Unknown"])]]]},
          [], "3u", 0),
+        # 3i / 3k: a disclosure with no effect is still a disclosure (rav1e `invisible:[rayon]`).
+        ("a REMOVED invisible-only row is 3i",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(invisible=["rayon"])]]]}, [], "3i", 1),
+        ("…and is not hidden in bucket 4",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(invisible=["rayon"])]]]}, [], "4", 0),
+        ("a CHANGED row whose invisible SHRINKS is 3i",
+         {"changed": [[["e", "p", "f", "h1"], [_v(invisible=["a", "b"])], [_v(invisible=["a"])]]]},
+         [], "3i", 1),
+        ("CONTROL: a row whose invisible GROWS is not 3i",
+         {"changed": [[["e", "p", "f", "h1"], [_v(invisible=["a"])], [_v(invisible=["a", "b"])]]]},
+         [], "3i", 0),
+        ("CONTROL: a removed row with no disclosure stays bucket 4",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(inferred=[])]]]}, [], "4", 1),
+        ("a REMOVED row carrying only a dispatchesOn key is 3k",
+         {"removed": [[["e", "p", "f", "h1"], 1, [_v(dispatchesOn=["T.m"])]]]}, [], "3k", 1),
+        ("CONTROL: dispatchesOn kept is not 3k",
+         {"changed": [[["e", "p", "f", "h1"], [_v(dispatchesOn=["T.m"])],
+                       [_v(dispatchesOn=["T.m"], inferred=["Fs"])]]]}, [], "3k", 0),
     ]
     for name, detail, pre_rows, bucket, want in cases:
         got = classify_verdicts(detail, pre_rows)["counts"].get(bucket, 0)

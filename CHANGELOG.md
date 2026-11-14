@@ -8,6 +8,17 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-14 — corpus-ab: lost `invisible` / `dispatchesOn` disclosures are loss buckets
+
+- `bin/corpus-ab.py --buckets`: loss detection read `inferred` only, so a REMOVED row that carried only `invisible`
+  (a disclosure naming an unanalysed dependency, no effects) fell into bucket 4 as harmless, and a CHANGED row whose
+  `invisible` shrank was invisible to the loss overlay. New overlay buckets `3i` (`invisible` element lost) and `3k`
+  (`dispatchesOn` join-key element lost), counted per element, so a duplicated row dropping one copy still counts.
+  Numbering 1/2/3/3u/4 is unchanged; bucket 4 now means "no loss of any of these". Seeded selftest cases: removed
+  invisible-only row, shrinking invisible, removed dispatchesOn-only row, plus grow/kept/no-disclosure controls (RED with
+  the overlay disabled, 4 failures). Replay over a rust pre/post report pair: 4 `deblock::*` rows losing `invisible:[rayon]`
+  with nothing replacing it, previously inside bucket 4 (50), now 3i = 4 (bucket 4 = 46).
+
 ## 2026-11-14 — A/B and preflight instruments: three false-OK paths closed
 
 - `bin/ab-price.py --arms`: two arms whose call graphs are of DIFFERENT KINDS (report `calls` lists on one, a `--out`

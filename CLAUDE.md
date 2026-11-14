@@ -546,7 +546,7 @@ because killing an over-charge is exactly where silent under-reports get introdu
 REMOVED row traced to a proven-pure body, and the second fixture written FIRST.** The live example is R764:
 publishing pure-only union entries makes a `crossDeps` lookup HIT, which short-circuits before the owner's
 ledger and **deletes an unchained owner's `invisible` disclosure** — a silence a percentage would never have
-surfaced, and one `SPEC.md:4385` already forbids in its own words (*a mechanism that makes reports better
+surfaced, and one `SPEC.md:5407` already forbids in its own words (*a mechanism that makes reports better
 must not make silence cheaper*).
 
 **AND THERE IS A THIRD DIRECTION, measured 2026-09-28 (SOUNDNESS R798) by a lane that said so rather than
@@ -656,7 +656,7 @@ re-export: R1698, which needs a wire change. The row is inside (c′) with L2 de
 - The units are recorded on the blocking row, so L2 is measured when that row's change lands. It BLOCKS there if a consumer
   then reads silent.
 
-Every consumer must stay disclosed on both arms. Chaining may not delete a disclosure (SPEC.md:4385). A consumer that goes
+Every consumer must stay disclosed on both arms. Chaining may not delete a disclosure (SPEC.md:5407). A consumer that goes
 silent is a block, not a deferral. This is not (d), because no hedge remains.
 
 **AND AN EXPOSED PRE-EXISTING SILENCE DOES NOT SHIP AS AN OPEN ROW.** The 0.40.0 floor rule applies to it even at

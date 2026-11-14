@@ -167,7 +167,8 @@ def coverage(work, entries):
         if not jar:
             continue
         n += 1
-        name = os.path.basename(jar)[:-4] if jar.endswith(".jar") else os.path.basename(jar)
+        name = entry_name(jar)
+        name = name[:-4] if name.endswith(".jar") else name
         mf = os.path.join(work, "c", name, "manifest.json")
         if not os.path.exists(mf):
             missing.append(name)
@@ -361,6 +362,16 @@ def rs_index(doc):
     return byfn, bypar, bymod, byent, present, foreign
 
 
+def entry_name(path):
+    """An entry's name as the shell generators spell it (`basename`, which ignores trailing slashes).
+
+    `os.path.basename("/a/b/")` is `''`, NOT `b`: an entries file whose lines end in `/` made this judge look up
+    `gen/.noimpl.json`, find nothing, and count ZERO probe quals while the generator had written 135 (measured
+    on the R1754 lane's workdir, 2026-11-14).  Strip the slashes first; every Python reader of an entry path
+    goes through here or does `rstrip("/")` itself."""
+    return os.path.basename((path or "").strip().rstrip("/"))
+
+
 def rs_manifests(work, entries, variant):
     """probe quals per entry name, from the generator's own manifest (empty for `standalone`)."""
     out = {}
@@ -368,7 +379,7 @@ def rs_manifests(work, entries, variant):
         entry = line.split("\t")[0].strip()
         if not entry:
             continue
-        name = os.path.basename(entry)
+        name = entry_name(entry)
         mf = os.path.join(work, "gen", "%s.%s.json" % (name, variant))
         if variant in ("noimpl", "impl") and os.path.exists(mf):
             try:
@@ -419,6 +430,14 @@ def report_rs(out, work, entries, variant):
         print("corpus-chained-judge: NO ENTRY has both arms — nothing to compare.")
         return 3
     mans = rs_manifests(work, entries, variant)
+    # A VACUOUS PROBE TABLE IS NOT A MEASUREMENT.  The generator declared probes but this judge read no qual:
+    # every cell below would be a 0/0 that looks exactly like a change with no effect (the trailing-slash defect).
+    declared = sum(d.get("probes", 0) for d in mans.values() if d)
+    read = sum(len(d.get("quals") or {}) for d in mans.values() if d)
+    if declared > 0 and read == 0:
+        print("corpus-chained-judge: NOT A MEASUREMENT — the manifests declare %d probe(s) but 0 probe quals were read." % declared)
+        print("  The judge's entry-name lookup or the manifest `quals` key is broken; every probe cell would read 0.")
+        return 3
     LIBS = rust_lib_names
     RUST = True
     dead = {}
@@ -596,6 +615,27 @@ def selftest():
           dead_join({"coverage": {"uncovered": [{"name": "libc"}]}, "functions": [fnrow("a::b", ["libc"])]}, rust_lib_names("serde-1.0.1"), True) == [])
     check("java: an unrelated uncovered package leaves the join live",
           dead_join({"functions": [fnrow("x", ["java.sql"])]}, {"org.acme.lib"}) == [])
+    # rust: the trailing-slash entries file (the R1754 defect).  FAILS on the old `os.path.basename(entry)`.
+    t = tempfile.mkdtemp(prefix="cjudge.")
+    try:
+        os.makedirs(os.path.join(t, "w", "gen"))
+        json.dump({"probes": 2, "quals": {"a::b": "x", "a::c": "x"}},
+                  open(os.path.join(t, "w", "gen", "foo-1.0.noimpl.json"), "w"))
+        ef = os.path.join(t, "entries")
+        open(ef, "w").write("/x/y/foo-1.0/\n")
+        m = rs_manifests(os.path.join(t, "w"), ef, "noimpl")
+        check("rust: an entry path ending in '/' still finds its manifest (old code: {'': 0})",
+              list(m) == ["foo-1.0"] and len(m["foo-1.0"].get("quals", {})) == 2)
+        # vacuous table -> refusal: probes>0 declared, quals empty
+        json.dump({"probes": 3, "quals": {}}, open(os.path.join(t, "w", "gen", "foo-1.0.noimpl.json"), "w"))
+        for arm in ("rep-pre", "rep-post"):
+            os.makedirs(os.path.join(t, "o", arm))
+            json.dump({"analyzed": {"count": 1}, "functions": []}, open(os.path.join(t, "o", arm, "foo-1.0.json"), "w"))
+        rc, txt = run(report_rs, os.path.join(t, "o"), os.path.join(t, "w"), ef, "noimpl")
+        check("rust: probes declared but 0 quals read -> rc 3 NOT A MEASUREMENT",
+              rc == 3 and "NOT A MEASUREMENT" in txt and "0 probe quals" in txt)
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
     print("corpus-chained-judge selftest: %s" % ("OK" if not bad else "FAILED (%d)" % bad))
     return 1 if bad else 0
 

@@ -110,7 +110,7 @@ elif [ "$ARM" = "ts" ]; then
   while IFS=$'\t' read -r repo tag sha target want_src want_an want_rows want_deps want_foreign; do
     case "$repo" in ''|\#*) continue ;; esac
     want=$((want + 1))
-    name="${repo##*/}"
+    name="${repo%/}"; name="${name##*/}"   # a trailing / would make ${x##*/} empty (same defect as the judge's basename)
     d="$DEST/$name"
     fit() { find "$1" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) \
               -not -name '*.d.ts' -not -path '*/node_modules/*' 2>/dev/null | wc -l | tr -d ' '; }

@@ -111,7 +111,7 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
   # place. Done BEFORE the skip pre-pass below, not just before the eval: with the prefix attached
   # `_lead` is `cd`, which that pre-pass exempts, so the "interpreter is not installed here" arm
   # never got to look at the real command word either.
-  _self="${d##*/}"
+  _self="${d%/}"; _self="${_self##*/}"   # a trailing / would make ${d##*/} empty
   case "$cmd" in
     # exactly the repo's own checkout path — the whole prefix goes
     "cd $_self && "*) cmd="${cmd#cd "$_self" && }" ;;

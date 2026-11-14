@@ -315,7 +315,7 @@ def _fill_one(job):
     if error is not None:
         return entry, None, "scan failed: %s" % error, secs
     try:
-        _rows, judged = ab.read_reports(text, os.path.basename(entry))
+        _rows, judged = ab.read_reports(text, os.path.basename(entry.rstrip("/")))
     except Exception as e:   # noqa: BLE001 — surface any reader refusal as this entry's failure
         return entry, None, "unreadable report: %s" % e, secs
     if not judged and not _rows and not keep_unjudged:

@@ -445,8 +445,11 @@ def arms_are_indistinguishable(pre_cmd, post_cmd, mark_env, mark_arm):
                        "wrapper that picks the binary by argument — the arms' ENGINES were NOT proven "
                        "to differ at the artefact (R691); name the binaries directly to prove it."
                        % pre_h[0][:12])
+    # Print a hash that DIFFERS.  The tuples are sorted, so `pre_h[0]` and `post_h[0]` are often the SAME file
+    # (a shared wrapper) while a later one differs, and the old line said "differ (aaaa… vs aaaa…)".
+    only_pre, only_post = sorted(set(pre_h) - set(post_h)), sorted(set(post_h) - set(pre_h))
     return False, ("arm identity: the arms' binaries differ (%s… vs %s…), proven by content hash."
-                   % ((pre_h[0][:12] if pre_h else "none"), (post_h[0][:12] if post_h else "none")))
+                   % ((only_pre[0][:12] if only_pre else "none"), (only_post[0][:12] if only_post else "none")))
 
 
 # ── WHAT DID THIS DIFF LOSE?  SOUNDNESS R701 ──────────────────────────────────────────────────────
@@ -1811,7 +1814,7 @@ def selftest():
     flat = {"pre": [], "post": []}
     for e in (ea, eb):
         for arm in ("pre", "post"):
-            rows, _ = read_reports(open(os.path.join(e, arm + ".json")).read(), os.path.basename(e))
+            rows, _ = read_reports(open(os.path.join(e, arm + ".json")).read(), os.path.basename(e.rstrip("/")))
             flat[arm] += [(e, p, r) for p, r in rows]
     want_head, want_detail = diff_multiset(index_multiset(flat["pre"], "unit", None),
                                            index_multiset(flat["post"], "unit", None))

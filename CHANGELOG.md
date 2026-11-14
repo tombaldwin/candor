@@ -25,6 +25,10 @@ keeps its own.
   fetched) and FAILS when a newer release tag exists remotely, naming the `git fetch --tags` to run. An unreachable
   origin fails too; `CANDOR_VM_NO_REMOTE=1` is the explicit offline opt-out and prints a warning rather than a pass
   (R1718: stale clones, newest tag v0.40.17 with 0.41.x published, gave a false OK for rust).
+- `bin/version-moved.sh` no longer passes having compared nothing: an engine in the cut that is not a git clone under
+  `CANDOR_ROOT` FAILS (it used to print `⊘ not a git repo` and exit OK, which is what an umbrella worktree got), and a cut
+  in which no engine was judged at all FAILS (`compared ZERO of N`). `CANDOR_VM_ALLOW_EMPTY=1` is the explicit opt-out and
+  prints a warning that it is not a pass. Seeded in its selftest and through the real preflight in `release-test.sh`.
 
 ## 2026-11-13 — release-ladder fixes from the ⟨0.42⟩ cut
 

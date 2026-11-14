@@ -48,12 +48,14 @@ _vm_semver() { grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u; }   # unique version
 
 # vm_check <root> <want_ver> <set>  → prints lines, returns number of failures
 vm_check() {
-  local root="$1" want="$2" set="$3" fails=0
+  local root="$1" want="$2" set="$3" fails=0 inset=0 compared=0
   local repo file key prefix paths bin ovr
   while IFS='|' read -r repo file key prefix paths bin ovr; do
     case " $set " in *" $repo "*) ;; *) printf '  ⊘ %s: not in this cut\n' "$repo"; continue;; esac
-    local d="$root/$repo"
-    git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || { printf '  ⊘ %s: not a git repo — nothing to compare\n' "$repo"; continue; }
+    local d="$root/$repo"; inset=$((inset+1))
+    # An engine IN THE CUT that is not a clone here was NOT compared; passing over it is the vacuous OK (an umbrella
+    # worktree's CANDOR_ROOT has no engine clones at all and the check printed OK having judged nothing).
+    git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || { printf '  ✘ %s: in this cut but %s is not a git clone — NOT compared; point CANDOR_ROOT at the directory holding the engine clones\n' "$repo" "$d"; fails=$((fails+1)); continue; }
     local tag
     tag="$(git -C "$d" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -vx "v${want}" | sort -V | tail -1)"
     # Are the LOCAL tags current?  Ask the remote what the newest release tag is (names only; nothing is fetched).
@@ -97,6 +99,7 @@ vm_check() {
         eff="$got"; how="built binary"
       fi
     fi
+    compared=$((compared+1))
     local -a pa; set -f; read -ra pa <<<"$paths"; set +f   # no shell glob: git expands the pathspecs itself
     local changed; changed="$(git -C "$d" diff --name-only "$tag" -- "${pa[@]}" 2>/dev/null | grep -c .)"
     if [ "$changed" -gt 0 ] && [ "$eff" = "$prev" ]; then
@@ -108,6 +111,16 @@ vm_check() {
       printf '  • %s: no source change since %s — version %s%s unchanged is correct\n' "$repo" "$tag" "$prefix" "$eff"
     fi
   done <<<"$VM_TABLE"
+  # The check must have JUDGED something.  Engines in the cut, none compared (every one ⊘ for want of a release tag, or
+  # failed above) is not a pass: say so.  CANDOR_VM_ALLOW_EMPTY=1 is the explicit opt-out and stays loud.
+  if [ "$inset" -gt 0 ] && [ "$compared" -eq 0 ]; then
+    if [ "${CANDOR_VM_ALLOW_EMPTY:-}" = 1 ]; then
+      printf '  ⚠ version-moved compared ZERO of %d engine(s) in this cut — CANDOR_VM_ALLOW_EMPTY=1, so this is NOT a pass of the check, only an allowed skip\n' "$inset"
+    elif [ "$fails" -eq 0 ]; then
+      printf '  ✘ version-moved compared ZERO of %d engine(s) in this cut — nothing was judged, which is not OK (set CANDOR_VM_ALLOW_EMPTY=1 only if you mean it)\n' "$inset"
+      fails=$((fails+1))
+    fi
+  fi
   return "$fails"
 }
 
@@ -174,6 +187,19 @@ vm_selftest() {
   expect "SEEDED: origin unreachable -> FAILS (cannot confirm the tags are current)" 1 'cannot reach origin' "$rc" "$out"
   out="$(CANDOR_VM_NO_REMOTE=1 run "$T/a" 0.2.0 candor-rust)"; rc=$?
   expect "CANDOR_VM_NO_REMOTE=1 is explicit and prints a NOT-verified warning" 0 'local tags NOT verified' "$rc" "$out"
+
+  # I. VACUOUS PASS: an engine in the cut that is not a clone under CANDOR_ROOT.  Used to print ⊘ and OK.
+  mkdir -p "$T/empty"
+  out="$(run "$T/empty" 0.2.0 candor-rust)"; rc=$?
+  expect "SEEDED: engine in the cut but no clone under the root -> FAILS" 1 '✘ candor-rust: in this cut but .* is not a git clone' "$rc" "$out"
+  #    …and every engine in the cut with no previous release tag compares nothing: also a failure.
+  mkdir -p "$T/notag/candor-rust"; "${g[@]}" -C "$T/notag/candor-rust" init -q
+  out="$(CANDOR_VM_NO_REMOTE=1 run "$T/notag" 0.2.0 candor-rust)"; rc=$?
+  expect "SEEDED: every engine in the cut skipped (no release tag) -> FAILS: compared ZERO" 1 'compared ZERO of 1' "$rc" "$out"
+  out="$(CANDOR_VM_NO_REMOTE=1 CANDOR_VM_ALLOW_EMPTY=1 run "$T/notag" 0.2.0 candor-rust)"; rc=$?
+  expect "CANDOR_VM_ALLOW_EMPTY=1 is explicit and prints a NOT-a-pass warning" 0 'compared ZERO .*NOT a pass' "$rc" "$out"
+  out="$(run "$T/empty" 0.2.0 candor-spec)"; rc=$?
+  expect "an empty cut (no engine in it) is not an error" 0 'not in this cut' "$rc" "$out"
 
   [ "$s" = 0 ] && echo "version-moved selftest: OK (every SEEDED case failed as required)" || echo "version-moved selftest: $s FAILED"
   return "$s"

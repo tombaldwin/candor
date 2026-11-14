@@ -4893,7 +4893,13 @@ _o="$(t4b_run)"
 hasin "$_o" -q 'origin has release tag v0.1.5 but the newest LOCAL tag is v0.1.0' \
   && ok "[4b] through the real preflight: a clone with stale local tags FAILS instead of passing against an older release (R1718)" \
   || { bad "[4b] passed a clone whose tags are older than origin's newest release"; printf '%s\n' "$_o" | sed 's/^/      /'; }
-rm -rf "${T4B:?}"
+# …and a root holding NO engine clone must FAIL the real preflight, not pass having compared nothing (umbrella-worktree shape).
+T4C="$(mktemp -d)"; mkdir -p "$T4C/candor"
+_o="$(CANDOR_ROOT="$T4C" bash "$UMBRELLA/bin/release-preflight.sh" 0.2 0.2.0 --only candor-rust 2>&1 | sed -n '/^\[4b\]/,/^\[5\]/p')"
+hasin "$_o" -q 'not a git clone' \
+  && ok "[4b] through the real preflight: an engine in the cut with no clone under CANDOR_ROOT FAILS (was a vacuous ⊘/OK)" \
+  || { bad "[4b] passed having compared nothing"; printf '%s\n' "$_o" | sed 's/^/      /'; }
+rm -rf "${T4C:?}" "${T4B:?}"
 
 printf '\n'
 if [ "$fail" -gt 0 ]; then printf '\033[31mrelease-test: %d FAILED, %d passed\033[0m\n' "$fail" "$pass"; exit 1; fi

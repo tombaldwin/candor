@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-14 — A/B and preflight instruments: three false-OK paths closed
+
+- `bin/ab-price.py --arms`: two arms whose call graphs are of DIFFERENT KINDS (report `calls` lists on one, a `--out`
+  call-graph sidecar on the other) are no longer compared as a measurement. interfaceUnion routing differs between the
+  kinds: on a java release bar 17 `hasEdgeConnecting` units read as `deny Unknown[native|reflect]` flips and the same
+  452 jars gave 0 with sidecars on both arms. Both arms are now re-read from the report `calls` (direct-only if either
+  has none), the output carries a `DIFFERENT KINDS` warning, and the graph line shows `MISMATCH-KIND->…`. Seeded
+  selftest: the old per-arm pairing fabricates the flip, the new one does not.
+- `bin/pubarm_cache.py fill` now stores each arm's `*.callgraph.json` sidecar beside the report
+  (`<entry>.callgraph.json.gz`, sha in the meta, verified on read; `lookup_callgraph`), `--require-callgraph` fails an
+  entry whose arm wrote none, and `status` counts the entries that have one. `ab-price --arms` reads a cache dir's
+  sidecar (an edited one is refused, not dropped). Entries filled before this have none: refill them (same `--cmd`,
+  so the cache key is unchanged for java's `--json {outdir}/r.json`, which already writes the sidecar).
+- `bin/version-moved.sh` ([4b]) no longer trusts the clone's local tags: it asks `origin` (`git ls-remote`, nothing
+  fetched) and FAILS when a newer release tag exists remotely, naming the `git fetch --tags` to run. An unreachable
+  origin fails too; `CANDOR_VM_NO_REMOTE=1` is the explicit offline opt-out and prints a warning rather than a pass
+  (R1718: stale clones, newest tag v0.40.17 with 0.41.x published, gave a false OK for rust).
+
 ## 2026-11-13 — release-ladder fixes from the ⟨0.42⟩ cut
 
 Three defects the 0.42 cut hit in the ladder itself (the candor-swift and candor-spec halves are in those repos):

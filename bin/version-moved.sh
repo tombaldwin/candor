@@ -21,9 +21,13 @@
 # every commit by construction (its jar NAME is gated by [7]).
 #
 # PREVIOUS RELEASE = the newest `vX.Y.Z` tag in that repo other than v$VER (so it still answers after the
-# cut's own tag exists). The tag is the repo's own record of what shipped and needs no network; the tag it
-# used is PRINTED, because a clone whose tags were never fetched compares against an OLDER release, which
-# can only make a silent engine look LESS silent — fetch tags first.
+# cut's own tag exists). The tag it used is PRINTED. A clone whose tags were never fetched compares against an
+# OLDER release, which can only make a silent engine look LESS silent — a FALSE OK (R1718: the engine clones'
+# newest local tag was v0.40.17 while 0.41.x was published, and rust passed). So the local tag is NOT trusted
+# alone: it is checked against `origin`'s tags (`git ls-remote`, no clone state touched) and a newer remote tag
+# than any local one FAILS with the fetch command to run. A clone with no reachable origin FAILS too (it cannot
+# say its tags are current); CANDOR_VM_NO_REMOTE=1 is the explicit offline opt-out and prints a warning line
+# saying the tags were NOT verified, never a ✔.
 # SOURCE CHANGED = any file under the engine's source pathspec differs between that tag and the working
 # tree (uncommitted included: it is what the build reads). Docs, changelogs and tests do not count.
 # FAILS when (1) source changed and the version the built artifact reports equals the previous release's, or
@@ -52,6 +56,22 @@ vm_check() {
     git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || { printf '  ⊘ %s: not a git repo — nothing to compare\n' "$repo"; continue; }
     local tag
     tag="$(git -C "$d" tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -vx "v${want}" | sort -V | tail -1)"
+    # Are the LOCAL tags current?  Ask the remote what the newest release tag is (names only; nothing is fetched).
+    local rtag=""
+    if [ "${CANDOR_VM_NO_REMOTE:-}" = 1 ]; then
+      printf '  ⚠ %s: CANDOR_VM_NO_REMOTE=1 — local tags NOT verified against origin; the previous release below may be stale\n' "$repo"
+    else
+      local rls
+      if ! rls="$(GIT_TERMINAL_PROMPT=0 git -C "$d" ls-remote --tags --refs origin 'v[0-9]*.[0-9]*.[0-9]*' 2>&1)"; then
+        printf '  ✘ %s: cannot reach origin to check the local tags are current (%s) — a stale clone gives a FALSE OK (R1718); fetch, or set CANDOR_VM_NO_REMOTE=1 to say you are offline\n' \
+          "$repo" "$(printf '%s' "$rls" | tail -1 | cut -c1-120)"; fails=$((fails+1)); continue
+      fi
+      rtag="$(printf '%s\n' "$rls" | sed -n 's#.*refs/tags/##p' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "v${want}" | sort -V | tail -1)"
+    fi
+    if [ -n "$rtag" ] && { [ -z "$tag" ] || [ "$(printf '%s\n%s\n' "$tag" "$rtag" | sort -V | tail -1)" != "$tag" ]; }; then
+      printf '  ✘ %s: origin has release tag %s but the newest LOCAL tag is %s — this clone'"'"'s tags are stale, so "previous release" would be the wrong one (R1718, false OK). Run: git -C %s fetch --tags origin\n' \
+        "$repo" "$rtag" "${tag:-none}" "$d"; fails=$((fails+1)); continue
+    fi
     [ -n "$tag" ] || { printf '  ⊘ %s: no previous release tag — nothing to compare\n' "$repo"; continue; }
     local prev cur n
     prev="$(git -C "$d" show "$tag:$file" 2>/dev/null | grep -oE "$key" | _vm_semver)"
@@ -101,6 +121,7 @@ vm_selftest() {
     echo 'let engineVersion = "candor-swift-0.1.0"' > "$1/candor-swift/Sources/candor-swift/main.swift"
     local r; for r in candor-rust candor-swift; do
       "${g[@]}" -C "$1/$r" init -q; "${g[@]}" -C "$1/$r" add -A; "${g[@]}" -C "$1/$r" commit -qm one; "${g[@]}" -C "$1/$r" tag v0.1.0
+      git init -q --bare "$1/$r.origin.git"; "${g[@]}" -C "$1/$r" remote add origin "$1/$r.origin.git"; "${g[@]}" -C "$1/$r" push -q origin HEAD v0.1.0
     done
   }
   stub() { printf '#!/bin/sh\necho "%s %s (spec 0.1)"\n' "$1" "$2" > "$3"; chmod +x "$3"; }
@@ -137,6 +158,22 @@ vm_selftest() {
   "${g[@]}" -C "$T/a/candor-rust" add -A; "${g[@]}" -C "$T/a/candor-rust" commit -qm two; "${g[@]}" -C "$T/a/candor-rust" tag v0.2.0
   out="$(run "$T/a" 0.2.0 candor-rust)"; rc=$?
   expect "the cut's own tag is skipped when choosing the previous release" 0 'from scan-0.1.0 \(v0.1.0\)' "$rc" "$out"
+
+  # G. STALE LOCAL TAGS (R1718).  A second clone publishes v0.1.5 to origin; `$T/a` never fetched it.  Source is unchanged
+  #    here, so before this check the cut passed against v0.1.0 — the false OK.  It must FAIL and name the fetch command.
+  git clone -q "$T/a/candor-rust.origin.git" "$T/pub" 2>/dev/null
+  "${g[@]}" -C "$T/pub" tag v0.1.5; "${g[@]}" -C "$T/pub" push -q origin v0.1.5
+  out="$(run "$T/a" 0.2.0 candor-rust)"; rc=$?
+  expect "SEEDED: origin has v0.1.5, local newest tag is v0.1.0 -> FAILS and says fetch" 1 'origin has release tag v0.1.5 but the newest LOCAL tag is v0.1.0.*fetch --tags' "$rc" "$out"
+  "${g[@]}" -C "$T/a/candor-rust" fetch -q --tags origin
+  out="$(run "$T/a" 0.2.0 candor-rust)"; rc=$?
+  expect "after fetching the tag it passes, against the NEW previous release" 0 'moved from scan-0.1.0 \(v0.1.5\)' "$rc" "$out"
+  # H. an unreachable origin is not a pass; the offline opt-out is explicit and is never a ✔
+  "${g[@]}" -C "$T/a/candor-rust" remote set-url origin "$T/does-not-exist.git"
+  out="$(run "$T/a" 0.2.0 candor-rust)"; rc=$?
+  expect "SEEDED: origin unreachable -> FAILS (cannot confirm the tags are current)" 1 'cannot reach origin' "$rc" "$out"
+  out="$(CANDOR_VM_NO_REMOTE=1 run "$T/a" 0.2.0 candor-rust)"; rc=$?
+  expect "CANDOR_VM_NO_REMOTE=1 is explicit and prints a NOT-verified warning" 0 'local tags NOT verified' "$rc" "$out"
 
   [ "$s" = 0 ] && echo "version-moved selftest: OK (every SEEDED case failed as required)" || echo "version-moved selftest: $s FAILED"
   return "$s"

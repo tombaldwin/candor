@@ -12,6 +12,9 @@ redoing a measurement that already existed once.  This is the one place that mea
         MANIFEST.json                       what was filled, with what, when, how long, how big
         entries/<label>-<entrysha16>.meta.json     the key this entry was stored under
         entries/<label>-<entrysha16>.report.gz     the raw report text the arm produced
+        entries/<label>-<entrysha16>.callgraph.json.gz   the arm's `--out` call-graph SIDECAR, if it wrote one
+                                                         ({fn: [callee,...]}, every analysed unit a key; a tree
+                                                         with several sidecars is merged by union)
 
 (`CANDOR_PUBARM` overrides the root.)  Outside /private/tmp on purpose.
 
@@ -32,6 +35,17 @@ keyed on EVERYTHING that determines the report, and every part is re-verified on
                  label, different bytes -> a miss.
   report sha     of the stored report, so a truncated or edited file is a miss, not a short corpus.
 
+THE SIDECAR (why it is stored).  An A/B of a candidate against a PUBLISHED version needs the SAME KIND of call
+graph on both arms.  The candidate arm has a sidecar (`--out`); a cache that kept only the report forced the
+published arm onto the report's `calls` lists, and the two route interfaceUnion differently: on a java release bar
+17 `hasEdgeConnecting` units read as class flips, and the same 452 jars gave 0 with sidecars on both arms.  So `fill`
+now keeps the sidecar beside the report, under its own sha (`callgraph_sha256` in the meta), and `lookup_callgraph`
+verifies it on read.  An entry filled BEFORE this had none: `meta.callgraph` is absent, `lookup_callgraph` raises
+CacheMiss("... predates sidecar storage"), and `bin/ab-price.py --arms` reports the arm graph-less / report-graph and
+says the pair is not like-with-like.  `fill --require-callgraph` fails an entry whose arm wrote no sidecar (use it
+whenever the arm command is meant to; an engine or flag that writes none is otherwise a silent graph-less fill), and
+an entry already cached WITHOUT a sidecar is re-filled under that flag rather than skipped.
+
 A MISS NEVER RETURNS EMPTY.  `lookup` raises `CacheMiss` with the specific reason (no such version / engine
 sha differs: cached X wanted Y / ...).  An empty or unreadable report is `CacheMiss` too — `fill` refuses to
 store one (R242: an entry that judged nothing is not a measurement).
@@ -39,7 +53,7 @@ store one (R242: an entry that judged nothing is not a measurement).
 USAGE
 =====
   bin/pubarm_cache.py fill   --version 0.40.18 --engine java --cmd 'java -jar JAR {entry} --json {outdir}/r.json'
-                             --entries-dir DIR [--jobs 4] [--timeout 600]
+                             --entries-dir DIR [--jobs 4] [--timeout 600] [--require-callgraph]
   bin/pubarm_cache.py status [--version V] [--engine E]
   bin/pubarm_cache.py check  --version V --engine E --cmd '...' --entries-dir DIR     # hit/miss per entry
   bin/pubarm_cache.py --selftest
@@ -140,8 +154,21 @@ def _report_version(text):
     return m.group(1) if m else None
 
 
+def merge_callgraphs(texts):
+    """Union of {fn: [callee,...]} documents -> one document (text).  Refuses anything that is not that shape."""
+    out = {}
+    for t in texts:
+        d = json.loads(t)
+        if not isinstance(d, dict) or not all(isinstance(v, list) for v in d.values()):
+            raise CacheMiss("a call-graph sidecar is not a {fn: [callee,...]} map — refusing to store it")
+        for k, v in d.items():
+            cur = out.setdefault(k, [])
+            cur.extend(c for c in v if c not in cur)
+    return json.dumps(out, sort_keys=True)
+
+
 def store(version, engine, entry_path, text, engine_hashes, residual, secs=None, root=None, judged=None,
-          expect_report_version=None):
+          expect_report_version=None, callgraph=None):
     """Write one entry.  Refuses an empty report, and (if given) a report whose own `candor.version` is not
     `expect_report_version`."""
     if not text or not text.strip():
@@ -164,9 +191,45 @@ def store(version, engine, entry_path, text, engine_hashes, residual, secs=None,
             "report_bytes": len(raw), "stored_bytes": len(gz), "scan_seconds": secs, "judged": judged,
             "stored_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     mp, rp = _paths(version, engine, eid, root)
+    cp = _cg_path(rp)
+    if callgraph is not None and callgraph.strip():
+        craw = callgraph.encode("utf-8")
+        meta["callgraph"] = {"sha256": hashlib.sha256(craw).hexdigest(), "bytes": len(craw)}
+        _atomic_write(cp, gzip.compress(craw, 6))
+    elif os.path.exists(cp):
+        os.unlink(cp)        # a re-store without a sidecar must not leave an older one claiming to match
     _atomic_write(rp, gz)
     _atomic_write(mp, json.dumps(meta, indent=1, sort_keys=True).encode())
     return meta
+
+
+def _cg_path(report_path):
+    return report_path[:-len(".report.gz")] + ".callgraph.json.gz"
+
+
+def lookup_callgraph(version, engine, entry_path, root=None):
+    """-> sidecar text, verified against the sha its meta recorded.  Raises CacheMiss(reason): no sidecar stored
+    (an entry filled before sidecars were kept, or an arm that wrote none), or the file is missing/corrupt/edited.
+    Call AFTER `lookup` has verified the entry's key; this only answers for the sidecar."""
+    esha, _k, _s = entry_identity(entry_path)
+    eid = entry_id(entry_path, esha)
+    mp, rp = _paths(version, engine, eid, root)
+    try:
+        meta = json.load(open(mp))
+    except (OSError, ValueError) as e:
+        raise CacheMiss("meta for %s unreadable: %s" % (eid, e))
+    want = (meta.get("callgraph") or {}).get("sha256")
+    if not want:
+        raise CacheMiss("entry %s has NO call-graph sidecar stored (filled before sidecars were kept, or the arm wrote "
+                        "none) — refill with --require-callgraph" % eid)
+    cp = _cg_path(rp)
+    try:
+        raw = gzip.decompress(open(cp, "rb").read())
+    except (OSError, EOFError, ValueError) as e:
+        raise CacheMiss("call-graph sidecar for %s unreadable (%s) — missing, truncated or corrupt" % (eid, e))
+    if hashlib.sha256(raw).hexdigest() != want:
+        raise CacheMiss("call-graph sidecar for %s fails its own sha — edited or truncated" % eid)
+    return raw.decode("utf-8")
 
 
 def lookup(version, engine, entry_path, engine_hashes, residual, root=None):
@@ -242,10 +305,12 @@ def _list_entries(args):
 
 
 def _fill_one(job):
-    entry, template, version, engine, timeout, hashes, residual, root, expect_rv, keep_unjudged = job
+    entry, template, version, engine, timeout, hashes, residual, root, expect_rv, keep_unjudged, need_cg = job
     ab = _load_ab()
     t0 = time.time()
-    text, _err, error = ab.run_arm(template, entry, timeout, {}, "*.json", (".callgraph.json", ".hierarchy.json", ".locs.json"))
+    cgs = []
+    text, _err, error = ab.run_arm(template, entry, timeout, {}, "*.json", (".callgraph.json", ".hierarchy.json", ".locs.json"),
+                                   callgraph_out=cgs)
     secs = round(time.time() - t0, 1)
     if error is not None:
         return entry, None, "scan failed: %s" % error, secs
@@ -255,9 +320,13 @@ def _fill_one(job):
         return entry, None, "unreadable report: %s" % e, secs
     if not judged and not _rows and not keep_unjudged:
         return entry, None, "judged NOTHING (analyzed.count %s, no rows) — R242, not stored (pass --store-unjudged to keep it)" % judged, secs
+    if need_cg and not cgs:
+        return entry, None, "--require-callgraph: the arm wrote NO *.callgraph.json under {outdir} (does --cmd pass --out " \
+                            "{outdir}/r and the engine's call-graph flag?) — not stored", secs
     try:
-        meta = store(version, engine, entry, text, hashes, residual, secs, root, judged, expect_rv)
-    except CacheMiss as e:
+        meta = store(version, engine, entry, text, hashes, residual, secs, root, judged, expect_rv,
+                     callgraph=merge_callgraphs(cgs) if cgs else None)
+    except (CacheMiss, ValueError) as e:
         return entry, None, str(e), secs
     return entry, meta, None, secs
 
@@ -283,10 +352,12 @@ def cmd_fill(args):
     for e in entries:
         try:
             lookup(args.version, args.engine, e, hashes, residual, root)
+            if args.require_callgraph:
+                lookup_callgraph(args.version, args.engine, e, root)   # cached WITHOUT a sidecar -> refill, not skip
             skipped += 1                     # already cached AND verified — resumable
         except CacheMiss:
             jobs.append((e, args.cmd, args.version, args.engine, args.timeout, hashes, residual, root,
-                         args.expect_report_version, args.store_unjudged))
+                         args.expect_report_version, args.store_unjudged, args.require_callgraph))
     with cf.ProcessPoolExecutor(max_workers=max(1, args.jobs)) as ex:
         for entry, meta, err, secs in ex.map(_fill_one, jobs):
             if err:
@@ -306,7 +377,7 @@ def cmd_fill(args):
 
 def status_of(version, engine, root=None):
     d = os.path.join(arm_dir(version, engine, root), "entries")
-    n = sb = rb = 0
+    n = sb = rb = ncg = 0
     if os.path.isdir(d):
         for f in os.listdir(d):
             if f.endswith(".meta.json"):
@@ -315,9 +386,10 @@ def status_of(version, engine, root=None):
                 except (OSError, ValueError):
                     continue
                 n += 1
+                ncg += 1 if (m.get("callgraph") or {}).get("sha256") else 0
                 sb += m.get("stored_bytes", 0)
                 rb += m.get("report_bytes", 0)
-    return {"entries": n, "stored_bytes": sb, "report_bytes": rb}
+    return {"entries": n, "stored_bytes": sb, "report_bytes": rb, "callgraphs": ncg}
 
 
 def write_manifest(version, engine, root, template, residual, hashes, wall, failed):
@@ -351,8 +423,8 @@ def cmd_status(args):
             if args.engine and e != args.engine:
                 continue
             st = status_of(v, e, root)
-            print("%-10s %-8s %5d entries  %8.1f MB stored  %8.1f MB raw" %
-                  (v, e, st["entries"], st["stored_bytes"] / 1e6, st["report_bytes"] / 1e6))
+            print("%-10s %-8s %5d entries (%d with call-graph sidecar)  %8.1f MB stored  %8.1f MB raw" %
+                  (v, e, st["entries"], st["callgraphs"], st["stored_bytes"] / 1e6, st["report_bytes"] / 1e6))
     return 0
 
 
@@ -448,6 +520,64 @@ def selftest():
         expect("directory identity ignores .git", entry_identity(dent)[0] == s1)
         open(os.path.join(dent, "src", "a.rs"), "w").write("fn b(){}")
         expect("directory identity moves with a source edit", entry_identity(dent)[0] != s1)
+        # call-graph sidecar: stored beside the report, verified on read, never invented
+        cg = json.dumps({"a": ["b"], "b": []})
+        try:
+            lookup_callgraph("9.9.9", "java", ent, root)
+            expect("an entry stored WITHOUT a sidecar answers CacheMiss, not an empty graph", False)
+        except CacheMiss as e:
+            expect("an entry stored WITHOUT a sidecar answers CacheMiss, not an empty graph", "NO call-graph sidecar" in str(e))
+        store("9.9.9", "java", ent, rep, hashes, resid, 1.0, root, callgraph=cg)
+        expect("sidecar round-trips", json.loads(lookup_callgraph("9.9.9", "java", ent, root)) == {"a": ["b"], "b": []})
+        cp = _cg_path(mp[:-len(".meta.json")] + ".report.gz")
+        goodcg = open(cp, "rb").read()
+        open(cp, "wb").write(gzip.compress(b'{"a": []}'))
+        try:
+            lookup_callgraph("9.9.9", "java", ent, root)
+            expect("an edited sidecar (valid gzip, wrong sha) is a MISS", False)
+        except CacheMiss as e:
+            expect("an edited sidecar (valid gzip, wrong sha) is a MISS", "fails its own sha" in str(e))
+        os.unlink(cp)
+        try:
+            lookup_callgraph("9.9.9", "java", ent, root)
+            expect("a deleted sidecar is a MISS", False)
+        except CacheMiss:
+            expect("a deleted sidecar is a MISS", True)
+        open(cp, "wb").write(goodcg)
+        expect("restoring it HITS again", "a" in json.loads(lookup_callgraph("9.9.9", "java", ent, root)))
+        store("9.9.9", "java", ent, rep, hashes, resid, 1.0, root)
+        expect("re-storing without a sidecar removes the old one (it cannot claim to match)", not os.path.exists(cp))
+        expect("merge_callgraphs unions per-package sidecars",
+               json.loads(merge_callgraphs(['{"a":["b"]}', '{"a":["c"],"z":[]}'])) == {"a": ["b", "c"], "z": []})
+        try:
+            merge_callgraphs(['["not","a","map"]'])
+            expect("merge_callgraphs refuses a non-graph shape", False)
+        except CacheMiss:
+            expect("merge_callgraphs refuses a non-graph shape", True)
+        # END TO END through `fill`: a fake engine that writes a report + sidecar under {outdir}, and one that writes none
+        eng_ok = os.path.join(tmp, "eng-ok.sh")
+        eng_nocg = os.path.join(tmp, "eng-nocg.sh")
+        body = 'out="$2"\nprintf \'%s\' \'' + rep + '\' > "$out/r.json"\n'
+        open(eng_ok, "w").write("#!/bin/bash\n" + body + 'printf \'{"a":["b"],"b":[]}\' > "$out/r.callgraph.json"\n')
+        open(eng_nocg, "w").write("#!/bin/bash\n" + body)
+        import argparse as _ap
+        for eng_path, req, want_fail, label in ((eng_ok, True, 0, "arm WITH a sidecar, --require-callgraph"),
+                                                (eng_nocg, True, 1, "arm with NO sidecar, --require-callgraph FAILS the entry"),
+                                                (eng_nocg, False, 0, "arm with no sidecar, no flag: stored graph-less")):
+            r2 = os.path.join(tmp, "root-" + label[:6].replace(" ", "_") + str(req))
+            tmpl = "bash %s {entry} {outdir}" % eng_path
+            a = _ap.Namespace(cmd=tmpl, version="9.9.9", engine="java", entries_dir=[], entry=[ent], entries_file=None,
+                              root=r2, engine_sha256=None, store_unjudged=False, expect_report_version=None,
+                              require_callgraph=req, jobs=1, timeout=60)
+            import io
+            import contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = cmd_fill(a)
+            expect("fill: " + label + " -> failed=%d" % want_fail, rc == want_fail)
+            h2, rs2 = identity_of(tmpl)
+            if eng_path == eng_ok:
+                expect("fill stored a verified sidecar", json.loads(lookup_callgraph("9.9.9", "java", ent, r2)) == {"a": ["b"], "b": []})
+                expect("status counts it", status_of("9.9.9", "java", r2)["callgraphs"] == 1)
         # status / manifest
         write_manifest("9.9.9", "java", root, "t", resid, hashes, 1.0, [])
         expect("manifest written and status counts the entry", status_of("9.9.9", "java", root)["entries"] == 1)
@@ -480,6 +610,9 @@ def main(argv=None):
                             "this it is refused (R242).  Needed to serve an A/B that runs --allow-unjudged; the "
                             "stored meta records judged=0 so the fact is not lost.")
         p.add_argument("--expect-report-version", help="fill: refuse any report whose candor.version differs")
+        p.add_argument("--require-callgraph", action="store_true",
+                       help="fill: an entry whose arm wrote no *.callgraph.json sidecar FAILS (and one cached without "
+                            "a sidecar is refilled).  Needed for an A/B against a candidate arm that has one.")
         p.add_argument("--jobs", type=int, default=2)
         p.add_argument("--timeout", type=int, default=600)
     p = sub.add_parser("status")

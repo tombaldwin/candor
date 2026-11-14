@@ -579,6 +579,25 @@ def _first(*paths):
     return None
 
 
+def _cache_callgraph(report_path, meta):
+    """The pubarm_cache call-graph sidecar beside a stored report, VERIFIED against the sha its meta recorded, or None
+    when the entry has none (filled before sidecars were kept).  A sidecar that is named but missing or fails its sha
+    is an error, not a graph-less arm: silently dropping it would put the pair back on mismatched graph kinds."""
+    want = (meta.get("callgraph") or {}).get("sha256")
+    if not want:
+        return None
+    cp = report_path[:-len(".report.gz")] + ".callgraph.json.gz"
+    import gzip
+    import hashlib
+    try:
+        raw = gzip.decompress(open(cp, "rb").read())
+    except (OSError, EOFError, ValueError) as e:
+        raise Unpriceable("pubarm entry %s names a call-graph sidecar that is unreadable (%s)" % (os.path.basename(cp), e))
+    if hashlib.sha256(raw).hexdigest() != want:
+        raise Unpriceable("pubarm entry %s: call-graph sidecar fails its recorded sha (edited or truncated)" % os.path.basename(cp))
+    return cp
+
+
 def arm_index(d):
     """{entry-name: (report_path, callgraph_path|None)} for a directory of arms.  Layouts: A) `<e>.scan.json[.gz]`
     (+ `<e>.scan.callgraph.json[.gz]`); B) a pubarm_cache dir (`entries/<label>-<sha>.report.gz` + `.meta.json`)."""
@@ -587,10 +606,11 @@ def arm_index(d):
         ent = os.path.join(d, "entries")
         for m in sorted(os.listdir(ent)):
             if m.endswith(".meta.json"):
-                lab = _read_json(os.path.join(ent, m)).get("entry_label")
+                meta = _read_json(os.path.join(ent, m))
+                lab = meta.get("entry_label")
                 rp = os.path.join(ent, m[:-len(".meta.json")] + ".report.gz")
                 if lab and os.path.exists(rp):
-                    idx[lab] = (rp, None)
+                    idx[lab] = (rp, _cache_callgraph(rp, meta))
         return idx
     for f in sorted(os.listdir(d)):
         for suf in (".scan.json.gz", ".scan.json"):
@@ -601,7 +621,7 @@ def arm_index(d):
     return idx
 
 
-def load_units(report_path, cg_path, use_graph=True):
+def load_units(report_path, cg_path, use_graph=True, graph="auto"):
     """-> {qual: {"eff": set, "unknown": bool, "classes": set}} — ONE record per qual, the UNION of its rows
     (never last-wins), classes transitive over the call graph.  `calls` on the rows are the fallback graph."""
     rep = _read_json(report_path)
@@ -609,9 +629,9 @@ def load_units(report_path, cg_path, use_graph=True):
     for f in rep.get("functions") or []:
         rows[f["fn"]].append(f)
     cg, graph_src = {}, "none"
-    if not use_graph:
+    if not use_graph or graph == "none":
         pass
-    elif cg_path:
+    elif cg_path and graph != "report":
         cg, graph_src = _read_json(cg_path), "sidecar"
     else:
         for q, rs in rows.items():
@@ -704,6 +724,17 @@ def arm_flips(pre_dir, post_dir):
             ua, ga = load_units(pa, ca, use_graph=False)
             ub, gb = load_units(pb, cb, use_graph=False)
             res["graph"]["MISMATCH->none"] += 1
+        elif ga != gb:
+            # BOTH arms have a graph but of DIFFERENT KINDS (a `calls`-list graph vs a call-graph sidecar).  The two
+            # route interfaceUnion differently, so the pair is not a like-with-like comparison: measured on a java bar,
+            # 17 `hasEdgeConnecting` units read as class flips that vanished with sidecars on both arms.  Re-read BOTH
+            # from the report's own `calls` (the one kind every arm can supply); if either has none, direct on both.
+            ua, ga = load_units(pa, ca, graph="report")
+            ub, gb = load_units(pb, cb, graph="report")
+            if "none" in (ga, gb):
+                ua, ga = load_units(pa, ca, use_graph=False)
+                ub, gb = load_units(pb, cb, use_graph=False)
+            res["graph"]["MISMATCH-KIND->" + ga] += 1
         res["entries"] += 1
         res["graph"][ga + "/" + gb] += 1
         # Judge at the BARE path (union of co-path members) — then, only where the very same disambiguated fn exists on
@@ -771,6 +802,11 @@ def render_arm_flips(res, pre, post, show=12):
     g = res["graph"]
     o.append("units judged at the BARE path (co-path members unioned, SPEC ⟨0.42⟩): %d bare paths merged >1 member" % res["copath_merged"])
     o.append("call graph (pre/post): " + ", ".join("%s x%d" % kv for kv in sorted(g.items())))
+    if any(k.startswith("MISMATCH-KIND") for k in g):
+        o.append("  !! the two arms carried DIFFERENT KINDS of call graph (report `calls` vs sidecar); they were compared on the "
+                 "report `calls` of BOTH (or direct-only if one lacked them).  A published-vs-candidate pair is only a "
+                 "measurement with a SIDECAR ON BOTH arms (bin/pubarm_cache.py fill --require-callgraph): do not read class "
+                 "flips that move on interfaceUnion routing as findings from this run.")
     if any("none" in k for k in g):  # includes MISMATCH->none
         o.append("  !! an arm with NO call graph computes DIRECT classes only: a class reaching a unit through a callee is "
                  "invisible, so class flips are UNDER-counted there (the sin direction).  Supply the sidecar.")
@@ -1006,6 +1042,44 @@ def selftest():
         check("graph on ONE arm only: compared direct-vs-direct (no fabricated caller flip), and the report SAYS the graph is missing",
               sorted(x[1] for x in r["rows"]) == ["sym"] and "NO call graph" in render_arm_flips(r, "a", "b")
               and r["graph"]["MISMATCH->none"] == 1, str(r["rows"]))
+        # ── graph KIND mismatch: report `calls` on one arm, a call-graph sidecar on the other ──
+        kr = [row("sym", ["Unknown"], [DISP]), row("caller", ["Unknown"], calls=["sym"])]
+        arm("kind_pre", kr)                          # graph = the report's own `calls`
+        arm("kind_post", kr, {"caller": [], "sym": []})   # graph = a sidecar routed differently (no caller->sym edge)
+        r = arm_flips(os.path.join(tmp, "kind_pre"), os.path.join(tmp, "kind_post"))
+        check("KIND MISMATCH (report calls vs sidecar): same reports -> ZERO flips, and the run SAYS the kinds differed",
+              r["rows"] == [] and r["graph"]["MISMATCH-KIND->report"] == 1
+              and "DIFFERENT KINDS" in render_arm_flips(r, "a", "b"), str((r["rows"], dict(r["graph"]))))
+        # the seed must be able to fail: the SAME pair read the old way (each arm its own graph) fabricates a flip
+        _ua, _ = load_units(os.path.join(tmp, "kind_pre", "e1.scan.json.gz"), None)
+        _ub, _ = load_units(os.path.join(tmp, "kind_post", "e1.scan.json.gz"),
+                            os.path.join(tmp, "kind_post", "e1.scan.callgraph.json.gz"))
+        check("…and that pair IS a fabricated flip if each arm keeps its own graph (the seed discriminates)",
+              _ua["caller"]["classes"] - _ub["caller"]["classes"] == {"dispatch"}, str((_ua["caller"], _ub["caller"])))
+        arm("kind_pre2", kr, {"caller": ["sym"], "sym": []})
+        check("sidecar on BOTH arms: kinds agree, no mismatch is reported",
+              not any(k.startswith("MISMATCH") for k in arm_flips(os.path.join(tmp, "kind_pre2"), os.path.join(tmp, "kind_post"))["graph"]))
+        # ── a pubarm_cache dir as the PUBLISHED arm: its stored sidecar is found, verified, and joins the candidate's ──
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import pubarm_cache as _pc
+        croot, ce = os.path.join(tmp, "cache"), os.path.join(tmp, "e1")
+        open(ce, "w").write("entry")
+        ceng = os.path.join(tmp, "eng.sh"); open(ceng, "w").write("x")
+        chs, crs = _pc.identity_of("bash %s {entry}" % ceng)
+        _pc.store("v", "e", ce, json.dumps({"functions": kr}), chs, crs, 1.0, croot, callgraph=json.dumps({"caller": ["sym"], "sym": []}))
+        cdir = os.path.join(croot, "v", "e")
+        arm("cache_post", kr, {"caller": ["sym"], "sym": []})
+        r = arm_flips(cdir, os.path.join(tmp, "cache_post"))
+        check("pubarm cache arm WITH a stored sidecar pairs with a sidecar candidate: graph kinds agree, no mismatch",
+              r["graph"].get("sidecar/sidecar") == 1 and not any(k.startswith("MISMATCH") for k in r["graph"]), str(dict(r["graph"])))
+        cgp = [os.path.join(cdir, "entries", f) for f in os.listdir(os.path.join(cdir, "entries")) if f.endswith(".callgraph.json.gz")][0]
+        with gzip.open(cgp, "wt") as f:
+            json.dump({"caller": []}, f)
+        try:
+            arm_flips(cdir, os.path.join(tmp, "cache_post"))
+            check("an EDITED cached sidecar is refused, not silently dropped to a graph-less arm", False)
+        except Unpriceable as e:
+            check("an EDITED cached sidecar is refused, not silently dropped to a graph-less arm", "recorded sha" in str(e), str(e))
         # ── co-path skew (R1679): merged `Ty::m` on pre vs `Ty::m(Ty)` + `Ty::m(Tr)` on post ──
         arm("cp_pre", [row("Ty::m", ["Fs"]), row("Ty::g", ["Net"]), row("T::new_ok", [])], {})
         for nm, rows in (("cp_a", [row("Ty::m(Ty)", ["Fs"]), row("Ty::m(Tr)", []), row("Ty::g(Ty)", ["Net"]), row("Ty::g(Tr)", ["Net"])]),

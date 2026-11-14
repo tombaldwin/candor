@@ -321,8 +321,9 @@ def diff_lastwins(pre, post):
 
 # ── running an arm ────────────────────────────────────────────────────────────────────────────────
 def run_arm(template, entry, timeout, env_extra, outdir_glob="*.json",
-            outdir_exclude=()):
-    """-> (stdout_text, stderr_bytes, error_or_None)."""
+            outdir_exclude=(), callgraph_out=None):
+    """-> (stdout_text, stderr_bytes, error_or_None).  `callgraph_out`, if a list, receives the text of every
+    `*.callgraph.json` sidecar the arm wrote (the published-arm cache stores them; the A/B itself deletes them)."""
     outdir = None
     try:
         argv = shlex.split(template)
@@ -353,6 +354,8 @@ def run_arm(template, entry, timeout, env_extra, outdir_glob="*.json",
             for f in files:
                 b = os.path.basename(f)
                 (skipped if any(b.endswith(x) for x in outdir_exclude) else kept).append(f)
+            if callgraph_out is not None:
+                callgraph_out.extend(open(f).read() for f in files if f.endswith(".callgraph.json"))
             if not kept:
                 return None, p.stderr, ("wrote no report under {outdir} (%d file(s) matched the "
                                         "sidecar denylist: %s)" % (len(skipped),

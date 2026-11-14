@@ -4874,6 +4874,8 @@ printf '[package]\nname = "candor-scan"\nversion = "0.1.0"\n' > "$T4B/candor-rus
 echo 'fn a(){}' > "$T4B/candor-rust/crates/candor-scan/src/scan.rs"
 t4b() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false -C "$T4B/candor-rust" "$@"; }
 git -C "$T4B/candor-rust" init -q; t4b add -A; t4b commit -qm one; t4b tag v0.1.0
+# [4b] now checks the local tags against origin (R1718), so the fixture needs one that has the release tag.
+git init -q --bare "$T4B/origin.git"; t4b remote add origin "$T4B/origin.git"; t4b push -q origin HEAD v0.1.0
 echo 'fn b(){}' >> "$T4B/candor-rust/crates/candor-scan/src/scan.rs"
 t4b_run() { CANDOR_ROOT="$T4B" bash "$UMBRELLA/bin/release-preflight.sh" 0.2 0.2.0 --only candor-rust 2>&1 | sed -n '/^\[4b\]/,/^\[5\]/p'; }
 _o="$(t4b_run)"
@@ -4885,6 +4887,12 @@ _o="$(t4b_run)"
 hasin "$_o" -q '✔ candor-rust: scan-0.2.0' \
   && ok "[4b] …and the same tree with the version moved PASSES (the check is not one-directional)" \
   || { bad "[4b] failed a moved version"; printf '%s\n' "$_o" | sed 's/^/      /'; }
+# …and a clone whose local tags are STALE against origin must FAIL through the real preflight (R1718's false OK).
+git clone -q "$T4B/origin.git" "$T4B/pub"; git -c user.email=t@t -c user.name=t -C "$T4B/pub" tag v0.1.5; git -C "$T4B/pub" push -q origin v0.1.5
+_o="$(t4b_run)"
+hasin "$_o" -q 'origin has release tag v0.1.5 but the newest LOCAL tag is v0.1.0' \
+  && ok "[4b] through the real preflight: a clone with stale local tags FAILS instead of passing against an older release (R1718)" \
+  || { bad "[4b] passed a clone whose tags are older than origin's newest release"; printf '%s\n' "$_o" | sed 's/^/      /'; }
 rm -rf "${T4B:?}"
 
 printf '\n'

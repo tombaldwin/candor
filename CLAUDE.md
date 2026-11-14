@@ -647,6 +647,18 @@ If pub joins and the candidate is silent over a real effect that no MAY or rulin
 consumer-side join disclosure or a true-reason hedge on exactly the losing units. If SPEC or a ruling permits the silence, ship
 and record the instance on the row that permits it.
 
+**(c′) WITH L2 DEFERRED TO AN OPEN WIRE ROW, settled by Fable 2026-11-14** (`~/candor-handoff/rust-reexport/FABLE-REVIEW.md`).
+This applies when a producer row trades a hedge for a key that NO consumer can yet join, for a reason a separate OPEN and
+DISCLOSED row already names. The case was 22 async-std adapter rows keyed by their private path while consumers spell the public
+re-export: R1698, which needs a wire change. The row is inside (c′) with L2 deferred, on three conditions:
+- L1 holds on the final binary.
+- The key names a member the trait actually declares.
+- The units are recorded on the blocking row, so L2 is measured when that row's change lands. It BLOCKS there if a consumer
+  then reads silent.
+
+Every consumer must stay disclosed on both arms. Chaining may not delete a disclosure (SPEC.md:4385). A consumer that goes
+silent is a block, not a deferral. This is not (d), because no hedge remains.
+
 **AND AN EXPOSED PRE-EXISTING SILENCE DOES NOT SHIP AS AN OPEN ROW.** The 0.40.0 floor rule applies to it even at
 one unit (R986). Resolve it if that is cheap and sound. Otherwise hedge at the LOST site with a true reason, priced in
 absolute rows. A both-arms silence is invisible to the flip list, so count its reach directly; one flip is not one unit.

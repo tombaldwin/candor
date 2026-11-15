@@ -176,6 +176,52 @@ is_sidecar() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# SOUNDNESS R1775 — what counts as BUILD OUTPUT when a freshness / manifest walk prunes. The walks used to
+# prune EVERY directory named `target`, so an edit to real source under `src/target/` (a Rust `mod target;`,
+# a JS `target/` folder) left a stale report reading as current. Mirrors candor-rust's
+# `candor_report::walk::is_build_output_dir` (R1765): a directory is build output only if it is
+#   (1) named `target` AND its parent holds a Cargo.toml, or
+#   (2) holds a CACHEDIR.TAG file (Cargo writes one into every target dir it builds), or
+#   (3) is the configured Cargo target dir (CARGO_TARGET_DIR, CARGO_BUILD_TARGET_DIR, `target-dir` in a
+#       .cargo/config[.toml] under the root).
+# `candor_prune_args ROOT NAME...` sets the array CPRUNE to a `find` prefix: `( NAME.. | build output ) -prune -o`.
+# Build output is still pruned BEFORE descent (a real target/ is never walked): (1) is one `test` per
+# `target`-named dir, and (2)/(3) are found by a first walk that already prunes (1) and the static names, then
+# handed to the real walk as -path prunes. NAME... are the static name prunes (.git, node_modules, ...) —
+# `target` is NOT one of them any more. Portable to BSD find (no -mindepth/-maxdepth, no GNU-only flags).
+candor_prune_args() {
+  local root="$1"; shift
+  local n d t cfg c ln
+  local -a cp_names=() out=()
+  for n in "$@"; do cp_names+=( -name "$n" -o ); done
+  # (1) a Cargo `target`: named target, beside a Cargo.toml, and not the walk root itself
+  local cargo_t=( \( -type d -name target ! -path "$root" -exec test -f '{}/../Cargo.toml' \; \) )
+  # (3) configured target dirs
+  local -a cfgs=() tagdirs=()
+  for cfg in "${CARGO_TARGET_DIR:-}" "${CARGO_BUILD_TARGET_DIR:-}"; do [ -n "$cfg" ] && cfgs+=( "$cfg" ); done
+  for c in "$root/.cargo/config.toml" "$root/.cargo/config"; do
+    [ -f "$c" ] || continue
+    ln="$(sed -n 's/^[[:space:]]*target-dir[[:space:]]*=[[:space:]]*["'"'"']\{0,1\}\([^"'"'"']*\)["'"'"']\{0,1\}[[:space:]]*$/\1/p' "$c" | head -1)"
+    [ -n "$ln" ] && cfgs+=( "$ln" )
+  done
+  local -a cpre=()   # the configured dirs, as -path prunes for the tag walk too (known up front: never descended)
+  for c in "${cfgs[@]}"; do
+    case "$c" in /*) ;; *) c="$PWD/$c" ;; esac
+    if [ -d "$c" ]; then c="$(cd "$c" 2>/dev/null && pwd -P)"; tagdirs+=( "$c" )
+      cpre+=( -path "$(printf '%s' "$c" | sed 's/[][*?\\]/\\&/g')" -o ); fi
+  done
+  # (2) CACHEDIR.TAG directories, found by a walk that already skips the static names, a Cargo target and
+  # the configured dirs
+  while IFS= read -r t; do [ -n "$t" ] && tagdirs+=( "$(dirname "$t")" ); done < <(
+    find "$root" \( "${cp_names[@]}" "${cpre[@]}" "${cargo_t[@]}" \) -prune -o -type f -name CACHEDIR.TAG -print 2>/dev/null)
+  for d in "${tagdirs[@]}"; do
+    [ "$d" = "$root" ] && continue
+    # -path is a glob: escape the metacharacters of a real directory name
+    out+=( -path "$(printf '%s' "$d" | sed 's/[][*?\\]/\\&/g')" -o )
+  done
+  CPRUNE=( \( "${cp_names[@]}" "${out[@]}" "${cargo_t[@]}" \) -prune -o )
+}
+
 # Validate an effect token against the §6 vocabulary; die with a did-you-mean on a miss. This closes the
 # silent-empty trap the persona audit found: `where Network` / `where fs` / `where Banana` used to reach the
 # engine, match nothing, and print a FALSE all-clear ("nothing performs it") — dangerous for a tool whose
@@ -687,7 +733,8 @@ route_query() {
     [ -z "$repfile" ] && [ -f "$famprefix.json" ] && repfile="$famprefix.json"
     if [ -n "$repfile" ]; then
       local root; root="$(dirname "$(dirname "$repfile")")"
-      newer=$(find "$root" \( -name .git -o -name .candor -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist \) -prune -o \
+      candor_prune_args "$root" .git .candor node_modules build .build dist
+      newer=$(find "$root" "${CPRUNE[@]}" \
         -type f \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.kt' -o -name '*.scala' -o -name '*.swift' \) \
         -newer "$repfile" -print -quit 2>/dev/null)
       [ -n "$newer" ] && echo "candor: note — source has changed since this report (${newer#"$root"/} is newer); re-run \`candor scan\` for current answers." >&2
@@ -1220,7 +1267,8 @@ print(f"  baseline {'wired: ' + str(keys.get('baseline')) if keys.get('baseline'
 PY
       # freshness marker (reuse the same pruned single-hit probe)
       repfile="$(ls -t "$croot"/.candor/report*.json 2>/dev/null | grep -vE 'callgraph|hierarchy|calibrated|gate|locs|encountered' | head -1)"
-      newer=$(find "$croot" \( -name .git -o -name .candor -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist \) -prune -o \
+      candor_prune_args "$croot" .git .candor node_modules build .build dist
+      newer=$(find "$croot" "${CPRUNE[@]}" \
         -type f \( -name '*.rs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.kt' -o -name '*.scala' -o -name '*.swift' \) \
         -newer "$repfile" -print -quit 2>/dev/null)
       [ -n "$newer" ] && echo "  ⚠ stale  source changed since the scan (${newer#"$croot"/}) — re-run \`candor scan .\`"
@@ -1825,8 +1873,8 @@ PY
       # the prune. Across four engines that was the ~15-SECOND SILENT PAUSE at the end of every
       # `candor update` and `candor doctor`, with nothing printed while it ran. Filtering output is not
       # the same as not walking, and this is what that difference costs.
-      newest=$(find "$src" \
-                 \( -name target -o -name .build -o -name node_modules -o -name .git \) -prune -o \
+      candor_prune_args "$src" .build node_modules .git
+      newest=$(find "$src" "${CPRUNE[@]}" \
                  \( -name '*.rs' -o -name '*.swift' -o -name '*.mjs' \) -print 2>/dev/null \
                | xargs stat "$_mf" "$_mv" 2>/dev/null | sort -rn | head -1)
       ibin=$(stat "$_mf" "$_mv" "$inst" 2>/dev/null)
@@ -2333,7 +2381,8 @@ PY
     fi
     # Loud notice for manifests in SUBDIRECTORIES init didn't cover (detect_langs only sees the top level) —
     # the polyglot blind spot where a root Cargo.toml + web/package.json left the TS half silently ungated.
-    subdirs="$(find "$idir" \( -name .git -o -name node_modules -o -name target -o -name build -o -name .build -o -name dist -o -name vendor -o -name .candor -o -name .github \) -prune -o \
+    candor_prune_args "$idir" .git node_modules build .build dist vendor .candor .github
+    subdirs="$(find "$idir" "${CPRUNE[@]}" \
       -type f \( -name Cargo.toml -o -name package.json -o -name Package.swift -o -name pom.xml -o -name build.gradle -o -name build.gradle.kts \) -print 2>/dev/null \
       | while IFS= read -r m; do d="$(cd "$(dirname "$m")" 2>/dev/null && pwd -P)"; [ -n "$d" ] && [ "$d" != "$abs_idir" ] && printf '%s\n' "${d#"$abs_idir"/}"; done | sort -u | head -12)"
     if [ -n "$subdirs" ]; then

@@ -843,6 +843,36 @@ case "$(uname -s):$(uname -m)" in
   *) skip "the two doctor-integration rust-asset rows (platform-derived, not override-able)";;
 esac
 
+# ---- SOUNDNESS R1775: the freshness note prunes BUILD OUTPUT, not every directory named `target` ----------
+# A `.rs` edit under `src/target/` is real source (a `mod target;`) and must age the report; one under Cargo's
+# `target/` (beside a Cargo.toml) or a CACHEDIR.TAG directory must not. Each fixture has an OLD report and one
+# NEW .rs file at the place under test, and a pre-existing old source file so the probe is not vacuous.
+fresh_fixture() { # $1 name ; $2 relative dir that receives the new .rs ; $3 "cargo" => Cargo.toml at root ; $4 "tag" => CACHEDIR.TAG in $2
+  local f="$T/fresh-$1"
+  mkdir -p "$f/.candor" "$f/src" "$f/$2"
+  echo '{"backend":"scan"}' > "$f/.candor/report.scan.json"
+  echo 'fn old() {}' > "$f/src/old.rs"
+  [ "${3:-}" = cargo ] && printf '[package]\nname = "x"\n' > "$f/Cargo.toml"
+  [ "${4:-}" = tag ] && echo 'Signature: 8a477f597d28d172789f06886806bc55' > "$f/$2/CACHEDIR.TAG"
+  touch -t 202001020000 "$f/.candor/report.scan.json"
+  touch -t 202001010000 "$f/src/old.rs"
+  [ -f "$f/Cargo.toml" ] && touch -t 202001010000 "$f/Cargo.toml"
+  [ -f "$f/$2/CACHEDIR.TAG" ] && touch -t 202001010000 "$f/$2/CACHEDIR.TAG"
+  echo 'fn edited() {}' > "$f/$2/edited.rs"
+  echo "$f"
+}
+fresh_note() { (cd "$1" && env CANDOR_DISPATCH_DRYRUN=1 bash "$D" where foo 2>&1); }
+f_src="$(fresh_fixture srctarget src/target cargo)"
+ok "R1775: an edit under src/target/ beside a Cargo.toml root makes the report STALE" "source has changed since this report (src/target/edited.rs" fresh_note "$f_src"
+f_cargo="$(fresh_fixture cargotarget target cargo)"
+no "R1775: an edit under a real target/ beside Cargo.toml leaves the report fresh" "source has changed" fresh_note "$f_cargo"
+f_tag="$(fresh_fixture tagdir out/build x tag)"
+no "R1775: an edit under a CACHEDIR.TAG directory leaves the report fresh" "source has changed" fresh_note "$f_tag"
+f_tagt="$(fresh_fixture tagtarget target cargo tag)"
+no "R1775: CONTROL a Cargo target that is also tagged stays fresh" "source has changed" fresh_note "$f_tagt"
+f_ctl="$(fresh_fixture control src/real cargo)"
+ok "R1775: CONTROL the probe can fire — an edit under an ordinary directory is stale" "source has changed since this report (src/real/edited.rs" fresh_note "$f_ctl"
+
 echo
 if [ "$fails" -eq 0 ]; then
   echo "candor-dispatch: OK$( [ "$skips" -gt 0 ] && printf ' (%d SKIPPED — a platform this row cannot be measured on, not a pass)' "$skips" )"

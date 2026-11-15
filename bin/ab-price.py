@@ -982,7 +982,11 @@ def selftest():
         outp = os.path.join(tmp, "ab.json")
         p = subprocess.run([sys.executable, os.path.join(here, "corpus-ab.py"), "--pre-json", os.path.join(tmp, "pre.json"),
                             "--post-json", os.path.join(tmp, "post.json"), "--allow-zero-reach", "--out", outp],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=120,
+                           # R1781: a selftest must never take the machine-wide A/B lock. Another lane's real A/B holds
+                           # ~/.cache/candor/corpus-ab.lock for hours, and this child's silent wait there hung
+                           # fast-gates with no output.  A private lock file in the temp dir keeps the e2e hermetic.
+                           env=dict(os.environ, CANDOR_AB_LOCK=os.path.join(tmp, "ab.lock")))
         check("corpus-ab wrote an --out", p.returncode == 0 and os.path.exists(outp), p.stdout[-300:] + p.stderr[-300:])
         r = price(json.load(open(outp)))
         check("denominator is the engine's analysed.count (100), not the row count (3)", r["denominator"]["post_analysed"] == 100)

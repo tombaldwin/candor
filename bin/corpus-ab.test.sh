@@ -144,6 +144,41 @@ CORPUS_HOME="$CH" bash "$CORPUS" --hollow-check "$T/hc/real" >/dev/null 2>&1
 if [ -d "$CH" ]; then bad "--hollow-check does not create \$CORPUS_HOME" "it created $CH"
 else ok "--hollow-check does not create \$CORPUS_HOME"; fi
 
+# R1781: A SELFTEST MUST NOT BLOCK ON, OR TAKE, THE MACHINE-WIDE A/B LOCK, AND TWO REAL A/Bs MUST STILL EXCLUDE.
+# A holder process keeps the lock; `ab-price --selftest` (whose e2e leg runs a real corpus-ab pair) must
+# finish anyway, and a real pair-mode corpus-ab must still WAIT and say what it waits on.
+LK="$T/ab.lock"
+python3 - "$LK" <<'PY' &
+import fcntl, sys, time
+fh = open(sys.argv[1], "a+")
+fcntl.flock(fh, fcntl.LOCK_EX)
+fh.write("pid held-by-test\n"); fh.flush()
+time.sleep(120)
+PY
+HOLDER=$!
+until grep -q held-by-test "$LK" 2>/dev/null; do sleep 0.1; done
+bounded() { # $1 secs ; rest: command. prints output, exit 124 on timeout (python: no GNU timeout on macOS)
+  python3 - "$@" <<'PY'
+import subprocess, sys
+try:
+    p = subprocess.run(sys.argv[2:], capture_output=True, text=True, timeout=float(sys.argv[1]))
+    print(p.stdout + p.stderr); sys.exit(p.returncode)
+except subprocess.TimeoutExpired as e:
+    print((e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or ""))
+    sys.exit(124)
+PY
+}
+printf '{"candor":{"spec":"0.35","version":"x"},"package":"p","analyzed":{"count":1},"functions":[]}' > "$T/e.json"
+rc_is "ab-price --selftest finishes while another lane holds the A/B lock" 0 \
+  env CANDOR_AB_LOCK="$LK" bash -c 'python3 - "$0" "$@" <<PY
+import subprocess, sys
+p = subprocess.run([sys.executable, sys.argv[1], "--selftest"], capture_output=True, text=True, timeout=100)
+print(p.stdout[-200:] + p.stderr[-200:]); sys.exit(p.returncode)
+PY' "$HERE/ab-price.py"
+rc_is "a REAL corpus-ab pair run still WAITS on a held lock (two A/Bs exclude)" 124 \
+  bounded 4 env CANDOR_AB_LOCK="$LK" python3 "$AB" --pre-json "$T/e.json" --post-json "$T/e.json" --allow-zero-reach --out "$T/o.json"
+kill "$HOLDER" 2>/dev/null; wait "$HOLDER" 2>/dev/null
+
 echo
 if [ "$fails" -eq 0 ]; then echo "corpus-ab: OK"; exit 0; fi
 echo "corpus-ab: $fails FAILED"; exit 1

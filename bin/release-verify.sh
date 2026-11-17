@@ -117,6 +117,22 @@ for r in "candor-spec:v$SPEC" "candor-rust:v$VER" "candor-java:v$VER" "candor-sw
          "candor-agents:v$VER" "candor-ts:v$VER" "candor:v$VER"; do
   repo="${r%%:*}"; tag="${r##*:}"
   rs_in_set "$repo" || { oos "$repo: not in this cut — no $tag release was created"; continue; }
+  # THE UMBRELLA'S TAG IS ITS OWN VERSION, NOT THE ENGINE LINE. `release.sh` step 7 tags `v$VER` only when the
+  # umbrella is cut at the family version; a CLI-only re-cut moves UMBRELLA_VERSION alone. 0.42: engines
+  # 0.42.0, candor-ts 0.42.1 (npm 0.42.0 was broken), umbrella v0.42.1 — and `release-audit.yml`, which derives
+  # $VER from ENGINE_PIN, went red weekly looking for a `v0.42.0` umbrella release that never existed. So the
+  # umbrella row reads UMBRELLA_VERSION from the tree under audit. Still a monitor in both directions: a
+  # release missing for THAT version fails below, and an umbrella BEHIND $VER fails here, so forgetting to bump
+  # it cannot make the check look up an older release and pass. Unreadable/absent (a fixture) keeps v$VER.
+  if [ "$repo" = candor ]; then
+    UV="$(sed -n 's/^UMBRELLA_VERSION="\([0-9][0-9.]*\)".*/\1/p' "$ROOT_C/candor/bin/candor" 2>/dev/null | head -1)"
+    if [ -n "$UV" ]; then
+      if rs_ver_lt "$UV" "$VER"; then
+        bad "candor: UMBRELLA_VERSION is $UV, BEHIND this release ($VER) — the umbrella was never re-cut over the engines"; continue
+      fi
+      tag="v$UV"
+    fi
+  fi
   # ONE gh call for both facts, not two adjacent ones. DEFECT (code review, 2026-08-26): the old code read
   # tagName and isDraft in separate calls, and if the SECOND one failed — network blip, secondary rate
   # limit; this loop already fires up to 14 back-to-back calls, and the incident that motivated the draft

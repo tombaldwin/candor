@@ -22,6 +22,8 @@ name: release-audit
 # THE VERSION IS DERIVED, NEVER TYPED. `ENGINE_PIN` in `bin/candor` is the engine line `candor update`
 # fetches, so it is the version whose artifacts must resolve; the spec floor is its major.minor. A hardcoded
 # version here would be one more record to go stale, which is the class of defect this file exists to catch.
+# The UMBRELLA's own release is the exception: it is tagged at `UMBRELLA_VERSION` (0.42: v0.42.1 over 0.42.0
+# engines), which release-verify.sh reads from the same checkout rather than assuming it equals ENGINE_PIN.
 on:
   schedule:
     - cron: '17 7 * * 1'      # Mondays 07:17 UTC — weekly is enough for artifacts that change per release

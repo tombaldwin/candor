@@ -8,6 +8,16 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-19 — ⟨0.43⟩ family release (released 2026-11-19 as 0.43.0)
+
+The umbrella ships the ⟨0.43⟩ engines. `ENGINE_PIN` moves to 0.43.0 and the scoped `ENGINE_PIN_TS=0.42.1`
+(left by the broken candor-ts 0.42.0 npm package) is cleared, so `candor update` and the Homebrew formula
+fetch one engine line again. Umbrella changes since v0.42.1 are in the dated entries below, plus:
+
+- `bin/release-verify.sh` audits the umbrella release at `UMBRELLA_VERSION`, not at the engine line, so the
+  weekly `release-audit` no longer looks for an umbrella release that never existed (it fails if
+  `UMBRELLA_VERSION` falls behind the engines).
+
 ## 2026-11-14 — corpus-ab: lost `invisible` / `dispatchesOn` disclosures are loss buckets
 
 - `bin/corpus-ab.py --buckets`: loss detection read `inferred` only, so a REMOVED row that carried only `invisible`

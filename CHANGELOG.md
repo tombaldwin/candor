@@ -14,6 +14,8 @@ The umbrella ships the ⟨0.43⟩ engines. `ENGINE_PIN` moves to 0.43.0 and the 
 (left by the broken candor-ts 0.42.0 npm package) is cleared, so `candor update` and the Homebrew formula
 fetch one engine line again. Umbrella changes since v0.42.1 are in the dated entries below, plus:
 
+- Pins moved to the published 0.43.0 releases: `ENGINE_PIN`, `ENGINE_PIN_TS` cleared, `adopt/candor.yml` (`CANDOR_JAVA_VERSION`), `adopt/candor-digest.yml` (candor-agents), and the VS Code / JetBrains `candorTsVersion` / `candorJavaVersion`.
+
 - `bin/release-verify.sh` audits the umbrella release at `UMBRELLA_VERSION`, not at the engine line, so the
   weekly `release-audit` no longer looks for an umbrella release that never existed (it fails if
   `UMBRELLA_VERSION` falls behind the engines).

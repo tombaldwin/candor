@@ -178,7 +178,8 @@ the soundness rules in this file; none of them licenses a silence.
   full 40-char head sha. The coordinator reads CI on that sha (`gh run list --commit <full sha>`) and does not re-run
   locally what CI ran on the same sha. Locally, the join keeps only what CI cannot do: the BY-HAND gates and inline
   `run:` blocks `gate-run.sh` reports as unrun, calibrated Self-guard, four-way conformance against the lane binary, and
-  the corpus A/B. A lane never merges to `main`; candor-spec and the umbrella have no lane trigger, so their lanes still
+  the corpus A/B. **Gate the merge command on the CI verdict itself** (`[ "$conclusion" = success ] && git merge --ff-only`):
+  on 2026-11-25 a chained wait-then-merge read the run, ignored its `failure`, and pushed a red head to swift `main`. A lane never merges to `main`; candor-spec and the umbrella have no lane trigger, so their lanes still
   commit without pushing. Batch joins when several lanes are ready.
 - **Reach orders the work; it never excuses a silence.** Rank open SILENT rows by gate flips and corpus reach. Before
   each cut every exposed silence is resolved or gets a true-reason hedge on the lost site (the floor rule). A dedicated

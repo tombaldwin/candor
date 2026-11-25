@@ -68,6 +68,9 @@ about one in five rows describes the wrong mechanism.
   candor-rust, candor-swift, candor-ts and candor-java. candor-spec and the umbrella have no lane trigger, so lanes
   there commit and do not push. **Never merge to `main` and never push `main`.**
 - Report the full 40-character head sha. You need not wait for CI; the coordinator reads it.
+- After a REBASE and force-push, the branch CI's `assert-audit` job diffs from the old, now unreachable head and fails
+  with "cannot diff". Run `assert-audit.sh "$PWD" origin/main..HEAD` locally and quote it in the report, so the
+  coordinator can tell that harness artefact from a real failure.
 - Repos are public: no field-client names in code, commits, CHANGELOGs or comments. Say "field case".
 
 ## 5. Machine

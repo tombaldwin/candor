@@ -32,6 +32,18 @@ A rust consumer report also REPUBLISHES rows it read off the wire — `tower_ser
 up in a consumer's own report.  Those are not the consumer's units, so a row is counted only when its
 `hash` names the report's own package, and the count of rows dropped by that rule is printed rather than
 assumed to be zero.
+
+THE SWIFT HALF (`--report-swift` / `--live-swift`, swift L0, 2026-11-25) answers ONE question and no other: did the
+chain JOIN?  A swift consumer is scanned twice by the SAME engine, unchained and chained (`CANDOR_DEPS` naming the
+reports of its in-pool dependencies, `bin/corpus-chained-swift/chain.py`), and the join is LIVE for an entry only
+if the chained report DIFFERS from the unchained one: a row's `inferred`, `invisible` or `unknownWhy`, or a row
+present in one arm only.  Liveness is a COUNT of rows, never the absence of a symptom: R700 measured a chained arm
+byte-identical to the standalone one (no `.build/checkouts`, so no module -> package map) and R1523 one that
+imported module `Algorithms` against a report whose package is `swift-algorithms`.  Both print a clean 0/0/0 exactly
+like a safe change.  An entry whose pool dependency closure is EMPTY is NO-DEPS (chained == unchained by
+construction): neither live nor dead.  An entry WITH dependencies whose count is 0 is DEAD-JOIN and is excluded and
+LISTED; no live entry at all is `NOT A MEASUREMENT` (rc 3).  An entry that is live but still lists a chained
+dependency in its own uncovered ledger is PARTIAL (listed, kept: some dependency joined and another did not).
 """
 import collections
 import glob
@@ -562,6 +574,118 @@ def report_rs(out, work, entries, variant):
     return 0
 
 
+
+# ── THE SWIFT LADDER: JOIN LIVENESS BY COUNT ──────────────────────────────────────────────────────
+def _swift_rowkey(r):
+    return (tuple(sorted(r.get("inferred") or [])), tuple(sorted(r.get("invisible") or [])),
+            tuple(sorted(r.get("unknownWhy") or [])))
+
+
+def swift_rows_differing(chained, unchained):
+    """-> (n, detail): how many rows of the two reports differ.  A row counts when its (inferred, invisible,
+    unknownWhy) differs between the arms, or when it exists in exactly one arm.  `interfaceUnion` rows are skipped
+    as everywhere else here (C1)."""
+    def idx(doc):
+        out = {}
+        for r in doc.get("functions", []):
+            if r.get("interfaceUnion"):
+                continue
+            out[r.get("fn")] = _swift_rowkey(r)
+        return out
+    a, b = idx(unchained), idx(chained)
+    changed = sorted(k for k in a.keys() & b.keys() if a[k] != b[k])
+    only_ch = sorted(b.keys() - a.keys())
+    only_un = sorted(a.keys() - b.keys())
+    return len(changed) + len(only_ch) + len(only_un), {"changed": changed, "only_chained": only_ch, "only_unchained": only_un}
+
+
+def swift_still_uncovered(chained, deps):
+    """closure members that the CHAINED consumer still lists as uncovered (normalised: `-` read as `_`, case folded)."""
+    un = {_norm(n) for n in uncovered_names(chained)}
+    return sorted(d for d in deps if _norm(d) in un)
+
+
+def swift_liveness(names, CH, UN, closure_of, imports_closure=None):
+    """-> (live, partial, dead, nodeps, noimport, counts).  `imports_closure(n)` (optional) says whether the entry's NON-TEST sources
+    import any module of its dependency closure: an entry that has a closure but imports none of it (a dev/test-only dependency) has
+    nothing to join, so 0 differing rows is the RIGHT answer and it is NO-IMPORT, not DEAD-JOIN.  Without the callback every
+    closure entry with 0 rows is DEAD-JOIN (the conservative reading)."""
+    live, partial, dead, nodeps, noimport, counts = [], [], [], [], [], {}
+    for n in names:
+        deps = closure_of(n)
+        if n in CH and n in UN:
+            c, _d = swift_rows_differing(CH[n], UN[n])
+        else:
+            c = 0   # no unchained twin was scanned: only legitimate for an entry with no closure
+        counts[n] = c
+        if not deps:
+            nodeps.append(n)
+        elif c == 0:
+            (noimport if (imports_closure is not None and not imports_closure(n)) else dead).append(n)
+        else:
+            live.append(n)
+            if swift_still_uncovered(CH[n], deps) and any(_norm(d) in {_norm(x) for x in uncovered_names(UN[n])} for d in deps):
+                partial.append(n)
+    return live, partial, dead, nodeps, noimport, counts
+
+
+def report_swift(chained_dir, unchained_dir, pool):
+    """`--report-swift CH_DIR UN_DIR POOL`: `<entry>.json` per entry in each dir (pool-scan.py writes them; the unchained dir holds
+    only entries WITH a closure).  POOL names the entries' Package.swift files so the closure and the imports are known."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus-chained-swift"))
+    import graph as G
+    CH, UN = load_arm(chained_dir), load_arm(unchained_dir)
+    names = sorted(CH)
+    if not names:
+        print("corpus-chained-judge: NO chained report — nothing to compare.")
+        return 3
+    g = G.graph(pool)
+    mods = {}
+    def imports_closure(n):
+        want = set()
+        for d in G.closure(g, n):
+            want |= mods.setdefault(d, G.modules(pool, d))
+        return bool(want & G.imported(pool, n))
+    missing = [n for n in names if G.closure(g, n) and n not in UN]
+    live, partial, dead, nodeps, noimport, counts = swift_liveness(names, CH, UN, lambda n: G.closure(g, n), imports_closure)
+    live = [n for n in live]
+    print("== SWIFT JOIN LIVENESS (by COUNT of rows that differ, chained vs the unchained twin) — %d entries" % len(names))
+    print("   LIVE %d   (of which PARTIAL %d)   DEAD-JOIN %d   NO-IMPORT %d   NO-DEPS %d" % (len(live), len(partial), len(dead), len(noimport), len(nodeps)))
+    print("   rows differing across the live entries: %d" % sum(counts[n] for n in live))
+    for n in live:
+        print("      LIVE      %-34s rows differing=%-6d closure=%d%s" % (
+            n, counts[n], len(G.closure(g, n)), "  PARTIAL (a chained dependency is still listed uncovered)" if n in partial else ""))
+    for n in dead:
+        print("      DEAD-JOIN %-34s rows differing=0  closure=%d and its sources IMPORT a closure module — the chain did not join;"
+              " NOT A MEASUREMENT for this entry" % (n, len(G.closure(g, n))))
+    for n in noimport:
+        print("      NO-IMPORT %-34s rows differing=0  closure=%d but its non-test sources import none of it (dev/test-only dependency):"
+              " nothing to join, excluded from the live count" % (n, len(G.closure(g, n))))
+    if nodeps:
+        print("      NO-DEPS   %d entries have no in-pool dependency (chained == unchained by construction): %s"
+              % (len(nodeps), ", ".join(nodeps[:12]) + (" ..." if len(nodeps) > 12 else "")))
+    if missing:
+        print("corpus-chained-judge: NOT A MEASUREMENT — %d entr(ies) have a closure but NO unchained twin report: %s" % (len(missing), ", ".join(missing[:8])))
+        return 3
+    if not live:
+        print("corpus-chained-judge: NOT A MEASUREMENT — no entry's chain JOINED (%d dead-join, %d no-import, %d no-deps)." % (len(dead), len(noimport), len(nodeps)))
+        print("  A chained arm that differs from the unchained one in NO row is blind, and identical arms say nothing about the engine.")
+        return 3
+    return 0
+
+
+def live_swift(chained_json, unchained_json):
+    """`--live-swift CH.json UN.json`: the single-report form the attack-matrix runner uses.  Prints the count and
+    returns 0 when it is > 0, 3 (NOT A MEASUREMENT) when it is 0."""
+    c, d = swift_rows_differing(json.load(open(chained_json)), json.load(open(unchained_json)))
+    print("swift join liveness: %d row(s) differ (changed %d, only-chained %d, only-unchained %d)"
+          % (c, len(d["changed"]), len(d["only_chained"]), len(d["only_unchained"])))
+    if c == 0:
+        print("corpus-chained-judge: NOT A MEASUREMENT — the chained report is row-identical to the unchained one.")
+        return 3
+    return 0
+
+
 def selftest():
     """SEEDS for the join-liveness gate: it must FIRE on a dead join and stay QUIET on a live one, java and rust."""
     import tempfile, shutil
@@ -636,6 +760,62 @@ def selftest():
               rc == 3 and "NOT A MEASUREMENT" in txt and "0 probe quals" in txt)
     finally:
         shutil.rmtree(t, ignore_errors=True)
+    # swift: liveness by COUNT.  Seeds: a live entry, a dead one (deps, imports them, 0 rows differ), a no-deps one, a partial one,
+    # and a dev/test-only one (closure non-empty, its sources import none of it: NO-IMPORT, not dead).
+    t = tempfile.mkdtemp(prefix="cjudge.")
+    try:
+        pool = os.path.join(t, "pool")
+        spec = (("libA", [], []), ("libB", [], []), ("appLive", ["libA"], ["libA"]), ("appDead", ["libA"], ["libA"]), ("appNone", [], []),
+                ("appPart", ["libA", "libB"], ["libA", "libB"]), ("appTest", ["libA"], []))
+        for n, urls, imps in spec:
+            os.makedirs(os.path.join(pool, n, "Sources", n))
+            open(os.path.join(pool, n, "Package.swift"), "w").write(
+                "let package = Package(name: \"%s\", dependencies: [%s], targets: [.target(name: \"%s\")])\n"
+                % (n, ", ".join('.package(url: "https://x/%s.git", from: "1.0.0")' % u for u in urls), n))
+            open(os.path.join(pool, n, "Sources", n, "a.swift"), "w").write("".join("import %s\n" % i for i in imps) + "func f() {}\n")
+        ch, un = os.path.join(t, "ch"), os.path.join(t, "un")
+        os.makedirs(ch); os.makedirs(un)
+        def put(d, name, rows, uncovered=()):
+            json.dump({"analyzed": {"count": len(rows)}, "functions": rows,
+                       "coverage": {"uncovered": [{"name": u} for u in uncovered]}}, open(os.path.join(d, name + ".json"), "w"))
+        base = [{"fn": "f", "inferred": []}]
+        for n in ("libA", "libB", "appNone"):
+            put(ch, n, base)                       # no closure: no unchained twin is needed (pool-scan.py writes none)
+        put(un, "appLive", base);  put(ch, "appLive", [{"fn": "f", "inferred": ["Fs"]}])
+        put(un, "appDead", base);  put(ch, "appDead", base)
+        put(un, "appTest", base);  put(ch, "appTest", base)
+        put(un, "appPart", base, ["libB"]); put(ch, "appPart", [{"fn": "f", "inferred": ["Fs"]}], ["libB"])
+        rc, txt = run(report_swift, ch, un, pool)
+        check("swift: live=2 (appLive, appPart), dead=1 (appDead imports its dep, 0 rows differ), no-import=1 (appTest), no-deps=3",
+              rc == 0 and "LIVE 2" in txt and "DEAD-JOIN 1" in txt and "NO-IMPORT 1" in txt and "NO-DEPS 3" in txt)
+        check("swift: the dead entry is LISTED by name and called NOT A MEASUREMENT for itself; the dev-only one is NOT called dead",
+              "DEAD-JOIN appDead" in txt and "DEAD-JOIN appTest" not in txt and "NO-IMPORT appTest" in txt)
+        check("swift: a live entry that still lists a chained dependency uncovered is PARTIAL (and appLive is not)",
+              any(l.startswith("      LIVE      appPart") and "PARTIAL" in l for l in txt.splitlines())
+              and any(l.startswith("      LIVE      appLive") and "PARTIAL" not in l for l in txt.splitlines()))
+        # the whole pool dead -> rc 3
+        put(ch, "appLive", base); put(ch, "appPart", base, ["libB"])
+        rc, txt = run(report_swift, ch, un, pool)
+        check("swift: every entry with deps dead -> rc 3 and 'NOT A MEASUREMENT' (seeded: a chained arm identical to the unchained)",
+              rc == 3 and "NOT A MEASUREMENT" in txt)
+        # an only-in-one-arm row counts as a difference (a join may ADD a row, not just change one)
+        put(ch, "appLive", base + [{"fn": "g", "inferred": []}])
+        rc, txt = run(report_swift, ch, un, pool)
+        check("swift: a row present in the chained arm only counts as a differing row", rc == 0 and "LIVE 1" in txt)
+        # a closure entry with NO unchained twin is not silently read as 'nothing differs'
+        os.remove(os.path.join(un, "appDead.json"))
+        rc, txt = run(report_swift, ch, un, pool)
+        check("swift: a closure entry missing its unchained twin -> rc 3 (never read as 0 differing rows)",
+              rc == 3 and "NO unchained twin" in txt)
+        # the single-report form
+        json.dump({"functions": base}, open(os.path.join(t, "a.json"), "w"))
+        json.dump({"functions": [{"fn": "f", "inferred": ["Net"]}]}, open(os.path.join(t, "b.json"), "w"))
+        rc, txt = run(live_swift, os.path.join(t, "b.json"), os.path.join(t, "a.json"))
+        rc2, txt2 = run(live_swift, os.path.join(t, "a.json"), os.path.join(t, "a.json"))
+        check("swift: --live-swift prints the count and fires (rc 3) on identical reports, stays quiet (rc 0) on a differing pair",
+              rc == 0 and "1 row(s) differ" in txt and rc2 == 3 and "NOT A MEASUREMENT" in txt2)
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
     print("corpus-chained-judge selftest: %s" % ("OK" if not bad else "FAILED (%d)" % bad))
     return 1 if bad else 0
 
@@ -648,6 +828,10 @@ if __name__ == "__main__":
         coverage_rs(sys.argv[2], sys.argv[3]); sys.exit(0)
     if len(sys.argv) >= 2 and sys.argv[1] == "--report-rs":
         sys.exit(report_rs(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]))
+    if len(sys.argv) >= 2 and sys.argv[1] == "--report-swift":
+        sys.exit(report_swift(sys.argv[2], sys.argv[3], sys.argv[4]))
+    if len(sys.argv) >= 2 and sys.argv[1] == "--live-swift":
+        sys.exit(live_swift(sys.argv[2], sys.argv[3]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--report":
         sys.exit(report(sys.argv[2], sys.argv[3], sys.argv[4]))
     print(__doc__)

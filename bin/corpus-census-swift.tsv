@@ -1,0 +1,62 @@
+# corpus-census-swift.tsv — the PINNED swift chained-corpus roster (swift L0, 2026-11-25).
+#
+# WHY.  The chained swift corpora behind R1455 / R1865 / R1866 were copies under the session scratchpad
+# (/private/tmp/.../scratchpad/swiftagent-*/ab/corpus) and were found HOLLOW: every directory present, 0 regular files
+# (`bin/corpus.sh --hollow-check` says HOLLOW: ".git is present but HEAD does not resolve"), the shape R242 describes.
+# The macOS /private/tmp cleaner and the per-user /var/folders dirhelper both reclaim files and leave directories.
+#
+# WHERE IT LIVES NOW.  ~/.candor/corpus/swift-chained  (the corpus home `bin/corpus.sh` documents: under $HOME, never
+# auto-reclaimed, only `bin/disk-guard.sh` stands between it and a full disk; 387 MB).  It survives a reboot because it is
+# not under /tmp, /private/tmp or $TMPDIR.  Rebuild it with:
+#     bash bin/corpus-chained-swift/mkpool.sh <39-entry source tree> ~/.candor/corpus/swift-chained
+# The 39 entries are the `tracka-r1/swift-t4/corpus` set (~/candor-handoff/tracka-r1/swift-t4/, itself rebuilt 2026-11-07
+# from the swiftab-a/b handoff copies after an earlier cleaner pass); `entries.txt` there is the roster.
+#
+# LIVE, NOT JUST PRESENT.  mkpool.sh symlinks each entry's TRANSITIVE in-pool dependency closure into
+# <entry>/.build/checkouts, so candor-swift can map module -> package and a CANDOR_DEPS chain actually JOINS (SOUNDNESS R700:
+# without it the chained arm is byte-identical to the standalone one).  Liveness is then asserted BY COUNT:
+#     python3 bin/corpus-chained-swift/pool-scan.py BIN ~/.candor/corpus/swift-chained OUTDIR --jobs 2
+#     python3 bin/corpus-chained-judge.py --report-swift OUTDIR/ch OUTDIR/un ~/.candor/corpus/swift-chained
+# Hollow check:  bash bin/corpus.sh --hollow-check ~/.candor/corpus/swift-chained/*/
+#
+# name <TAB> HEAD sha (git -C <entry> rev-parse HEAD) <TAB> swift files <TAB> in-pool dependency closure size <TAB> clone origin when it was made
+# (a file:///…/swiftpm/repositories origin is a SwiftPM cache clone; the sha is the pin, the origin is not.)
+Alamofire	bda9ed57d72988a3a2ada33d824583541f86eac6	101	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Alamofire-63cd6d99
+candor-swift-src	eeb9c34b96aacbf47f41dacbfddabc87b81eabf8	236	1	-
+CwlCatchException	fbe84898e2e949f91d96b8ea5c7538f5364425f2	3	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/CwlCatchException-6c89c9f8
+CwlPreconditionTesting	0139c665ebb45e6a9fbdb68aabfd7c39f3fe0071	6	1	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/CwlPreconditionTesting-87e551a1
+GRDB.swift	0d8cf958b4b66a0473ec6e6986eb9da462171da9	478	0	https://github.com/groue/GRDB.swift.git
+Kingfisher	a821446e559d74f67d93dfcab86bcd370e177bf0	175	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Kingfisher-adb94c78
+Logger	5187b01d66ee187c80a84ac686f6461d9975fa76	11	3	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Logger-de94f035
+Nimble	727f75d91a0f7501d08d938966d17e6728b76a2a	127	2	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Nimble-80770dfe
+OHHTTPStubs	c582400a38590a3dabb4353416d9d46cb7278d06	9	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/OHHTTPStubs-292da3f7
+PackageConfig	58523193c26fb821ed1720dcd8a21009055c7cdb	12	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/PackageConfig-1be97877
+pollen	4cb068f54fe73796d76390525bb7e52de3b5e9e2	99	0	file:///Users/tom/git/pollen
+Quick	2b4547b230e94d84320724fd6df65e418b058be2	113	6	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Quick-22a439cf
+ReactiveSwift	a44317ce38b5bcce173b03f5d36cfdc939e1768b	86	7	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/ReactiveSwift-6916d001
+Rocket	df94499fa028ac7f72ca34d977cc5fa38f00b464	64	7	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Rocket-c0b22117
+RxSwift	3e33f90c1bcd3cdea25bdb49bd4a594a50c3ab84	1019	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/RxSwift-25ac69bd
+SourceKitten	6e1805bb1dd6a6817f3f2ed5a214421d506c85df	89	2	https://github.com/jpsim/SourceKitten.git
+swift-algorithms	5b7143f8e291dee0e14c118fd0212487f0b37af5	57	1	https://github.com/apple/swift-algorithms.git
+swift-argument-parser	efd239f0055b3d6b6cc122a786c46a0ea8d0235b	170	0	https://github.com/apple/swift-argument-parser.git
+swift-asn1	3b6410f7dee09eb33cdd26260c5fd47fda19b0e2	32	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-asn1-7065ad2c
+swift-atomics	bc30c67cf0c4479633621ad7950d71494a07390f	58	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-atomics-7429e549
+swift-case-paths	57160303c3954432637a536d503d4c50f42bcaf6	35	1	https://github.com/pointfreeco/swift-case-paths.git
+swift-certificates	ff86b924ead66f853b8baf91f3c41926a8f36177	141	2	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-certificates-b091bbdc
+swift-collections	935f696a549abf069a2a1e4c6db2f834f7009cd3	734	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-collections-9a58d5cf
+swift-composable-architecture	bc2db5ba8ad3a47deba5db32fa340637ba6c9a76	798	3	https://github.com/pointfreeco/swift-composable-architecture.git
+swift-crypto	a629920495a76bed8a97a431883eb7080ffb3010	257	1	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-crypto-7e0614ea
+swift-format	b15dd59fad21f1770cdc888b1ca6e2937490001a	263	3	https://github.com/swiftlang/swift-format.git
+swift-http-types	379731fb1dde8c628c129892bdc5b597b1571402	28	0	https://github.com/apple/swift-http-types.git
+swift-log	640484247551bbacd9b135fe25fe6690136aef8b	42	0	https://github.com/apple/swift-log.git
+swift-markdown	392b73b858efe3dacec0e8a91c6e7fd19af0bb98	137	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-markdown-5ccdcf70
+swift-nio	feaf4ac57e27e411e83e88ee2f9b1789ddf08d0b	555	3	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-nio-a9bb6d62
+swift-numerics	a7d826ead09420d5e38221ff76c3e0ec9ea4ea8b	51	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-numerics-d936ec6c
+swift-openapi-generator	2b3e804e54f3839467336ffd47401215d66217c0	284	5	https://github.com/apple/swift-openapi-generator.git
+swift-protobuf	ab4d0b59ac9218dbcc45ee91d20021634fa43be2	500	0	https://github.com/apple/swift-protobuf.git
+swift-syntax	754c5132e37f5840aec3f340d04d5c9c28b8fdb0	768	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-syntax-e1f983d3
+swift-system	e6796eb47df06f4d7bf1202b020217c1c6826070	66	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/swift-system-5815d4b7
+SwiftLint	ec4691d9e813a1d3358e82917326b56b0a71d3c9	779	4	https://github.com/realm/SwiftLint.git
+SwiftShell	5b2207cd7177567e4efd9366d554c384037ef42f	19	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/SwiftShell-bdb5da28
+vapor	3966c26927d27a7b950229375820fd084e1897f6	277	12	https://github.com/vapor/vapor.git
+Yams	df801bc4f158f107035d2e14f6d0d8d31eb31ddb	45	0	file:///Users/tom/Library/Caches/org.swift.swiftpm/repositories/Yams-fd9f2519

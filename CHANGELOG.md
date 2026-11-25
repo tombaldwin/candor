@@ -8,6 +8,20 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-25 — the chained swift corpus is live again, and the judge can tell (swift L0)
+
+- The chained swift corpus behind R1455/R1865/R1866 was a hollow copy under the session scratchpad (every directory present,
+  0 regular files). It is re-assembled at `~/.candor/corpus/swift-chained` (the corpus home: under `$HOME`, so neither the
+  `/private/tmp` cleaner nor the per-user dirhelper reclaims it), 39 entries, 387 MB, pinned by `bin/corpus-census-swift.tsv`
+  (HEAD sha, file count, in-pool closure size). `bin/corpus.sh --hollow-check` says ok on all 39 and HOLLOW on a seeded gutted copy.
+- `bin/corpus-chained-swift/` holds the tools that were loose in lane scratch dirs: `mkpool.sh` (builds the pool and symlinks
+  each entry's transitive dependency closure into `.build/checkouts`, so a `CANDOR_DEPS` chain actually joins; R700), `graph.py`,
+  `chain.py`, `cachechain.py`, and `pool-scan.py` (scans each entry once chained, in dependency order, plus an unchained twin).
+- `bin/corpus-chained-judge.py --report-swift CH UN POOL` and `--live-swift CH.json UN.json`: join liveness BY COUNT (rows whose
+  `inferred`, `invisible` or `unknownWhy` differ from the unchained twin, or exist in one arm only). An entry with dependencies
+  and 0 differing rows is DEAD-JOIN and listed; no live entry is `NOT A MEASUREMENT` (rc 3); NO-DEPS entries are neither.
+  `--selftest` now seeds a dead, a partial, a live and a no-deps entry and is shown to fire on each.
+
 ## 2026-11-25 — two shared instruments for lanes (efficiency plan step 6)
 
 - `bin/build-at.sh <repo> <commit>`: build candor-rust (candor-scan), candor-swift, candor-java or candor-ts at exactly

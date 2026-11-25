@@ -60,7 +60,8 @@ reach (a change nothing reaches is not a fix), and for anything touching the cla
 an A/B with **`/Users/tom/git/candor/bin/corpus-ab.py`** — never a fresh `ab.py`.
 **`/tmp/candor-corpus` is HOLLOW (0 `.rs` files): an A/B over it prints 0/0/0 exactly
 like a safely-inert change.** Use the pinned rosters in `candor/bin/corpus-census-*.tsv`.
-Commit, DO NOT push.
+Commit on `lane/<name>` and push that branch so CI gates it (`bin/AGENT-FIX-LANE-BRIEF.md` §4); never
+push `main`. In candor-spec or the umbrella, commit and do not push.
 
 **Stop and report if the premise you were given is wrong.** A hypothesis you did not try
 to break is a guess.

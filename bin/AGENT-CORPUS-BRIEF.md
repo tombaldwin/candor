@@ -152,6 +152,11 @@ each on runs for work they had already proven locally, and a GitHub outage once 
 would never start at all (zero jobs, `updated_at == created_at`, uncancellable and undeletable). Run the
 local checks, push, say once that CI is in flight, and send your report.
 
+A lane that changes an engine pushes its `lane/<name>` branch and reports the full sha. CI on that sha
+is then the per-repo gate list, so do not hand-run the whole list as well. Local runs cover what CI
+cannot: fixtures with executed ground truth, the corpus A/B and the published arms. See
+`bin/AGENT-FIX-LANE-BRIEF.md` §2 for which check belongs to which tier.
+
 `verify-local.sh` is also **stricter** than CI in at least one place — it caught a changelog lag that
 would have aborted the next release at step 0. A local green is worth more than a badge, not less.
 

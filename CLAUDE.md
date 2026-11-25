@@ -10,6 +10,8 @@ Hand every agent the relevant brief, and tell it to attack the premise:
 - **Corpus / bug-hunting work** → `bin/AGENT-CORPUS-BRIEF.md`
 - **Release work** → `bin/AGENT-RELEASE-BRIEF.md`
 - **Re-verifying OPEN SOUNDNESS rows** → `bin/AGENT-SWEEP-BRIEF.md` (pair it with the corpus brief's §F1)
+- **Any lane that commits to an engine** → `bin/AGENT-FIX-LANE-BRIEF.md` (scope, verification tiers, push
+  `lane/<name>`, report format), beside a short brief naming the rows, the defect and the constraints
 
 And in the prompt, always:
 
@@ -151,6 +153,45 @@ answers this, because **it holds every unit including the pure ones**, so it can
 The trap, and it is the same vacuity shape as everywhere else in this file: **"C3 is empty" is evidence only
 once the classifier has been PROVEN able to find a C3.** Seed one and require it to fire, or the clean
 partition is arithmetic rather than a measurement.
+
+## How a lane runs: the efficiency rules (adopted 2026-11-18, written in 2026-11-25)
+
+These come from the efficiency plan (https://claude.ai/artifact/D7T67xrVLfm86Ep3qwWf1v) and Fable's review of it
+(`~/candor-handoff/efficiency-plan/FABLE-REVIEW.md`). **Why, measured 2026-11-17:** throughput was high (431 rust
+commits in 30 days) but payoff per lane was low. R1832 took 4 review rounds, swift R1865 4, I1 stage 3 took 3 and
+R1857 2, and most extra rounds chased neighbours that were already silent on the release. Each round re-ran the
+full A/B and gate list, and the local join took 2–4 hours against ~30 minutes on CI. Every rule below stays inside
+the soundness rules in this file; none of them licenses a silence.
+
+- **Attack matrix before the code.** For a defect area, Fable writes the full matrix of spellings (definition site ×
+  use site, every position) as the acceptance test before a fix lane starts. A Sonnet lane executes it into checked-in
+  fixtures with executed ground truth. The fix lane works against the whole matrix, so merge review confirms rather than
+  discovers. Fable stays a reviewer: it writes the matrix and reviews, it does not implement.
+- **Merge-review scope.** Send a lane back only for a 1→0 or a fabrication ITS change introduced, measured against the
+  last release and main. A neighbour already silent on the release becomes a row with a dated place in a design queue,
+  and the monotone commits land. **After two rounds on one subsystem, stop: design doc → Fable → lane, not a third
+  round.** "Always fix a fixable silence" still holds; it means fix it in a planned lane, not inside this merge.
+- **Verify in tiers.** A rework round runs the attack matrix, the fixtures and the unit tests. The corpus A/B, the
+  release-bar check and the full gate list run ONCE, on the final commit. Briefs say which tier each check belongs to.
+- **Lanes push their branch; CI gates it.** Tom, 2026-11-23: lane commits may be public before review. rust, swift and
+  ts `ci.yml` run on `lane/**` (java's runs on every push). A lane commits on `lane/<name>`, pushes it, and reports the
+  full 40-char head sha. The coordinator reads CI on that sha (`gh run list --commit <full sha>`) and does not re-run
+  locally what CI ran on the same sha. Locally, the join keeps only what CI cannot do: the BY-HAND gates and inline
+  `run:` blocks `gate-run.sh` reports as unrun, calibrated Self-guard, four-way conformance against the lane binary, and
+  the corpus A/B. A lane never merges to `main`; candor-spec and the umbrella have no lane trigger, so their lanes still
+  commit without pushing. Batch joins when several lanes are ready.
+- **Reach orders the work; it never excuses a silence.** Rank open SILENT rows by gate flips and corpus reach. Before
+  each cut every exposed silence is resolved or gets a true-reason hedge on the lost site (the floor rule). A dedicated
+  lane is earned by belonging to a design area or by gate flips above 0. A lone 0-flip row takes the site hedge plus a
+  dated design-queue place.
+- **Hedges are site-level and true.** No module-wide or producer-wide `Unknown`: slot (c″) forbids the blanket
+  producer hedge. At every cut, report each engine's running total of hedges, since the bands price one change at a
+  time.
+- **No new kill switch per fix** unless the change is non-additive (it can remove a charge or a disclosure). Existing
+  switches stay until `bin/build-at.sh` can bisect without them; then they retire on the 0.43.0 floor.
+- **Use the shared tools, do not write copies.** `bin/corpus-ab.py`, `bin/corpus-chained-judge.py`, `bin/gates.sh`,
+  `bin/ci-watch.sh`, and as they land `bin/build-at.sh` and corpus-ab's nothing-lower mode. A lane that needs a
+  comparator the toolkit lacks says so in its report; it does not ship a fifth `lower.py`.
 
 ## Two rules that recur
 
@@ -432,11 +473,15 @@ is a CROSS-ENGINE DIFFERENTIAL and was never going to see a per-repo lint. cando
 pin. Both forms are in `bin/gates.sh candor-rust`, so the repo's own list would have caught it — which
 is the whole point of the list being printed rather than remembered.
 
-So the wave shape is: agents run their OWN repo's suite → agents commit, DO NOT push → coordinator runs
+So the wave shape was: agents run their OWN repo's suite → agents commit, DO NOT push → coordinator runs
 `gate-run.sh` for each changed repo SERIALLY → then conformance → then push. Running the three lists
 serially afterwards took minutes and came back 31/31, 10/10, 11/11; doing it before the push would have
 cost the same minutes and saved a red `main`. **Parallelism buys lanes and costs the one instrument that
 catches per-repo regressions; reinstate it at the join, not after the push.**
+
+**Superseded in part, 2026-11-23:** lanes in rust, swift, ts and java now push `lane/<name>` and CI runs the repo's
+workflow on that sha, so "reinstate it at the join" means: read CI green on the lane's full sha, then run locally only
+the gates CI cannot (see "How a lane runs" above). `main` is still pushed only by the coordinator, after the join.
 
 **AND `gate-run.sh` EXIT 2 / INCOMPLETE IS NOT GREEN — THE UNRUN LINES HELD THE FAILING GATE.** Measured
 2026-09-28 on the R756 fix. `gate-run.sh candor-rust` printed `32 gate(s) run, 32 ok, 0 failed` and then its

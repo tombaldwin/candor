@@ -22,6 +22,8 @@ keeps its own.
   a measurement, 0 clean), over the existing `unit` key and the existing 3 / 3u / 3i / 3k loss classification. New pair
   mode over directories (`--pre-dir` / `--post-dir`). Existing outputs and exit codes are unchanged. Seeded effect,
   `Unknown`, `invisible` and `dispatchesOn` losses, a same-leaf-name decoy and a cross-file decoy are in `--selftest`.
+- The VS Code extension's own version moves 0.42.0 → 0.43.0 to track the server it bundles (`candorTsVersion` 0.43.0);
+  the 0.43.0 pin commit left `test-vscode.sh`'s manifest/README drift check red.
 
 ## 2026-11-19 — ⟨0.43⟩ family release (released 2026-11-19 as 0.43.0)
 

@@ -45,8 +45,15 @@ about one in five rows describes the wrong mechanism.
 - Add a kill switch only if the change is non-additive, meaning it can remove a charge or a disclosure. An additive
   change gets none.
 - Use the shared tools: `bin/corpus-ab.py`, `bin/corpus-chained-judge.py` (prove a chained join is live),
-  `bin/gates.sh`, `bin/disk-guard.sh`, and `bin/build-at.sh` once it exists. Do not write a new comparator. If the
-  toolkit lacks one, say so in the report.
+  `bin/gates.sh`, `bin/disk-guard.sh`, `bin/build-at.sh` and `bin/corpus-ab.py --lower`. Do not write a new
+  comparator. If the toolkit lacks one, say so in the report.
+- `bin/build-at.sh <repo> <commit>` builds candor-rust (candor-scan), candor-swift, candor-java or candor-ts at exactly
+  that commit, in a fresh verified tree and a private target dir, without touching any working tree or worktree; stdout
+  is the artefact path. `--debug` is the fast variant (rust and swift builds are bit-reproducible at a fixed
+  `CANDOR_BUILD_AT_ROOT`). It reuses a finished build only after re-hashing it against its MANIFEST (`--verify`).
+- `bin/corpus-ab.py --lower` answers "does any unit read lower on POST?" (a lost effect, `Unknown`, `invisible` or
+  `dispatchesOn`) with an exit code: 0 clean, 1 lower found, 3 not a measurement (including a PRE arm with nothing to
+  lose). It takes command arms, `--pre-json/--post-json`, or `--pre-dir/--post-dir` (report directories paired by path).
 - A build used as evidence names its commit, and its binary sha differs from the other arm's.
 
 ## 4. Branch, commit, push

@@ -101,7 +101,15 @@ USAGE
   # two captured reports, no engine (also how --selftest drives itself)
   bin/corpus-ab.py --pre-json a.json --post-json b.json
 
-  bin/corpus-ab.py --selftest        # the four calibration proofs; run by CI
+  # two directories of captured reports, paired by relative path (a file on one side only is NOT a measurement)
+  bin/corpus-ab.py --pre-dir reports-pre --post-dir reports-post
+
+  # THE NO-UNIT-READS-LOWER VERDICT (any mode): exit 1 if a unit lost an effect / `Unknown` / `invisible` /
+  # `dispatchesOn` on POST, 3 if not a measurement (incl. a PRE arm with nothing to lose), 0 clean.  It reads the
+  # `--buckets` 3 / 3u / 3i / 3k classification over the same `unit` key; it is not a second comparator.
+  bin/corpus-ab.py --pre-dir A --post-dir B --lower
+
+  bin/corpus-ab.py --selftest        # the calibration proofs; run by CI
 
 MEMORY (SOUNDNESS R1228).  Each entry's rows are parsed AND reduced to counts and diff records in the
 worker that ran it, so this process holds the DIFF, never the corpus: the Python side peaks at about
@@ -122,6 +130,7 @@ from __future__ import annotations
 import argparse
 import collections
 import concurrent.futures as cf
+import fnmatch
 import glob
 import hashlib
 import json
@@ -665,8 +674,18 @@ def reduce_entry(entry, pre_pairs, post_pairs, key, fields):
     gpre, gpost = gate_tokens_of(pre_rows, touched), gate_tokens_of(post_rows, touched)
     gate = [[entry, q, gpre.get(q, []), gpost.get(q, [])] for q in sorted(touched)
             if gpre.get(q, []) != gpost.get(q, [])]
+    # The PRE arm's population of things that COULD be lost, for `--lower`'s vacuity guard: "no unit read
+    # lower" over an arm that carried nothing to lose is arithmetic, not a measurement.
+    lowerable = collections.Counter()
+    for _e, _p, row in pre_rows:
+        inf = row.get("inferred") or []
+        lowerable["effect"] += sum(1 for x in inf if x != "Unknown")
+        lowerable["unknown"] += sum(1 for x in inf if x == "Unknown")
+        lowerable["invisible"] += len(row.get("invisible") or [])
+        lowerable["dispatchesOn"] += len(row.get("dispatchesOn") or [])
     return {"pre_n": len(pre_rows), "post_n": len(post_rows), "headline": headline,
-            "detail": detail, "table": table, "pre_by_fn": pre_by_fn, "gate_by_fn": gate}
+            "detail": detail, "table": table, "pre_by_fn": pre_by_fn, "gate_by_fn": gate,
+            "pre_lowerable": dict(lowerable)}
 
 
 def one_entry(job):
@@ -939,6 +958,15 @@ def build_parser():
     ap.add_argument("--entries-file", help="a file of entry paths, one per line")
     ap.add_argument("--pre-json", help="pair mode: a captured PRE report")
     ap.add_argument("--post-json", help="pair mode: a captured POST report")
+    ap.add_argument("--pre-dir", help="pair mode over DIRECTORIES: a directory of captured PRE reports (every "
+                                      "report file under it is one entry, paired with the same relative path "
+                                      "under --post-dir)")
+    ap.add_argument("--post-dir", help="pair mode over DIRECTORIES: the POST directory")
+    ap.add_argument("--lower", action="store_true",
+                    help="the NO-UNIT-READS-LOWER question as a verdict with its own exit code: 1 if any unit lost "
+                         "a concrete effect, an `Unknown`, an `invisible` element or a `dispatchesOn` key on POST; "
+                         "3 if it is not a measurement (incl. a PRE arm with nothing to lose); 0 clean. Works in "
+                         "every mode (command arms, --pre-json/--post-json, --pre-dir/--post-dir).")
     ap.add_argument("--pre-cache", metavar="VERSION:ENGINE",
                     help="serve the PRE arm from the published-arm cache (bin/pubarm_cache.py, "
                          "/Users/tom/candor-handoff/pubarm/VERSION/ENGINE) instead of scanning.  --pre-cmd is "
@@ -1011,16 +1039,67 @@ def run(args):
         k, v = kv.split("=", 1)
         mark_env[k] = v
 
+    if args.lower and fields is not None:
+        emit("corpus-ab: --lower asks about EVERY gate-visible field; --fields narrows the compared value and "
+             "would blind it (§E1).  Drop --fields.")
+        return 2
     # ── gather both arms ──
     results = []
     swift_unfit = []
     caches = {}
-    if (args.pre_json or args.post_json) and (args.pre_cache or args.post_cache):
+    if (args.pre_json or args.post_json or args.pre_dir or args.post_dir) and (args.pre_cache or args.post_cache):
         emit("corpus-ab: --pre-cache/--post-cache serve a COMMAND arm; pair mode already takes captured reports.")
         return 2
     arm_identity_note = ("arm identity: pair mode — two captured reports, so there is no command to "
                          "hash; the arms are whatever produced those files.")
-    if args.pre_json or args.post_json:
+    if args.pre_dir or args.post_dir:
+        if args.pre_json or args.post_json:
+            emit("corpus-ab: --pre-dir/--post-dir and --pre-json/--post-json are different pair modes; pick one")
+            return 2
+        if not (args.pre_dir and args.post_dir):
+            emit("corpus-ab: directory pair mode needs BOTH --pre-dir and --post-dir")
+            return 2
+        for d in (args.pre_dir, args.post_dir):
+            if not os.path.isdir(d):
+                return refuse(["%s is not a directory." % d])
+        if os.path.realpath(args.pre_dir) == os.path.realpath(args.post_dir) and not args.allow_identical_arms:
+            return refuse(["--pre-dir and --post-dir are the SAME directory: a self-comparison (R691).",
+                           "Pass --allow-identical-arms to acknowledge it in writing."])
+        oexcl = tuple(x.strip() for x in args.outdir_exclude.split(",") if x.strip())
+
+        def _reports_under(root):
+            found = {}
+            for dp, _dn, fns in os.walk(root):
+                for fn_ in fns:
+                    if fnmatch.fnmatch(fn_, args.outdir_glob) and not any(fn_.endswith(x) for x in oexcl):
+                        full = os.path.join(dp, fn_)
+                        found[os.path.relpath(full, root)] = full
+            return found
+        pre_files, post_files = _reports_under(args.pre_dir), _reports_under(args.post_dir)
+        # A report present on one side only is a unit set that was never compared.  Dropping it would be
+        # the quiet-exclusion R289 forbids, so it is NOT a measurement.
+        lopsided = sorted(pre_files.keys() ^ post_files.keys())
+        if lopsided or not pre_files:
+            return refuse(["The two directories do not hold the same report files." if pre_files else
+                           "No report file under --pre-dir (glob %s)." % args.outdir_glob] +
+                          ["  only on %s: %s" % ("PRE" if k in pre_files else "POST", k) for k in lopsided[:20]])
+        arm_identity_note = ("arm identity: directory pair mode — %d captured report file(s) per side, so there "
+                             "is no command to hash; the arms are whatever produced those files." % len(pre_files))
+        for rel in sorted(pre_files):
+            res = {"entry": rel, "label": rel}
+            arms = {}
+            for name, path in (("pre", pre_files[rel]), ("post", post_files[rel])):
+                try:
+                    with open(path) as fh:
+                        arms[name], res[name + "_judged"] = read_reports(fh.read(), rel)
+                except (BadReport, OSError) as e:
+                    res["error"] = "%s arm: %s" % (name, e)
+            if "error" not in res:
+                res.update(reduce_entry(rel, arms["pre"], arms["post"], args.key, fields))
+            del arms
+            results.append(res)
+        entries = sorted(pre_files)
+    elif args.pre_json or args.post_json:
         if not (args.pre_json and args.post_json):
             emit("corpus-ab: pair mode needs BOTH --pre-json and --post-json")
             return 2
@@ -1348,6 +1427,39 @@ def run(args):
         emit("    Audit the loss set in FULL and ground-truth it from the SOURCE, never from candor's")
         emit("    own report: a wrong removal and a right one are the same bytes.")
 
+    # ── NO UNIT READS LOWER (--lower) ─────────────────────────────────────────────────────────
+    # THE QUESTION EVERY LANE ANSWERS, asked once: over these arms, does any unit read LOWER on POST — a
+    # concrete effect lost, an `Unknown` lost, an `invisible` element lost (and a `dispatchesOn` join key,
+    # which the bucket ladder already names)?  It is NOT a new comparator.  `--buckets` 3 / 3u / 3i / 3k
+    # are exactly these losses, over the same `unit` key and the same counted multiset, and `--lower` reads
+    # them from `classify_verdicts` rather than re-deriving them.  What `--buckets` lacked for this
+    # question: an exit code (it is always 0), the whole list (it keeps 6), and a guard for a PRE arm with
+    # nothing to lose.  Four ad-hoc comparators (lower.py, lower2.py, cmp3.py, evid2.sh) were written in
+    # one day for want of it, and one keyed on the leaf name and was fooled by a same-named unit elsewhere.
+    lower = None
+    if args.lower:
+        b = classify_verdicts(detail, pre_by_fn={}, sample=10 ** 9)
+        kinds = (("3", "effect"), ("3u", "unknown"), ("3i", "invisible"), ("3k", "dispatchesOn"))
+        lowerable = collections.Counter()
+        for r in good:
+            lowerable.update(r.get("pre_lowerable") or {})
+        lower = {"lost": {name: [[list(k), els] for k, els in b["where"].get(code, [])] for code, name in kinds},
+                 "pre_lowerable": dict(lowerable)}
+        lower["n_lower_units"] = len({tuple(k) for rec in lower["lost"].values() for k, _ in rec})
+        emit()
+        emit("  NO-UNIT-READS-LOWER (--lower, key %s) — PRE had %d effect(s), %d Unknown, %d invisible, %d dispatchesOn "
+             "element(s) that a unit could lose:"
+             % (args.key, lowerable["effect"], lowerable["unknown"], lowerable["invisible"], lowerable["dispatchesOn"]))
+        for code, name in kinds:
+            rec = lower["lost"][name]
+            emit("    %-13s %6d unit(s) read lower" % (name, len(rec)))
+            for k, els in rec[:40]:
+                emit("        %s  lost %s" % (" / ".join(str(x) for x in k), ", ".join(els)[:90]))
+            if len(rec) > 40:
+                emit("        … and %d more (full list in the --out JSON under `lower`)" % (len(rec) - 40))
+        emit("    A row removed outright counts, and so does a unit re-keyed by a moved `hash` under the default")
+        emit("    `unit` key (re-run with --key pkgfn to see which losses are only that).  Neither is silent.")
+
     # ── write detail ──
     if args.out:
         with open(args.out, "w") as fh:
@@ -1358,6 +1470,7 @@ def run(args):
                        "pre_cache": caches.get("pre") and {k: v for k, v in caches["pre"].items() if k in ("version", "engine")},
                        "post_cache": caches.get("post") and {k: v for k, v in caches["post"].items() if k in ("version", "engine")},
                        "excluded": bad, "unjudged": unjudged, "all_pure": allpure, "pre_rows": n_pre, "post_rows": n_post,
+                       "lower": lower,
                        "reach": dict(reach), "reach_entries": dict(reach_entries),
                        "reach_where": {k: v for k, v in reach_where.items()},
                        "detail": detail}, fh)
@@ -1367,6 +1480,30 @@ def run(args):
     # ── the "produced, but not evidence" exits ──
     empty = (headline["added_rows"] == 0 and headline["removed_rows"] == 0
              and headline["changed_rows"] == 0)
+    if args.lower:
+        # ORDER: not-a-measurement (3) outranks a finding (1) outranks a clean (0).  A PRE arm that held
+        # nothing a unit could lose cannot show a loss, so "clean" over it is arithmetic.  The generic
+        # empty-diff exit 4 is replaced by this guard, because the lower question is exact: an empty diff
+        # over a PRE arm with something to lose really does mean nothing read lower — though it says nothing
+        # about whether the change under test ran, which only --mark can.
+        if not any(lower["pre_lowerable"].values()):
+            return refuse(["--lower: the PRE arm carries no effect, no Unknown, no invisible and no dispatchesOn",
+                           "anywhere in the %d compared entr%s, so no unit COULD read lower.  A clean answer"
+                           % (len(good), "y" if len(good) == 1 else "ies"),
+                           "here would be the control that is pure on every arm — vacuous.  Not a measurement."])
+        if lower["n_lower_units"]:
+            emit()
+            emit("corpus-ab --lower: %d UNIT(S) READ LOWER on POST.  Exit 1.  Ground-truth each from SOURCE: a loss "
+                 "is a resolution only when the body is proven pure or the effect re-charged." % lower["n_lower_units"])
+            return 1
+        emit()
+        emit("corpus-ab --lower: no unit read lower (effect, Unknown, invisible, dispatchesOn).  Exit 0.")
+        if empty:
+            emit("  The diff is EMPTY: that is a statement about the arms, not about whether the change ran.")
+        if zero_reach and not args.allow_zero_reach:
+            emit("  EVERY --mark COUNTED ZERO: this is safety-only for the change under test.  Exit 4.")
+            return 4
+        return 0
     if zero_reach and not args.allow_zero_reach:
         emit()
         emit("=" * 96)
@@ -1905,6 +2042,73 @@ def selftest():
     rc, out = go(cargs[:-3] + ["--mark", "M", "--mark-arm", "pre", "--out", outc])
     check("--mark on a CACHED arm is a usage error (its REACH would read 0 for the wrong reason)", rc == 2, out)
     os.environ.pop("CANDOR_PUBARM", None)
+
+    emit()
+    emit("[lower] --lower: does ANY unit read lower?  Each kind of loss is SEEDED and must fire; a same-leaf-name")
+    emit("        decoy in another owner that GAINS the effect must not mask it.  Exit 1 lower / 3 not a measurement / 0.")
+
+    def pair(name, pre_fns, post_fns, judged=None):
+        d = os.path.join(tmp, "lw-" + name)
+        os.makedirs(d, exist_ok=True)
+        a, b = os.path.join(d, "pre.json"), os.path.join(d, "post.json")
+        open(a, "w").write(_report("pkg", pre_fns, judged))
+        open(b, "w").write(_report("pkg", post_fns, judged))
+        return ["--pre-json", a, "--post-json", b, "--lower"]
+
+    keep = _fn("keep::k", ["Fs"])          # an untouched effectful unit, so PRE always has something to lose
+    for kind, pre_f, post_f, want in (
+            ("a lost CONCRETE EFFECT", _fn("a::f", ["Fs", "Net"]), _fn("a::f", ["Net"]), "effect"),
+            ("a lost `Unknown`", _fn("a::f", ["Unknown"], ["x"]), _fn("a::f", []), "unknown"),
+            ("a lost `invisible` element on a row that stays", _fn("a::f", [], invisible=["dep1", "dep2"]),
+             _fn("a::f", [], invisible=["dep1"]), "invisible"),
+            ("a row carrying ONLY `invisible`, removed", _fn("a::f", [], invisible=["dep1"]), None, "invisible"),
+            ("a lost `dispatchesOn` key", dict(_fn("a::f", []), dispatchesOn=["T::m"]), _fn("a::f", []),
+             "dispatchesOn")):
+        rc, out = go(pair("seed", [pre_f, keep], [x for x in (post_f, keep) if x]))
+        check("SEEDED %s fires (exit 1)" % kind, rc == 1 and ("%-13s %6d unit(s) read lower" % (want, 1)) in out
+              and "a::f" in out, out)
+    # THE DECOY.  a::f loses Fs while b::f — the same LEAF name, a different owner — gains it.  Joined on
+    # the leaf, the two cancel and the run reads clean.  Keyed on the unit it must fire, and name a::f only.
+    pre_d = [_fn("a::f", ["Fs"]), _fn("b::f", []), keep]
+    post_d = [_fn("a::f", []), _fn("b::f", ["Fs"]), keep]
+    rc, out = go(pair("decoy", pre_d, post_d))
+    check("a same-leaf-name decoy in another owner does not mask the loss (exit 1)", rc == 1, out)
+    check("…and the loss is attributed to a::f, never b::f",
+          any("a::f" in l and "lost Fs" in l for l in out.splitlines())
+          and not any("b::f" in l and "lost" in l for l in out.splitlines()), out)
+    # The same check one level out: the SAME qual in two ENTRIES (flate2-1.1.9 / 1.1.10), one loses, one gains.
+    da, db = os.path.join(tmp, "lw-dirA"), os.path.join(tmp, "lw-dirB")
+    for d in (da, db):
+        os.makedirs(os.path.join(d, "x"), exist_ok=True)
+    open(os.path.join(da, "x", "one.json"), "w").write(_report("pkg", [_fn("f", ["Fs"]), keep]))
+    open(os.path.join(da, "x", "two.json"), "w").write(_report("pkg", [_fn("f", []), keep]))
+    open(os.path.join(db, "x", "one.json"), "w").write(_report("pkg", [_fn("f", []), keep]))   # POST: one.json lost f's Fs
+    open(os.path.join(db, "x", "two.json"), "w").write(_report("pkg", [_fn("f", ["Fs"]), keep]))  # POST: two.json gained it
+    rc, out = go(["--pre-dir", da, "--post-dir", db, "--lower"])
+    check("DIRECTORIES: a loss in one report file is not masked by the same qual GAINING in another (exit 1)",
+          rc == 1 and "x/one.json" in out and not any("x/two.json" in l and "lost" in l for l in out.splitlines()), out)
+    open(os.path.join(db, "x", "one.json"), "w").write(_report("pkg", [_fn("f", ["Fs"]), keep]))
+    rc, out = go(["--pre-dir", da, "--post-dir", db, "--lower"])
+    check("DIRECTORIES: with the loss undone it reads clean (exit 0)", rc == 0 and "no unit read lower" in out, out)
+    open(os.path.join(db, "x", "extra.json"), "w").write(_report("pkg", [keep]))
+    rc, out = go(["--pre-dir", da, "--post-dir", db, "--lower"])
+    check("DIRECTORIES: a report present on one side only is NOT A MEASUREMENT (exit 3), not a quiet exclusion",
+          rc == 3 and "only on POST" in out, out)
+    os.remove(os.path.join(db, "x", "extra.json"))
+    rc, out = go(["--pre-dir", da, "--post-dir", da, "--lower"])
+    check("DIRECTORIES: the same directory twice is refused as a self-comparison (exit 3)", rc == 3, out)
+    # CLEAN, and its two controls.
+    rc, out = go(pair("clean", [_fn("a::f", []), keep], [_fn("a::f", ["Fs", "Unknown"], ["y"]), keep]))
+    check("a change that only GAINS reads clean (exit 0)", rc == 0 and "no unit read lower" in out, out)
+    rc, out = go(pair("vacuous", [_fn("a::f", []), _fn("b::g", [])], [_fn("a::f", []), _fn("b::g", [])]))
+    check("a PRE arm with nothing to lose is NOT A MEASUREMENT (exit 3), not a clean pass", rc == 3 and "vacuous" in out, out)
+    rc, out = go(pair("fields", [_fn("a::f", ["Fs"])], [_fn("a::f", [])]) + ["--fields", "fn"])
+    check("--lower with --fields (a narrowed, blinded value) is a usage error (exit 2)", rc == 2, out)
+    # Existing behaviour is untouched: without --lower the same loss is still exit 0 / 4, as before.
+    base = pair("seed", [_fn("a::f", ["Fs"]), keep], [_fn("a::f", []), keep])
+    rc, out = go([a for a in base if a != "--lower"] + ["--allow-zero-reach"])
+    check("WITHOUT --lower the same loss still exits 0 and prints no NO-UNIT-READS-LOWER section",
+          rc == 0 and "NO-UNIT-READS-LOWER" not in out, out)
 
     if fails:
         emit("corpus-ab selftest: %d FAILED — %s" % (len(fails), "; ".join(fails)))

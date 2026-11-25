@@ -8,6 +8,21 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-25 — two shared instruments for lanes (efficiency plan step 6)
+
+- `bin/build-at.sh <repo> <commit>`: build candor-rust (candor-scan), candor-swift, candor-java or candor-ts at exactly
+  one commit and print the artefact path. The tree is materialised from the commit's own objects into a fresh directory
+  and checked (index equals the commit's tree, every file on disk hashes to the commit's blob), the target/scratch dir is
+  private and fresh, the engine repo's working tree and worktrees are never touched, and a finished build is reused only
+  after it re-hashes against its MANIFEST (a build of another commit in the slot is refused). Runs `disk-guard.sh`, uses
+  `--no-daemon` Gradle, checks the jar's baked build id, and deletes its work dir. Ships with `bin/build-at.test.sh`
+  (`build-at.sh --selftest`), which first reproduces the stale-artefact trap and is shown to fail under three seeded
+  mutations of the script.
+- `bin/corpus-ab.py --lower`: the no-unit-reads-lower question as a verdict with its own exit code (1 lower found, 3 not
+  a measurement, 0 clean), over the existing `unit` key and the existing 3 / 3u / 3i / 3k loss classification. New pair
+  mode over directories (`--pre-dir` / `--post-dir`). Existing outputs and exit codes are unchanged. Seeded effect,
+  `Unknown`, `invisible` and `dispatchesOn` losses, a same-leaf-name decoy and a cross-file decoy are in `--selftest`.
+
 ## 2026-11-19 — ⟨0.43⟩ family release (released 2026-11-19 as 0.43.0)
 
 The umbrella ships the ⟨0.43⟩ engines. `ENGINE_PIN` moves to 0.43.0 and the scoped `ENGINE_PIN_TS=0.42.1`

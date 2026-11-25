@@ -113,6 +113,27 @@ rc_is "an empty entry set exits 3" 3 ab --entries-dir "$T/corpus/same"
 rc_is "a usage error exits 2"      2 python3 "$AB" --entry "$T/corpus/dup"
 
 echo
+echo "--lower, from a shell: the exit code is the verdict (0 clean / 1 a unit read lower / 3 not a measurement):"
+lw() { printf '{"candor":{"spec":"0.35"},"package":"p","analyzed":{"count":2},"functions":%s}' "$2" > "$T/lw-$1.json"; }
+lw pre  '[{"fn":"a::f","hash":"p#a::f","inferred":["Fs"]},{"fn":"k","hash":"p#k","inferred":["Net"]}]'
+lw lost '[{"fn":"a::f","hash":"p#a::f","inferred":[]},{"fn":"k","hash":"p#k","inferred":["Net"]}]'
+lw gain '[{"fn":"a::f","hash":"p#a::f","inferred":["Fs","Net"]},{"fn":"k","hash":"p#k","inferred":["Net"]}]'
+lw pure '[{"fn":"a::f","hash":"p#a::f","inferred":[]}]'
+rc_is "a lost effect exits 1" 1 python3 "$AB" --pre-json "$T/lw-pre.json" --post-json "$T/lw-lost.json" --lower
+says  "…and names the unit and the effect"  "lost Fs"
+rc_is "a gain only exits 0" 0 python3 "$AB" --pre-json "$T/lw-pre.json" --post-json "$T/lw-gain.json" --lower
+rc_is "a PRE arm with nothing to lose exits 3, not 0" 3 python3 "$AB" --pre-json "$T/lw-pure.json" --post-json "$T/lw-pure.json" --lower
+rc_is "WITHOUT --lower the same loss is still exit 0 (existing behaviour unchanged)" 0 \
+  python3 "$AB" --pre-json "$T/lw-pre.json" --post-json "$T/lw-lost.json" --allow-zero-reach
+mkdir -p "$T/lw-a" "$T/lw-b"; cp "$T/lw-pre.json" "$T/lw-a/r.json"; cp "$T/lw-lost.json" "$T/lw-b/r.json"
+rc_is "report DIRECTORIES: a lost effect exits 1" 1 python3 "$AB" --pre-dir "$T/lw-a" --post-dir "$T/lw-b" --lower
+cp "$T/lw-pre.json" "$T/lw-b/extra.json"
+rc_is "report DIRECTORIES: a file on one side only is not a measurement (exit 3)" 3 python3 "$AB" --pre-dir "$T/lw-a" --post-dir "$T/lw-b" --lower
+mkentry lost 1 '[{"fn":"a","hash":"p#a","inferred":["Fs"]}]' '[{"fn":"a","hash":"p#a","inferred":[]}]'
+rc_is "command arms work too (exit 1)" 1 ab --entry "$T/corpus/lost" --lower
+rc_is "…and over an entry whose Unknown merely changed REASON, clean (exit 0)" 0 ab --entry "$T/corpus/dup" --lower
+
+echo
 echo "the authority it asks — bin/corpus.sh --hollow-check (§G: one implementation, two callers):"
 mkdir -p "$T/hc/empty" "$T/hc/gutted/.git/hooks" "$T/hc/gutted/.git/info" "$T/hc/notgit"
 for f in a b c; do echo x > "$T/hc/notgit/$f"; done

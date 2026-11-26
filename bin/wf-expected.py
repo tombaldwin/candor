@@ -137,6 +137,15 @@ def parse_workflow(path):
             in_on = stripped.rstrip(":") in ("on", '"on"', "'on'") or stripped.startswith("on:")
             in_push = False
             listing = None
+            # Scalar and flow forms carry the events on the `on:` line itself: `on: push` and
+            # `on: [push, pull_request]` mean every push. Without this they read as NO push trigger, so a
+            # workflow that runs on every commit was "not required" — the flattering direction.
+            m = re.match(r'^["\']?on["\']?:\s*(\S.*?)\s*$', stripped)
+            if m and not m.group(1).startswith("#"):
+                events = [e.strip().strip('"\'') for e in m.group(1).strip("[]").split(",")]
+                if "push" in events:
+                    has_push = True
+                in_on = False
             continue
         if not in_on:
             continue
@@ -248,6 +257,12 @@ SELFTEST_CASES = [
      "branch filter excludes this branch"),
     ("name: main-only\non:\n  push:\n    branches: ['main']\n", ["a.rs"], "main", "required",
      "branch filter includes this branch"),
+    ("name: scalar\non: push\n", ["a.rs"], "main", "required",
+     "scalar `on: push` is every push"),
+    ("name: flow\non: [push, pull_request]\n", ["a.rs"], "main", "required",
+     "flow `on: [push, ...]` is every push"),
+    ("name: prs\non: [pull_request]\n", ["a.rs"], "main", "not-required",
+     "flow form without push is not a push trigger"),
     ("name: cron\non:\n  schedule:\n    - cron: '0 3 * * *'\n", ["a.rs"], "main", "not-required",
      "no push trigger"),
     ("name: weird\non:\n  push:\n    paths: &anchor\n", ["a.rs"], "main", "required",

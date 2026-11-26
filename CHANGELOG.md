@@ -8,6 +8,15 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-26 — ci-watch judges the runs of the branch being verified, not every run at the sha
+
+- `bin/ci-watch.sh` enumerated runs by commit sha, so after a fast-forward of `main` to a lane head it read the lane-branch run
+  and main's run together: a red lane run (assert-audit on a rebase artefact) read NOT GREEN over a passing main, and a newer
+  lane green shadowed a main red in the per-workflow dedup (a false green). It now judges runs whose branch is the repo's
+  default branch (asked of `gh repo view`, or `CI_WATCH_BRANCH`), plus release/tag runs and runs with no branch recorded.
+  Runs left out are printed on an `(other refs)` line with their count and how many were not success. `--selftest` seeds
+  lane-red/main-green (OK), lane-green/main-red (NOT GREEN), lane-only (not OK) and the schedule, release, tag, PR and dispatch cases.
+
 ## 2026-11-25 — the chained swift corpus is live again, and the judge can tell (swift L0)
 
 - The chained swift corpus behind R1455/R1865/R1866 was a hollow copy under the session scratchpad (every directory present,

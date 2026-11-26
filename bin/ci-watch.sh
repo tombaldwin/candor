@@ -209,6 +209,46 @@ gh_call() {
 # below -- one value, used everywhere it is needed, so it cannot silently drift from what US= above means.
 JQ_ROW='.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .createdAt'
 
+# ── WHICH RUNS AT A SHA BELONG TO THE BRANCH BEING VERIFIED (2026-11-25) ───────────────────────────────
+# `gh run list --commit <sha>` returns every run at that sha on EVERY ref. Lanes now push `lane/**` and CI runs
+# there, so after main is fast-forwarded to a lane's head the one sha carries two sets of runs. Measured
+# 2026-11-25: candor-swift main 93fc4f1 read NOT GREEN because the LANE-branch run had failed (assert-audit
+# could not diff an unreachable pre-rebase head) while main's own run was still in progress and later passed.
+# It was also reachable the other way: the dedup keeps the NEWEST row per workflow id, so a lane run started
+# after main's would SHADOW main's row and a lane green could stand in for a main red — a false green.
+#
+# A run BELONGS when its headBranch is the repo's default branch, or when it is a tag/release run:
+#   - `release` event (headBranch is the tag), or headBranch names a tag that points at this sha (`git tag
+#     --points-at`; release.sh tags locally). A publish.yml run on a tag is the verdict on a release.
+#   - schedule and workflow_dispatch runs carry headBranch = the branch they ran on, so the one rule covers them;
+#     a dispatch aimed at a lane branch is that lane's, not main's.
+#   - a `pull_request` run carries the PR's SOURCE branch, so a PR from lane/x is the lane's run and is not
+#     judged; a PR whose head is the default branch itself is.
+# A run whose headBranch is MISSING cannot be shown to belong elsewhere, so it is kept (fail toward judging).
+# What is left out is never silent: other_note names the branches, run counts and how many were red, and the
+# row for a missing main run falls into the no-run arm (pending, then NO RUN AT HEAD), so a lane green can
+# never stand in for main's run.
+#   $1 = gh JSON  $2 = default branch  $3 = newline-separated tag names at this sha
+# Sets: rows (kept, deduped by workflow id, newest first), other_note ("" when nothing was left out).
+JQ_BELONGS='map(select((.headBranch // "") == "" or .headBranch == $br or .event == "release"
+                       or ((.headBranch as $h | ($tags | split("\n")) | index($h)) != null)))'
+select_branch_rows() {
+  local json="$1" br="$2" tags="$3" kept others
+  rows="$(printf '%s' "$json" | jq -r --arg US "$US" --arg br "$br" --arg tags "$tags" \
+          "$JQ_BELONGS | $JQ_ROW" | awk -F"$US" '!seen[$1]++')"
+  others="$(printf '%s' "$json" | jq -r --arg br "$br" --arg tags "$tags" \
+          'map(select(((.headBranch // "") != "") and .headBranch != $br and .event != "release"
+                      and (((.headBranch as $h | ($tags | split("\n")) | index($h)) != null) | not)))
+           | group_by(.headBranch)
+           | map("\(.[0].headBranch): \(length) run(s)" + (if (map(select(.status == "completed" and .conclusion != "success")) | length) > 0
+                 then ", \(map(select(.status == "completed" and .conclusion != "success")) | length) not success" else "" end))
+           | join("; ")')"
+  other_note=""
+  [ -n "$others" ] && other_note="also at this sha, NOT judged (not $br, not a tag): $others"
+  return 0
+}
+DEFBR="${CI_WATCH_BRANCH:-main}"   # the branch whose runs are judged; the loop below sets it per repo
+
 # THE STALL DECISION, as a function so it can be exercised without waiting for a real hang. A check whose
 # alarm has never been seen to fire is a check nobody should trust — this is the arm that was missing on
 # 2026-08-19, and a version of it that silently never fired would have left the same gap wearing a green.
@@ -413,7 +453,7 @@ fetch_earlier_commit_rows() {  # $1 = repo name -> sets `latest`, `dupe_latest`;
   local rname="$1" id name row combined="" failed=0
   while IFS="$US" read -r id name; do
     [ -z "$id" ] && continue
-    if gh_call run list -R "$OWNER/$rname" --workflow "$id" --branch main --limit 1 \
+    if gh_call run list -R "$OWNER/$rname" --workflow "$id" --branch "$DEFBR" --limit 1 \
                --json workflowDatabaseId,workflowName,status,conclusion,headSha; then
       row="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" \
              '.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .status + $US + (if (.conclusion // "") == "" then "-" else .conclusion end) + $US + .headSha')"
@@ -928,14 +968,14 @@ EOF
   cp "$(dirname "${BASH_SOURCE[0]}")/_release_set.sh" "$(dirname "${BASH_SOURCE[0]}")/wf-expected.py" "$_t/candor/bin/"
   ( cd "$_t/candor-spec" && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x \
     && mkdir -p .github/workflows \
-    && printf 'name: ci\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: ok\n' > .github/workflows/ci.yml \
+    && printf 'name: ci\non:\n  push:\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: ok\n' > .github/workflows/ci.yml \
     && git add -A && git -c user.email=t@e -c user.name=t commit -qm y ) >/dev/null 2>&1
   _e2e() {  # $1 = gh stub body ; rest = extra env. Prints the child's output, sets E2E_RC.
     printf '#!/bin/sh\n%s\n' "$1" > "$_t/shim/gh"; chmod +x "$_t/shim/gh"
     E2E_OUT="$(PATH="$_t/shim:$PATH" TMPDIR="$_t" CI_WATCH_LOCK="$_t/lock" bash "$_t/candor/bin/ci-watch.sh" "${@:2}" candor-spec 2>&1)"; E2E_RC=$?
   }
   _RL='echo "HTTP 403: API rate limit exceeded for user ID 1." >&2; exit 1'
-  _GOOD='case "$*" in *"workflow list"*) echo "[{\"id\":1,\"path\":\".github/workflows/ci.yml\"}]";; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"$C\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
+  _GOOD='case "$*" in *"repo view"*) echo main;; *"workflow list"*) echo "[{\"id\":1,\"path\":\".github/workflows/ci.yml\"}]";; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"$C\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
   _e2e "$_RL"
   if [ "$E2E_RC" -eq 75 ] && printf '%s' "$E2E_OUT" | grep -q 'BLOCKED by the GitHub API rate limit' && ! printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN'; then
     echo "  ✔ a verdict made only of rate-limit rows says BLOCKED (exit 75), not NOT GREEN"
@@ -944,7 +984,7 @@ EOF
   if [ "$E2E_RC" -eq 1 ] && printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN' && ! printf '%s' "$E2E_OUT" | grep -q 'BLOCKED'; then
     echo "  ✔ a genuine red run stays NOT GREEN (exit 1) — BLOCKED does not swallow it"
   else echo "  ✘ a real red run did not read NOT GREEN (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
-  _e2e 'case "$*" in *"workflow list"*) echo "HTTP 403: API rate limit exceeded" >&2; exit 1;; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"failure\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
+  _e2e 'case "$*" in *"repo view"*) echo main;; *"workflow list"*) echo "HTTP 403: API rate limit exceeded" >&2; exit 1;; *"run list"*) echo "[{\"workflowDatabaseId\":1,\"workflowName\":\"ci\",\"status\":\"completed\",\"conclusion\":\"failure\",\"createdAt\":\"2026-01-01T00:00:00Z\"}]";; esac'
   if [ "$E2E_RC" -eq 1 ] && printf '%s' "$E2E_OUT" | grep -q 'NOT GREEN' && printf '%s' "$E2E_OUT" | grep -q 'are rate-limit/403 answers'; then
     echo "  ✔ a red run beside a rate-limited call stays NOT GREEN and the rate-limit rows are counted in a note"
   else echo "  ✘ mixed red + 403 was not NOT GREEN with a note (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); fi
@@ -964,6 +1004,54 @@ EOF
   if [ "$E2E_RC" -eq 75 ] && printf '%s' "$E2E_OUT" | grep -q 'BLOCKED by the GitHub API rate limit' && ! printf '%s' "$E2E_OUT" | grep -q REFUSING && [ ! -e "$_t/lock" ]; then
     echo "  ✔ a stale lock is reclaimed, --wait stops on BLOCKED instead of polling, and releases its lock"
   else echo "  ✘ stale-lock reclaim / BLOCKED stop failed (rc=$E2E_RC, lock present: $([ -e "$_t/lock" ] && echo yes || echo no)): $E2E_OUT"; fails=$((fails+1)); fi
+  # ── 2026-11-25: RUNS ON ANOTHER REF AT THE SAME SHA DO NOT DECIDE THE VERDICT. Seeded with the measured shape:
+  # a failing run on `lane/x` and a successful one on `main`, ONE sha, ONE workflow id, the lane run listed first
+  # (newest). It must read OK. The inverse (main red, lane green and newer) must read NOT GREEN: the dedup keeps the
+  # newest row per workflow, so without the branch filter a lane green SHADOWS a main red.
+  _runj() {  # $1 branch  $2 event  $3 conclusion  $4 createdAt  -> one run object
+    printf '{"workflowDatabaseId":1,"workflowName":"ci","status":"completed","conclusion":"%s","createdAt":"%s","headBranch":"%s","event":"%s"}' "$3" "$4" "$1" "$2"
+  }
+  _GOODJ='case "$*" in *"repo view"*) echo main;; *"workflow list"*) echo "[{\"id\":1,\"path\":\".github/workflows/ci.yml\"}]";; *"run list"*"--commit"*) echo "[$RUNS]";; *"run list"*) echo "[]";; esac'
+  _e2eb() { RUNS="$1"; export RUNS; _e2e "${GOODJ_OVERRIDE:-$_GOODJ}"; }
+  _want() {  # $1 label ; $2 want-rc ; $3 want-text-or-empty
+    if [ "$E2E_RC" -eq "$2" ] && { [ -z "$3" ] || printf '%s' "$E2E_OUT" | grep -q "$3"; }; then echo "  ✔ $1 -> exit $E2E_RC"
+    else echo "  ✘ $1 -> exit $E2E_RC (want $2 $3): $E2E_OUT"; fails=$((fails+1)); fi
+  }
+  _e2eb "$(_runj lane/x push failure 2026-01-01T00:00:09Z),$(_runj main push success 2026-01-01T00:00:01Z)"
+  _want "lane/x red + main green at one sha (lane newer)" 0 "^ci-watch: OK"
+  printf '%s' "$E2E_OUT" | grep -q 'NOT judged.*lane/x: 1 run(s), 1 not success' \
+    && echo "  ✔ the left-out lane run is shown, with its red count, not hidden" \
+    || { echo "  ✘ the lane run was not disclosed: $E2E_OUT"; fails=$((fails+1)); }
+  _e2eb "$(_runj lane/x push success 2026-01-01T00:00:09Z),$(_runj main push failure 2026-01-01T00:00:01Z)"
+  _want "main red + lane green at one sha (lane newer) — the inverse" 1 "NOT GREEN"
+  _e2eb "$(_runj lane/x push success 2026-01-01T00:00:09Z)"
+  [ "$E2E_RC" -ne 0 ] && ! printf '%s' "$E2E_OUT" | grep -q '^ci-watch: OK' \
+    && echo "  ✔ a lane green with NO main run is not OK (main's run is absent, not borrowed from the lane)" \
+    || { echo "  ✘ a lane-only green read OK (rc=$E2E_RC): $E2E_OUT"; fails=$((fails+1)); }
+  # runs that SHOULD count: scheduled on main, a release/tag run, a PR whose head is main — each red, each must be NOT GREEN.
+  _e2eb "$(_runj main schedule failure 2026-01-01T00:00:01Z)"
+  _want "a scheduled run on main (red) counts" 1 "NOT GREEN"
+  _e2eb "$(_runj v9.9.9 release failure 2026-01-01T00:00:01Z),$(_runj main push success 2026-01-01T00:00:00Z)"
+  _want "a release run (headBranch = the tag, red) counts" 1 "NOT GREEN"
+  ( cd "$_t/candor-spec" && git -c user.email=t@e -c user.name=t tag v9.9.8 ) >/dev/null 2>&1
+  _e2eb "$(_runj v9.9.8 push failure 2026-01-01T00:00:01Z),$(_runj main push success 2026-01-01T00:00:00Z)"
+  _want "a tag-push run (a tag at this sha, red) counts" 1 "NOT GREEN"
+  _e2eb "$(_runj main pull_request failure 2026-01-01T00:00:01Z),$(_runj main push success 2026-01-01T00:00:00Z)"
+  _want "a pull_request run whose head is main (red) counts" 1 "NOT GREEN"
+  _e2eb "$(_runj lane/x pull_request failure 2026-01-01T00:00:09Z),$(_runj lane/x workflow_dispatch failure 2026-01-01T00:00:08Z),$(_runj main push success 2026-01-01T00:00:00Z)"
+  _want "a PR from lane/x and a dispatch on lane/x (red) do not decide" 0 "^ci-watch: OK"
+  # a run with NO headBranch cannot be shown to belong elsewhere: judged (fail toward judging)
+  _e2eb '{"workflowDatabaseId":1,"workflowName":"ci","status":"completed","conclusion":"failure","createdAt":"2026-01-01T00:00:01Z"}'
+  _want "a run with no headBranch (red) is judged, not dropped" 1 "NOT GREEN"
+  # the default branch is asked of the repo, not assumed: on a repo whose default is `trunk`, `trunk` counts, `main` does not
+  GOODJ_OVERRIDE="${_GOODJ/echo main;;/echo trunk;;}"
+  _e2eb "$(_runj trunk push success 2026-01-01T00:00:01Z),$(_runj main push failure 2026-01-01T00:00:09Z)"
+  GOODJ_OVERRIDE=
+  _want "default branch is read from the repo (trunk green, main red -> OK)" 0 "^ci-watch: OK"
+  # an unanswered default-branch question is red, never a guess
+  _e2e 'case "$*" in *"repo view"*) echo boom >&2; exit 1;; *"workflow list"*) echo "[]";; *"run list"*) echo "[]";; esac'
+  _want "a failed default-branch lookup is red" 1 "repo view, default branch"
+  unset -f _runj _e2eb _want
   rm -rf "$_t"
 
   echo
@@ -1113,10 +1201,23 @@ for repo in "${REPOS[@]}"; do
   # release-preflight.sh's two call sites in the SAME change, and missed here; this file's other two
   # call sites are already scoped (`--limit 1`, `--limit 12`). Headroom today is 6 rows on the busiest
   # sha against 20, so this was latent — which is why nothing caught it.
+  # The branch whose runs decide the verdict: CI_WATCH_BRANCH if set, else the repo's own default branch.
+  if [ -n "${CI_WATCH_BRANCH:-}" ]; then
+    DEFBR="$CI_WATCH_BRANCH"
+  elif gh_call repo view "$OWNER/$repo" --json defaultBranchRef --jq .defaultBranchRef.name && [ -n "$GH_OUT" ]; then
+    DEFBR="$GH_OUT"
+  else
+    printf "  %-14s %-26s ✘ gh FAILED (repo view, default branch) — %s — cannot tell which branch's runs to judge\n" \
+           "$repo" "(gh)" "${GH_ERR:-empty answer}"
+    rc=1
+    continue
+  fi
+  _tags="$(git -C "$d" tag --points-at "$sha" 2>/dev/null)"
   if gh_call run list -R "$OWNER/$repo" --commit "$sha" --limit 100 \
-             --json workflowDatabaseId,workflowName,status,conclusion,createdAt; then
-    rows="$(printf '%s' "$GH_OUT" | jq -r --arg US "$US" "$JQ_ROW" | awk -F"$US" '!seen[$1]++')"
+             --json workflowDatabaseId,workflowName,status,conclusion,createdAt,headBranch,event; then
+    select_branch_rows "$GH_OUT" "$DEFBR" "$_tags"
     dupe_names="$(dup_names_of "$rows")"
+    [ -n "$other_note" ] && printf "  %-14s %-26s ℹ %s\n" "$repo" "(other refs)" "$other_note"
   else
     # A failed call here is not "no runs at HEAD" — it is "HEAD was never checked". Reporting the former
     # over the latter is exactly B3 (adversarial re-review, 2026-08-28): this repo cannot be judged, so it

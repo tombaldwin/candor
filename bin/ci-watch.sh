@@ -233,7 +233,7 @@ JQ_ROW='.[] | (.workflowDatabaseId|tostring) + $US + .workflowName + $US + .stat
 JQ_BELONGS='map(select((.headBranch // "") == "" or .headBranch == $br or .event == "release"
                        or ((.headBranch as $h | ($tags | split("\n")) | index($h)) != null)))'
 select_branch_rows() {
-  local json="$1" br="$2" tags="$3" kept others
+  local json="$1" br="$2" tags="$3" others
   rows="$(printf '%s' "$json" | jq -r --arg US "$US" --arg br "$br" --arg tags "$tags" \
           "$JQ_BELONGS | $JQ_ROW" | awk -F"$US" '!seen[$1]++')"
   others="$(printf '%s' "$json" | jq -r --arg br "$br" --arg tags "$tags" \

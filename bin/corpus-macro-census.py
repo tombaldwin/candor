@@ -1101,6 +1101,14 @@ def selftest_dep():
                   (f"{nm}: twin FAILS (2) with and without the report", bool(q) and e0(q) == "FAIL" and e1(q) == "FAIL"),
                   (f"{nm}: (2)(b) is CALIBRATED -- an effect-free D report keeps the writer out", bool(go) and eval2(go["ddir"], go["macro"], dict(functions=[dict(fn="emit", inferred=[])]))["status"] == "FAIL")]
         for t, v in ck: print(("OK   " if v else "FAIL ") + t); ok &= bool(v)
+    # (2)(a) must be able to fire: a D macro that names a std effect locator INLINE passes with no report at all, its pure twin does not
+    os.makedirs(f"{d}/da/src"); open(f"{d}/da/Cargo.toml", "w").write('[package]\nname = "da"\nversion = "0.1.0"\nedition = "2021"\n')
+    open(f"{d}/da/src/lib.rs", "w").write('#[macro_export] macro_rules! wr { () => { ::std::fs::write("a", b"x").unwrap() } }\n#[macro_export] macro_rules! quiet { () => { 1 + 1 } }\n')
+    ea, eq = eval2(f"{d}/da", "wr", None), eval2(f"{d}/da", "quiet", None)
+    for t, v in (("(2)(a): an inline ::std::fs::write macro PASSES with no report, class Fs", ea["status"] == "PASS" and ea["a"] and ea["eff"] == ["Fs"]),
+                 ("(2)(a): its effect-free twin FAILS", eq["status"] == "FAIL"),
+                 ("(2): a macro name D does not define is NO-DEF, an unresolved D is NO-D-SRC", eval2(f"{d}/da", "nosuch", None)["status"] == "NO-DEF" and eval2(None, "wr", None)["status"] == "NO-D-SRC")):
+        print(("OK   " if v else "FAIL ") + t); ok &= bool(v)
     # the (3)/(4) readers must be able to say each class
     sa = ({"functions": [dict(fn="inner::go", loc="src/inner.rs:1:1", inferred=[], invisible=["fx-d"])]}, {"inner::go": [], "inner::q": []})
     ch = ({"functions": []}, {"inner::go": [], "inner::q": []})

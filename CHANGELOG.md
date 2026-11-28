@@ -8,6 +8,24 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-28 — `bin/swift-index-diff.py`: the compiler's index store as the swift resolver's test oracle
+
+- New shared instrument `bin/swift-index-diff.py` (+ helper `bin/swift_indexstore.py`, a ctypes reader of libIndexStore that
+  unions every unit of the store and counts stale files). It builds a Swift package, reads the index store and compares, per
+  call site, the callee the compiler bound with candor-swift's `--out` call-graph sidecar and report rows: (A) sites both
+  resolve to different callees, classified naming artefact / wrong target with an effect (silence or fabrication direction) /
+  wrong target, pure; (B) every `dispatch:T.m` hedge, as statically resolved by the store, contradicted (the compiler's callee
+  is not a member of T), function value, consistent dynamic dispatch, or no site; (C) first-hop concrete effects a caller row
+  lacks with no `Unknown` and no `invisible`. Initialiser sites (no `calledBy`) are reported in their own block, and every
+  `diff.txt` prints the comparison's boundary. Subcommands `run`, `diff`, `pool` (the pinned 17-package pool in
+  `bin/swift-index-diff.pool.tsv`), `summary`, `locate`. Not in `fast-gates.sh`: its selftest runs `swift build`.
+- `--selftest` has two layers. Layer 1 mutates a synthetic candor arm built from a fixture's own store: a seeded
+  disagreement, a seeded silent drop, a hedged drop, a statically closable and a contradicted dispatch reason, and a clean
+  pair. Layer 2 runs the real engine on the fixture, expecting the R2034, R2031 and R2001 shapes. If the engine fixes one,
+  that line says SEED-STALE. Calibration: three injected comparator defects each turn the selftest red (`FAILED L1 seeded
+  disagreement reported`, `FAILED L1 seeded drop reported UNHEDGED`, `FAILED L1 a dispatch reason naming the wrong type is
+  CONTRADICTED`). Retro-rediscovery on the R2031–R2039 fixtures: 32/32 executed-silent cells flagged, 0 of 5 pure twins.
+
 ## 2026-11-28 — ⟨0.44⟩ family release (released 2026-11-28 as 0.44.0)
 
 The umbrella ships the ⟨0.44⟩ engines: SPEC §4's `dispatchesOn` value now says the key names the abstraction that

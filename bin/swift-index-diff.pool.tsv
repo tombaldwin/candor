@@ -1,0 +1,19 @@
+# swift-index-diff pool: the 17 SwiftPM libraries of the 2026-11-28 typer strategy study (name, git url, commit).
+# Pinned so a week-on-week change in the differential is the ENGINE's, not the pool's.
+Alamofire	https://github.com/Alamofire/Alamofire.git	bda9ed57d72988a3a2ada33d824583541f86eac6
+GRDB.swift	https://github.com/groue/GRDB.swift.git	0d8cf958b4b66a0473ec6e6986eb9da462171da9
+Kingfisher	https://github.com/onevcat/Kingfisher.git	a821446e559d74f67d93dfcab86bcd370e177bf0
+RxSwift	https://github.com/ReactiveX/RxSwift.git	3e33f90c1bcd3cdea25bdb49bd4a594a50c3ab84
+SourceKitten	https://github.com/jpsim/SourceKitten.git	6e1805bb1dd6a6817f3f2ed5a214421d506c85df
+SwiftLint	https://github.com/realm/SwiftLint.git	ec4691d9e813a1d3358e82917326b56b0a71d3c9
+Yams	https://github.com/jpsim/Yams.git	df801bc4f158f107035d2e14f6d0d8d31eb31ddb
+swift-algorithms	https://github.com/apple/swift-algorithms.git	5b7143f8e291dee0e14c118fd0212487f0b37af5
+swift-argument-parser	https://github.com/apple/swift-argument-parser.git	efd239f0055b3d6b6cc122a786c46a0ea8d0235b
+swift-asn1	https://github.com/apple/swift-asn1.git	3b6410f7dee09eb33cdd26260c5fd47fda19b0e2
+swift-atomics	https://github.com/apple/swift-atomics.git	bc30c67cf0c4479633621ad7950d71494a07390f
+swift-collections	https://github.com/apple/swift-collections.git	935f696a549abf069a2a1e4c6db2f834f7009cd3
+swift-crypto	https://github.com/apple/swift-crypto.git	a629920495a76bed8a97a431883eb7080ffb3010
+swift-http-types	https://github.com/apple/swift-http-types.git	379731fb1dde8c628c129892bdc5b597b1571402
+swift-log	https://github.com/apple/swift-log.git	640484247551bbacd9b135fe25fe6690136aef8b
+swift-nio	https://github.com/apple/swift-nio.git	feaf4ac57e27e411e83e88ee2f9b1789ddf08d0b
+swift-numerics	https://github.com/apple/swift-numerics.git	a7d826ead09420d5e38221ff76c3e0ec9ea4ea8b

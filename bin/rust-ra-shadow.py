@@ -7,15 +7,27 @@ resolver disagree, and what a UNION of the two would add. The swift analogue is 
 vocabulary and the per-caller-unit matching rule are kept the same on purpose.
 
 The ra arm is tools/ra-shadow-arm (ra_ap_* 0.0.358, built with its own Cargo.lock, OUTSIDE candor-rust's workspace). It
-loads a cargo project without building it (no build scripts, no proc-macro server) and writes every call site's
+loads a project without building it (no build scripts, no proc-macro server) and writes every call site's
 resolved callee (+ generic substitution), every fn decl with its line range, and the trait-impl index with each impl's
 own cfg predicate.
 
+THE INVARIANT (R0, 2026-11-28): candor never executes the scanned tree's code, and neither does this tool. `cargo metadata`
+and ra's cargo loader both run binaries the TREE names (`.cargo/config.toml` `build.rustc-wrapper` and `build.rustc`; a
+rust-toolchain.toml `path =` toolchain reached through the rustup proxy) and both write Cargo.lock into the tree. So the
+tool never hands ra a cargo project: `plan()` resolves the USER's toolchain to absolute paths, runs `cargo metadata` from a
+neutral cwd over a symlink farm in scratch (the tree's `.cargo` and rust-toolchain files left out, Cargo.lock copied in)
+under a scrubbed env, and writes the rust-project.json ITSELF; the arm loads that and refuses a directory with a Cargo.toml.
+Toolchain code still runs (`cargo metadata`, `rustc --print`); the tree's does not. What the tree's config said is dropped
+and disclosed (`plan.config_dropped`): its `[source]`/`[patch]`/`[env]`/rustflags are NOT read, so a vendored or patched tree
+resolves from the user's cache or `--online`. `meta.json` records `plan` and `tree_written` (must be []).
+
 USAGE
   rust-ra-shadow.py run <entries-file> --ra BIN (--cs BIN | --cs-from RUNDIR) --work DIR --out DIR [--jobs 2]
-        [--online] [--only a,b]
-        per entry: copy the tree into --work, run the ra arm (--offline unless --online), `cargo metadata`, and
-        candor-scan (`--out`, fresh CANDOR_CACHE_DIR), then `diff`. Writes <out>/<entry>/{diff.json,diff.txt,...}.
+        [--online] [--only a,b] [--target TRIPLE]
+        per entry: copy the tree into --work, `plan` (sandboxed `cargo metadata` + a rust-project.json for TRIPLE, default
+        the host), run the ra arm over it (--offline unless --online) with std typed under TRIPLE's cfg, and
+        candor-scan (`--out`, fresh CANDOR_CACHE_DIR), then `diff`. If `cargo metadata` fails the plan falls back to
+        `--no-deps` (members only; D1 reads metadata-failed), and if that fails too the entry is NOT A MEASUREMENT. Writes <out>/<entry>/{diff.json,diff.txt,...}.
         A summary of every entry is written to <out>/SUMMARY.txt by `summary`.
   rust-ra-shadow.py diff <entry-out-dir>           re-run the diff over a finished `run` entry.
         $RA_SHADOW_CLASSIFY names the candor-classify-paths binary (the sink oracle; without it: builtin table).
@@ -40,7 +52,10 @@ USAGE
         contains it; a reference to a trait method DECLARATION fans out to every `impl#[..][Tr]m()` and the default
         (SCIP carries no substitution, so this is CHA); a call token that lives in a macro_rules! BODY is attributed
         to no fn (SCIP records it at the definition site), and is counted as `macro-body` instead.
-  rust-ra-shadow.py --selftest                     synthetic calibration, no binaries needed (exit 0/1).
+  rust-ra-shadow.py --selftest [--ra BIN] [--ra-old BIN]
+        synthetic calibration (exit 0/1). Without --ra it needs only a rustup toolchain: the detectors and the hostile-tree
+        PLAN legs. With --ra (or $RA_SHADOW_ARM) it adds the hostile-tree ARM legs and the arm fixtures (D5, locality, std
+        per configuration); --ra-old (or $RA_SHADOW_ARM_OLD) a pre-R0 arm, for the RED line of each arm fixture.
 
 WHAT IT MEASURES (candor-scan's sidecar has no positions, so a "site" is ra's site and candor's answer is the CALLER
 UNIT's edge set; matching is name-level on `module::Type::member`, the crate prefix and generics dropped):
@@ -65,10 +80,14 @@ UNIT's edge set; matching is name-level on `module::Type::member`, the crate pre
                   (the e10 shape: a cfg-disabled impl from an item macro charged to the preceding fn).
       D3 cfgimpl  an impl in ra's index whose own cfg predicate is FALSE on this host (ra's hir should drop it).
       D4 sysroot  no call site resolved into std/core/alloc: rust-src absent, resolution collapses silently.
+      D5 procmacro a function-like PROC macro call. Without a server ra reads it as an empty expansion and its
+                  `unexpanded` channel stays silent; the arm names it by the resolved macro's KIND (outcome `procmacro`).
+                  Derive and attribute macros are NOT detected here.
   An entry with D1 != full, D2 > 0, D3 > 0 or D4 set is reported, and its (B) rows are tagged with the detector, so
   a degraded load is never read as a clean diff.
 
-BOUNDARIES (printed in every diff.txt): ra sees ONE configuration (host target, default features); sites ra marks
+BOUNDARIES (printed in every diff.txt): ra sees ONE configuration (the --target triple, default host; default features; std is
+typed under that configuration's cfg too, and `debug_assertions` is off as in ra's own cargo load); sites ra marks
 `inactive` (cfg-disabled items) are counted, never compared. Sites with no enclosing fn (const/static initialisers)
 have caller "" and are counted as unattributed. Callers or callees with no candor key are counted and excluded.
 Sinks: every std/core/alloc callee is classified by candor-classify itself ($RA_SHADOW_CLASSIFY, the
@@ -436,8 +455,15 @@ def diff(ra, cs, metadata=None, with_metadata=False, classifier=None):
     out['det']['cfgimpl'] = len(cfgbad)
     out['det']['cfgimpl_ex'] = [(m['impl'], m['self'], m['cfg']) for m in cfgbad[:5]]
     lang = sum(1 for s in ra.sites if s.get('origin') == 'lang')
-    callsites = sum(1 for s in ra.sites if s.get('outcome') not in ('inactive', 'ctor', 'unexpanded'))
+    callsites = sum(1 for s in ra.sites if s.get('outcome') not in ('inactive', 'ctor', 'unexpanded', 'procmacro'))
     out['det']['sysroot'] = 'absent' if (callsites >= 5 and lang == 0) else 'ok'   # calibrated: e10 --no-sysroot has 7
+    # D5: a function-like PROC-macro call. ra has no proc-macro server, reads it as an empty expansion and the
+    # `unexpanded` channel stays silent, so the arm names it BY KIND (the resolved macro's kind) and the call is never read
+    # as typed. Derive and attribute macros are NOT covered here (T2p: a derive shows only as an unresolved method, an
+    # attribute item is typed as written).
+    pm = [s for s in ra.sites if s.get('outcome') == 'procmacro']
+    out['det']['procmacro'] = len(pm)
+    out['det']['procmacro_ex'] = [(s.get('file'), s.get('line'), s.get('caller')) for s in pm[:5]]
     out['det']['inactive'] = sum(1 for s in ra.sites if s.get('outcome') == 'inactive')
     out['det']['unattributed'] = sum(1 for s in ra.sites if s.get('caller') == '')
     # ---- edges
@@ -603,7 +629,7 @@ def _witness(k, E, graph, eff, cs, seed, added, root):
 
 
 def render(name, d):
-    L = [f'== {name}', 'BOUNDARIES: one host configuration; inactive sites counted not compared; sinks std::fs/env/net/process only.']
+    L = [f'== {name}', 'BOUNDARIES: one configuration (--target, default host); inactive sites counted not compared; sinks std::fs/env/net/process only.']
     L.append('detectors: ' + ', '.join(f'{k}={v}' for k, v in d['det'].items() if not k.endswith('_ex')))
     L.append('edges: ' + ', '.join(f'{k} {v}' for k, v in sorted(d['edges'].items())))
     L.append('(A): ' + ', '.join(f'{k} {v}' for k, v in sorted(d['A'].items())))
@@ -618,6 +644,284 @@ def render(name, d):
         L.append(f"  B {r['effect']:4} {r['cs_state']:2} {r['unit']}  <= {' -> '.join(rt.get('path', []))}"
                  f"  [{rt.get('item')}] @{os.path.basename(rt.get('file') or '')}:{rt.get('line')} {(rt.get('text') or '')[:60]!r}")
     return '\n'.join(L) + '\n'
+
+
+# ------------------------------------------------------------------------------------------------------------ plan
+# THE INVARIANT: candor never executes the scanned tree's code. `cargo metadata` and ra's cargo loader both run
+# binaries the TREE names (measured, DESIGN rust-real-typer-design §2.1): `.cargo/config.toml` `build.rustc-wrapper`
+# (9 calls in one ra load) and `build.rustc`, and a rust-toolchain.toml `path =` toolchain reached through the rustup
+# proxy; and both write Cargo.lock into the tree. So THIS tool never lets either near the tree:
+#   1. the toolchain is resolved from the USER's rustup default (cwd = a fresh scratch dir, never the tree) to an
+#      ABSOLUTE `cargo`/`rustc`, and every child runs under a scrubbed env (RUSTC/CARGO absolute, wrappers emptied);
+#   2. `cargo metadata` runs from a neutral cwd with --manifest-path over a SYMLINK FARM in scratch (the tree's
+#      top-level entries linked in, `.cargo` and rust-toolchain files left out), so the lock lands in the farm;
+#   3. candor writes the rust-project.json itself and the ra arm loads THAT (no Cargo.toml in its project dir).
+# Toolchain code still runs (`cargo metadata`, `rustc --print`); the tree's does not.
+_TC = None
+SKIP_TOP = ('target', '.git')
+
+
+def _scrub_env(extra=None):
+    keep = ('HOME', 'CARGO_HOME', 'RUSTUP_HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'TERM', 'USER', 'SSL_CERT_FILE',
+            'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy')
+    env = {k: os.environ[k] for k in keep if k in os.environ}
+    env.update(extra or {})
+    return env
+
+
+def toolchain():
+    """The user-level toolchain as ABSOLUTE paths: {'name','bin','cargo','rustc','sysroot','host'}. Resolved from a
+    scratch cwd, so no rust-toolchain file of any scanned tree is consulted."""
+    global _TC
+    if _TC:
+        return _TC
+    td = tempfile.mkdtemp(prefix='rashadow-tc-')
+    try:
+        env = _scrub_env({'PATH': os.environ.get('PATH', '/usr/bin:/bin')})
+        env.pop('RUSTUP_TOOLCHAIN', None)
+        if os.environ.get('RUSTUP_TOOLCHAIN'):
+            env['RUSTUP_TOOLCHAIN'] = os.environ['RUSTUP_TOOLCHAIN']    # the USER's own choice, not the tree's
+        r = subprocess.run(['rustup', 'which', 'rustc'], cwd=td, env=env, capture_output=True, text=True)
+        rustc = r.stdout.strip() if r.returncode == 0 else (shutil.which('rustc') or '')
+        if not rustc:
+            raise RuntimeError('no rustc: install a rustup toolchain (the shadow tool never takes one from the scanned tree)')
+        rustc = os.path.realpath(rustc)
+        b = os.path.dirname(rustc)
+        env2 = _scrub_env({'PATH': f'{b}:/usr/bin:/bin', 'RUSTC': rustc, 'CARGO': os.path.join(b, 'cargo'),
+                           'RUSTC_WRAPPER': '', 'RUSTC_WORKSPACE_WRAPPER': ''})
+        sysroot = subprocess.run([rustc, '--print', 'sysroot'], cwd=td, env=env2, capture_output=True, text=True).stdout.strip()
+        vv = subprocess.run([rustc, '-vV'], cwd=td, env=env2, capture_output=True, text=True).stdout
+        host = next((l.split()[1] for l in vv.splitlines() if l.startswith('host:')), 'unknown')
+        name = os.path.basename(os.path.dirname(b)) if os.path.basename(os.path.dirname(b)) else ''
+        _TC = {'name': name, 'bin': b, 'cargo': os.path.join(b, 'cargo'), 'rustc': rustc, 'sysroot': sysroot, 'host': host}
+        return _TC
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def sandbox_env(online=False, extra=None):
+    """The env EVERY child of the shadow tool runs under: absolute toolchain, no wrapper, no tree-chosen binary."""
+    tc = toolchain()
+    e = {'PATH': f"{tc['bin']}:/usr/bin:/bin", 'RUSTC': tc['rustc'], 'CARGO': tc['cargo'],
+         'RUSTC_WRAPPER': '', 'RUSTC_WORKSPACE_WRAPPER': '', 'CARGO_BUILD_RUSTC': tc['rustc']}
+    if tc['name']:
+        e['RUSTUP_TOOLCHAIN'] = tc['name']
+    if not online:
+        e['CARGO_NET_OFFLINE'] = 'true'
+    e.update(extra or {})
+    return _scrub_env(e)
+
+
+def tree_snapshot(tree):
+    """(relative path -> (size, mtime_ns)) over the tree, skipping the top-level build dir and VCS dir."""
+    top = os.path.abspath(tree)
+    snap = {'./' + n: None for n in os.listdir(top)}      # the top level in full, build and VCS dirs included
+    for d, dirs, files in os.walk(top):
+        if d == top:
+            dirs[:] = [x for x in dirs if x not in SKIP_TOP]
+        for f in files:
+            p = os.path.join(d, f)
+            try:
+                st = os.lstat(p)
+                snap[os.path.relpath(p, top)] = (st.st_size, st.st_mtime_ns)
+            except OSError:
+                pass
+        for x in dirs:
+            snap.setdefault(os.path.relpath(os.path.join(d, x), top) + '/', None)
+    return snap
+
+
+def snapshot_delta(a, b):
+    return sorted({k for k in set(a) | set(b) if a.get(k) != b.get(k)})
+
+
+def _farm(tree, farm):
+    """Links to the tree's top-level entries, leaving out the build dir, VCS dir, `.cargo` and rust-toolchain files
+    (their execution-capable keys are never read; see `config_dropped`) and Cargo.lock (COPIED, below)."""
+    os.makedirs(farm)
+    dropped = []
+    for n in sorted(os.listdir(tree)):
+        if n in SKIP_TOP or n == 'Cargo.lock':
+            continue
+        if n == '.cargo' or n.startswith('rust-toolchain'):
+            dropped.append(n)
+            continue
+        os.symlink(os.path.join(tree, n), os.path.join(farm, n))
+    lk = os.path.join(tree, 'Cargo.lock')
+    if os.path.isfile(lk):
+        shutil.copy(lk, os.path.join(farm, 'Cargo.lock'))
+    return dropped
+
+
+def _lib_target(p):
+    for t in p['targets']:
+        if set(t['kind']) & {'lib', 'rlib', 'proc-macro', 'dylib', 'cdylib', 'staticlib'}:
+            return t
+    return None
+
+
+def _pkg_env(p, t, tgt):
+    v = p['version'].split('-')[0].split('+')[0].split('.') + ['0', '0', '0']
+    pre = p['version'].split('-', 1)[1].split('+')[0] if '-' in p['version'] else ''
+    e = {'CARGO_PKG_NAME': p['name'], 'CARGO_PKG_VERSION': p['version'], 'CARGO_PKG_VERSION_MAJOR': v[0],
+         'CARGO_PKG_VERSION_MINOR': v[1], 'CARGO_PKG_VERSION_PATCH': v[2], 'CARGO_PKG_VERSION_PRE': pre,
+         'CARGO_PKG_AUTHORS': ':'.join(p.get('authors') or []), 'CARGO_PKG_DESCRIPTION': p.get('description') or '',
+         'CARGO_PKG_HOMEPAGE': p.get('homepage') or '', 'CARGO_PKG_REPOSITORY': p.get('repository') or '',
+         'CARGO_PKG_LICENSE': p.get('license') or '', 'CARGO_PKG_LICENSE_FILE': p.get('license_file') or '',
+         'CARGO_PKG_RUST_VERSION': p.get('rust_version') or '', 'CARGO_PKG_README': p.get('readme') or '',
+         'CARGO_CRATE_NAME': t['name'].replace('-', '_'),
+         'CARGO_MANIFEST_DIR': os.path.dirname(os.path.realpath(p['manifest_path']))}
+    if 'bin' in t['kind']:
+        e['CARGO_BIN_NAME'] = t['name']
+    return e
+
+
+def make_project(md, triple, cfgs, sysroot, real):
+    """cargo metadata (resolve present) -> (rust-project.json dict, local-roots list). One crate per lib/proc-macro
+    target and, for workspace members, per bin/example/test/bench target. A lib's deps are the NORMAL ones; every other
+    member target also gets the dev-dependencies and its own package's lib. Build scripts (custom-build) never enter
+    the graph, build-dependencies are not edges, and proc-macro crates are crates WITHOUT a dylib: ra has no server."""
+    pk = {p['id']: p for p in md['packages']}
+    members = set(md['workspace_members'])
+    nodes = {n['id']: n for n in md['resolve']['nodes']}
+    crates, index, order = [], {}, []
+    for pid in nodes:
+        p = pk[pid]
+        tg = []
+        lt = _lib_target(p)
+        if lt:
+            tg.append(lt)
+        if pid in members:
+            tg += [t for t in p['targets'] if set(t['kind']) & {'bin', 'example', 'test', 'bench'}]
+        for t in tg:
+            order.append((pid, t, t is lt))
+    for pid, t, is_lib in order:
+        index[(pid, t['name'], t['kind'][0])] = len(crates)
+        crates.append(None)
+    local = []
+    for pid, t, is_lib in order:
+        p = pk[pid]
+        i = index[(pid, t['name'], t['kind'][0])]
+        feats = [f'feature="{f}"' for f in nodes[pid].get('features', [])]
+        root = real(t['src_path'])
+        is_pm = 'proc-macro' in t['kind']
+        deps = []
+        for d in nodes[pid]['deps']:
+            kinds = {k['kind'] for k in d['dep_kinds']}
+            if not (kinds & ({None, 'normal'} if is_lib else {None, 'normal', 'dev'})):
+                continue
+            dl = _lib_target(pk[d['pkg']])
+            if dl:
+                j = index.get((d['pkg'], dl['name'], dl['kind'][0]))
+                if j is not None:
+                    deps.append({'crate': j, 'name': d['name']})
+        if not is_lib:
+            lt = _lib_target(p)
+            if lt:
+                deps.append({'crate': index[(pid, lt['name'], lt['kind'][0])], 'name': lt['name'].replace('-', '_')})
+        c = {'display_name': t['name'].replace('-', '_'), 'root_module': root, 'edition': t['edition'], 'deps': deps,
+             'cfg': [x for x in cfgs if x != 'debug_assertions'] + feats, 'target': triple,
+             'is_workspace_member': pid in members, 'is_proc_macro': is_pm, 'env': _pkg_env(p, t, t),
+             'version': p['version']}
+        crates[i] = c
+        if pid in members:
+            local.append(root)
+    return {'sysroot': sysroot, 'sysroot_src': f'{sysroot}/lib/rustlib/src/rust/library', 'crates': crates}, sorted(set(local))
+
+
+def make_project_nodeps(md, triple, cfgs, sysroot, real):
+    """`cargo metadata --no-deps` (no resolve): the members' own targets, wired to each other by package name. The
+    caller records `deps: metadata-failed`: this is the degraded graph, never read as a full one."""
+    members = md['packages']
+    crates, byname, local = [], {}, []
+    for p in members:
+        lt = _lib_target(p)
+        for t in ([lt] if lt else []) + [t for t in p['targets'] if set(t['kind']) & {'bin', 'example', 'test', 'bench'}]:
+            byname[(p['name'], t is lt)] = len(crates)
+            crates.append((p, t, t is lt))
+    out = []
+    for p, t, is_lib in crates:
+        deps = []
+        for d in p.get('dependencies', []):
+            j = byname.get((d['name'], True))
+            if j is not None and (d.get('kind') in (None, 'normal') or not is_lib) and d.get('kind') != 'build':
+                deps.append({'crate': j, 'name': (d.get('rename') or d['name']).replace('-', '_')})
+        if not is_lib and (p['name'], True) in byname:
+            deps.append({'crate': byname[(p['name'], True)], 'name': p['name'].replace('-', '_')})
+        root = real(t['src_path'])
+        local.append(root)
+        out.append({'display_name': t['name'].replace('-', '_'), 'root_module': root, 'edition': t['edition'], 'deps': deps,
+                    'cfg': [x for x in cfgs if x != 'debug_assertions'], 'target': triple, 'is_workspace_member': True,
+                    'is_proc_macro': 'proc-macro' in t['kind'], 'env': _pkg_env(p, t, t), 'version': p['version']})
+    return {'sysroot': sysroot, 'sysroot_src': f'{sysroot}/lib/rustlib/src/rust/library', 'crates': out}, sorted(set(local))
+
+
+def plan(tree, pdir, triple=None, online=False):
+    """Write <pdir>/rust-project.json (+ local-roots.json, metadata.json) for <tree> without executing anything the tree
+    names and without writing into it. Returns a dict: verdict ('ok' | 'degraded-no-deps' | 'metadata-failed'),
+    triple, lock ('tree' | 'candor-resolved' | 'none'), config_dropped, tree_written (must be []), metadata (or None)."""
+    tree = os.path.realpath(tree)
+    tc = toolchain()
+    if os.path.realpath(tc['rustc']).startswith(tree + os.sep):
+        raise RuntimeError('the toolchain resolves INSIDE the scanned tree: refused')
+    triple = triple or tc['host']
+    shutil.rmtree(pdir, ignore_errors=True)
+    os.makedirs(pdir)
+    before = tree_snapshot(tree)
+    scratch = tempfile.mkdtemp(prefix='rashadow-plan-')
+    res = {'triple': triple, 'toolchain': tc['rustc']}
+    try:
+        par = os.path.join(scratch, 'par')
+        farm = os.path.join(par, os.path.basename(tree))
+        os.makedirs(par)
+        # the tree's SIBLINGS are linked beside the farm so a `path = "../dep"` dependency resolves as it would in place
+        for n in os.listdir(os.path.dirname(tree)):
+            if n != os.path.basename(tree):
+                try:
+                    os.symlink(os.path.join(os.path.dirname(tree), n), os.path.join(par, n))
+                except OSError:
+                    pass
+        res['config_dropped'] = _farm(tree, farm)
+        neutral = os.path.join(scratch, 'cwd')
+        os.makedirs(neutral)
+        env = sandbox_env(online)
+        flags = [] if online else ['--offline']
+
+        def meta(extra):
+            return subprocess.run([tc['cargo'], 'metadata', '--format-version', '1', '--manifest-path',
+                                   os.path.join(farm, 'Cargo.toml')] + flags + extra, cwd=neutral, env=env,
+                                  capture_output=True, text=True, timeout=900)
+        md = meta(['--filter-platform', triple])
+        full = md.returncode == 0
+        if not full:
+            res['metadata_err'] = (md.stderr.strip().splitlines() or ['?'])[-1][:300]
+            md = meta(['--no-deps'])
+        if md.returncode != 0:
+            res['verdict'] = 'metadata-failed'
+            res['metadata'] = None
+            return res
+        m = json.loads(md.stdout)
+
+        def real(p):      # a path through the farm names the tree's own file
+            return os.path.realpath(p)
+        cfgs = subprocess.run([tc['rustc'], '--print', 'cfg', '--target', triple], cwd=neutral, env=env,
+                              capture_output=True, text=True).stdout.split('\n')
+        cfgs = [c for c in (x.strip() for x in cfgs) if c]
+        pj, roots = (make_project if full else make_project_nodeps)(m, triple, cfgs, tc['sysroot'], real)
+        json.dump(pj, open(os.path.join(pdir, 'rust-project.json'), 'w'))
+        json.dump(roots, open(os.path.join(pdir, 'local-roots.json'), 'w'))
+        if full:
+            open(os.path.join(pdir, 'metadata.json'), 'w').write(md.stdout)
+        tl, fl = os.path.join(tree, 'Cargo.lock'), os.path.join(farm, 'Cargo.lock')
+        res['lock'] = ('none' if not os.path.exists(fl) else
+                       'tree' if os.path.exists(tl) and open(tl, 'rb').read() == open(fl, 'rb').read() else 'candor-resolved')
+        res['verdict'] = 'ok' if full else 'degraded-no-deps'
+        res['metadata'] = m if full else None
+        res['crates'] = len(pj['crates'])
+        return res
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+        res['tree_written'] = snapshot_delta(before, tree_snapshot(tree))
 
 
 # -------------------------------------------------------------------------------------------------------------- run
@@ -644,7 +948,7 @@ def _copy_tree(e, tree):
                     ignore=lambda d, names: [n for n in names if n in ('target', '.git') and os.path.abspath(d) == top])
 
 
-def run_one(e, ra_bin, cs_bin, work, out, online=False, cs_from=None):
+def run_one(e, ra_bin, cs_bin, work, out, online=False, cs_from=None, triple=None):
     name = entry_name(e)
     od = os.path.join(out, name)
     shutil.rmtree(od, ignore_errors=True)
@@ -657,19 +961,28 @@ def run_one(e, ra_bin, cs_bin, work, out, online=False, cs_from=None):
     meta = {'entry': e}
     try:
         sites, impls = os.path.join(od, 'ra.sites.jsonl'), os.path.join(od, 'ra.impls.jsonl')
-        p, w, rss = _timed([ra_bin, tree, '--sites', sites, '--impls', impls] + ([] if online else ['--offline']))
-        summ = next((json.loads(l) for l in p.stdout.splitlines() if l.startswith('{')), None)
-        meta.update(ra_rc=p.returncode, ra_wall=round(w, 1), ra_rss_mb=round(rss / 1e6))
-        if summ is None:
-            meta['ra_err'] = '\n'.join(p.stderr.strip().splitlines()[-5:])[:600]
+        snap0 = tree_snapshot(tree)
+        pdir = os.path.join(work, name + '.proj')
+        pl = plan(tree, pdir, triple, online)
+        meta.update(plan={k: v for k, v in pl.items() if k != 'metadata'})
+        if pl['verdict'] == 'metadata-failed':
+            meta['ra_err'] = 'plan: cargo metadata failed (even --no-deps): ' + pl.get('metadata_err', '?')
+            summ = None
         else:
-            json.dump(summ, open(os.path.join(od, 'ra.summary.json'), 'w'))
-        md = subprocess.run(['cargo', 'metadata', '--format-version', '1'] + ([] if online else ['--offline'])
-                            + ['--filter-platform', _host()], cwd=tree, capture_output=True, text=True, timeout=600)
-        if md.returncode == 0:
-            open(os.path.join(od, 'metadata.json'), 'w').write(md.stdout)
-        else:
-            meta['metadata_err'] = md.stderr.strip().splitlines()[-1:] if md.stderr else ['?']
+            if pl['metadata'] is not None:
+                json.dump(pl['metadata'], open(os.path.join(od, 'metadata.json'), 'w'))
+            elif pl.get('metadata_err'):
+                meta['metadata_err'] = [pl['metadata_err']]
+            p, w, rss = _timed([ra_bin, pdir, '--local-roots', os.path.join(pdir, 'local-roots.json'), '--target', pl['triple'],
+                                '--sites', sites, '--impls', impls] + ([] if online else ['--offline']),
+                               env=sandbox_env(online), cwd=pdir)
+            summ = next((json.loads(l) for l in p.stdout.splitlines() if l.startswith('{')), None)
+            meta.update(ra_rc=p.returncode, ra_wall=round(w, 1), ra_rss_mb=round(rss / 1e6))
+            if summ is None:
+                meta['ra_err'] = '\n'.join(p.stderr.strip().splitlines()[-5:])[:600]
+            else:
+                json.dump(summ, open(os.path.join(od, 'ra.summary.json'), 'w'))
+        meta['tree_written'] = snapshot_delta(snap0, tree_snapshot(tree))     # must be []: the tree is never written
         if cs_from:      # the candor-scan arm of ANOTHER run (a host where the cs binary runs; cs is syntactic)
             src = os.path.join(cs_from, name)
             for f in os.listdir(src) if os.path.isdir(src) else []:
@@ -692,16 +1005,11 @@ def run_one(e, ra_bin, cs_bin, work, out, online=False, cs_from=None):
     return diff_dir(od)
 
 
-_HOST = None
 _CLF = Classifier(os.environ.get('RA_SHADOW_CLASSIFY') or None)
 
 
 def _host():
-    global _HOST
-    if _HOST is None:
-        v = subprocess.run(['rustc', '-vV'], capture_output=True, text=True).stdout
-        _HOST = next((l.split()[1] for l in v.splitlines() if l.startswith('host:')), 'unknown')
-    return _HOST
+    return toolchain()['host']
 
 
 def _cs_files(od):
@@ -764,6 +1072,7 @@ def summary(out):
             det['attrib>0'] += dt.get('attrib', 0) > 0
             det['cfgimpl>0'] += dt.get('cfgimpl', 0) > 0
             det['sysroot=' + dt.get('sysroot', '?')] += 1
+            det['procmacro>0'] += dt.get('procmacro', 0) > 0
             tot['inactive'] += dt.get('inactive', 0)
             tot['unattributed'] += dt.get('unattributed', 0)
             tag = [] if dt.get('deps') == 'full' else ['deps:' + str(dt.get('deps'))]
@@ -863,7 +1172,7 @@ def reach(sites_p, impls_p, probe, no_subst=False, trace=False):
         seen.add((fn, env))
         envd = dict(env)
         for s in out.get(fn, []):
-            if s['outcome'] in ('unexpanded', 'unresolved'):
+            if s['outcome'] in ('unexpanded', 'unresolved', 'procmacro'):
                 eff.add('Unknown')
                 continue
             if s['outcome'] in ('inactive', 'ctor', 'closure', 'fnptr', 'fn_trait', 'macro'):
@@ -1140,8 +1449,14 @@ def fixture(d, probes, ra_bin, cs_bin, tdir, work=None):
                     if f.startswith(arm + '.') and f.endswith('.scan.json')), None)
         arms[arm] = (rep, env)
     sites, impls = os.path.join(work, 'ra.sites.jsonl'), os.path.join(work, 'ra.impls.jsonl')
-    rp = subprocess.run([ra_bin, d, '--sites', sites, '--impls', impls, '--offline'], capture_output=True, text=True)
-    ra_ok = rp.returncode == 0 and os.path.exists(sites)
+    pdir = os.path.join(work, 'proj')
+    pl = plan(d, pdir)
+    ra_ok = False
+    if pl['verdict'] == 'ok':
+        rp = subprocess.run([ra_bin, pdir, '--local-roots', os.path.join(pdir, 'local-roots.json'), '--target', pl['triple'],
+                             '--sites', sites, '--impls', impls, '--offline'], capture_output=True, text=True,
+                            env=sandbox_env(), cwd=pdir)
+        ra_ok = rp.returncode == 0 and os.path.exists(sites)
     for probe in probes:
         mark = os.path.join(work, 'MARK.' + probe)
         if os.path.exists(mark):
@@ -1174,8 +1489,225 @@ def fixture(d, probes, ra_bin, cs_bin, tdir, work=None):
     return 0
 
 
+
+# ------------------------------------------------------------------------------------------------------ hostile seeds
+def _hostile(ok, td, ra_bin):
+    """The tree must never choose what runs. Each seed is a tiny crate whose config names a hook binary that appends a
+    marker (outside the tree) and then execs the real tool. Measured for each seed: the OLD load path (`cargo metadata`
+    with cwd = the tree through the rustup proxy; and, with --ra, the arm's cargo load behind RA_SHADOW_UNSAFE_CARGO_LOAD)
+    and the NEW path (plan() + the arm over the driver's rust-project.json). A seed whose old path reads 0 is a GUARD, not
+    a RED: nothing in either path runs it (build.rs, proc macros, runner, linker and `[env]` are not executed by
+    `cargo metadata`), and the line says so. Every green leg also requires a LIVE load (a verdict ok plan and, with
+    --ra, std call sites resolved), or "0 markers" would be a failed load."""
+    try:
+        tc = toolchain()
+    except Exception as exc:
+        ok(False, f'hostile seeds: NOT RUN, no toolchain ({exc})')
+        return
+    proxy = shutil.which('cargo')
+    host = tc['host']
+    W = os.path.join(td, 'hostile')
+    os.makedirs(W)
+    seeds = {
+        'wrapper': lambda t, hook: f'[build]\nrustc-wrapper = "{hook("wrapper", "")}"\n',
+        'rustc': lambda t, hook: f'[build]\nrustc = "{hook("rustc", tc["rustc"])}"\n',
+        'envwrapper': lambda t, hook: f'[env]\nRUSTC_WRAPPER = "{hook("envwrapper", "")}"\n',
+        'runner_linker': lambda t, hook: (f'[target.{host}]\nrunner = "{hook("runner", "")}"\n'
+                                          f'linker = "{hook("linker", "")}"\n'),
+    }
+    expect_red = {'wrapper', 'rustc', 'toolchain_path'}
+    names = list(seeds) + ['toolchain_path', 'buildrs_procmacro']
+
+    def build(name):
+        t = os.path.join(W, name, 'tree')
+        mk = os.path.join(W, name, 'markers')
+        os.makedirs(os.path.join(t, 'src'))
+        os.makedirs(mk)
+
+        def hook(tag, real, path=None):
+            hp = path or os.path.join(t, 'hook-' + tag)
+            os.makedirs(os.path.dirname(hp), exist_ok=True)
+            open(hp, 'w').write(f'#!/bin/sh\necho "$0 $*" >> "{mk}/{tag}.log"\nexec {json.dumps(real) if real else ""} "$@"\n')
+            os.chmod(hp, 0o755)
+            return hp
+        pkg = ('[package]\nname = "seed"\nversion = "0.1.0"\nedition = "2021"\nbuild = "build.rs"\n[workspace]\n')
+        open(os.path.join(t, 'src/lib.rs'), 'w').write('pub fn f() { let _ = std::fs::read("x"); }\n')
+        open(os.path.join(t, 'build.rs'), 'w').write(
+            'fn main() { use std::io::Write; let _ = std::fs::OpenOptions::new().create(true).append(true)'
+            f'.open("{mk}/buildrs.log").and_then(|mut f| writeln!(f, "build.rs ran")); }}\n')
+        if name in seeds:
+            os.makedirs(os.path.join(t, '.cargo'))
+            open(os.path.join(t, '.cargo/config.toml'), 'w').write(seeds[name](t, lambda tag, real: hook(tag, real)))
+        elif name == 'toolchain_path':
+            hook('tcargo', tc['cargo'], os.path.join(t, 'tc/bin/cargo'))
+            hook('trustc', tc['rustc'], os.path.join(t, 'tc/bin/rustc'))
+            open(os.path.join(t, 'rust-toolchain.toml'), 'w').write(f'[toolchain]\npath = "{t}/tc"\n')
+        else:   # a proc-macro crate and the build script: nothing in either path builds them
+            open(os.path.join(t, 'Cargo.toml'), 'w').write(pkg + '[dependencies]\npm = { path = "pm" }\n')
+            os.makedirs(os.path.join(t, 'pm/src'))
+            open(os.path.join(t, 'pm/Cargo.toml'), 'w').write('[package]\nname = "pm"\nversion = "0.1.0"\nedition = "2021"\n[lib]\nproc-macro = true\n')
+            open(os.path.join(t, 'pm/src/lib.rs'), 'w').write(
+                'use proc_macro::TokenStream;\n#[proc_macro]\npub fn mk(_i: TokenStream) -> TokenStream {\n'
+                f'    std::fs::write("{mk}/procmacro.log", "x").unwrap(); "()".parse().unwrap() }}\n')
+            return t, mk
+        if not os.path.exists(os.path.join(t, 'Cargo.toml')):
+            open(os.path.join(t, 'Cargo.toml'), 'w').write(pkg)
+        return t, mk
+
+    def marks(mk):
+        return sum(len(open(os.path.join(mk, f)).read().splitlines()) for f in os.listdir(mk))
+
+    def reset(t, mk):
+        for f in os.listdir(mk):
+            os.remove(os.path.join(mk, f))
+        if os.path.exists(os.path.join(t, 'Cargo.lock')):
+            os.remove(os.path.join(t, 'Cargo.lock'))
+    for name in names:
+        t, mk = build(name)
+        # ---- OLD: `cargo metadata`, cwd = the tree, the rustup proxy on PATH (what run_one did before R0)
+        if proxy:
+            reset(t, mk)
+            subprocess.run([proxy, 'metadata', '--format-version', '1', '--offline', '--filter-platform', host], cwd=t,
+                           capture_output=True, text=True)
+            old, lock = marks(mk), os.path.exists(os.path.join(t, 'Cargo.lock'))
+            if name in expect_red:
+                ok(old > 0 and lock, f'hostile[{name}] OLD cargo metadata RED: ran the tree\'s binary ({old} markers) and wrote Cargo.lock')
+            else:
+                ok(old == 0, f'hostile[{name}] OLD cargo metadata: {old} markers, Cargo.lock {"written" if lock else "absent"} '
+                             f'(guard only: nothing in the old path executes this seed)')
+        else:
+            ok(False, f'hostile[{name}] OLD path NOT RUN: no `cargo` on PATH to calibrate against')
+        # ---- OLD arm: ra's own cargo load (opt-in calibration seed only)
+        if ra_bin:
+            reset(t, mk)
+            subprocess.run([ra_bin, t, '--offline'], cwd=W, capture_output=True, text=True,
+                           env=dict(os.environ, RA_SHADOW_UNSAFE_CARGO_LOAD='1'))
+            old, lock = marks(mk), os.path.exists(os.path.join(t, 'Cargo.lock'))
+            if name in expect_red:
+                ok(old > 0 and lock, f'hostile[{name}] OLD ra cargo load RED: ran the tree\'s binary ({old} markers) and wrote Cargo.lock')
+            else:
+                ok(old == 0, f'hostile[{name}] OLD ra cargo load: {old} markers (guard only)')
+        # ---- NEW
+        reset(t, mk)
+        before = tree_snapshot(t)
+        pdir = os.path.join(W, name, 'proj')
+        pl = plan(t, pdir)
+        live = pl['verdict'] == 'ok' and pl.get('crates', 0) >= 1
+        ok(live and marks(mk) == 0 and pl['tree_written'] == [] and snapshot_delta(before, tree_snapshot(t)) == [],
+           f'hostile[{name}] NEW plan: verdict {pl["verdict"]}, {pl.get("crates")} crates, {marks(mk)} markers, tree written {pl["tree_written"]}, '
+           f'config dropped {pl.get("config_dropped")}, lock {pl.get("lock")}')
+        if ra_bin and live:
+            sites = os.path.join(W, name, 'sites.jsonl')
+            r = subprocess.run([ra_bin, pdir, '--local-roots', os.path.join(pdir, 'local-roots.json'), '--target', pl['triple'],
+                                '--sites', sites, '--offline'], cwd=pdir, capture_output=True, text=True, env=sandbox_env())
+            summ = next((json.loads(l) for l in r.stdout.splitlines() if l.startswith('{')), {})
+            ok(r.returncode == 0 and marks(mk) == 0 and summ.get('target_lang', 0) > 0
+               and snapshot_delta(before, tree_snapshot(t)) == [],
+               f'hostile[{name}] NEW arm over the project: {marks(mk)} markers, std call sites resolved {summ.get("target_lang")}, tree untouched')
+            r2 = subprocess.run([ra_bin, t, '--offline'], cwd=W, capture_output=True, text=True)
+            ok(r2.returncode != 0 and 'refusing a cargo load' in r2.stderr and marks(mk) == 0,
+               f'hostile[{name}] the arm REFUSES a cargo project dir by default ({marks(mk)} markers)')
+        elif not ra_bin:
+            print(f'skip hostile[{name}] arm legs: no --ra / $RA_SHADOW_ARM (plan leg ran)')
+    # ---- the env-var seed: the tool's own env must not hand a wrapper to its children
+    shutil.rmtree(os.path.join(W, 'wrapper'))
+    t, mk = build('wrapper')
+    hk = os.path.join(W, 'hook-envleak')
+    open(hk, 'w').write(f'#!/bin/sh\necho "$0" >> "{mk}/envleak.log"\nexec "$@"\n')
+    os.chmod(hk, 0o755)
+    reset(t, mk)
+    old_env = {k: os.environ.get(k) for k in ('RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTC_WRAPPER')}
+    os.environ.update(RUSTC_WRAPPER=hk, RUSTC_WORKSPACE_WRAPPER=hk, CARGO_BUILD_RUSTC_WRAPPER=hk)
+    try:
+        if proxy:
+            subprocess.run([proxy, 'metadata', '--format-version', '1', '--offline'], cwd=t, capture_output=True, text=True)
+            ok(marks(mk) > 0, f'hostile[RUSTC_WRAPPER in the environment] OLD path inherits it: RED ({marks(mk)} markers)')
+        reset(t, mk)
+        pl = plan(t, os.path.join(W, 'envleak-proj'))
+        ok(pl['verdict'] == 'ok' and marks(mk) == 0, f'hostile[RUSTC_WRAPPER in the environment] NEW plan scrubs it: {marks(mk)} markers')
+    finally:
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+def _arm_fixtures(ok, td, ra_bin, ra_old=None):
+    """Arm-level seeds, each over the driver's own rust-project.json: (1) a function-like proc macro is named by KIND
+    (D5), a `macro_rules!` call beside it is not; (2) a dependency that is not a workspace member is `dep`, not `local`
+    (the 103,820-site tokio walk); (3) std is typed under the CONFIGURATION's cfg, not the host's (`std::os::windows`)."""
+    F = os.path.join(td, 'armfx')
+    os.makedirs(F)
+
+    def w(path, text):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, 'w').write(text)
+
+    def load(tree, target=None, binp=None):
+        binp = binp or ra_bin
+        pd = os.path.join(F, os.path.basename(tree) + '.proj' + (target or '') + ('.old' if binp != ra_bin else ''))
+        pl = plan(tree, pd, target)
+        if pl['verdict'] != 'ok':
+            return pl, [], {}
+        sp = pd + '.sites'
+        r = subprocess.run([binp, pd, '--local-roots', os.path.join(pd, 'local-roots.json'), '--target', pl['triple'],
+                            '--sites', sp, '--offline'], cwd=pd, capture_output=True, text=True, env=sandbox_env())
+        summ = next((json.loads(l) for l in r.stdout.splitlines() if l.startswith('{')), {})
+        rows = [x for x in (json.loads(l) for l in open(sp)) if 'outcome' in x] if os.path.exists(sp) else []
+        return pl, rows, summ
+    # (1) proc macro: effectful and pure twin, plus a macro_rules! call that must stay expanded
+    pm = os.path.join(F, 'pmfx')
+    w(pm + '/Cargo.toml', '[package]\nname = "pmfx"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\npm = { path = "pm" }\n[workspace]\n')
+    w(pm + '/pm/Cargo.toml', '[package]\nname = "pm"\nversion = "0.1.0"\nedition = "2021"\n[lib]\nproc-macro = true\n')
+    w(pm + '/pm/src/lib.rs', 'use proc_macro::TokenStream;\n#[proc_macro]\npub fn mkw(_i: TokenStream) -> TokenStream {\n'
+      '    "{ std::fs::write(\\"x\\", \\"y\\").unwrap(); }".parse().unwrap() }\n#[proc_macro]\npub fn mkq(_i: TokenStream) -> TokenStream { "{ }".parse().unwrap() }\n')
+    w(pm + '/src/lib.rs', 'macro_rules! mac { () => { std::fs::read("a") } }\npub fn p_fnlike_e() { pm::mkw!() }\n'
+      'pub fn p_fnlike_q() { pm::mkq!() }\npub fn p_rules() { let _ = mac!(); }\n')
+    pl, rows, summ = load(pm)
+    pms = [r for r in rows if r['outcome'] == 'procmacro']
+    ok(pl['verdict'] == 'ok' and len(pms) == 2 and summ.get('macro_proc') == 2 and summ.get('macro_unexpanded') == 0,
+       f'D5 arm: both function-like proc-macro calls (effectful and pure twin) read `procmacro` by kind ({len(pms)}), unexpanded channel {summ.get("macro_unexpanded")}')
+    ok(any(r['target'] == 'std::fs::read' and r['macro'] for r in rows) and
+       not any(r['outcome'] == 'procmacro' and 'mac!' in r.get('text', '') for r in rows),
+       'D5 arm: the macro_rules! call still expands (std::fs::read reached) and is not flagged')
+    if ra_old:
+        _, orows, osumm = load(pm, binp=ra_old)
+        ok(not any(r['outcome'] == 'procmacro' for r in orows) and osumm.get('macro_unexpanded') == 0,
+           f'D5 OLD arm RED: the pre-R0 arm reads the same two proc-macro calls as typed (unexpanded channel {osumm.get("macro_unexpanded")}, no proc-macro record)')
+    # (2) members vs dependencies
+    ap = os.path.join(F, 'app')
+    w(ap + '/Cargo.toml', '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\ndepc = { path = "../depc" }\n[workspace]\n')
+    w(ap + '/src/lib.rs', 'pub fn a() { depc::d(); }\n')
+    w(os.path.join(F, 'depc/Cargo.toml'), '[package]\nname = "depc"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n')
+    w(os.path.join(F, 'depc/src/lib.rs'), 'pub fn d() { let _ = std::fs::read("d"); }\n')
+    pl, rows, summ = load(ap)
+    ok(pl['verdict'] == 'ok' and rows and not any('/depc/' in r['file'] for r in rows)
+       and any(r['target'].endswith('depc::d') and r['origin'] == 'dep' for r in rows) and summ.get('crates') == 1,
+       f'locality: a path dependency outside the workspace is `dep`, its body is not walked (walked crates {summ.get("crates")})')
+    if ra_old:
+        _, orows, osumm = load(ap, binp=ra_old)
+        ok(any('/depc/' in r['file'] for r in orows) and osumm.get('crates') == 2,
+           f'locality OLD arm RED: every crate is `local`, the dependency body is walked (walked crates {osumm.get("crates")})')
+    # (3) std per configuration
+    st = os.path.join(F, 'stdcfg')
+    w(st + '/Cargo.toml', '[package]\nname = "stdcfg"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n')
+    w(st + '/src/lib.rs', 'pub fn w(o: &mut std::fs::OpenOptions) { use std::os::windows::fs::OpenOptionsExt; o.custom_flags(0); }\n')
+    res = {}
+    for tg in (toolchain()['host'], 'x86_64-pc-windows-msvc'):
+        pl, rows, summ = load(st, tg)
+        res[tg] = [r for r in rows if r['text'].startswith('o.custom_flags')]
+    if ra_old:
+        _, orows, _ = load(st, 'x86_64-pc-windows-msvc', binp=ra_old)
+        o = [r for r in orows if r['text'].startswith('o.custom_flags')]
+        ok(o and o[0]['outcome'] == 'unresolved',
+           'std per configuration OLD arm RED: the pre-R0 arm types std under the host cfg whatever the configuration (`std::os::windows` unresolved)')
+    host_r, win_r = res[toolchain()['host']], res['x86_64-pc-windows-msvc']
+    ok(host_r and win_r and host_r[0]['outcome'] == 'unresolved' and win_r[0]['origin'] == 'lang',
+       f'std per configuration: `std::os::windows` method unresolved under the host config ({host_r and host_r[0]["outcome"]}) and resolved into std under x86_64-pc-windows-msvc ({win_r and win_r[0]["target"]})')
+
+
 # --------------------------------------------------------------------------------------------------------- selftest
-def _selftest():
+def _selftest(ra_bin=None, opt_old=None):
     td = tempfile.mkdtemp(prefix='rashadow-selftest-')
     fails = []
 
@@ -1250,6 +1782,12 @@ def _selftest():
         sp4 = os.path.join(td, 's4.jsonl')
         open(sp4, 'w').write(''.join(json.dumps(r) + '\n' for r in decls + [site('c1', 'k::m::helper')] * 20))
         ok(diff(Ra(sp4, None, summ_full), Cs(rp, cp))['det']['sysroot'] == 'absent', 'D4 seeded no-sysroot load fires')
+        sp5 = os.path.join(td, 's5.jsonl')
+        pmsite = dict(site('c1', '', outcome='procmacro'), form='macro', text='mk!()')
+        open(sp5, 'w').write(''.join(json.dumps(r) + '\n' for r in decls + [site('c1', 'k::m::helper'), pmsite]))
+        d5 = diff(Ra(sp5, None, summ_full), Cs(rp, cp))['det']
+        ok(d5['procmacro'] == 1 and d5['procmacro_ex'][0][2] == 'c1', 'D5 seeded function-like proc-macro site fires')
+        ok(diff(Ra(sp4, None, summ_full), Cs(rp, cp))['det']['procmacro'] == 0, 'D5 silent on a load with no proc-macro site')
         ok(d['det']['sysroot'] == 'ok', 'D4 silent on a load with std edges')
         # the sink oracle: a classifier that says std::fs::<File>::create is NOT an effect must win over the table
         fake = os.path.join(td, 'clf.py')
@@ -1325,6 +1863,11 @@ def _selftest():
         ok(reach(r3s, r3i, 'gen_q')[0] == 'NOREACH', 'reach: CHA over a type parameter fans out to the named trait\'s implementors only')
         ok(reach(rsp, rip, 'probe_q')[0] == 'NOREACH', 'reach: the Quiet-only twin stays pure WITH substitution')
         ok(reach(rsp, rip, 'probe_q', no_subst=True)[0] == 'REACH', 'reach --no-subst (SCIP proxy): the twin falls to CHA and charges')
+        _hostile(ok, td, ra_bin)
+        if ra_bin:
+            _arm_fixtures(ok, td, ra_bin, os.environ.get('RA_SHADOW_ARM_OLD') or opt_old)
+        else:
+            print('skip arm fixtures (D5 arm, locality, std per configuration): no --ra / $RA_SHADOW_ARM')
     finally:
         shutil.rmtree(td, ignore_errors=True)
     print(f'selftest: {"FAIL " + str(len(fails)) if fails else "OK"}')
@@ -1340,13 +1883,16 @@ def main(argv):
     def opt(k, d=None):
         return argv[argv.index(k) + 1] if k in argv else d
     if argv[0] == '--selftest':
-        return _selftest()
+        ab = lambda x: os.path.abspath(x) if x else x
+        return _selftest(ab(opt('--ra') or os.environ.get('RA_SHADOW_ARM')), ab(opt('--ra-old')))
     if argv[0] == 'run':
         ents = [l.strip() for l in open(argv[1]) if l.strip() and not l.startswith('#')]
         only = set(opt('--only').split(',')) if opt('--only') else None
         if only:
             ents = [e for e in ents if entry_name(e) in only]
         ra_bin, cs_bin, work, out = opt('--ra'), opt('--cs'), opt('--work'), opt('--out')
+        # the arm runs with cwd = the plan dir, so every path it is handed must be absolute
+        ra_bin, cs_bin, work, out = (os.path.abspath(x) if x else x for x in (ra_bin, cs_bin, work, out))
         if not all((ra_bin, cs_bin or opt('--cs-from'), work, out)):
             print('run: --ra --cs --work --out are required', file=sys.stderr)
             return 2
@@ -1355,7 +1901,7 @@ def main(argv):
         jobs = int(opt('--jobs', '2'))
         import concurrent.futures as cf
         with cf.ThreadPoolExecutor(jobs) as ex:
-            futs = {ex.submit(run_one, e, ra_bin, cs_bin, work, out, '--online' in argv, opt('--cs-from')): e for e in ents}
+            futs = {ex.submit(run_one, e, ra_bin, cs_bin, work, out, '--online' in argv, os.path.abspath(opt('--cs-from')) if opt('--cs-from') else None, opt('--target')): e for e in ents}
             for f in cf.as_completed(futs):
                 try:
                     rc = f.result()

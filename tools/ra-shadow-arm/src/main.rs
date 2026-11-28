@@ -8,7 +8,14 @@
 //! Lives OUTSIDE candor-rust's workspace on purpose: 188 packages (27 ra_ap_*), MSRV 1.98 and weekly breaking 0.0.x
 //! releases must not reach `cargo install candor-scan`'s lock or MSRV while this is an instrument.
 //!
-//!   ra-shadow-arm <project-dir> [--sites out.jsonl] [--impls impls.jsonl] [--offline] [--no-sysroot] [--test]
+//!   ra-shadow-arm <project-dir> [--local-roots roots.json] [--target TRIPLE] [--sites out.jsonl] [--impls impls.jsonl]
+//!                [--offline] [--no-sysroot] [--test]
+//!
+//! <project-dir> holds the driver's rust-project.json and NO Cargo.toml (R0: a cargo load runs binaries the scanned tree
+//! names and writes Cargo.lock into it; the arm refuses it unless RA_SHADOW_UNSAFE_CARGO_LOAD is set, which exists only so
+//! the hostile-tree selftest can show the RED). --local-roots: the workspace members' root modules (a JSON list); every
+//! other loaded crate is origin `dep` (ra marks them all local in a project json). --target: the configuration's triple,
+//! for std's cfg. A function-like proc-macro call is outcome `procmacro` (no server: ra would read it as expanding to nothing).
 //!
 //! --sites: one JSON line per decl ({decl, path, file, start, end, macro, self_src}) and per call site ({file, line,
 //!   mline, form, macro, outcome, target, origin, text, caller, tid, subst}); a site inside a cfg-disabled item is
@@ -17,11 +24,11 @@
 //!   and every trait's declared methods ({self: "<default>", has_body}); `trait` is ra's TraitId (identity, not name).
 //! stdout: one JSON summary line, including `loaded` (every non-lang crate ra loaded: the no-deps detector's input).
 //! RA_SHADOW_LEGACY_FALLBACK=1 restores the v3 attribution, for calibrating the detector only.
-use std::{collections::HashSet, io::Write, path::Path, time::Instant};
+use std::{collections::HashSet, io::Write, path::Path, sync::OnceLock, time::Instant};
 
 use hir::{
-    AsAssocItem, AssocItemContainer, CallableKind, HasAttrs, HasSource, HirDisplay, ModuleDef, ModuleSource,
-    PathResolution, Semantics,
+    AsAssocItem, AssocItemContainer, CallableKind, HasAttrs, HasSource, HirDisplay, MacroKind, ModuleDef,
+    ModuleSource, PathResolution, Semantics,
 };
 use ide_db::RootDatabase;
 use load_cargo::{LoadCargoConfig, ProcMacroServerChoice, load_workspace_at};
@@ -58,6 +65,7 @@ struct Tally {
     target_lang: u64,
     macros: u64,
     macro_unexpanded: u64,
+    macro_proc: u64, // fn-like proc-macro calls: ra has no server and reads them as expanding to NOTHING
     macro_depth_cut: u64,
     ops: u64, // operator / await / ? resolved to a user-visible fn (extra edges, not counted in sites)
 }
@@ -76,12 +84,19 @@ struct Ctx<'a> {
     cur_file: Option<ra_ap_vfs::FileId>,
 }
 
+/// Root files of the crates that are NOT workspace members. ra's rust-project.json loader gives every non-sysroot crate
+/// `CrateOrigin::Local` (measured: tokio's walk was 103,820 sites against 11,843 through cargo, 1.9 GB), so the
+/// driver passes the members' root modules in `--local-roots` and every other loaded crate is a `dep`.
+static DEP_ROOTS: OnceLock<HashSet<ra_ap_vfs::FileId>> = OnceLock::new();
+
 fn origin_of(db: &RootDatabase, k: hir::Crate) -> &'static str {
     let origin = k.origin(db);
-    if origin.is_local() {
-        "local"
-    } else if origin.is_lang() {
+    if origin.is_lang() {
         "lang"
+    } else if DEP_ROOTS.get().is_some_and(|d| d.contains(&k.root_file(db))) {
+        "dep"
+    } else if origin.is_local() {
+        "local"
     } else {
         "dep"
     }
@@ -339,6 +354,15 @@ impl<'a> Ctx<'a> {
                 }
             } else if let Some(mac) = ast::MacroCall::cast(node.clone()) {
                 self.t.macros += 1;
+                // A function-like PROC macro reads as an empty (or wrong) expansion without a server: `expand_macro_call`
+                // answers Some(empty), so the `unexpanded` channel below never fires and the call is typed as nothing.
+                // Disclose it by KIND, from the resolved definition (never from ra's silence). `macro_rules!` and the
+                // builtins are not proc macros and keep expanding.
+                if self.sema.resolve_macro_call(&mac).is_some_and(|m| m.kind(self.db) == MacroKind::ProcMacro) {
+                    self.t.macro_proc += 1;
+                    self.emit(&node, "macro", in_macro, "procmacro", "", "", "", serde_json::Value::Null);
+                    continue;
+                }
                 if depth < 32 {
                     if let Some(exp) = self.sema.expand_macro_call(&mac) {
                         let enc = self.caller_of(&node);
@@ -417,15 +441,37 @@ fn main() -> anyhow::Result<()> {
     let no_sysroot = args.iter().any(|a| a == "--no-sysroot");
     let all_crates = args.iter().any(|a| a == "--all-crates");
     let t0 = Instant::now();
+    // The ONLY load is over a rust-project.json the driver wrote (bin/rust-ra-shadow.py `plan`): <project-dir> holds
+    // that file and no Cargo.toml, so ra never runs cargo or rustc on the scanned tree's behalf. Loading a cargo
+    // project makes ra (and `cargo metadata` under it) run binaries the TREE names: `build.rustc-wrapper` (9 calls in
+    // one load), `build.rustc`, a rust-toolchain `path =` toolchain; and it writes Cargo.lock into the tree. That
+    // path is kept ONLY behind RA_SHADOW_UNSAFE_CARGO_LOAD=1, as the calibration seed for the hostile-tree selftest.
+    let unsafe_cargo = std::env::var("RA_SHADOW_UNSAFE_CARGO_LOAD").is_ok();
+    if !unsafe_cargo {
+        let has_json = dir.join("rust-project.json").is_file();
+        if !has_json || dir.join("Cargo.toml").exists() {
+            anyhow::bail!("ra-shadow-arm: refusing a cargo load of {}: <project-dir> must hold the driver's rust-project.json and no Cargo.toml (run it through `rust-ra-shadow.py run`)", dir.display());
+        }
+    }
     let mut cfg = CargoConfig {
         sysroot: if no_sysroot { None } else { Some(RustLibSource::Discover) },
         all_targets: true,
         set_test: args.iter().any(|a| a == "--test"),
+        target: opt("--target"),
         ..Default::default()
     };
     if offline {
         cfg.extra_env.insert("CARGO_NET_OFFLINE".into(), Some("true".into()));
     }
+    // belt and braces: whatever the process env says, ra's own child processes run with no wrapper
+    if !unsafe_cargo {
+        cfg.extra_env.insert("RUSTC_WRAPPER".into(), Some(String::new()));
+        cfg.extra_env.insert("RUSTC_WORKSPACE_WRAPPER".into(), Some(String::new()));
+    }
+    let local_roots: Option<HashSet<String>> = opt("--local-roots").map(|p| {
+        let v: Vec<String> = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        v.into_iter().collect()
+    });
     let load = LoadCargoConfig {
         load_out_dirs_from_check: false,
         with_proc_macro_server: ProcMacroServerChoice::None,
@@ -435,6 +481,19 @@ fn main() -> anyhow::Result<()> {
     };
     let (db, vfs, _pm) = load_workspace_at(dir, &cfg, &load, &|_| {})?;
     let t_load = t0.elapsed().as_secs_f64();
+    if let Some(lr) = &local_roots {
+        let mut dep = HashSet::new();
+        for k in hir::Crate::all(&db) {
+            if k.origin(&db).is_lang() {
+                continue;
+            }
+            let rf = k.root_file(&db);
+            if !lr.contains(&vfs.file_path(rf).to_string()) {
+                dep.insert(rf);
+            }
+        }
+        let _ = DEP_ROOTS.set(dep);
+    }
     hir::attach_db(&db, || -> anyhow::Result<()> {
     let sema = Semantics::new(&db);
     let mut ctx = Ctx {
@@ -501,7 +560,7 @@ fn main() -> anyhow::Result<()> {
         "dir": args[1], "crates": ncrates, "loaded": loaded, "ra_ap": "0.0.358", "files": nfiles, "load_s": t_load, "total_s": t_all,
         "sites": t.sites, "method": t.method, "call": t.call, "in_macro": t.in_macro,
         "free": t.free, "inherent": t.inherent, "trait_impl": t.trait_impl, "trait_decl": t.trait_decl,
-        "ctor": t.ctor, "macros": t.macros, "macro_unexpanded": t.macro_unexpanded, "macro_depth_cut": t.macro_depth_cut, "closure": t.closure, "fnptr": t.fnptr, "fn_trait": t.fn_trait, "ops": t.ops,
+        "ctor": t.ctor, "macros": t.macros, "macro_unexpanded": t.macro_unexpanded, "macro_proc": t.macro_proc, "macro_depth_cut": t.macro_depth_cut, "closure": t.closure, "fnptr": t.fnptr, "fn_trait": t.fn_trait, "ops": t.ops,
         "unresolved": t.unresolved, "inactive": t.inactive, "unresolved_method": t.unresolved_method, "unresolved_path": t.unresolved_path,
         "target_local": t.target_local, "target_dep": t.target_dep, "target_lang": t.target_lang,
         "definite_share": if callsites > 0 { definite as f64 / callsites as f64 } else { 0.0 },

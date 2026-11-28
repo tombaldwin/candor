@@ -8,6 +8,27 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-28 — rust-ra-shadow R0: the shadow tool no longer lets the scanned tree choose what runs
+
+- Defect (rust-real-typer-design §2.1): `cargo metadata` and ra's cargo load run binaries the TREE names (`.cargo/config.toml`
+  `build.rustc-wrapper` and `build.rustc`, a rust-toolchain `path =` toolchain via the rustup proxy) and write Cargo.lock into it.
+  Now `plan()` resolves the user's toolchain to absolute paths, runs `cargo metadata` from a neutral cwd over a symlink farm
+  (the tree's `.cargo` and rust-toolchain files left out, Cargo.lock copied in) under a scrubbed env, and writes the
+  rust-project.json itself; the arm loads that and refuses a directory holding a Cargo.toml. `meta.json` records `plan` and
+  `tree_written` (empty on all 37 corpus entries). The tree's own cargo config is no longer read (a vendored or patched tree
+  resolves from the user's cache or `--online`); `plan.config_dropped` says when something was dropped.
+- Same lane: `--target`/`run --target` types std under the configuration's cfg (was the host's); `--local-roots` makes
+  non-member crates `dep` (ra marks every crate of a project json local: tokio walked 103,014 sites and 2.0 GB, now 11,843 and
+  1.06 GB); a function-like proc-macro call is outcome `procmacro` and detector D5 (the `unexpanded` channel never fired on it).
+  Derive and attribute proc macros are not detected. ra's cargo load made each `build.rs` a crate; the project does not.
+- Calibration (`--selftest --ra BIN --ra-old BIN`, 75 ok, 0 FAIL). RED with the old path, then green:
+  `rustc-wrapper` old metadata 3 markers + Cargo.lock written, old ra load 9 markers; `build.rustc` 3 / 9; rust-toolchain `path`
+  4 / 1; `RUSTC_WRAPPER` in the process env 4. New plan and arm: 0 markers, tree untouched, std call sites resolved (live load).
+  `[env]` wrapper, runner, linker, build.rs and proc-macro seeds read 0 on the old path too (guards only). Old-arm RED for D5,
+  locality and std-per-configuration is in the selftest.
+- Corpus (37 entries, old tool + arm vs new, same candor-scan arm): (A) and (B) totals identical on every entry; detectors
+  identical (deps full 33, metadata-failed 4); site counts identical except the 6 entries whose `build.rs` ra used to walk.
+
 ## 2026-11-28 — rust-ra-shadow: rust-analyzer as a shadow differential beside candor-scan (no product change)
 
 - `bin/rust-ra-shadow.py` + `tools/ra-shadow-arm/` (Phase 0 of the rust typer strategy, Fable review 2026-11-28). The ra arm

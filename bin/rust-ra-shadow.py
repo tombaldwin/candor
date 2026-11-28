@@ -170,7 +170,9 @@ def decl_keys(d):
         mi = next((i for i in range(len(segs) - 1, 0, -1) if not segs[i].startswith('<') and i < len(segs) - 1), None)
         if mi and segs[mi] != stem:
             alt = segs[:mi] + [stem] + segs[mi + 1:]
-            out += decl_keys({'path': '::'.join(alt), 'self_src': st})
+            # the file-stem spelling goes FIRST: candor keeps a `platform::f` placeholder with no edges beside the
+            # real `tz_linux::f` (measured: iana-time-zone), so an exact hit on the mod-name spelling is the wrong unit
+            out = decl_keys({'path': '::'.join(alt), 'self_src': st}) + out
     if st and len(segs) > 2 and segs[-2].startswith('<'):
         mods = [_seg(x) for x in segs[1:-2]]
         t = st.strip()
@@ -1282,8 +1284,8 @@ def _selftest():
         ok('m::Y::r#yield' in cs_keys('k::m::<Y<T>>::yield'), 'map: a raw identifier spelling')
         ok('t::NonZeroI16::decode' in decl_keys({'path': 'k::t::<NonZero<i16> as Decode>::decode', 'self_src': 'NonZeroI16'}),
            'map: the self type as written beats ra canonical display')
-        ok('soft::fx64::ks' in decl_keys({'path': 'k::soft::fx::ks', 'file': '/c/src/soft/fx64.rs'}),
-           'map: a #[path] module keys by its file stem')
+        ok(decl_keys({'path': 'k::soft::fx::ks', 'file': '/c/src/soft/fx64.rs'})[0] == 'soft::fx64::ks',
+           'map: a #[path] module keys by its file stem, before the mod-name placeholder')
         ok('fr::from_row' in decl_keys({'path': 'k::fr::<(T1, T2) as FromRow>::from_row', 'self_src': '(T1, T2)'}),
            'map: a tuple self type has the type-less spelling')
         # reach, with and without substitution

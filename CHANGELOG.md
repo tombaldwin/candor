@@ -8,6 +8,14 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-28 — ⟨0.44⟩ family release (released 2026-11-28 as 0.44.0)
+
+The umbrella ships the ⟨0.44⟩ engines: SPEC §4's `dispatchesOn` value now says the key names the abstraction that
+declares the dispatched member, and the rust bound-dispatch and swift type-identity lanes landed under it. `ENGINE_PIN`
+moves to 0.44.0 so `candor update` and the Homebrew formula fetch the engines this cut published. Umbrella changes
+since v0.43.0 are in the dated entries below (shared lane instruments `bin/build-at.sh` and `corpus-ab.py --lower`,
+the live chained swift corpus, `ci-watch` branch filtering), plus the macro and `Self::m` corpus censuses.
+
 ## 2026-11-26 — ci-watch judges the runs of the branch being verified, not every run at the sha
 
 - `bin/ci-watch.sh` enumerated runs by commit sha, so after a fast-forward of `main` to a lane head it read the lane-branch run

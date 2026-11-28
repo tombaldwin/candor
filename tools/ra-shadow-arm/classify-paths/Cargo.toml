@@ -1,0 +1,11 @@
+[package]
+name = "candor-classify-paths"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# the PUBLISHED classifier: the shadow tool asks the authority instead of keeping its own sink table
+candor-classify = "=0.44.0"
+
+[workspace]

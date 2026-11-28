@@ -1,0 +1,19 @@
+[package]
+name = "ra-shadow-arm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ra_ap_hir = "=0.0.358"
+ra_ap_ide_db = "=0.0.358"
+ra_ap_load-cargo = "=0.0.358"
+ra_ap_project_model = "=0.0.358"
+ra_ap_syntax = "=0.0.358"
+ra_ap_vfs = "=0.0.358"
+ra_ap_paths = "=0.0.358"
+serde_json = "1"
+anyhow = "1"
+either = "1"
+
+[profile.release]
+debug = false

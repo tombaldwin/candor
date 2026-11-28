@@ -8,6 +8,18 @@ engine versions it targets, so this changelog is **dated**, most recent first. E
 in [candor-spec's changelog](https://github.com/tombaldwin/candor-spec/blob/main/CHANGELOG.md); each engine
 keeps its own.
 
+## 2026-11-28 — rust-ra-shadow: rust-analyzer as a shadow differential beside candor-scan (no product change)
+
+- `bin/rust-ra-shadow.py` + `tools/ra-shadow-arm/` (Phase 0 of the rust typer strategy, Fable review 2026-11-28). The ra arm
+  (`ra_ap_*` 0.0.358, its own lock, outside candor-rust's workspace) loads a cargo project without building it and names every
+  call site's callee; the tool diffs that against candor-scan's `--out` sidecar and report rows: (A) mis-binding on sites both
+  resolve, (B) the concrete effects a UNION would add, each with its root ra edge, plus `fixture` (executed probe: exec,
+  candor-scan solo/chained token and gate, ra with and without substitution), `reach` and `scip-reach` (the `rust-analyzer scip`
+  alternative, no linking). Sinks are asked of the published candor-classify (`tools/ra-shadow-arm/classify-paths`), never a
+  table. Four detectors, each seeded in `--selftest` and on the real binaries: a without-deps load (`cargo metadata` failed),
+  a macro site charged to the wrong fn (the v3 prototype's e10/e11/e12/e2 fabrications), a cfg-false impl in ra's index, and a
+  missing rust-src. The working copy keeps nested `target/` modules (a depth-blind ignore hollowed cc's `src/target/`).
+
 ## 2026-11-28 — `bin/swift-index-diff.py`: the compiler's index store as the swift resolver's test oracle
 
 - New shared instrument `bin/swift-index-diff.py` (+ helper `bin/swift_indexstore.py`, a ctypes reader of libIndexStore that
